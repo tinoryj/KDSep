@@ -30,6 +30,13 @@ LICENSE file.
   <packaging>jar</packaging>
 
   <dependencies>
+    <dependency>  
+    	<groupId>RocksDB</groupId>
+    	<artifactId>RocksDBInterface</artifactId>
+    	<version>7.7.3</version>
+        <scope>system</scope>  
+        <systemPath>${project.basedir}/../extradatabase/RocksDB/jni/target/RocksDBInterface_jni-7.7.3-jar-with-dependencies.jar</systemPath>  
+    </dependency>  
     <dependency>
       <groupId>org.rocksdb</groupId>
       <artifactId>rocksdbjni</artifactId>
@@ -63,6 +70,5 @@ LICENSE file.
       <version>4.12</version>
       <scope>test</scope>
     </dependency>
-
   </dependencies>
 </project>

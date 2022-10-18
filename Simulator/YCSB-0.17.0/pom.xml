@@ -38,30 +38,6 @@ LICENSE file.
       <distribution>repo</distribution>
     </license>
   </licenses>
-  <developers>
-    <!-- Please see git for authorship information.
-         This list is project maintainers -->
-    <developer>
-      <id>allanbank</id>
-      <name>Robert J. Moore</name>
-      <email>robert.j.moore@allanbank.com</email>
-    </developer>
-    <developer>
-      <id>busbey</id>
-      <name>Sean Busbey</name>
-      <email>sean.busbey@gmail.com</email>
-    </developer>
-    <developer>
-      <id>cmatser</id>
-      <name>Chrisjan Matser</name>
-      <email>cmatser@codespinnerinc.com</email>
-    </developer>
-    <developer>
-      <id>stfeng2</id>
-      <name>Stanley Feng</name>
-      <email>stfeng@google.com</email>
-    </developer>
-  </developers>
 
   <scm>
     <connection>scm:git:git://github.com/brianfrankcooper/YCSB.git</connection>

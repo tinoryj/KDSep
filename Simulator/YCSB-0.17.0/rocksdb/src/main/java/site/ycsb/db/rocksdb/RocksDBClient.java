@@ -17,6 +17,8 @@
 
 package site.ycsb.db.rocksdb;
 
+import RocksDBInterface;
+
 import site.ycsb.*;
 import site.ycsb.Status;
 import net.jcip.annotations.GuardedBy;
