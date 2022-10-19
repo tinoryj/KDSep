@@ -107,13 +107,6 @@ class CoreWorkload {
   static const std::string REQUEST_DISTRIBUTION_PROPERTY;
   static const std::string REQUEST_DISTRIBUTION_DEFAULT;
   
-  ///
-  /// The name of the property for adding zero padding to record numbers in order to match 
-  /// string sort order. Controls the number of 0s to left pad with.
-  ///
-  static const std::string ZERO_PADDING_PROPERTY;
-  static const std::string ZERO_PADDING_DEFAULT;
-
   /// 
   /// The name of the property for the max scan length (number of records).
   ///
@@ -140,11 +133,24 @@ class CoreWorkload {
   static const std::string RECORD_COUNT_PROPERTY;
   static const std::string OPERATION_COUNT_PROPERTY;
 
+  static const std::string LARGE_VALUE_PROPORTION_PROPERTY;
+  static const std::string LARGE_VALUE_PROPORTION_DEFAULT;
+
+  static const std::string MID_VALUE_PROPORTION_PROPERTY;
+  static const std::string SMALL_VALUE_PROPORTION_PROPERTY;
+
+  static const std::string LARGE_VALUE_SIZE_PROPERTY;
+  static const std::string MID_VALUE_SIZE_PROPERTY;
+  static const std::string SMALL_VALUE_SIZE_PROPERTY;
+
+  static const std::string PARETO_K;
+  static const std::string PARETO_THETA;
+  static const std::string PARETO_SIGMA;
   ///
   /// Initialize the scenario.
   /// Called once, in the main client thread, before any operations are started.
   ///
-  virtual void Init(const utils::Properties &p);
+  virtual void Init(const utils::Properties &p, bool run_phase = false);
   
   virtual void BuildValues(std::vector<ycsbc::DB::KVPair> &values);
   virtual void BuildUpdate(std::vector<ycsbc::DB::KVPair> &update);
@@ -163,7 +169,7 @@ class CoreWorkload {
       field_count_(0), read_all_fields_(false), write_all_fields_(false),
       field_len_generator_(NULL), key_generator_(NULL), key_chooser_(NULL),
       field_chooser_(NULL), scan_len_chooser_(NULL), insert_key_sequence_(3),
-      ordered_inserts_(true), record_count_(0) {
+      ordered_inserts_(true), record_count_(0), is_run_phase_(false) {
   }
   
   virtual ~CoreWorkload() {
@@ -175,7 +181,7 @@ class CoreWorkload {
   }
   
  protected:
-  static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
+  Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
 
   std::string table_name_;
@@ -191,7 +197,8 @@ class CoreWorkload {
   CounterGenerator insert_key_sequence_;
   bool ordered_inserts_;
   size_t record_count_;
-  int zero_padding_;
+  size_t operation_count_;
+  bool is_run_phase_;
 };
 
 inline std::string CoreWorkload::NextSequenceKey() {
@@ -211,10 +218,8 @@ inline std::string CoreWorkload::BuildKeyName(uint64_t key_num) {
   if (!ordered_inserts_) {
     key_num = utils::Hash(key_num);
   }
-  std::string key_num_str = std::to_string(key_num);
-  int zeros = zero_padding_ - key_num_str.length();
-  zeros = std::max(0, zeros);
-  return std::string("user").append(zeros, '0').append(key_num_str);
+
+  return std::string("user").append(std::to_string(key_num));
 }
 
 inline std::string CoreWorkload::NextFieldName() {

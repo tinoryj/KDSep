@@ -11,10 +11,9 @@
 
 #include "generator.h"
 
-#include <atomic>
 #include <cstdint>
-#include "utils.h"
 #include "zipfian_generator.h"
+#include "utils.h"
 
 namespace ycsbc {
 
@@ -29,26 +28,19 @@ class ScrambledZipfianGenerator : public Generator<uint64_t> {
       ScrambledZipfianGenerator(0, num_items - 1) { }
   
   uint64_t Next();
-  uint64_t Last();
+  uint64_t Last() { return last_; }
   
  private:
-  const uint64_t base_;
-  const uint64_t num_items_;
+  uint64_t base_;
+  uint64_t num_items_;
   ZipfianGenerator generator_;
-
-  uint64_t Scramble(uint64_t value) const;
+  uint64_t last_;
 };
 
-inline uint64_t ScrambledZipfianGenerator::Scramble(uint64_t value) const {
-  return base_ + utils::FNVHash64(value) % num_items_;
-}
-
 inline uint64_t ScrambledZipfianGenerator::Next() {
-  return Scramble(generator_.Next());
-}
-
-inline uint64_t ScrambledZipfianGenerator::Last() {
-  return Scramble(generator_.Last());
+  uint64_t value = generator_.Next();
+  value = base_ + utils::FNVHash64(value) % num_items_;
+	return last_ = value;
 }
 
 }

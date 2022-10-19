@@ -1,3 +1,7 @@
+# clion
+.idea
+cmake*
+CMake*
 # Compiled Object files
 *.slo
 *.lo
@@ -39,3 +43,12 @@
 
 redis/sample
 ycsbc
+resultDir
+*latencies*
+db_size
+
+#python cache
+.mypy_cache
+__pycache__
+#vscode cache
+.vscode

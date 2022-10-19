@@ -9,10 +9,10 @@
 #ifndef YCSB_C_UTILS_H_
 #define YCSB_C_UTILS_H_
 
-#include <algorithm>
 #include <cstdint>
-#include <exception>
 #include <random>
+#include <algorithm>
+#include <exception>
 
 namespace utils {
 
@@ -44,7 +44,8 @@ inline double RandomDouble(double min = 0.0, double max = 1.0) {
 /// Returns an ASCII code that can be printed to desplay
 ///
 inline char RandomPrintChar() {
-  return rand() % 94 + 33;
+  // No last ascii
+  return rand() % 93 + 33;
 }
 
 class Exception : public std::exception {

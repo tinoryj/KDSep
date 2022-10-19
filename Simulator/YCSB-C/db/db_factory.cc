@@ -14,6 +14,9 @@
 #include "db/redis_db.h"
 #include "db/tbb_rand_db.h"
 #include "db/tbb_scan_db.h"
+#include "db/leveldb_db.h"
+#include "db/rocksdb_db.h"
+#include "db/titandb_db.h"
 
 using namespace std;
 using ycsbc::DB;
@@ -32,6 +35,13 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     return new TbbRandDB;
   } else if (props["dbname"] == "tbb_scan") {
     return new TbbScanDB;
-  } else return NULL;
+  } else if (props["dbname"] == "leveldb" || props["dbname"]=="pebblesdb") {
+    return new LevelDB(props["dbfilename"].c_str(), props["configpath"]);
+  } else if (props["dbname"] == "rocksdb" || props["dbname"]=="rocksdb_tiered") {
+    return new RocksDB(props["dbfilename"].c_str(),props["configpath"]);
+  } else if (props["dbname"]=="diffkv" || props["dbname"] == "titandb") {
+    return new TitanDB(props["dbfilename"].c_str(),props["configpath"]);
+  }
+  else return NULL;
 }
 

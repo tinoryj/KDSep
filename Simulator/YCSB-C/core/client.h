@@ -14,14 +14,17 @@
 #include "core_workload.h"
 #include "utils.h"
 
+extern double ops_time[4];
+extern long ops_cnt[4];
+
 namespace ycsbc {
 
 class Client {
  public:
   Client(DB &db, CoreWorkload &wl) : db_(db), workload_(wl) { }
   
-  virtual bool DoInsert();
-  virtual bool DoTransaction();
+  virtual Operation DoInsert();
+  virtual Operation DoTransaction();
   
   virtual ~Client() { }
   
@@ -37,27 +40,45 @@ class Client {
   CoreWorkload &workload_;
 };
 
-inline bool Client::DoInsert() {
-  std::string key = workload_.NextSequenceKey();
-  std::vector<DB::KVPair> pairs;
-  workload_.BuildValues(pairs);
-  return (db_.Insert(workload_.NextTable(), key, pairs) == DB::kOK);
-}
+//FILE* fw = fopen("write_latencies","a");
+//FILE* fr = fopen("read_latencies","a");
 
-inline bool Client::DoTransaction() {
+  inline Operation Client::DoInsert() {
+    std::string key = workload_.NextSequenceKey();
+    std::vector<DB::KVPair> pairs;
+    workload_.BuildValues(pairs);
+    assert (db_.Insert(workload_.NextTable(), key, pairs) >=0);
+    return (Operation::INSERT);
+  }
+
+inline Operation Client::DoTransaction() {
   int status = -1;
+  utils::Timer timer;
+  Operation operation_type = workload_.NextOperation();
+  timer.Start();
   switch (workload_.NextOperation()) {
     case READ:
       status = TransactionRead();
+      ops_time[READ] += timer.End();
+      ops_cnt[READ]++;
+//      fprintf(fr,"%.0f,",timer.End());
       break;
     case UPDATE:
       status = TransactionUpdate();
+      ops_time[INSERT] += timer.End();
+      ops_cnt[INSERT]++;
+//      fprintf(fw,"%.0f,",timer.End());
       break;
     case INSERT:
       status = TransactionInsert();
+      ops_time[INSERT] += timer.End();
+      ops_cnt[INSERT]++;
+//      fprintf(fw,"%.0f,",timer.End());
       break;
     case SCAN:
       status = TransactionScan();
+      ops_time[SCAN] += timer.End();
+      ops_cnt[SCAN]++;
       break;
     case READMODIFYWRITE:
       status = TransactionReadModifyWrite();
@@ -66,7 +87,7 @@ inline bool Client::DoTransaction() {
       throw utils::Exception("Operation request is not recognized!");
   }
   assert(status >= 0);
-  return (status == DB::kOK);
+  return (operation_type);
 }
 
 inline int Client::TransactionRead() {

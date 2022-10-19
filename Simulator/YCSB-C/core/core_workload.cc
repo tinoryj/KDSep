@@ -12,6 +12,8 @@
 #include "skewed_latest_generator.h"
 #include "const_generator.h"
 #include "core_workload.h"
+#include "ratio_generator.h"
+#include "pareto_generator.h"
 
 #include <string>
 
@@ -22,7 +24,7 @@ const string CoreWorkload::TABLENAME_PROPERTY = "table";
 const string CoreWorkload::TABLENAME_DEFAULT = "usertable";
 
 const string CoreWorkload::FIELD_COUNT_PROPERTY = "fieldcount";
-const string CoreWorkload::FIELD_COUNT_DEFAULT = "10";
+const string CoreWorkload::FIELD_COUNT_DEFAULT = "1";
 
 const string CoreWorkload::FIELD_LENGTH_DISTRIBUTION_PROPERTY =
     "field_len_dist";
@@ -49,6 +51,21 @@ const string CoreWorkload::INSERT_PROPORTION_DEFAULT = "0.0";
 const string CoreWorkload::SCAN_PROPORTION_PROPERTY = "scanproportion";
 const string CoreWorkload::SCAN_PROPORTION_DEFAULT = "0.0";
 
+const string CoreWorkload::LARGE_VALUE_PROPORTION_PROPERTY = "largeproportion";
+const string CoreWorkload::LARGE_VALUE_PROPORTION_DEFAULT = "1";
+
+const string CoreWorkload::MID_VALUE_PROPORTION_PROPERTY = "midproportion";
+const string CoreWorkload::SMALL_VALUE_PROPORTION_PROPERTY = "smallproportion";
+
+const string CoreWorkload::LARGE_VALUE_SIZE_PROPERTY = "largesize";
+const string CoreWorkload::MID_VALUE_SIZE_PROPERTY = "midsize";
+const string CoreWorkload::SMALL_VALUE_SIZE_PROPERTY = "smallsize";
+
+const string CoreWorkload::PARETO_K = "pareto_k";
+const string CoreWorkload::PARETO_THETA = "pareto_theta";
+const string CoreWorkload::PARETO_SIGMA = "pareto_sigma";
+
+
 const string CoreWorkload::READMODIFYWRITE_PROPORTION_PROPERTY =
     "readmodifywriteproportion";
 const string CoreWorkload::READMODIFYWRITE_PROPORTION_DEFAULT = "0.0";
@@ -56,9 +73,6 @@ const string CoreWorkload::READMODIFYWRITE_PROPORTION_DEFAULT = "0.0";
 const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY =
     "requestdistribution";
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
-
-const string CoreWorkload::ZERO_PADDING_PROPERTY = "zeropadding";
-const string CoreWorkload::ZERO_PADDING_DEFAULT = "1";
 
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";
@@ -76,11 +90,15 @@ const string CoreWorkload::INSERT_START_DEFAULT = "0";
 const string CoreWorkload::RECORD_COUNT_PROPERTY = "recordcount";
 const string CoreWorkload::OPERATION_COUNT_PROPERTY = "operationcount";
 
-void CoreWorkload::Init(const utils::Properties &p) {
+void CoreWorkload::Init(const utils::Properties &p, bool run_phase) {
+  if(run_phase) is_run_phase_ = true;
   table_name_ = p.GetProperty(TABLENAME_PROPERTY,TABLENAME_DEFAULT);
   
-  field_count_ = std::stoi(p.GetProperty(FIELD_COUNT_PROPERTY,
+  field_count_ = std::stoul(p.GetProperty(FIELD_COUNT_PROPERTY,
                                          FIELD_COUNT_DEFAULT));
+  record_count_ = std::stoul(p.GetProperty(RECORD_COUNT_PROPERTY));
+  operation_count_ = std::stoul(p.GetProperty(OPERATION_COUNT_PROPERTY));
+
   field_len_generator_ = GetFieldLenGenerator(p);
   
   double read_proportion = std::stod(p.GetProperty(READ_PROPORTION_PROPERTY,
@@ -94,10 +112,8 @@ void CoreWorkload::Init(const utils::Properties &p) {
   double readmodifywrite_proportion = std::stod(p.GetProperty(
       READMODIFYWRITE_PROPORTION_PROPERTY, READMODIFYWRITE_PROPORTION_DEFAULT));
   
-  record_count_ = std::stoi(p.GetProperty(RECORD_COUNT_PROPERTY));
   std::string request_dist = p.GetProperty(REQUEST_DISTRIBUTION_PROPERTY,
                                            REQUEST_DISTRIBUTION_DEFAULT);
-  zero_padding_ = std::stoi(p.GetProperty(ZERO_PADDING_PROPERTY, ZERO_PADDING_DEFAULT));
   int max_scan_len = std::stoi(p.GetProperty(MAX_SCAN_LENGTH_PROPERTY,
                                              MAX_SCAN_LENGTH_DEFAULT));
   std::string scan_len_dist = p.GetProperty(SCAN_LENGTH_DISTRIBUTION_PROPERTY,
@@ -113,6 +129,8 @@ void CoreWorkload::Init(const utils::Properties &p) {
   if (p.GetProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_DEFAULT) == "hashed") {
     ordered_inserts_ = false;
   } else {
+    std::cerr<<"ordered values"<<std::endl;
+    std::cout<<"ordered values"<<std::endl;
     ordered_inserts_ = true;
   }
   
@@ -162,6 +180,8 @@ void CoreWorkload::Init(const utils::Properties &p) {
     scan_len_chooser_ = new UniformGenerator(1, max_scan_len);
   } else if (scan_len_dist == "zipfian") {
     scan_len_chooser_ = new ZipfianGenerator(1, max_scan_len);
+  } else if (scan_len_dist == "constant"){
+    scan_len_chooser_ = new UniformGenerator(max_scan_len,max_scan_len);
   } else {
     throw utils::Exception("Distribution not allowed for scan length: " +
         scan_len_dist);
@@ -180,7 +200,32 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
     return new UniformGenerator(1, field_len);
   } else if(field_len_dist == "zipfian") {
     return new ZipfianGenerator(1, field_len);
-  } else {
+  } else if(field_len_dist == "ratio"){
+    double small_ratio = std::stod(p.GetProperty(SMALL_VALUE_PROPORTION_PROPERTY));
+    double mid_ratio = std::stod(p.GetProperty(MID_VALUE_PROPORTION_PROPERTY));
+    double large_ratio = std::stod(p.GetProperty(LARGE_VALUE_PROPORTION_PROPERTY));
+    int small_size = std::stoi(p.GetProperty(SMALL_VALUE_SIZE_PROPERTY));
+    int mid_size = std::stoi(p.GetProperty(MID_VALUE_SIZE_PROPERTY));
+    int large_size = std::stoi(p.GetProperty(LARGE_VALUE_SIZE_PROPERTY));
+    return new RatioGenerator(small_ratio, mid_ratio, large_ratio, small_size, mid_size, large_size);
+  } else if(field_len_dist == "pareto") {
+    double k = std::stod(p.GetProperty(PARETO_K));
+    double theta = std::stod(p.GetProperty(PARETO_THETA));
+    double sigma = std::stod(p.GetProperty(PARETO_SIGMA));
+    uint64_t num = 0;
+    if(is_run_phase_){
+      double update_proportion = std::stod(p.GetProperty(UPDATE_PROPORTION_PROPERTY,
+                                                     UPDATE_PROPORTION_DEFAULT));
+      double insert_proportion = std::stod(p.GetProperty(INSERT_PROPORTION_PROPERTY,
+                                                     INSERT_PROPORTION_DEFAULT));
+      num = operation_count_*(update_proportion+insert_proportion);
+      num = num==0?record_count_:num;
+    } else {
+      num = record_count_;
+    }
+    return new ParetoGenerator(num, theta, k, sigma);
+  }
+  else {
     throw utils::Exception("Unknown field length distribution: " +
         field_len_dist);
   }
