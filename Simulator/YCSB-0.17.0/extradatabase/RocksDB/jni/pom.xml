@@ -29,6 +29,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -60,7 +61,7 @@
                                     <type>so</type>
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/classes</outputDirectory>
-                                    <destFileName>librocksdb-ycsb.so</destFileName>
+                                    <destFileName>libRocksDBInterface.so</destFileName>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>

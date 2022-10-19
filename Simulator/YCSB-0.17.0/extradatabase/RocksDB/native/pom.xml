@@ -16,6 +16,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.0</version>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -24,8 +25,8 @@
                 <extensions>true</extensions>
                 <configuration>
                     <compilerProvider>generic-classic</compilerProvider>
-                    <compilerExecutable>g++</compilerExecutable>
-                    <linkerExecutable>g++</linkerExecutable>
+                    <compilerExecutable>clang++</compilerExecutable>
+                    <linkerExecutable>clang++</linkerExecutable>
                     <sources>
                         <source>
                             <directory>${basedir}/src/main/c/jni</directory>
@@ -35,20 +36,16 @@
                         </source>
                     </sources>
                     <compilerStartOptions>
-                        <compilerStartOption>-I ${JAVA_HOME}/include/</compilerStartOption>
-                        <compilerStartOption>-I ${JAVA_HOME}/include/linux/</compilerStartOption>
+                        <compilerStartOption>-std=c++17 -fPIC</compilerStartOption>
                     </compilerStartOptions>
                     <compilerEndOptions>
-                        <compilerEndOption>-shared</compilerEndOption>
-                        <compilerEndOption>-fPIC</compilerEndOption>
+                        <compilerEndOption>-I ${JAVA_HOME}/include/ -I ${JAVA_HOME}/include/linux/ -I ${project.basedir}/src/lib/include/</compilerEndOption>
                     </compilerEndOptions>
                     <linkerStartOptions>
-                        <linkerStartOption>-I ${JAVA_HOME}/include/</linkerStartOption>
-                        <linkerStartOption>-I ${JAVA_HOME}/include/linux/</linkerStartOption>
+                        <linkerStartOption>-shared </linkerStartOption>
                     </linkerStartOptions>
                     <linkerEndOptions>
-                        <linkerEndOption>-shared</linkerEndOption>
-                        <linkerEndOption>-fPIC</linkerEndOption>
+                        <linkerEndOption>${project.basedir}/src/lib/librocksdb.a</linkerEndOption>
                     </linkerEndOptions>
                 </configuration>
             </plugin>
