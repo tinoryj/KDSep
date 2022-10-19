@@ -1,6 +1,6 @@
 CC=g++
-CFLAGS=-std=c++11 -c -g -Wall -fgnu-tm
-INCLUDES=-I ../
+CFLAGS=-std=c++17 -c -g -Wall -fgnu-tm
+INCLUDES=-I ../ -I ../../Databases/RocksDB/include/
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
 
