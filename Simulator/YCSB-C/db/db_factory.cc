@@ -7,8 +7,8 @@
 //
 
 #include "db/db_factory.h"
-#include "db/leveldb_db.h"
-#include "db/rocksdb_db.h"
+#include "LevelDB/leveldb_db.h"
+#include "RocksDB/rocksdb_db.h"
 #include <string>
 
 using namespace std;

@@ -3,7 +3,7 @@
 //
 
 #include "rocksdb_db.h"
-#include "extern_db_config.h"
+#include "db/extern_db_config.h"
 #include <iostream>
 
 using namespace std;
@@ -50,8 +50,8 @@ RocksDB::RocksDB(const char* dbfilename, const std::string& config_file_path)
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     // merge operators
-    // options.merge_operator = MergeOperators::CreateStringAppendOperator();
-
+    options.merge_operator = rocksdb::MergeOperators::CreateStringAppendOperator();
+    // options.merge_operator = shared_ptr<DummyMergeOperator>();
     cerr << "Start create RocksDB instance" << endl;
     rocksdb::Status s = rocksdb::DB::Open(options, dbfilename, &db_);
     if (!s.ok()) {
@@ -125,7 +125,7 @@ int RocksDB::Update(const std::string& table, const std::string& key, std::vecto
     rocksdb::Status s;
     for (KVPair& p : values) {
         s = db_->Merge(rocksdb::WriteOptions(), key, p.second);
-        db_->Flush(rocksdb::FlushOptions());
+        // db_->Flush(rocksdb::FlushOptions());
         if (!s.ok()) {
             cout << "Merge value failed: " << s.ToString() << endl;
             exit(-1);

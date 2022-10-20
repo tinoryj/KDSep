@@ -6,7 +6,7 @@
 #define YCSB_C_LEVELDB_DB_H
 
 #include "core/db.h"
-#include "extern_db_config.h"
+#include "db/extern_db_config.h"
 #include "leveldb/db.h"
 #include <boost/property_tree/ini_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
