@@ -7,8 +7,93 @@
 #include <iostream>
 
 using namespace std;
+using namespace rocksdb;
 
 namespace ycsbc {
+vector<string> split(string str, string token)
+{
+    vector<string> result;
+    while (str.size()) {
+        int index = str.find(token);
+        if (index != string::npos) {
+            result.push_back(str.substr(0, index));
+            str = str.substr(index + token.size());
+            if (str.size() == 0)
+                result.push_back(str);
+        } else {
+            result.push_back(str);
+            str = "";
+        }
+    }
+    return result;
+}
+
+class FieldUpdateMergeOperator : public MergeOperator {
+public:
+    // Gives the client a way to express the read -> modify -> write semantics
+    // key:         (IN) The key that's associated with this merge operation.
+    // existing:    (IN) null indicates that the key does not exist before this op
+    // operand_list:(IN) the sequence of merge operations to apply, front() first.
+    // new_value:  (OUT) Client is responsible for filling the merge result here
+    // logger:      (IN) Client could use this to log errors during merge.
+    //
+    // Return true on success, false on failure/corruption/etc.
+    bool FullMerge(const Slice& key,
+        const Slice* existing_value,
+        const std::deque<std::string>& operand_list,
+        std::string* new_value,
+        Logger* logger) const override
+    {
+
+        // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
+        // new_value->assign(existing_value->ToString());
+        vector<std::string> words = split(existing_value->ToString(), ",");
+        // for (int i = 0; i < words.size(); i++) {
+        //     cout << "Index = " << i << ", Words = " << words[i] << endl;
+        // }
+        for (auto q : operand_list) {
+            vector<string> operandVector = split(q, ",");
+            for (int i = 0; i < operandVector.size(); i += 2) {
+                words[stoi(operandVector[i])] = operandVector[i + 1];
+            }
+        }
+        string temp;
+        for (int i = 0; i < words.size() - 1; i++) {
+            temp += words[i] + ",";
+        }
+        temp += words[words.size() - 1];
+        new_value->assign(temp);
+        // cout << new_value->data() << "\n Size=" << new_value->length() << endl;
+        return true;
+    };
+
+    // This function performs merge(left_op, right_op)
+    // when both the operands are themselves merge operation types.
+    // Save the result in *new_value and return true. If it is impossible
+    // or infeasible to combine the two operations, return false instead.
+    bool PartialMerge(const Slice& key,
+        const Slice& left_operand,
+        const Slice& right_operand,
+        std::string* new_value,
+        Logger* logger) const override
+    {
+        new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
+        cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
+        cout << right_operand.data() << "\n Size=" << right_operand.size() << endl;
+        cout << new_value << "\n Size=" << new_value->length() << endl;
+        // new_value->assign(left_operand.data(), left_operand.size());
+        return true;
+    };
+
+    // The name of the MergeOperator. Used to check for MergeOperator
+    // mismatches (i.e., a DB created with one MergeOperator is
+    // accessed using a different MergeOperator)
+    const char* Name() const override
+    {
+        return "FieldUpdateMergeOperator";
+    }
+};
+
 RocksDB::RocksDB(const char* dbfilename, const std::string& config_file_path)
     : noResult(0)
 {
@@ -50,7 +135,7 @@ RocksDB::RocksDB(const char* dbfilename, const std::string& config_file_path)
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     // merge operators
-    options.merge_operator = rocksdb::MergeOperators::CreateStringAppendOperator();
+    options.merge_operator.reset(new FieldUpdateMergeOperator);
     // options.merge_operator = shared_ptr<DummyMergeOperator>();
     cerr << "Start create RocksDB instance" << endl;
     rocksdb::Status s = rocksdb::DB::Open(options, dbfilename, &db_);
@@ -109,13 +194,16 @@ int RocksDB::Insert(const std::string& table, const std::string& key,
     std::vector<KVPair>& values)
 {
     rocksdb::Status s;
-    for (KVPair& p : values) {
-        s = db_->Put(rocksdb::WriteOptions(), key, p.second);
-        if (!s.ok()) {
-            cerr << "insert error" << s.ToString() << "\n"
-                 << endl;
-            exit(0);
-        }
+    string fullValue;
+    for (int i = 0; i < values.size() - 1; i++) {
+        fullValue += (values[i].second + ",");
+    }
+    fullValue += values[values.size() - 1].second;
+    s = db_->Put(rocksdb::WriteOptions(), key, fullValue);
+    if (!s.ok()) {
+        cerr << "insert error" << s.ToString() << "\n"
+             << endl;
+        exit(0);
     }
     return DB::kOK;
 }
@@ -123,15 +211,18 @@ int RocksDB::Insert(const std::string& table, const std::string& key,
 int RocksDB::Update(const std::string& table, const std::string& key, std::vector<KVPair>& values)
 {
     rocksdb::Status s;
+    string value;
+    s = db_->Get(rocksdb::ReadOptions(), key, &value);
+    // std::cout << "Update->existing value = " << value << std::endl;
     for (KVPair& p : values) {
         s = db_->Merge(rocksdb::WriteOptions(), key, p.second);
-        // db_->Flush(rocksdb::FlushOptions());
         if (!s.ok()) {
-            cout << "Merge value failed: " << s.ToString() << endl;
+            // cout << "Merge value failed: " << s.ToString() << endl;
             exit(-1);
         }
     }
-    return Insert(table, key, values);
+    // s = db_->Flush(rocksdb::FlushOptions());
+    return s.ok();
 }
 
 int RocksDB::Delete(const std::string& table, const std::string& key)

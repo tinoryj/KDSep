@@ -13,6 +13,7 @@
 #include "core_workload.h"
 #include "db.h"
 #include "utils.h"
+#include <iostream>
 #include <string>
 
 extern double ops_time[5];
@@ -102,6 +103,7 @@ inline int Client::TransactionRead()
 {
     const std::string& table = workload_.NextTable();
     const std::string& key = workload_.NextTransactionKey();
+    // std::cout << "Read transaction key = " << key << std::endl;
     std::vector<DB::KVPair> result;
     if (!workload_.read_all_fields()) {
         std::vector<std::string> fields;
@@ -162,6 +164,10 @@ inline int Client::TransactionUpdate()
     } else {
         workload_.BuildUpdate(values);
     }
+    // std::cout << "Update transaction key = " << key << std::endl;
+    // for (int i = 0; i < values.size(); i++) {
+    //     std::cout << "Update transaction value = " << values[i].second << std::endl;
+    // }
     return db_.Update(table, key, values);
 }
 

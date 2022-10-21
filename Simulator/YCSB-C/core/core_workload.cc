@@ -24,7 +24,7 @@ const string CoreWorkload::TABLENAME_PROPERTY = "table";
 const string CoreWorkload::TABLENAME_DEFAULT = "usertable";
 
 const string CoreWorkload::FIELD_COUNT_PROPERTY = "fieldcount";
-const string CoreWorkload::FIELD_COUNT_DEFAULT = "1";
+const string CoreWorkload::FIELD_COUNT_DEFAULT = "10";
 
 const string CoreWorkload::FIELD_LENGTH_DISTRIBUTION_PROPERTY = "field_len_dist";
 const string CoreWorkload::FIELD_LENGTH_DISTRIBUTION_DEFAULT = "constant";
@@ -232,7 +232,10 @@ void CoreWorkload::BuildValues(std::vector<ycsbc::DB::KVPair>& values)
         ycsbc::DB::KVPair pair;
         pair.first.append("field").append(std::to_string(i));
         pair.second.append(field_len_generator_->Next(), utils::RandomPrintChar());
+        // pair.second.append(",");
         values.push_back(pair);
+        // std::cout << "Build Values->field name [" << i << "] = " << pair.first << std::endl;
+        // std::cout << "Build Values->field value [" << i << "] = " << pair.second << std::endl;
     }
 }
 
@@ -240,6 +243,9 @@ void CoreWorkload::BuildUpdate(std::vector<ycsbc::DB::KVPair>& update)
 {
     ycsbc::DB::KVPair pair;
     pair.first.append(NextFieldName());
+    // std::cout << "Update->Next field name = " << pair.first << std::endl;
+    pair.second.append(pair.first.substr(5) + ",");
     pair.second.append(field_len_generator_->Next(), utils::RandomPrintChar());
+    // std::cout << "Update->Next field content p.second = " << pair.second << std::endl;
     update.push_back(pair);
 }

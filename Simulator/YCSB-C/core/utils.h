@@ -48,7 +48,7 @@ inline double RandomDouble(double min = 0.0, double max = 1.0)
 inline char RandomPrintChar()
 {
     // No last ascii
-    return rand() % 93 + 33;
+    return rand() % 26 + 65;
 }
 
 class Exception : public std::exception {
