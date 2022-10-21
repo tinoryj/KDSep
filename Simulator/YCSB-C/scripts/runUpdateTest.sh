@@ -23,7 +23,7 @@ do
         echo "Loading the database =====================>"
         ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
         echo "Benchmark the database =====================>"
-        ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini > ./ResultLogs/Read-0.$i-Update-0.$UpdateProportion-Round-$multiRun.log
+        ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > ./ResultLogs/Read-0.$i-Update-0.$UpdateProportion-Round-$multiRun.log
     done
 done
 
@@ -45,6 +45,6 @@ do
         echo "Loading the database =====================>"
         ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
         echo "Benchmark the database =====================>"
-        ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini > ./ResultLogs/Read-0.$i-RMW-0.$RMWProportion-Round-$multiRun.log
+        ./ycsbc -db rocksdb -dbfilename dbtest -threads 16 -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > ./ResultLogs/Read-0.$i-RMW-0.$RMWProportion-Round-$multiRun.log
     done
 done
