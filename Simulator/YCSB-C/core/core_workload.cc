@@ -1,11 +1,3 @@
-//
-//  core_workload.cc
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/9/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
 #include "core_workload.h"
 #include "const_generator.h"
 #include "pareto_generator.h"
@@ -253,9 +245,9 @@ void CoreWorkload::BuildUpdate(std::vector<ycsbc::DB::KVPair>& update)
 {
     ycsbc::DB::KVPair pair;
     pair.first.append(NextFieldName());
-    // std::cout << "Update->Next field name = " << pair.first << std::endl;
     pair.second.append(pair.first.substr(5) + ",");
     pair.second.append(field_len_generator_->Next(), utils::RandomPrintChar());
+    // std::cout << "Update->Next field name = " << pair.first << std::endl;
     // std::cout << "Update->Next field content p.second = " << pair.second << std::endl;
     update.push_back(pair);
 }

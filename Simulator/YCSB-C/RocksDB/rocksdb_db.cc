@@ -1,7 +1,3 @@
-//
-// Created by wujy on 1/23/19.
-//
-
 #include "rocksdb_db.h"
 #include "db/extern_db_config.h"
 #include <iostream>
@@ -25,8 +21,8 @@ vector<string> split(string str, string token)
 {
     vector<string> result;
     while (str.size()) {
-        int index = str.find(token);
-        if (index != string::npos) {
+        size_t index = str.find(token);
+        if (index != std::string::npos) {
             result.push_back(str.substr(0, index));
             str = str.substr(index + token.size());
             if (str.size() == 0)
@@ -59,17 +55,17 @@ public:
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
         vector<std::string> words = split(existing_value->ToString(), ",");
-        // for (int i = 0; i < words.size(); i++) {
+        // for (long unsigned int i = 0; i < words.size(); i++) {
         //     cout << "Index = " << i << ", Words = " << words[i] << endl;
         // }
         for (auto q : operand_list) {
             vector<string> operandVector = split(q, ",");
-            for (int i = 0; i < operandVector.size(); i += 2) {
+            for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
                 words[stoi(operandVector[i])] = operandVector[i + 1];
             }
         }
         string temp;
-        for (int i = 0; i < words.size() - 1; i++) {
+        for (long unsigned int i = 0; i < words.size() - 1; i++) {
             temp += words[i] + ",";
         }
         temp += words[words.size() - 1];
@@ -110,16 +106,15 @@ public:
 };
 
 RocksDB::RocksDB(const char* dbfilename, const std::string& config_file_path)
-    : noResult(0)
 {
     rocksdb::Options options;
     //get rocksdb config
     ExternDBConfig config = ExternDBConfig(config_file_path);
     int bloomBits = config.getBloomBits();
     size_t blockCacheSize = config.getBlockCache();
-    bool seekCompaction = config.getSeekCompaction();
+    // bool seekCompaction = config.getSeekCompaction();
     bool compression = config.getCompression();
-    bool directIO = config.getDirectIO();
+    // bool directIO = config.getDirectIO();
     size_t memtable = config.getMemtable();
     //set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -149,9 +144,7 @@ RocksDB::RocksDB(const char* dbfilename, const std::string& config_file_path)
     bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
-    // merge operators
-    options.merge_operator.reset(new FieldUpdateMergeOperator);
-    // options.merge_operator = shared_ptr<DummyMergeOperator>();
+    options.merge_operator.reset(new FieldUpdateMergeOperator); // merge operators
     cerr << "Start create RocksDB instance" << endl;
     rocksdb::Status s = rocksdb::DB::Open(options, dbfilename, &db_);
     if (!s.ok()) {
@@ -166,17 +159,8 @@ int RocksDB::Read(const std::string& table, const std::string& key, const std::v
 {
     string value;
     rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
-    // if(s.ok()) return DB::kOK;
-    // if(s.IsNotFound()){
-    //     noResult++;
-    //     cout<<noResult<<"not found"<<endl;
-    //     return DB::kOK;
-    // }else{
-    //     cerr<<"read error"<<endl;
-    //     exit(0);
-    // }
     // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
-    return DB::kOK;
+    return s.ok();
 }
 
 int RocksDB::Scan(const std::string& table, const std::string& key, int len, const std::vector<std::string>* fields,
@@ -195,13 +179,6 @@ int RocksDB::Scan(const std::string& table, const std::string& key, int len, con
         if (val.empty())
             cnt++;
     }
-    // if(i<len) {
-    //     std::cout<<" get "<<i<<" for length "<<len<<"."<<std::endl;
-    //     std::cerr<<" get "<<i<<" for length "<<len<<"."<<std::endl;
-    // }
-    // if(cnt>0) {
-    //     std::cout<<cnt<<"empty values"<<std::endl;
-    // }
     delete it;
     return DB::kOK;
 }
@@ -211,7 +188,7 @@ int RocksDB::Insert(const std::string& table, const std::string& key,
 {
     rocksdb::Status s;
     string fullValue;
-    for (int i = 0; i < values.size() - 1; i++) {
+    for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
@@ -227,9 +204,6 @@ int RocksDB::Insert(const std::string& table, const std::string& key,
 int RocksDB::Update(const std::string& table, const std::string& key, std::vector<KVPair>& values)
 {
     rocksdb::Status s;
-    // string value;
-    // s = db_->Get(rocksdb::ReadOptions(), key, &value);
-    // std::cout << "Update->existing value = " << value << std::endl;
     for (KVPair& p : values) {
         s = db_->Merge(rocksdb::WriteOptions(), key, p.second);
         if (!s.ok()) {
@@ -246,14 +220,13 @@ int RocksDB::OverWrite(const std::string& table, const std::string& key,
 {
     rocksdb::Status s;
     string fullValue;
-    for (int i = 0; i < values.size() - 1; i++) {
+    for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
     s = db_->Put(rocksdb::WriteOptions(), key, fullValue);
     if (!s.ok()) {
-        cerr << "insert error" << s.ToString() << "\n"
-             << endl;
+        cerr << "insert error" << s.ToString() << endl;
         exit(0);
     }
     return DB::kOK;
@@ -261,8 +234,9 @@ int RocksDB::OverWrite(const std::string& table, const std::string& key,
 
 int RocksDB::Delete(const std::string& table, const std::string& key)
 {
-    vector<DB::KVPair> values;
-    return Insert(table, key, values);
+    std::string value;
+    rocksdb::Status s = db_->SingleDelete(rocksdb::WriteOptions(), key, value); // Undefined result
+    return s.ok();
 }
 
 void RocksDB::printStats()
@@ -275,11 +249,10 @@ void RocksDB::printStats()
 
 RocksDB::~RocksDB()
 {
+    cout << "Full merge operation number = " << counter_full << endl;
+    cout << "Full merge operation running time = " << totalTimeFull / 1000000.0 << " s" << endl;
+    cout << "Partial merge operation number = " << counter_part << endl;
+    cout << "Partial merge operation running time = " << totalTimePart / 1000000.0 << " s" << endl;
     delete db_;
-    std::cout << "Full merge operation number = " << counter_full << endl;
-    std::cout << "Full merge operation running time = " << totalTimeFull / 1000000.0 << " s" << endl;
-    std::cout << "Partial merge operation number = " << counter_part << endl;
-    std::cout << "Partial merge operation running time = " << totalTimePart / 1000000.0
-              << " s" << endl;
 }
 }

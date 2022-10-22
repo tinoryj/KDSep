@@ -1,11 +1,3 @@
-//
-//  zipfian_generator.h
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/7/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
 #ifndef YCSB_C_ZIPFIAN_GENERATOR_H_
 #define YCSB_C_ZIPFIAN_GENERATOR_H_
 

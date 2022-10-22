@@ -1,7 +1,3 @@
-//
-// Created by wujy on 1/23/19.
-//
-
 #ifndef YCSB_C_ROCKSDB_DB_H
 #define YCSB_C_ROCKSDB_DB_H
 
@@ -27,13 +23,11 @@
 #include <iostream>
 #include <string>
 
-using std::cout;
-using std::endl;
-
 namespace ycsbc {
 class RocksDB : public DB {
 public:
     RocksDB(const char* dbfilename, const std::string& config_file_path);
+
     int Read(const std::string& table, const std::string& key,
         const std::vector<std::string>* fields,
         std::vector<KVPair>& result);
@@ -59,7 +53,6 @@ public:
 
 private:
     rocksdb::DB* db_;
-    unsigned noResult;
     rocksdb::Iterator* it { nullptr };
 };
 

@@ -1,9 +1,5 @@
-//
-// Created by wujy on 11/3/18.
-//
-
-#ifndef YCSB_C_LEVELDB_CONFIG_H
-#define YCSB_C_LEVELDB_CONFIG_H
+#ifndef YCSB_C_EXTRA_CONFIG_H
+#define YCSB_C_EXTRA_CONFIG_H
 
 #include "core/db.h"
 #include "leveldb/db.h"
@@ -214,4 +210,4 @@ public:
 };
 }
 
-#endif //YCSB_C_LEVELDB_DB_H
+#endif //YCSB_C_EXTRA_CONFIG_H

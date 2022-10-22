@@ -1,11 +1,3 @@
-//
-//  basic_db.cc
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/17/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
 #include "db/db_factory.h"
 #include "RocksDB/rocksdb_db.h"
 #include <string>

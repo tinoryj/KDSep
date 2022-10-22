@@ -1,11 +1,3 @@
-//
-//  db.h
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/10/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
 #ifndef YCSB_C_DB_H_
 #define YCSB_C_DB_H_
 
@@ -20,16 +12,10 @@ public:
     static const int kOK = 0;
     static const int kErrorNoData = 1;
     static const int kErrorConflict = 2;
-    ///
-    /// Initializes any state for accessing this DB.
-    /// Called once per DB client (thread); there is a single DB instance globally.
-    ///
+
     virtual void Init() { }
-    ///
-    /// Clears any state for accessing this DB.
-    /// Called once per DB client (thread); there is a single DB instance globally.
-    ///
     virtual void Close() { }
+
     ///
     /// Reads a record from the database.
     /// Field/value pairs from the result are stored in a vector.
@@ -44,6 +30,7 @@ public:
         const std::vector<std::string>* fields,
         std::vector<KVPair>& result)
         = 0;
+
     ///
     /// Performs a range scan for a set of records in the database.
     /// Field/value pairs from the result are stored in a vector.
@@ -60,6 +47,7 @@ public:
         int record_count, const std::vector<std::string>* fields,
         std::vector<std::vector<KVPair>>& result)
         = 0;
+
     ///
     /// Updates a record in the database.
     /// Field/value pairs in the specified vector are written to the record,
@@ -73,6 +61,7 @@ public:
     virtual int Update(const std::string& table, const std::string& key,
         std::vector<KVPair>& values)
         = 0;
+
     ///
     /// Overwrite a record in the database.
     /// Field/value pairs in the specified vector are written to the record,
@@ -86,6 +75,7 @@ public:
     virtual int OverWrite(const std::string& table, const std::string& key,
         std::vector<KVPair>& values)
         = 0;
+
     ///
     /// Inserts a record into the database.
     /// Field/value pairs in the specified vector are written into the record.
@@ -98,6 +88,7 @@ public:
     virtual int Insert(const std::string& table, const std::string& key,
         std::vector<KVPair>& values)
         = 0;
+
     ///
     /// Deletes a record from the database.
     ///

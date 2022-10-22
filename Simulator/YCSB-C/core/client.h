@@ -1,11 +1,3 @@
-//
-//  client.h
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/10/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
 #ifndef YCSB_C_CLIENT_H_
 #define YCSB_C_CLIENT_H_
 
@@ -172,7 +164,7 @@ inline int Client::TransactionUpdate()
         workload_.BuildUpdate(values);
     }
     // std::cout << "Update transaction key = " << key << std::endl;
-    // for (int i = 0; i < values.size(); i++) {
+    // for (long unsigned int i = 0; i < values.size(); i++) {
     //     std::cout << "Update transaction value = " << values[i].second << std::endl;
     // }
     return db_.Update(table, key, values);
@@ -185,7 +177,7 @@ inline int Client::TransactionOverWrite()
     std::vector<DB::KVPair> values;
     workload_.BuildValues(values);
     // std::cout << "Update transaction key = " << key << std::endl;
-    // for (int i = 0; i < values.size(); i++) {
+    // for (long unsigned int i = 0; i < values.size(); i++) {
     //     std::cout << "Update transaction value = " << values[i].second << std::endl;
     // }
     return db_.OverWrite(table, key, values);

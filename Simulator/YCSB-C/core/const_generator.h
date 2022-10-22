@@ -1,13 +1,5 @@
-//
-//  const_generator.h
-//  YCSB-C
-//
-//  Created by Jinglei Ren on 12/10/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
-#ifndef YCSB_C_CONST_GENERATOR_H_
-#define YCSB_C_CONST_GENERATOR_H_
+#ifndef YCSB_C_CONST_GENERATOR_H
+#define YCSB_C_CONST_GENERATOR_H
 
 #include "generator.h"
 #include <cstdint>
@@ -29,4 +21,4 @@ private:
 
 } // ycsbc
 
-#endif // YCSB_C_CONST_GENERATOR_H_
+#endif // YCSB_C_CONST_GENERATOR_H

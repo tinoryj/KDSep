@@ -1,7 +1,3 @@
-//
-// Created by wujy on 4/10/20.
-//
-
 #ifndef YCSB_C_PARETOGENERATOR_H
 #define YCSB_C_PARETOGENERATOR_H
 

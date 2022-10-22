@@ -197,7 +197,7 @@ int main(const int argc, const char* argv[])
             cout << "============================statistics===========================" << endl;
             db->printStats();
         }
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 6; i++) {
             ops_cnt[i] = 0;
             ops_time[i] = 0;
         }
@@ -280,7 +280,7 @@ int main(const int argc, const char* argv[])
       db->printStats();
     }
 	*/
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 6; i++) {
             ops_cnt[i] = 0;
             ops_time[i] = 0;
         }

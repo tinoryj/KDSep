@@ -7,12 +7,13 @@ DB_Name="dbtest"
 Thread_number="1"
 KVPairsNumber="50000000" #"50000000"
 OperationsNumber="50000000" #"50000000"
+MAXRunTimes=1
 
 if [ ! -d $ResultLogFolder ]; then
     mkdir -p  $ResultLogFolder
 fi
 
-for multiRun in {1..10}
+for((roundIndex=1;roundIndex<=$MAXRunTimes;roundIndex++));
 do
 
     for ReadProportion in ${ReadRatioSet[@]};
@@ -39,11 +40,11 @@ do
             rm -rf $DB_Name
             echo "Deleted old database folder"
         fi
-        echo "<===================== Loading the database (Round $multiRun) =====================>"
+        echo "<===================== Loading the database (Round $roundIndex) =====================>"
         ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
-        echo "<===================== Benchmark the database (Round $multiRun) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$multiRun.log
-        echo "<===================== Benchmark the database (Round $multiRun) done =====================>"
+        echo "<===================== Benchmark the database (Round $roundIndex) =====================>"
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
         # Running RMW
 
@@ -67,11 +68,16 @@ do
             rm -rf $DB_Name
             echo "Deleted old database folder"
         fi
-        echo "<===================== Loading the database (Round $multiRun) =====================>"
+        echo "<===================== Loading the database (Round $roundIndex) =====================>"
         ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
-        echo "<===================== Benchmark the database (Round $multiRun) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$multiRun.log
-        echo "<===================== Benchmark the database (Round $multiRun) done =====================>"
+        echo "<===================== Benchmark the database (Round $roundIndex) =====================>"
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
+        # Cleanup
+        if [ -f workloada-temp.spec ]; then
+            rm -rf workloada-temp.spec
+            echo "Deleted old workload spec"
+        fi
     done
 done

@@ -1,7 +1,3 @@
-//
-// Created by wujy on 5/14/19.
-//
-
 #ifndef YCSB_C_RATIOGENERATOR_H
 #define YCSB_C_RATIOGENERATOR_H
 
