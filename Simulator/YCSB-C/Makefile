@@ -25,7 +25,7 @@ clean:
 		$(MAKE) -C $$dir $@; \
 		done
 	$(RM) $(EXEC)
-	# rm -rf ./dbtest
+	rm -rf ./dbtest
 
 
 

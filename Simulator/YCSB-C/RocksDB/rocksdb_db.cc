@@ -78,9 +78,9 @@ public:
         Logger* logger) const override
     {
         new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
-        cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
-        cout << right_operand.data() << "\n Size=" << right_operand.size() << endl;
-        cout << new_value << "\n Size=" << new_value->length() << endl;
+        // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
+        // cout << right_operand.data() << "\n Size=" << right_operand.size() << endl;
+        // cout << new_value << "\n Size=" << new_value->length() << endl;
         // new_value->assign(left_operand.data(), left_operand.size());
         return true;
     };

@@ -74,6 +74,7 @@ int DelegateClient(ycsbc::DB* db, ycsbc::CoreWorkload* wl, const int num_ops,
     int oks = 0;
     ycsbc::Operation operation_type;
     utils::Timer timer;
+    int processLabel_base = num_ops / 100;
     for (int i = 0; i < num_ops; ++i) {
         timer.Start();
         // if(i%10000==0){
@@ -91,6 +92,10 @@ int DelegateClient(ycsbc::DB* db, ycsbc::CoreWorkload* wl, const int num_ops,
             ;
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
+        if (i % processLabel_base == 0) {
+            std::cerr << "\r";
+            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%";
+        }
     }
     cerr << endl;
     db->Close();

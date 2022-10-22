@@ -60,38 +60,5 @@ private:
     rocksdb::Iterator* it { nullptr };
 };
 
-class DummyMergeOperator : public rocksdb::MergeOperator {
-private:
-    bool FullMerge(const rocksdb::Slice& key, const rocksdb::Slice* existing_value,
-        const std::deque<std::string>& operands_list, std::string* new_value,
-        rocksdb::Logger* logger) const override
-    {
-        *new_value = "FullMerge";
-        std::cout << "    FullMerge "
-                  << (existing_value ? "SOME_VALUE" : "<empty>")
-                  << " + " << operands_list.size() << " merge ops" << std::endl;
-        return true;
-    }
-    bool FullMergeV2(const MergeOperationInput& merge_in,
-        MergeOperationOutput* merge_out) const override
-    {
-        merge_out->new_value = "FullMergeV2";
-        std::cout << "    FullMergeV2 "
-                  << (merge_in.existing_value ? "SOME_VALUE" : "<empty>")
-                  << " + " << merge_in.operand_list.size() << " merge ops" << std::endl;
-        return true;
-    }
-
-    bool PartialMergeMulti(const rocksdb::Slice& key, const std::deque<rocksdb::Slice>& operand_list,
-        std::string* new_value, rocksdb::Logger* logger) const override
-    {
-        *new_value = "PartialMergeMulti";
-        std::cout << "    PartialMergeMulti " << operand_list.size() << " merge ops" << std::endl;
-        return true;
-    }
-    const char* Name() const override { return "DummyMergeOperator"; }
-    //bool AllowSingleOperand() const override { return true; }
-};
-
 }
 #endif //YCSB_C_ROCKSDB_DB_H
