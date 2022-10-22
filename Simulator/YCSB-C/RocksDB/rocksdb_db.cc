@@ -5,11 +5,22 @@
 #include "rocksdb_db.h"
 #include "db/extern_db_config.h"
 #include <iostream>
+#include <sys/time.h>
 
 using namespace std;
 using namespace rocksdb;
 
 namespace ycsbc {
+
+struct timeval timestartFull;
+struct timeval timeendFull;
+struct timeval timestartPart;
+struct timeval timeendPart;
+uint64_t counter_full = 0;
+double totalTimeFull = 0;
+uint64_t counter_part = 0;
+double totalTimePart = 0;
+
 vector<string> split(string str, string token)
 {
     vector<string> result;
@@ -38,13 +49,13 @@ public:
     // logger:      (IN) Client could use this to log errors during merge.
     //
     // Return true on success, false on failure/corruption/etc.
-    bool FullMerge(const Slice& key,
-        const Slice* existing_value,
+    bool FullMerge(const Slice& key, const Slice* existing_value,
         const std::deque<std::string>& operand_list,
-        std::string* new_value,
-        Logger* logger) const override
+        std::string* new_value, Logger* logger) const override
     {
 
+        counter_full++;
+        gettimeofday(&timestartFull, NULL);
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
         vector<std::string> words = split(existing_value->ToString(), ",");
@@ -63,7 +74,9 @@ public:
         }
         temp += words[words.size() - 1];
         new_value->assign(temp);
-        // cout << new_value->data() << "\n Size=" << new_value->length() << endl;
+        // cout << new_value->data() << "\n Size=" << new_value->length() <<endl;
+        gettimeofday(&timeendFull, NULL);
+        totalTimeFull += 1000000 * (timeendFull.tv_sec - timestartFull.tv_sec) + timeendFull.tv_usec - timestartFull.tv_usec;
         return true;
     };
 
@@ -71,13 +84,15 @@ public:
     // when both the operands are themselves merge operation types.
     // Save the result in *new_value and return true. If it is impossible
     // or infeasible to combine the two operations, return false instead.
-    bool PartialMerge(const Slice& key,
-        const Slice& left_operand,
-        const Slice& right_operand,
-        std::string* new_value,
+    bool PartialMerge(const Slice& key, const Slice& left_operand,
+        const Slice& right_operand, std::string* new_value,
         Logger* logger) const override
     {
+        counter_part++;
+        gettimeofday(&timestartPart, NULL);
         new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
+        gettimeofday(&timeendPart, NULL);
+        totalTimePart += 1000000 * (timeendPart.tv_sec - timestartPart.tv_sec) + timeendPart.tv_usec - timestartPart.tv_usec;
         // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
         // cout << right_operand.data() << "\n Size=" << right_operand.size() << endl;
         // cout << new_value << "\n Size=" << new_value->length() << endl;
@@ -160,6 +175,7 @@ int RocksDB::Read(const std::string& table, const std::string& key, const std::v
     //     cerr<<"read error"<<endl;
     //     exit(0);
     // }
+    // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
     return DB::kOK;
 }
 
@@ -211,8 +227,8 @@ int RocksDB::Insert(const std::string& table, const std::string& key,
 int RocksDB::Update(const std::string& table, const std::string& key, std::vector<KVPair>& values)
 {
     rocksdb::Status s;
-    string value;
-    s = db_->Get(rocksdb::ReadOptions(), key, &value);
+    // string value;
+    // s = db_->Get(rocksdb::ReadOptions(), key, &value);
     // std::cout << "Update->existing value = " << value << std::endl;
     for (KVPair& p : values) {
         s = db_->Merge(rocksdb::WriteOptions(), key, p.second);
@@ -223,6 +239,24 @@ int RocksDB::Update(const std::string& table, const std::string& key, std::vecto
     }
     // s = db_->Flush(rocksdb::FlushOptions());
     return s.ok();
+}
+
+int RocksDB::OverWrite(const std::string& table, const std::string& key,
+    std::vector<KVPair>& values)
+{
+    rocksdb::Status s;
+    string fullValue;
+    for (int i = 0; i < values.size() - 1; i++) {
+        fullValue += (values[i].second + ",");
+    }
+    fullValue += values[values.size() - 1].second;
+    s = db_->Put(rocksdb::WriteOptions(), key, fullValue);
+    if (!s.ok()) {
+        cerr << "insert error" << s.ToString() << "\n"
+             << endl;
+        exit(0);
+    }
+    return DB::kOK;
 }
 
 int RocksDB::Delete(const std::string& table, const std::string& key)
@@ -242,5 +276,10 @@ void RocksDB::printStats()
 RocksDB::~RocksDB()
 {
     delete db_;
+    std::cout << "Full merge operation number = " << counter_full << endl;
+    std::cout << "Full merge operation running time = " << totalTimeFull / 1000000.0 << " s" << endl;
+    std::cout << "Partial merge operation number = " << counter_part << endl;
+    std::cout << "Partial merge operation running time = " << totalTimePart / 1000000.0
+              << " s" << endl;
 }
 }

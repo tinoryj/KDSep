@@ -1,6 +1,6 @@
 CC=g++
 CFLAGS=-std=c++17 -c -g -Wall
-INCLUDES=-I ../ -I $(shell pwd)/../../Databases/RocksDB/include/ -I $(shell pwd)/../../Databases/LevelDB/include/
+INCLUDES=-I ../ -I $(shell pwd)/../../Databases/RocksDB/include/ #-I $(shell pwd)/../../Databases/LevelDB/include/
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
 

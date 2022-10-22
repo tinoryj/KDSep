@@ -24,6 +24,7 @@ enum Operation {
     INSERT,
     READ,
     UPDATE,
+    OVERWRITE,
     SCAN,
     READMODIFYWRITE
 };
@@ -80,6 +81,12 @@ public:
     ///
     static const std::string UPDATE_PROPORTION_PROPERTY;
     static const std::string UPDATE_PROPORTION_DEFAULT;
+
+    ///
+    /// The name of the property for the proportion of overwrite transactions.
+    ///
+    static const std::string OVERWRITE_PROPORTION_PROPERTY;
+    static const std::string OVERWRITE_PROPORTION_DEFAULT;
 
     ///
     /// The name of the property for the proportion of insert transactions.

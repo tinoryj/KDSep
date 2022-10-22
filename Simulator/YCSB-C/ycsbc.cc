@@ -30,6 +30,8 @@ using namespace std;
         cout << histogram[ycsbc::Operation::READ]->ToString() << endl;            \
         cout << "# UPDATE " << endl;                                              \
         cout << histogram[ycsbc::Operation::UPDATE]->ToString() << endl;          \
+        cout << "# OVERWRITE " << endl;                                           \
+        cout << histogram[ycsbc::Operation::OVERWRITE]->ToString() << endl;       \
         cout << "# SCAN " << endl;                                                \
         cout << histogram[ycsbc::Operation::SCAN]->ToString() << endl;            \
         cout << "# READMODIFYWRITE " << endl;                                     \
@@ -40,6 +42,7 @@ using namespace std;
         histogram[ycsbc::Operation::INSERT]->Clear();          \
         histogram[ycsbc::Operation::READ]->Clear();            \
         histogram[ycsbc::Operation::UPDATE]->Clear();          \
+        histogram[ycsbc::Operation::OVERWRITE]->Clear();       \
         histogram[ycsbc::Operation::SCAN]->Clear();            \
         histogram[ycsbc::Operation::READMODIFYWRITE]->Clear(); \
     }
@@ -53,6 +56,7 @@ using namespace std;
         INSERT_MAP_HISTOGRAM(ycsbc::Operation::INSERT, histogram);          \
         INSERT_MAP_HISTOGRAM(ycsbc::Operation::READ, histogram);            \
         INSERT_MAP_HISTOGRAM(ycsbc::Operation::UPDATE, histogram);          \
+        INSERT_MAP_HISTOGRAM(ycsbc::Operation::OVERWRITE, histogram);       \
         INSERT_MAP_HISTOGRAM(ycsbc::Operation::SCAN, histogram);            \
         INSERT_MAP_HISTOGRAM(ycsbc::Operation::READMODIFYWRITE, histogram); \
     }
@@ -63,8 +67,8 @@ std::atomic_flag histogram_lock = ATOMIC_FLAG_INIT;
 void UsageMessage(const char* command);
 bool StrStartWith(const char* str, const char* pre);
 string ParseCommandLine(int argc, const char* argv[], utils::Properties& props);
-double ops_time[5] = { 0.0 };
-long ops_cnt[5] = { 0 };
+double ops_time[6] = { 0.0 };
+long ops_cnt[6] = { 0 };
 
 int DelegateClient(ycsbc::DB* db, ycsbc::CoreWorkload* wl, const int num_ops,
     bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>>& histogram)
@@ -97,7 +101,8 @@ int DelegateClient(ycsbc::DB* db, ycsbc::CoreWorkload* wl, const int num_ops,
             std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%";
         }
     }
-    cerr << endl;
+    std::cerr << "\r";
+    std::cerr << "[Running Status] Operation process: 100%" << std::endl;
     db->Close();
     return oks;
 }
@@ -147,16 +152,47 @@ int main(const int argc, const char* argv[])
         actual_ops.clear();
         OUTPUT_MAP_HISTOGRAM(histogram);
         //cerr<< "done, sleep 10 minutes for compaction"<<endl;
-        cout << "Read ops： " << ops_cnt[ycsbc::READ] << "\n\tTotal read time: " << ops_time[ycsbc::READ] / 1000000 << " s" << endl;
-        cout << "\tTime per read: " << ops_time[ycsbc::READ] / ops_cnt[ycsbc::READ] / 1000 << " ms" << endl;
-        cout << "Insert ops: " << ops_cnt[ycsbc::INSERT] << "\n\tTotal insert time: " << ops_time[ycsbc::INSERT] / 1000000 << " s" << endl;
-        cout << "\tTime per insert: " << ops_time[ycsbc::INSERT] / ops_cnt[ycsbc::INSERT] / 1000 << " ms" << endl;
-        cout << "Scan ops: " << ops_cnt[ycsbc::SCAN] << "\n\tTotal scan time: " << ops_time[ycsbc::SCAN] / 1000000 << " s" << endl;
-        cout << "\tTime per scan: " << ops_time[ycsbc::SCAN] / ops_cnt[ycsbc::SCAN] / 1000 << " ms" << endl;
-        cout << "Update ops: " << ops_cnt[ycsbc::UPDATE] << "\n\tTotal update time: " << ops_time[ycsbc::UPDATE] / 1000000 << " s" << endl;
-        cout << "\tTime per update: " << ops_time[ycsbc::UPDATE] / ops_cnt[ycsbc::UPDATE] / 1000 << " ms" << endl;
-        cout << "Read-Modify-Write ops: " << ops_cnt[ycsbc::READMODIFYWRITE] << "\n\tTotal R-M-W time: " << ops_time[ycsbc::READMODIFYWRITE] / 1000000 << " s" << endl;
-        cout << "\tTime per R-M-W: " << ops_time[ycsbc::READMODIFYWRITE] / ops_cnt[ycsbc::READMODIFYWRITE] / 1000 << " ms" << endl;
+        cout << "Read ops： " << ops_cnt[ycsbc::READ]
+             << "\n\tTotal read time: " << ops_time[ycsbc::READ] / 1000000
+             << " s" << endl;
+        cout << "\tTime per read: "
+             << ops_time[ycsbc::READ] / ops_cnt[ycsbc::READ] / 1000 << " ms"
+             << endl;
+
+        cout << "Insert ops: " << ops_cnt[ycsbc::INSERT]
+             << "\n\tTotal insert time: " << ops_time[ycsbc::INSERT] / 1000000
+             << " s" << endl;
+        cout << "\tTime per insert: "
+             << ops_time[ycsbc::INSERT] / ops_cnt[ycsbc::INSERT] / 1000 << " ms"
+             << endl;
+
+        cout << "Scan ops: " << ops_cnt[ycsbc::SCAN]
+             << "\n\tTotal scan time: " << ops_time[ycsbc::SCAN] / 1000000
+             << " s" << endl;
+        cout << "\tTime per scan: "
+             << ops_time[ycsbc::SCAN] / ops_cnt[ycsbc::SCAN] / 1000 << " ms"
+             << endl;
+
+        cout << "Update ops: " << ops_cnt[ycsbc::UPDATE]
+             << "\n\tTotal update time: " << ops_time[ycsbc::UPDATE] / 1000000
+             << " s" << endl;
+        cout << "\tTime per update: "
+             << ops_time[ycsbc::UPDATE] / ops_cnt[ycsbc::UPDATE] / 1000 << " ms"
+             << endl;
+
+        cout << "OverWrite ops: " << ops_cnt[ycsbc::OVERWRITE]
+             << "\n\tTotal OverWrite time: " << ops_time[ycsbc::OVERWRITE] / 1000000
+             << " s" << endl;
+        cout << "\tTime per OverWrite: "
+             << ops_time[ycsbc::OVERWRITE] / ops_cnt[ycsbc::OVERWRITE] / 1000 << " ms"
+             << endl;
+
+        cout << "Read-Modify-Write ops: " << ops_cnt[ycsbc::READMODIFYWRITE]
+             << "\n\tTotal R-M-W time: "
+             << ops_time[ycsbc::READMODIFYWRITE] / 1000000 << " s" << endl;
+        cout << "\tTime per R-M-W: "
+             << ops_time[ycsbc::READMODIFYWRITE] / ops_cnt[ycsbc::READMODIFYWRITE] / 1000
+             << " ms" << endl;
         if (props["dbname"] == "leveldb" || props["dbname"] == "vlog" || props["dbname"] == "expdb" || props["dbname"] == "rocksdb" || props["dbname"] == "titandb" || props["dbname"] == "vtable") {
             cout << "============================statistics===========================" << endl;
             db->printStats();
@@ -191,16 +227,48 @@ int main(const int argc, const char* argv[])
         cout << "run time: " << duration << "us\n\n"
              << endl;
         OUTPUT_MAP_HISTOGRAM(histogram);
-        cout << "Read ops： " << ops_cnt[ycsbc::READ] << "\n\tTotal read time: " << ops_time[ycsbc::READ] / 1000000 << " s" << endl;
-        cout << "\tTime per read: " << ops_time[ycsbc::READ] / ops_cnt[ycsbc::READ] / 1000 << " ms" << endl;
-        cout << "Insert ops: " << ops_cnt[ycsbc::INSERT] << "\n\tTotal insert time: " << ops_time[ycsbc::INSERT] / 1000000 << " s" << endl;
-        cout << "\tTime per insert: " << ops_time[ycsbc::INSERT] / ops_cnt[ycsbc::INSERT] / 1000 << " ms" << endl;
-        cout << "Scan ops: " << ops_cnt[ycsbc::SCAN] << "\n\tTotal scan time: " << ops_time[ycsbc::SCAN] / 1000000 << " s" << endl;
-        cout << "\tTime per scan: " << ops_time[ycsbc::SCAN] / ops_cnt[ycsbc::SCAN] / 1000 << " ms" << endl;
-        cout << "Update ops: " << ops_cnt[ycsbc::UPDATE] << "\n\tTotal update time: " << ops_time[ycsbc::UPDATE] / 1000000 << " s" << endl;
-        cout << "\tTime per update: " << ops_time[ycsbc::UPDATE] / ops_cnt[ycsbc::UPDATE] / 1000 << " ms" << endl;
-        cout << "Read-Modify-Write ops: " << ops_cnt[ycsbc::READMODIFYWRITE] << "\n\tTotal R-M-W time: " << ops_time[ycsbc::READMODIFYWRITE] / 1000000 << " s" << endl;
-        cout << "\tTime per R-M-W: " << ops_time[ycsbc::READMODIFYWRITE] / ops_cnt[ycsbc::READMODIFYWRITE] / 1000 << " ms" << endl;
+        cout << "Read ops： " << ops_cnt[ycsbc::READ]
+             << "\n\tTotal read time: " << ops_time[ycsbc::READ] / 1000000
+             << " s" << endl;
+        cout << "\tTime per read: "
+             << ops_time[ycsbc::READ] / ops_cnt[ycsbc::READ] / 1000 << " ms"
+             << endl;
+
+        cout << "Insert ops: " << ops_cnt[ycsbc::INSERT]
+             << "\n\tTotal insert time: " << ops_time[ycsbc::INSERT] / 1000000
+             << " s" << endl;
+        cout << "\tTime per insert: "
+             << ops_time[ycsbc::INSERT] / ops_cnt[ycsbc::INSERT] / 1000 << " ms"
+             << endl;
+
+        cout << "Scan ops: " << ops_cnt[ycsbc::SCAN]
+             << "\n\tTotal scan time: " << ops_time[ycsbc::SCAN] / 1000000
+             << " s" << endl;
+        cout << "\tTime per scan: "
+             << ops_time[ycsbc::SCAN] / ops_cnt[ycsbc::SCAN] / 1000 << " ms"
+             << endl;
+
+        cout << "Update ops: " << ops_cnt[ycsbc::UPDATE]
+             << "\n\tTotal update time: " << ops_time[ycsbc::UPDATE] / 1000000
+             << " s" << endl;
+        cout << "\tTime per update: "
+             << ops_time[ycsbc::UPDATE] / ops_cnt[ycsbc::UPDATE] / 1000 << " ms"
+             << endl;
+
+        cout << "OverWrite ops: " << ops_cnt[ycsbc::OVERWRITE]
+             << "\n\tTotal OverWrite time: " << ops_time[ycsbc::OVERWRITE] / 1000000
+             << " s" << endl;
+        cout << "\tTime per OverWrite: "
+             << ops_time[ycsbc::OVERWRITE] / ops_cnt[ycsbc::OVERWRITE] / 1000 << " ms"
+             << endl;
+
+        cout << "Read-Modify-Write ops: " << ops_cnt[ycsbc::READMODIFYWRITE]
+             << "\n\tTotal R-M-W time: "
+             << ops_time[ycsbc::READMODIFYWRITE] / 1000000 << " s" << endl;
+        cout << "\tTime per R-M-W: "
+             << ops_time[ycsbc::READMODIFYWRITE] / ops_cnt[ycsbc::READMODIFYWRITE] / 1000
+             << " ms" << endl;
+
         // if (props["dbname"] == "leveldb"||props["dbname"] == "vlog"||props["dbname"]=="expdb"||props["dbname"]=="rocksdb"||props["dbname"]=="titandb"||props["dbname"]=="vtable"){
         cout << "============================statistics===========================" << endl;
         db->printStats();
@@ -352,8 +420,8 @@ void UsageMessage(const char* command)
     cout << "Usage: " << command << " [options]" << endl;
     cout << "Options:" << endl;
     cout << "  -threads n: execute using n threads (default: 1)" << endl;
-    cout << "  -db dbname: specify the name of the DB (rocksdb/leveldb)" << endl;
-    cout << "  -phase load/run: load the database or run the benchamark" << endl;
+    cout << "  -db dbname: specify the name of the DB (rocksdb)" << endl;
+    cout << "  -phase load/run/both: load the database or run the benchamark" << endl;
     cout << "  -dbfilename path: specify the path of the database (make sure path exist" << endl;
     cout << "  -configpath path: specify the path of the config file (templetes config fi-" << endl;
     cout << "                    les in configDir directory )" << endl;

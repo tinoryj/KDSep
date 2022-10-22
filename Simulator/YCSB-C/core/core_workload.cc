@@ -39,10 +39,13 @@ const string CoreWorkload::WRITE_ALL_FIELDS_PROPERTY = "writeallfields";
 const string CoreWorkload::WRITE_ALL_FIELDS_DEFAULT = "false";
 
 const string CoreWorkload::READ_PROPORTION_PROPERTY = "readproportion";
-const string CoreWorkload::READ_PROPORTION_DEFAULT = "0.95";
+const string CoreWorkload::READ_PROPORTION_DEFAULT = "0.0";
 
 const string CoreWorkload::UPDATE_PROPORTION_PROPERTY = "updateproportion";
-const string CoreWorkload::UPDATE_PROPORTION_DEFAULT = "0.05";
+const string CoreWorkload::UPDATE_PROPORTION_DEFAULT = "0.0";
+
+const string CoreWorkload::OVERWRITE_PROPORTION_PROPERTY = "overwriteproportion";
+const string CoreWorkload::OVERWRITE_PROPORTION_DEFAULT = "0.0";
 
 const string CoreWorkload::INSERT_PROPORTION_PROPERTY = "insertproportion";
 const string CoreWorkload::INSERT_PROPORTION_DEFAULT = "0.0";
@@ -100,8 +103,10 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase)
 
     double read_proportion = std::stod(p.GetProperty(READ_PROPORTION_PROPERTY,
         READ_PROPORTION_DEFAULT));
-    double update_proportion = std::stod(p.GetProperty(UPDATE_PROPORTION_PROPERTY,
-        UPDATE_PROPORTION_DEFAULT));
+    double update_proportion = std::stod(
+        p.GetProperty(UPDATE_PROPORTION_PROPERTY, UPDATE_PROPORTION_DEFAULT));
+    double overwrite_proportion = std::stod(p.GetProperty(OVERWRITE_PROPORTION_PROPERTY,
+        OVERWRITE_PROPORTION_DEFAULT));
     double insert_proportion = std::stod(p.GetProperty(INSERT_PROPORTION_PROPERTY,
         INSERT_PROPORTION_DEFAULT));
     double scan_proportion = std::stod(p.GetProperty(SCAN_PROPORTION_PROPERTY,
@@ -138,6 +143,9 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase)
     }
     if (update_proportion > 0) {
         op_chooser_.AddValue(UPDATE, update_proportion);
+    }
+    if (overwrite_proportion > 0) {
+        op_chooser_.AddValue(OVERWRITE, overwrite_proportion);
     }
     if (insert_proportion > 0) {
         op_chooser_.AddValue(INSERT, insert_proportion);
@@ -213,9 +221,11 @@ ycsbc::Generator<uint64_t>* CoreWorkload::GetFieldLenGenerator(
         if (is_run_phase_) {
             double update_proportion = std::stod(p.GetProperty(UPDATE_PROPORTION_PROPERTY,
                 UPDATE_PROPORTION_DEFAULT));
-            double insert_proportion = std::stod(p.GetProperty(INSERT_PROPORTION_PROPERTY,
-                INSERT_PROPORTION_DEFAULT));
-            num = operation_count_ * (update_proportion + insert_proportion);
+            double insert_proportion = std::stod(p.GetProperty(
+                INSERT_PROPORTION_PROPERTY, INSERT_PROPORTION_DEFAULT));
+            double overwrite_proportion = std::stod(p.GetProperty(OVERWRITE_PROPORTION_PROPERTY,
+                OVERWRITE_PROPORTION_DEFAULT));
+            num = operation_count_ * (update_proportion + insert_proportion + overwrite_proportion);
             num = num == 0 ? record_count_ : num;
         } else {
             num = record_count_;

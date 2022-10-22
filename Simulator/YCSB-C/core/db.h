@@ -74,6 +74,19 @@ public:
         std::vector<KVPair>& values)
         = 0;
     ///
+    /// Overwrite a record in the database.
+    /// Field/value pairs in the specified vector are written to the record,
+    /// overwriting any existing values with the same field names.
+    ///
+    /// @param table The name of the table.
+    /// @param key The key of the record to write.
+    /// @param values A vector of field/value pairs to update in the record.
+    /// @return Zero on success, a non-zero error code on error.
+    ///
+    virtual int OverWrite(const std::string& table, const std::string& key,
+        std::vector<KVPair>& values)
+        = 0;
+    ///
     /// Inserts a record into the database.
     /// Field/value pairs in the specified vector are written into the record.
     ///

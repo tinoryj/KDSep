@@ -24,3 +24,6 @@ hs_err_pid*
 
 # VSCode
 .vscode
+Simulator/Databases
+Simulator/YCSB-C/dbtest
+Simulator/YCSB-C/ResultLogs

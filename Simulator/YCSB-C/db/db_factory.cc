@@ -7,7 +7,6 @@
 //
 
 #include "db/db_factory.h"
-#include "LevelDB/leveldb_db.h"
 #include "RocksDB/rocksdb_db.h"
 #include <string>
 
@@ -17,10 +16,9 @@ using ycsbc::DBFactory;
 
 DB* DBFactory::CreateDB(utils::Properties& props)
 {
-    if (props["dbname"] == "leveldb") {
-        return new LevelDB(props["dbfilename"].c_str(), props["configpath"]);
-    } else if (props["dbname"] == "rocksdb" || props["dbname"] == "rocksdb_tiered") {
+    if (props["dbname"] == "rocksdb") {
         return new RocksDB(props["dbfilename"].c_str(), props["configpath"]);
-    } else
+    } else {
         return NULL;
+    }
 }

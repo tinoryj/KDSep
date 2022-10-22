@@ -48,6 +48,9 @@ public:
     int Update(const std::string& table, const std::string& key,
         std::vector<KVPair>& values);
 
+    int OverWrite(const std::string& table, const std::string& key,
+        std::vector<KVPair>& values);
+
     int Delete(const std::string& table, const std::string& key);
 
     void printStats();

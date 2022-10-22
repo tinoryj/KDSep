@@ -16,8 +16,8 @@
 #include <iostream>
 #include <string>
 
-extern double ops_time[5];
-extern long ops_cnt[5];
+extern double ops_time[6];
+extern long ops_cnt[6];
 
 namespace ycsbc {
 
@@ -39,13 +39,14 @@ protected:
     virtual int TransactionReadModifyWrite();
     virtual int TransactionScan();
     virtual int TransactionUpdate();
+    virtual int TransactionOverWrite();
     virtual int TransactionInsert();
 
     DB& db_;
     CoreWorkload& workload_;
 };
 
-//FILE* fw = fopen("write_latencies","a");
+// FILE* fw = fopen("write_latencies", "a");
 //FILE* fr = fopen("read_latencies","a");
 
 inline Operation Client::DoInsert()
@@ -74,7 +75,13 @@ inline Operation Client::DoTransaction()
         status = TransactionUpdate();
         ops_time[UPDATE] += timer.End();
         ops_cnt[UPDATE]++;
-        //      fprintf(fw,"%.0f,",timer.End());
+        // fprintf(fw, "%.0f,", timer.End());
+        break;
+    case OVERWRITE:
+        status = TransactionOverWrite();
+        ops_time[OVERWRITE] += timer.End();
+        ops_cnt[OVERWRITE]++;
+        // fprintf(fw, "%.0f,", timer.End());
         break;
     case INSERT:
         status = TransactionInsert();
@@ -169,6 +176,19 @@ inline int Client::TransactionUpdate()
     //     std::cout << "Update transaction value = " << values[i].second << std::endl;
     // }
     return db_.Update(table, key, values);
+}
+
+inline int Client::TransactionOverWrite()
+{
+    const std::string& table = workload_.NextTable();
+    const std::string& key = workload_.NextTransactionKey();
+    std::vector<DB::KVPair> values;
+    workload_.BuildValues(values);
+    // std::cout << "Update transaction key = " << key << std::endl;
+    // for (int i = 0; i < values.size(); i++) {
+    //     std::cout << "Update transaction value = " << values[i].second << std::endl;
+    // }
+    return db_.OverWrite(table, key, values);
 }
 
 inline int Client::TransactionInsert()
