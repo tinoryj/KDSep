@@ -56,7 +56,7 @@ inline Operation Client::DoTransaction()
     utils::Timer timer;
     Operation operation_type = workload_.NextOperation();
     timer.Start();
-    switch (workload_.NextOperation()) {
+    switch (operation_type) {
     case READ:
         status = TransactionRead();
         ops_time[READ] += timer.End();
