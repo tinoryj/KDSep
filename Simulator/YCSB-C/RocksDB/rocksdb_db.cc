@@ -268,7 +268,7 @@ namespace ycsbc
         string stats;
         db_->GetProperty("rocksdb.stats", &stats);
         cout << stats << endl;
-        cout << options_.statistics->ToString() << endl;
+        // cout << options_.statistics->ToString() << endl;
     }
 
     RocksDB::~RocksDB()

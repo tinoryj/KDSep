@@ -4,27 +4,25 @@ ReadRatioSet=(0.1 0.45 0.8)
 OverWriteRatio=0.1
 ResultLogFolder="ResultLogs"
 DB_Name="dbtest"
-Thread_number="1"
-KVPairsNumber="50000000" #"50000000"
-OperationsNumber="50000000" #"50000000"
+Thread_number=1
+KVPairsNumber=50000000    #"50000000"
+OperationsNumber=50000000 #"50000000"
 MAXRunTimes=1
 
 if [ ! -d $ResultLogFolder ]; then
-    mkdir -p  $ResultLogFolder
+    mkdir -p $ResultLogFolder
 fi
 
-for((roundIndex=1;roundIndex<=$MAXRunTimes;roundIndex++));
-do
+for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
 
-    for ReadProportion in ${ReadRatioSet[@]};
-    do 
+    for ReadProportion in ${ReadRatioSet[@]}; do
         # Running Update
 
         if [ -f workloada-temp.spec ]; then
             rm -rf workloada-temp.spec
             echo "Deleted old workload spec"
         fi
-        UpdateProportion=$(echo "1.0-$OverWriteRatio-$ReadProportion"|bc)
+        UpdateProportion=$(echo "1.0-$OverWriteRatio-$ReadProportion" | bc)
         echo "Modify spec, Read/Update ratio = $ReadProportion:0$UpdateProportion"
         cp workloads/workloada-test.spec ./workloada-temp.spec
         sed -i "9s/NaN/$KVPairsNumber/g" workloada-temp.spec
@@ -41,9 +39,9 @@ do
             echo "Deleted old database folder"
         fi
         echo "<===================== Loading the database (Round $roundIndex) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini
         echo "<===================== Benchmark the database (Round $roundIndex) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath configDir/leveldb_config.ini >$ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
         # Running RMW
@@ -52,7 +50,7 @@ do
             rm -rf workloada-temp.spec
             echo "Deleted old workload spec"
         fi
-        RMWProportion=$(echo "1.0-$OverWriteRatio-$ReadProportion"|bc)
+        RMWProportion=$(echo "1.0-$OverWriteRatio-$ReadProportion" | bc)
         echo "Modify spec, Read/RMW ratio = $ReadProportion:0$RMWProportion"
         cp workloads/workloada-test.spec ./workloada-temp.spec
         sed -i "9s/NaN/$KVPairsNumber/g" workloada-temp.spec
@@ -69,9 +67,9 @@ do
             echo "Deleted old database folder"
         fi
         echo "<===================== Loading the database (Round $roundIndex) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase load  -configpath configDir/leveldb_config.ini
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini
         echo "<===================== Benchmark the database (Round $roundIndex) =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec  -phase run  -configpath configDir/leveldb_config.ini > $ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath configDir/leveldb_config.ini >$ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
         # Cleanup
@@ -80,4 +78,5 @@ do
             echo "Deleted old workload spec"
         fi
     done
+
 done
