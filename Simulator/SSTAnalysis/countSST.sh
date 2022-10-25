@@ -1,14 +1,13 @@
 #!/bin/bash
-pwd
-ReadRatioSet=(0.1 0.45 0.8)
-OverWriteRatio=0.1
-ResultLogFolder="ResultLogs"
-DB_Name="dbtest"
-Thread_number=1
-KVPairsNumber=5000    #"50000000"
-OperationsNumber=5000 #"50000000"
-MAXRunTimes=1
 
+targetAnalysisPath=$1
+
+sstablesSet=$(ls $targetAnalysisPath/*.sst)
+
+echo "Find SSTable files:"
+echo $sstablesSet
+
+exit
 if [ ! -d $ResultLogFolder ]; then
     mkdir -p $ResultLogFolder
 fi

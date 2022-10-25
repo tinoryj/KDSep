@@ -158,11 +158,19 @@ namespace ycsbc
 
         options_.merge_operator.reset(new FieldUpdateMergeOperator); // merge operators
         cerr << "Start create RocksDB instance" << endl;
+
         rocksdb::Status s = rocksdb::DB::Open(options_, dbfilename, &db_);
         if (!s.ok())
         {
             cerr << "Can't open rocksdb " << dbfilename << endl;
             exit(0);
+        }
+        else
+        {
+            // RocksDB perf
+            rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTime);
+            rocksdb::get_perf_context()->Reset();
+            rocksdb::get_iostats_context()->Reset();
         }
         // cout << "\nbloom bits:" << bloomBits << "bits\ndirectIO:" << (bool)directIO << "\nseekCompaction:" << (bool)seekCompaction << endl;
     }
@@ -261,6 +269,7 @@ namespace ycsbc
 
     void RocksDB::printStats()
     {
+        db_->Flush(rocksdb::FlushOptions());
         cout << "Full merge operation number = " << counter_full << endl;
         cout << "Full merge operation running time = " << totalTimeFull / 1000000.0 << " s" << endl;
         cout << "Partial merge operation number = " << counter_part << endl;
@@ -269,6 +278,11 @@ namespace ycsbc
         db_->GetProperty("rocksdb.stats", &stats);
         cout << stats << endl;
         // cout << options_.statistics->ToString() << endl;
+        rocksdb::SetPerfLevel(rocksdb::PerfLevel::kDisable);
+        cout << "Get RocksDB Build-in Perf Context: " << endl;
+        cout << rocksdb::get_perf_context()->ToString() << endl;
+        cout << "Get RocksDB Build-in I/O Stats Context: " << endl;
+        cout << rocksdb::get_iostats_context()->ToString() << endl;
     }
 
     RocksDB::~RocksDB()

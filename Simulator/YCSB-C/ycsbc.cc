@@ -129,7 +129,7 @@ int main(const int argc, const char *argv[])
     utils::Timer timer;
     // bool skipLoad = utils::StrToBool(props["skipLoad"]);
     std::string phase = props["phase"];
-    std::cerr << "threads " << props["threadcount"] << std::endl;
+    std::cerr << "Running threads " << props["threadcount"] << std::endl;
 
     const int num_threads = stoi(props.GetProperty("threadcount", "1"));
     const int s = stoi(props.GetProperty("sleep", "0"));
@@ -307,9 +307,9 @@ int main(const int argc, const char *argv[])
         db->printStats();
     }
 
-    std::cerr << "delete db" << std::endl;
+    std::cerr << "Start delete db" << std::endl;
     delete db;
-    std::cerr << "deleted db" << std::endl;
+    std::cerr << "Deleted db success" << std::endl;
 }
 
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props)

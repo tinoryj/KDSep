@@ -6,11 +6,15 @@ using namespace std;
 using ycsbc::DB;
 using ycsbc::DBFactory;
 
-DB* DBFactory::CreateDB(utils::Properties& props)
+DB *DBFactory::CreateDB(utils::Properties &props)
 {
-    if (props["dbname"] == "rocksdb") {
+    if (props["dbname"] == "rocksdb")
+    {
         return new RocksDB(props["dbfilename"].c_str(), props["configpath"]);
-    } else {
+        // cerr << props["dbfilename"].c_str() << props["configpath"] << endl;
+    }
+    else
+    {
         return NULL;
     }
 }
