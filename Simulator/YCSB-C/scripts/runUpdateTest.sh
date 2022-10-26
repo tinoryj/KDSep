@@ -5,8 +5,8 @@ OverWriteRatio=0.1
 ResultLogFolder="ResultLogs"
 DB_Name="loadedDB"
 DB_Loaded_Path="/mnt/sn640"
-KVPairsNumber=300000000    #"50000000"
-OperationsNumber=300000000 #"50000000"
+KVPairsNumber=300000000    #"300000000"
+OperationsNumber=100000000 #"300000000"
 MAXRunTimes=1
 Thread_number=1
 
@@ -14,8 +14,17 @@ if [ ! -d $ResultLogFolder ]; then
     mkdir -p $ResultLogFolder
 fi
 
+if [ -f workloada-temp.spec ]; then
+    rm -rf workloada-temp.spec
+    echo "Deleted old workload spec"
+fi
+echo "Modify spec for load"
+cp workloads/workloada-test.spec ./workloada-temp.spec
+sed -i "9s/NaN/$KVPairsNumber/g" workloada-temp.spec
+sed -i "10s/NaN/$OperationsNumber/g" workloada-temp.spec
+
 echo "<===================== Loading the database =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini >$ResultLogFolder/LoadDB.log
 cp -r $DB_Name $DB_Loaded_Path/ # Copy loaded DB
 
 for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
@@ -42,9 +51,9 @@ for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
         if [ -d $DB_Name ]; then
             rm -rf $DB_Name
             echo "Deleted old database folder"
-            cp -r $DB_Loaded_Path/$DB_Name ./
-            echo "Copy loaded database"
         fi
+        cp -r $DB_Loaded_Path/$DB_Name ./
+        echo "Copy loaded database"
         if [ ! -d $DB_Name ]; then
             echo "Retrived loaded database error"
             exit
@@ -76,9 +85,9 @@ for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
         if [ -d $DB_Name ]; then
             rm -rf $DB_Name
             echo "Deleted old database folder"
-            cp -r $DB_Loaded_Path/$DB_Name ./
-            echo "Copy loaded database"
         fi
+        cp -r $DB_Loaded_Path/$DB_Name ./
+        echo "Copy loaded database"
         if [ ! -d $DB_Name ]; then
             echo "Retrived loaded database error"
             exit
