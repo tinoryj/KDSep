@@ -27,6 +27,7 @@ class MergeOperator;
 class Statistics;
 class SystemClock;
 class BlobFetcher;
+class DeltaFetcher;
 class PrefetchBufferCollection;
 struct CompactionIterationStats;
 
@@ -75,6 +76,10 @@ class MergeHelper {
   // blob_fetcher: (IN) blob fetcher object for the compaction's input version.
   // prefetch_buffers: (IN/OUT) a collection of blob file prefetch buffers
   //                            used for compaction readahead.
+  // delta_fetcher: (IN) delta fetcher object for the compaction's input
+  // version.
+  // prefetch_buffers: (IN/OUT) a collection of delta file prefetch buffers
+  //                            used for compaction readahead.
   // c_iter_stats: (OUT) compaction iteration statistics.
   //
   // Returns one of the following statuses:
@@ -92,6 +97,7 @@ class MergeHelper {
                     const SequenceNumber stop_before, const bool at_bottom,
                     const bool allow_data_in_errors,
                     const BlobFetcher* blob_fetcher,
+                    const DeltaFetcher* delta_fetcher,
                     PrefetchBufferCollection* prefetch_buffers,
                     CompactionIterationStats* c_iter_stats);
 
@@ -156,7 +162,7 @@ class MergeHelper {
   const CompactionFilter* compaction_filter_;
   const std::atomic<bool>* shutting_down_;
   Logger* logger_;
-  bool assert_valid_internal_key_; // enforce no internal key corruption?
+  bool assert_valid_internal_key_;  // enforce no internal key corruption?
   bool allow_single_operand_;
   SequenceNumber latest_snapshot_;
   const SnapshotChecker* const snapshot_checker_;

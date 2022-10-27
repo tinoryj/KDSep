@@ -110,10 +110,11 @@ bool MemTableListVersion::Get(const LookupKey& key, std::string* value,
                               MergeContext* merge_context,
                               SequenceNumber* max_covering_tombstone_seq,
                               SequenceNumber* seq, const ReadOptions& read_opts,
-                              ReadCallback* callback, bool* is_blob_index) {
+                              ReadCallback* callback, bool* is_blob_index,
+                              bool* is_delta_index) {
   return GetFromList(&memlist_, key, value, columns, timestamp, s,
                      merge_context, max_covering_tombstone_seq, seq, read_opts,
-                     callback, is_blob_index);
+                     callback, is_blob_index, is_delta_index);
 }
 
 void MemTableListVersion::MultiGet(const ReadOptions& read_options,
@@ -147,10 +148,10 @@ bool MemTableListVersion::GetFromHistory(
     const LookupKey& key, std::string* value, PinnableWideColumns* columns,
     std::string* timestamp, Status* s, MergeContext* merge_context,
     SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
-    const ReadOptions& read_opts, bool* is_blob_index) {
+    const ReadOptions& read_opts, bool* is_blob_index, bool* is_delta_index) {
   return GetFromList(&memlist_history_, key, value, columns, timestamp, s,
                      merge_context, max_covering_tombstone_seq, seq, read_opts,
-                     nullptr /*read_callback*/, is_blob_index);
+                     nullptr /*read_callback*/, is_blob_index, is_delta_index);
 }
 
 bool MemTableListVersion::GetFromList(
@@ -158,17 +159,17 @@ bool MemTableListVersion::GetFromList(
     PinnableWideColumns* columns, std::string* timestamp, Status* s,
     MergeContext* merge_context, SequenceNumber* max_covering_tombstone_seq,
     SequenceNumber* seq, const ReadOptions& read_opts, ReadCallback* callback,
-    bool* is_blob_index) {
+    bool* is_blob_index, bool* is_delta_index) {
   *seq = kMaxSequenceNumber;
 
   for (auto& memtable : *list) {
     assert(memtable->IsFragmentedRangeTombstonesConstructed());
     SequenceNumber current_seq = kMaxSequenceNumber;
 
-    bool done =
-        memtable->Get(key, value, columns, timestamp, s, merge_context,
-                      max_covering_tombstone_seq, &current_seq, read_opts,
-                      true /* immutable_memtable */, callback, is_blob_index);
+    bool done = memtable->Get(key, value, columns, timestamp, s, merge_context,
+                              max_covering_tombstone_seq, &current_seq,
+                              read_opts, true /* immutable_memtable */,
+                              callback, is_blob_index, is_delta_index);
     if (*seq == kMaxSequenceNumber) {
       // Store the most recent sequence number of any operation on this key.
       // Since we only care about the most recent change, we only need to
@@ -520,6 +521,18 @@ Status MemTableList::TryInstallMemtableFlushResults(
                            m->edit_.GetBlobFileAdditions().size());
         }
 
+        if (m->edit_.GetDeltaFileAdditions().empty()) {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64 " started",
+                           cfd->GetName().c_str(), m->file_number_);
+        } else {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64
+                           " (+%zu delta files) started",
+                           cfd->GetName().c_str(), m->file_number_,
+                           m->edit_.GetDeltaFileAdditions().size());
+        }
+
         edit_list.push_back(&m->edit_);
         memtables_to_flush.push_back(m);
 #ifndef ROCKSDB_LITE
@@ -725,6 +738,20 @@ void MemTableList::RemoveMemTablesOrRestoreFlags(
                          m->edit_.GetBlobFileAdditions().size(), mem_id);
       }
 
+      if (m->edit_.GetDeltaFileAdditions().empty()) {
+        ROCKS_LOG_BUFFER(log_buffer,
+                         "[%s] Level-0 commit table #%" PRIu64
+                         ": memtable #%" PRIu64 " done",
+                         cfd->GetName().c_str(), m->file_number_, mem_id);
+      } else {
+        ROCKS_LOG_BUFFER(log_buffer,
+                         "[%s] Level-0 commit table #%" PRIu64
+                         " (+%zu delta files)"
+                         ": memtable #%" PRIu64 " done",
+                         cfd->GetName().c_str(), m->file_number_,
+                         m->edit_.GetDeltaFileAdditions().size(), mem_id);
+      }
+
       assert(m->file_number_ > 0);
       current_->Remove(m, to_delete);
       UpdateCachedValuesFromMemTableListVersion();
@@ -747,6 +774,20 @@ void MemTableList::RemoveMemTablesOrRestoreFlags(
                          ": memtable #%" PRIu64 " failed",
                          m->file_number_,
                          m->edit_.GetBlobFileAdditions().size(), mem_id);
+      }
+
+      if (m->edit_.GetDeltaFileAdditions().empty()) {
+        ROCKS_LOG_BUFFER(log_buffer,
+                         "Level-0 commit table #%" PRIu64 ": memtable #%" PRIu64
+                         " failed",
+                         m->file_number_, mem_id);
+      } else {
+        ROCKS_LOG_BUFFER(log_buffer,
+                         "Level-0 commit table #%" PRIu64
+                         " (+%zu delta files)"
+                         ": memtable #%" PRIu64 " failed",
+                         m->file_number_,
+                         m->edit_.GetDeltaFileAdditions().size(), mem_id);
       }
 
       m->flush_completed_ = false;
@@ -912,6 +953,21 @@ Status InstallMemtableAtomicFlushResults(
                            edit->GetBlobFileAdditions().size(), mem_id);
         }
 
+        if (edit->GetDeltaFileAdditions().empty()) {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64
+                           ": memtable #%" PRIu64 " done",
+                           cfds[i]->GetName().c_str(), m->GetFileNumber(),
+                           mem_id);
+        } else {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64
+                           " (+%zu delta files)"
+                           ": memtable #%" PRIu64 " done",
+                           cfds[i]->GetName().c_str(), m->GetFileNumber(),
+                           edit->GetDeltaFileAdditions().size(), mem_id);
+        }
+
         imm->current_->Remove(m, to_delete);
         imm->UpdateCachedValuesFromMemTableListVersion();
         imm->ResetTrimHistoryNeeded();
@@ -939,6 +995,21 @@ Status InstallMemtableAtomicFlushResults(
                            ": memtable #%" PRIu64 " failed",
                            cfds[i]->GetName().c_str(), m->GetFileNumber(),
                            edit->GetBlobFileAdditions().size(), mem_id);
+        }
+
+        if (edit->GetDeltaFileAdditions().empty()) {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64
+                           ": memtable #%" PRIu64 " failed",
+                           cfds[i]->GetName().c_str(), m->GetFileNumber(),
+                           mem_id);
+        } else {
+          ROCKS_LOG_BUFFER(log_buffer,
+                           "[%s] Level-0 commit table #%" PRIu64
+                           " (+%zu delta files)"
+                           ": memtable #%" PRIu64 " failed",
+                           cfds[i]->GetName().c_str(), m->GetFileNumber(),
+                           edit->GetDeltaFileAdditions().size(), mem_id);
         }
 
         m->SetFlushCompleted(false);

@@ -13,10 +13,10 @@ public class MutableColumnFamilyOptions
   /**
    * User must use builder pattern, or parser.
    *
-   * @param keys the keys
+   * @param keys   the keys
    * @param values the values
    *
-   * See {@link #builder()} and {@link #parse(String)}.
+   *               See {@link #builder()} and {@link #parse(String)}.
    */
   private MutableColumnFamilyOptions(final String[] keys,
       final String[] values) {
@@ -43,7 +43,8 @@ public class MutableColumnFamilyOptions
    *
    * key1=value1;intArrayKey1=1:2:3
    *
-   * @param str The string representation of the mutable column family options
+   * @param str           The string representation of the mutable column family
+   *                      options
    * @param ignoreUnknown what to do if the key is not one of the keys we expect
    *
    * @return A builder for the mutable column family options
@@ -60,23 +61,28 @@ public class MutableColumnFamilyOptions
     return parse(str, false);
   }
 
-  private interface MutableColumnFamilyOptionKey extends MutableOptionKey {}
+  private interface MutableColumnFamilyOptionKey extends MutableOptionKey {
+  }
 
   public enum MemtableOption implements MutableColumnFamilyOptionKey {
     write_buffer_size(ValueType.LONG),
     arena_block_size(ValueType.LONG),
     memtable_prefix_bloom_size_ratio(ValueType.DOUBLE),
     memtable_whole_key_filtering(ValueType.BOOLEAN),
-    @Deprecated memtable_prefix_bloom_bits(ValueType.INT),
-    @Deprecated memtable_prefix_bloom_probes(ValueType.INT),
+    @Deprecated
+    memtable_prefix_bloom_bits(ValueType.INT),
+    @Deprecated
+    memtable_prefix_bloom_probes(ValueType.INT),
     memtable_huge_page_size(ValueType.LONG),
     max_successive_merges(ValueType.LONG),
-    @Deprecated filter_deletes(ValueType.BOOLEAN),
+    @Deprecated
+    filter_deletes(ValueType.BOOLEAN),
     max_write_buffer_number(ValueType.INT),
     inplace_update_num_locks(ValueType.LONG),
     experimental_mempurge_threshold(ValueType.DOUBLE);
 
     private final ValueType valueType;
+
     MemtableOption(final ValueType valueType) {
       this.valueType = valueType;
     }
@@ -104,6 +110,7 @@ public class MutableColumnFamilyOptions
     periodic_compaction_seconds(ValueType.LONG);
 
     private final ValueType valueType;
+
     CompactionOption(final ValueType valueType) {
       this.valueType = valueType;
     }
@@ -127,7 +134,32 @@ public class MutableColumnFamilyOptions
     prepopulate_blob_cache(ValueType.ENUM);
 
     private final ValueType valueType;
+
     BlobOption(final ValueType valueType) {
+      this.valueType = valueType;
+    }
+
+    @Override
+    public ValueType getValueType() {
+      return valueType;
+    }
+  }
+
+  public enum DeltaOption implements MutableColumnFamilyOptionKey {
+    enable_delta_files(ValueType.BOOLEAN),
+    min_delta_size(ValueType.LONG),
+    delta_file_size(ValueType.LONG),
+    delta_compression_type(ValueType.ENUM),
+    enable_delta_garbage_collection(ValueType.BOOLEAN),
+    delta_garbage_collection_age_cutoff(ValueType.DOUBLE),
+    delta_garbage_collection_force_threshold(ValueType.DOUBLE),
+    delta_compaction_readahead_size(ValueType.LONG),
+    delta_file_starting_level(ValueType.INT),
+    prepopulate_delta_cache(ValueType.ENUM);
+
+    private final ValueType valueType;
+
+    DeltaOption(final ValueType valueType) {
       this.valueType = valueType;
     }
 
@@ -144,6 +176,7 @@ public class MutableColumnFamilyOptions
     compression(ValueType.ENUM);
 
     private final ValueType valueType;
+
     MiscOption(final ValueType valueType) {
       this.valueType = valueType;
     }
@@ -155,24 +188,29 @@ public class MutableColumnFamilyOptions
   }
 
   public static class MutableColumnFamilyOptionsBuilder
-      extends AbstractMutableOptionsBuilder<MutableColumnFamilyOptions, MutableColumnFamilyOptionsBuilder, MutableColumnFamilyOptionKey>
+      extends
+      AbstractMutableOptionsBuilder<MutableColumnFamilyOptions, MutableColumnFamilyOptionsBuilder, MutableColumnFamilyOptionKey>
       implements MutableColumnFamilyOptionsInterface<MutableColumnFamilyOptionsBuilder> {
 
     private final static Map<String, MutableColumnFamilyOptionKey> ALL_KEYS_LOOKUP = new HashMap<>();
     static {
-      for(final MutableColumnFamilyOptionKey key : MemtableOption.values()) {
+      for (final MutableColumnFamilyOptionKey key : MemtableOption.values()) {
         ALL_KEYS_LOOKUP.put(key.name(), key);
       }
 
-      for(final MutableColumnFamilyOptionKey key : CompactionOption.values()) {
+      for (final MutableColumnFamilyOptionKey key : CompactionOption.values()) {
         ALL_KEYS_LOOKUP.put(key.name(), key);
       }
 
-      for(final MutableColumnFamilyOptionKey key : MiscOption.values()) {
+      for (final MutableColumnFamilyOptionKey key : MiscOption.values()) {
         ALL_KEYS_LOOKUP.put(key.name(), key);
       }
 
       for (final MutableColumnFamilyOptionKey key : BlobOption.values()) {
+        ALL_KEYS_LOOKUP.put(key.name(), key);
+      }
+
+      for (final MutableColumnFamilyOptionKey key : DeltaOption.values()) {
         ALL_KEYS_LOOKUP.put(key.name(), key);
       }
     }
@@ -382,7 +420,6 @@ public class MutableColumnFamilyOptions
     public long maxCompactionBytes() {
       return getLong(CompactionOption.max_compaction_bytes);
     }
-
 
     @Override
     public MutableColumnFamilyOptionsBuilder setTargetFileSizeBase(
@@ -618,6 +655,115 @@ public class MutableColumnFamilyOptions
     @Override
     public PrepopulateBlobCache prepopulateBlobCache() {
       return (PrepopulateBlobCache) getEnum(BlobOption.prepopulate_blob_cache);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setEnableDeltaFiles(final boolean enableDeltaFiles) {
+      return setBoolean(DeltaOption.enable_belta_files, enableDeltaFiles);
+    }
+
+    @Override
+    public boolean enableDeltaFiles() {
+      return getBoolean(DeltaOption.enable_belta_files);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setMinDeltaSize(final long minDeltaSize) {
+      return setLong(DeltaOption.min_belta_size, minDeltaSize);
+    }
+
+    @Override
+    public long minDeltaSize() {
+      return getLong(DeltaOption.min_belta_size);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaFileSize(final long beltaFileSize) {
+      return setLong(DeltaOption.belta_file_size, beltaFileSize);
+    }
+
+    @Override
+    public long beltaFileSize() {
+      return getLong(DeltaOption.belta_file_size);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaCompressionType(
+        final CompressionType compressionType) {
+      return setEnum(DeltaOption.belta_compression_type, compressionType);
+    }
+
+    @Override
+    public CompressionType beltaCompressionType() {
+      return (CompressionType) getEnum(DeltaOption.belta_compression_type);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setEnableDeltaGarbageCollection(
+        final boolean enableDeltaGarbageCollection) {
+      return setBoolean(DeltaOption.enable_belta_garbage_collection, enableDeltaGarbageCollection);
+    }
+
+    @Override
+    public boolean enableDeltaGarbageCollection() {
+      return getBoolean(DeltaOption.enable_belta_garbage_collection);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaGarbageCollectionAgeCutoff(
+        final double beltaGarbageCollectionAgeCutoff) {
+      return setDouble(
+          DeltaOption.belta_garbage_collection_age_cutoff, beltaGarbageCollectionAgeCutoff);
+    }
+
+    @Override
+    public double beltaGarbageCollectionAgeCutoff() {
+      return getDouble(DeltaOption.belta_garbage_collection_age_cutoff);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaGarbageCollectionForceThreshold(
+        final double beltaGarbageCollectionForceThreshold) {
+      return setDouble(
+          DeltaOption.belta_garbage_collection_force_threshold, beltaGarbageCollectionForceThreshold);
+    }
+
+    @Override
+    public double beltaGarbageCollectionForceThreshold() {
+      return getDouble(DeltaOption.belta_garbage_collection_force_threshold);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaCompactionReadaheadSize(
+        final long beltaCompactionReadaheadSize) {
+      return setLong(DeltaOption.belta_compaction_readahead_size, beltaCompactionReadaheadSize);
+    }
+
+    @Override
+    public long beltaCompactionReadaheadSize() {
+      return getLong(DeltaOption.belta_compaction_readahead_size);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setDeltaFileStartingLevel(
+        final int beltaFileStartingLevel) {
+      return setInt(DeltaOption.belta_file_starting_level, beltaFileStartingLevel);
+    }
+
+    @Override
+    public int beltaFileStartingLevel() {
+      return getInt(DeltaOption.belta_file_starting_level);
+    }
+
+    @Override
+    public MutableColumnFamilyOptionsBuilder setPrepopulateDeltaCache(
+        final PrepopulateDeltaCache prepopulateDeltaCache) {
+      return setEnum(DeltaOption.prepopulate_belta_cache, prepopulateDeltaCache);
+    }
+
+    @Override
+    public PrepopulateDeltaCache prepopulateDeltaCache() {
+      return (PrepopulateDeltaCache) getEnum(DeltaOption.prepopulate_belta_cache);
     }
   }
 }

@@ -68,9 +68,11 @@ enum ValueType : unsigned char {
   kTypeCommitXIDAndTimestamp = 0x15,  // WAL only
   kTypeWideColumnEntity = 0x16,
   kTypeColumnFamilyWideColumnEntity = 0x17,  // WAL only
-  kTypeMaxValid,    // Should be after the last valid type, only used for
-                    // validation
-  kMaxValue = 0x7F  // Not used for storing records.
+  kTypeMaxValid,     // Should be after the last valid type, only used for
+                     // validation
+  kMaxValue = 0x7F,  // Not used for storing records.
+  kTypeColumnFamilyDeltaIndex = 0x8E,  // Delta DB only
+  kTypeDeltaIndex = 0x8F               // Delta DB only
 };
 
 // Defined in dbformat.cc
@@ -81,7 +83,8 @@ extern const ValueType kValueTypeForSeekForPrev;
 // (i.e. a type used in memtable skiplist and sst file datablock).
 inline bool IsValueType(ValueType t) {
   return t <= kTypeMerge || kTypeSingleDeletion == t || kTypeBlobIndex == t ||
-         kTypeDeletionWithTimestamp == t || kTypeWideColumnEntity == t;
+         kTypeDeltaIndex == t || kTypeDeletionWithTimestamp == t ||
+         kTypeWideColumnEntity == t;
 }
 
 // Checks whether a type is from user operation
@@ -662,12 +665,13 @@ extern bool ReadKeyFromWriteBatchEntry(Slice* input, Slice* key,
 
 // Read record from a write batch piece from input.
 // tag, column_family, key, value and blob are return values. Callers own the
-// slice they point to.
+// slice they point to. delta returns delta used for merge operator.
 // Tag is defined as ValueType.
 // input will be advanced to after the record.
 extern Status ReadRecordFromWriteBatch(Slice* input, char* tag,
                                        uint32_t* column_family, Slice* key,
-                                       Slice* value, Slice* blob, Slice* xid);
+                                       Slice* value, Slice* blob, Slice* delta,
+                                       Slice* xid);
 
 // When user call DeleteRange() to delete a range of keys,
 // we will store a serialized RangeTombstone in MemTable and SST.

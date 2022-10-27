@@ -59,6 +59,8 @@ const std::map<LevelStatType, LevelStat> InternalStats::compaction_level_stats =
         {LevelStatType::KEY_DROP, LevelStat{"KeyDrop", "KeyDrop"}},
         {LevelStatType::R_BLOB_GB, LevelStat{"RblobGB", "Rblob(GB)"}},
         {LevelStatType::W_BLOB_GB, LevelStat{"WblobGB", "Wblob(GB)"}},
+        {LevelStatType::R_DELTA_GB, LevelStat{"RdeltaGB", "Rdelta(GB)"}},
+        {LevelStatType::W_DELTA_GB, LevelStat{"WdeltaGB", "Wdelta(GB)"}},
 };
 
 const std::map<InternalStats::InternalDBStatsType, DBStatInfo>
@@ -108,7 +110,8 @@ void PrintLevelStatsHeader(char* buf, size_t len, const std::string& cf_name,
       hdr(LevelStatType::COMP_CPU_SEC), hdr(LevelStatType::COMP_COUNT),
       hdr(LevelStatType::AVG_SEC), hdr(LevelStatType::KEY_IN),
       hdr(LevelStatType::KEY_DROP), hdr(LevelStatType::R_BLOB_GB),
-      hdr(LevelStatType::W_BLOB_GB));
+      hdr(LevelStatType::W_BLOB_GB), hdr(LevelStatType::R_DELTA_GB),
+      hdr(LevelStatType::W_DELTA_GB));
 
   written_size += line_size;
   written_size = std::min(written_size, static_cast<int>(len));
@@ -122,8 +125,10 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
                        const InternalStats::CompactionStats& stats) {
   const uint64_t bytes_read = stats.bytes_read_non_output_levels +
                               stats.bytes_read_output_level +
-                              stats.bytes_read_blob;
-  const uint64_t bytes_written = stats.bytes_written + stats.bytes_written_blob;
+                              stats.bytes_read_blob + stats.bytes_read_delta;
+  const uint64_t bytes_written = stats.bytes_written +
+                                 stats.bytes_written_blob +
+                                 stats.bytes_written_delta;
   const int64_t bytes_new = stats.bytes_written - stats.bytes_read_output_level;
   const double elapsed = (stats.micros + 1) / kMicrosInSec;
 
@@ -152,6 +157,8 @@ void PrepareLevelStats(std::map<LevelStatType, double>* level_stats,
       static_cast<double>(stats.num_dropped_records);
   (*level_stats)[LevelStatType::R_BLOB_GB] = stats.bytes_read_blob / kGB;
   (*level_stats)[LevelStatType::W_BLOB_GB] = stats.bytes_written_blob / kGB;
+  (*level_stats)[LevelStatType::R_DELTA_GB] = stats.bytes_read_delta / kGB;
+  (*level_stats)[LevelStatType::W_DELTA_GB] = stats.bytes_written_delta / kGB;
 }
 
 void PrintLevelStats(char* buf, size_t len, const std::string& name,
@@ -178,7 +185,9 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
       "%7s "      /*  KeyIn */
       "%6s "      /*  KeyDrop */
       "%9.1f "    /*  Rblob(GB) */
-      "%9.1f\n",  /*  Wblob(GB) */
+      "%9.1f\n"   /*  Wblob(GB) */
+      "%9.1f "    /*  Rdelta(GB) */
+      "%9.1f\n",  /*  Wdelta(GB) */
       name.c_str(), static_cast<int>(stat_value.at(LevelStatType::NUM_FILES)),
       static_cast<int>(stat_value.at(LevelStatType::COMPACTED_FILES)),
       BytesToHumanString(
@@ -205,7 +214,9 @@ void PrintLevelStats(char* buf, size_t len, const std::string& name,
           static_cast<std::int64_t>(stat_value.at(LevelStatType::KEY_DROP)))
           .c_str(),
       stat_value.at(LevelStatType::R_BLOB_GB),
-      stat_value.at(LevelStatType::W_BLOB_GB));
+      stat_value.at(LevelStatType::W_BLOB_GB)),
+            stat_value.at(LevelStatType::R_DELTA_GB),
+      stat_value.at(LevelStatType::W_DELTA_GB));
 }
 
 void PrintLevelStats(char* buf, size_t len, const std::string& name,
@@ -310,6 +321,15 @@ static const std::string live_blob_file_garbage_size =
 static const std::string blob_cache_capacity = "blob-cache-capacity";
 static const std::string blob_cache_usage = "blob-cache-usage";
 static const std::string blob_cache_pinned_usage = "blob-cache-pinned-usage";
+static const std::string num_delta_files = "num-delta-files";
+static const std::string delta_stats = "delta-stats";
+static const std::string total_delta_file_size = "total-delta-file-size";
+static const std::string live_delta_file_size = "live-delta-file-size";
+static const std::string live_delta_file_garbage_size =
+    "live-delta-file-garbage-size";
+static const std::string delta_cache_capacity = "delta-cache-capacity";
+static const std::string delta_cache_usage = "delta-cache-usage";
+static const std::string delta_cache_pinned_usage = "delta-cache-pinned-usage";
 
 const std::string DB::Properties::kNumFilesAtLevelPrefix =
     rocksdb_prefix + num_files_at_level_prefix;
@@ -418,6 +438,21 @@ const std::string DB::Properties::kBlobCacheUsage =
     rocksdb_prefix + blob_cache_usage;
 const std::string DB::Properties::kBlobCachePinnedUsage =
     rocksdb_prefix + blob_cache_pinned_usage;
+const std::string DB::Properties::kNumDeltaFiles =
+    rocksdb_prefix + num_delta_files;
+const std::string DB::Properties::kDeltaStats = rocksdb_prefix + delta_stats;
+const std::string DB::Properties::kTotalDeltaFileSize =
+    rocksdb_prefix + total_delta_file_size;
+const std::string DB::Properties::kLiveDeltaFileSize =
+    rocksdb_prefix + live_delta_file_size;
+const std::string DB::Properties::kLiveDeltaFileGarbageSize =
+    rocksdb_prefix + live_delta_file_garbage_size;
+const std::string DB::Properties::kDeltaCacheCapacity =
+    rocksdb_prefix + delta_cache_capacity;
+const std::string DB::Properties::kDeltaCacheUsage =
+    rocksdb_prefix + delta_cache_usage;
+const std::string DB::Properties::kDeltaCachePinnedUsage =
+    rocksdb_prefix + delta_cache_pinned_usage;
 
 const UnorderedMap<std::string, DBPropertyInfo>
     InternalStats::ppt_name_to_info = {
@@ -587,6 +622,29 @@ const UnorderedMap<std::string, DBPropertyInfo>
           nullptr}},
         {DB::Properties::kBlobCachePinnedUsage,
          {false, nullptr, &InternalStats::HandleBlobCachePinnedUsage, nullptr,
+          nullptr}},
+        {DB::Properties::kNumDeltaFiles,
+         {false, nullptr, &InternalStats::HandleNumDeltaFiles, nullptr,
+          nullptr}},
+        {DB::Properties::kDeltaStats,
+         {false, &InternalStats::HandleDeltaStats, nullptr, nullptr, nullptr}},
+        {DB::Properties::kTotalDeltaFileSize,
+         {false, nullptr, &InternalStats::HandleTotalDeltaFileSize, nullptr,
+          nullptr}},
+        {DB::Properties::kLiveDeltaFileSize,
+         {false, nullptr, &InternalStats::HandleLiveDeltaFileSize, nullptr,
+          nullptr}},
+        {DB::Properties::kLiveDeltaFileGarbageSize,
+         {false, nullptr, &InternalStats::HandleLiveDeltaFileGarbageSize,
+          nullptr, nullptr}},
+        {DB::Properties::kDeltaCacheCapacity,
+         {false, nullptr, &InternalStats::HandleDeltaCacheCapacity, nullptr,
+          nullptr}},
+        {DB::Properties::kDeltaCacheUsage,
+         {false, nullptr, &InternalStats::HandleDeltaCacheUsage, nullptr,
+          nullptr}},
+        {DB::Properties::kDeltaCachePinnedUsage,
+         {false, nullptr, &InternalStats::HandleDeltaCachePinnedUsage, nullptr,
           nullptr}},
 };
 
@@ -899,6 +957,126 @@ bool InternalStats::HandleBlobCachePinnedUsage(uint64_t* value, DBImpl* /*db*/,
   Cache* blob_cache = GetBlobCacheForStats();
   if (blob_cache) {
     *value = static_cast<uint64_t>(blob_cache->GetPinnedUsage());
+    return true;
+  }
+  return false;
+}
+
+bool InternalStats::HandleNumDeltaFiles(uint64_t* value, DBImpl* /*db*/,
+                                        Version* /*version*/) {
+  assert(value);
+  assert(cfd_);
+
+  const auto* current = cfd_->current();
+  assert(current);
+
+  const auto* vstorage = current->storage_info();
+  assert(vstorage);
+
+  const auto& delta_files = vstorage->GetDeltaFiles();
+
+  *value = delta_files.size();
+
+  return true;
+}
+
+bool InternalStats::HandleDeltaStats(std::string* value, Slice /*suffix*/) {
+  assert(value);
+  assert(cfd_);
+
+  const auto* current = cfd_->current();
+  assert(current);
+
+  const auto* vstorage = current->storage_info();
+  assert(vstorage);
+
+  const auto delta_st = vstorage->GetDeltaStats();
+
+  std::ostringstream oss;
+
+  oss << "Number of delta files: " << vstorage->GetDeltaFiles().size()
+      << "\nTotal size of delta files: " << delta_st.total_file_size
+      << "\nTotal size of garbage in delta files: "
+      << delta_st.total_garbage_size
+      << "\nDelta file space amplification: " << delta_st.space_amp << '\n';
+
+  value->append(oss.str());
+
+  return true;
+}
+
+bool InternalStats::HandleTotalDeltaFileSize(uint64_t* value, DBImpl* /*db*/,
+                                             Version* /*version*/) {
+  assert(value);
+  assert(cfd_);
+
+  *value = cfd_->GetTotalDeltaFileSize();
+
+  return true;
+}
+
+bool InternalStats::HandleLiveDeltaFileSize(uint64_t* value, DBImpl* /*db*/,
+                                            Version* /*version*/) {
+  assert(value);
+  assert(cfd_);
+
+  const auto* current = cfd_->current();
+  assert(current);
+
+  const auto* vstorage = current->storage_info();
+  assert(vstorage);
+
+  *value = vstorage->GetDeltaStats().total_file_size;
+
+  return true;
+}
+
+bool InternalStats::HandleLiveDeltaFileGarbageSize(uint64_t* value,
+                                                   DBImpl* /*db*/,
+                                                   Version* /*version*/) {
+  assert(value);
+  assert(cfd_);
+
+  const auto* current = cfd_->current();
+  assert(current);
+
+  const auto* vstorage = current->storage_info();
+  assert(vstorage);
+
+  *value = vstorage->GetDeltaStats().total_garbage_size;
+
+  return true;
+}
+
+Cache* InternalStats::GetDeltaCacheForStats() {
+  return cfd_->ioptions()->delta_cache.get();
+}
+
+bool InternalStats::HandleDeltaCacheCapacity(uint64_t* value, DBImpl* /*db*/,
+                                             Version* /*version*/) {
+  Cache* delta_cache = GetDeltaCacheForStats();
+  if (delta_cache) {
+    *value = static_cast<uint64_t>(delta_cache->GetCapacity());
+    return true;
+  }
+  return false;
+}
+
+bool InternalStats::HandleDeltaCacheUsage(uint64_t* value, DBImpl* /*db*/,
+                                          Version* /*version*/) {
+  Cache* delta_cache = GetDeltaCacheForStats();
+  if (delta_cache) {
+    *value = static_cast<uint64_t>(delta_cache->GetUsage());
+    return true;
+  }
+  return false;
+}
+
+bool InternalStats::HandleDeltaCachePinnedUsage(uint64_t* value, DBImpl* /*db*/,
+                                                Version* /*version*/) {
+  Cache* delta_cache = GetDeltaCacheForStats();
+  if (delta_cache) {
+    *value = static_cast<uint64_t>(delta_cache->GetPinnedUsage());
     return true;
   }
   return false;
@@ -1606,13 +1784,15 @@ void InternalStats::DumpCFMapStats(
         input_bytes = curr_ingest;
       } else {
         input_bytes = comp_stats_[level].bytes_read_non_output_levels +
-                      comp_stats_[level].bytes_read_blob;
+                      comp_stats_[level].bytes_read_blob +
+                      comp_stats_[level].bytes_read_delta;
       }
       double w_amp =
           (input_bytes == 0)
               ? 0.0
               : static_cast<double>(comp_stats_[level].bytes_written +
-                                    comp_stats_[level].bytes_written_blob) /
+                                    comp_stats_[level].bytes_written_blob +
+                                    comp_stats_[level].bytes_written_delta) /
                     input_bytes;
       std::map<LevelStatType, double> level_stats;
       PrepareLevelStats(&level_stats, files, files_being_compacted[level],
@@ -1625,7 +1805,8 @@ void InternalStats::DumpCFMapStats(
   double w_amp = (0 == curr_ingest)
                      ? 0.0
                      : (compaction_stats_sum->bytes_written +
-                        compaction_stats_sum->bytes_written_blob) /
+                        compaction_stats_sum->bytes_written_blob +
+                        compaction_stats_sum->bytes_written_delta) /
                            static_cast<double>(curr_ingest);
   // Stats summary across levels
   std::map<LevelStatType, double> sum_stats;
@@ -1732,7 +1913,8 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   CompactionStats interval_stats(compaction_stats_sum);
   interval_stats.Subtract(cf_stats_snapshot_.comp_stats);
   double w_amp =
-      (interval_stats.bytes_written + interval_stats.bytes_written_blob) /
+      (interval_stats.bytes_written + interval_stats.bytes_written_blob +
+       interval_stats.bytes_written_delta) /
       static_cast<double>(interval_ingest);
   PrintLevelStats(buf, sizeof(buf), "Int", 0, 0, 0, 0, w_amp, interval_stats);
   value->append(buf);
@@ -1759,6 +1941,15 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
            ", total size: %.1f GB, garbage size: %.1f GB, space amp: %.1f\n\n",
            vstorage->GetBlobFiles().size(), blob_st.total_file_size / kGB,
            blob_st.total_garbage_size / kGB, blob_st.space_amp);
+  value->append(buf);
+
+  const auto delta_st = vstorage->GetDeltaStats();
+
+  snprintf(buf, sizeof(buf),
+           "\nDelta file count: %" ROCKSDB_PRIszt
+           ", total size: %.1f GB, garbage size: %.1f GB, space amp: %.1f\n\n",
+           vstorage->GetDeltaFiles().size(), delta_st.total_file_size / kGB,
+           delta_st.total_garbage_size / kGB, delta_st.space_amp);
   value->append(buf);
 
   uint64_t now_micros = clock_->NowMicros();
@@ -1803,9 +1994,11 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   for (int level = 0; level < number_levels_; level++) {
     compact_bytes_read += comp_stats_[level].bytes_read_output_level +
                           comp_stats_[level].bytes_read_non_output_levels +
-                          comp_stats_[level].bytes_read_blob;
+                          comp_stats_[level].bytes_read_blob +
+                          comp_stats_[level].bytes_read_delta;
     compact_bytes_write += comp_stats_[level].bytes_written +
-                           comp_stats_[level].bytes_written_blob;
+                           comp_stats_[level].bytes_written_blob +
+                           comp_stats_[level].bytes_written_delta;
     compact_micros += comp_stats_[level].micros;
   }
 
@@ -1914,6 +2107,11 @@ void InternalStats::DumpCFFileHistogram(std::string* value) {
   if (!blob_file_read_latency_.Empty()) {
     oss << "** Blob file read latency histogram (micros):\n"
         << blob_file_read_latency_.ToString() << '\n';
+  }
+
+  if (!delta_file_read_latency_.Empty()) {
+    oss << "** Delta file read latency histogram (micros):\n"
+        << delta_file_read_latency_.ToString() << '\n';
   }
 
   value->append(oss.str());

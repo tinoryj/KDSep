@@ -144,7 +144,7 @@ schedule="$output_dir/schedule.txt"
 syncval="1"
 if [ ! -z $DB_BENCH_NO_SYNC ]; then
   echo "Turning sync off for all multithreaded tests"
-  syncval="0";
+  syncval="0"
 fi
 
 compaction_style=${COMPACTION_STYLE:-leveled}
@@ -163,7 +163,7 @@ num_threads=${NUM_THREADS:-64}
 mb_written_per_sec=${MB_WRITE_PER_SEC:-0}
 # Only for tests that do range scans
 num_nexts_per_seek=${NUM_NEXTS_PER_SEEK:-10}
-cache_size=${CACHE_SIZE:-$(( 16 * $G ))}
+cache_size=${CACHE_SIZE:-$((16 * $G))}
 cache_numshardbits=${CACHE_NUMSHARDBITS:-6}
 compression_max_dict_bytes=${COMPRESSION_MAX_DICT_BYTES:-0}
 compression_type=${COMPRESSION_TYPE:-zstd}
@@ -200,15 +200,15 @@ fi
 
 soft_pending_arg=""
 if [ ! -z $SOFT_PENDING_COMPACTION_BYTES_LIMIT_IN_GB ]; then
-  soft_pending_bytes=$( echo $SOFT_PENDING_COMPACTION_BYTES_LIMIT_IN_GB | \
-    awk '{ printf "%.0f", $1 * GB }' GB=$G )
+  soft_pending_bytes=$(echo $SOFT_PENDING_COMPACTION_BYTES_LIMIT_IN_GB |
+    awk '{ printf "%.0f", $1 * GB }' GB=$G)
   soft_pending_arg="--soft_pending_compaction_bytes_limit=$soft_pending_bytes"
 fi
 
 hard_pending_arg=""
 if [ ! -z $HARD_PENDING_COMPACTION_BYTES_LIMIT_IN_GB ]; then
-  hard_pending_bytes=$( echo $HARD_PENDING_COMPACTION_BYTES_LIMIT_IN_GB | \
-    awk '{ printf "%.0f", $1 * GB }' GB=$G )
+  hard_pending_bytes=$(echo $HARD_PENDING_COMPACTION_BYTES_LIMIT_IN_GB |
+    awk '{ printf "%.0f", $1 * GB }' GB=$G)
   hard_pending_arg="--hard_pending_compaction_bytes_limit=$hard_pending_bytes"
 fi
 
@@ -231,14 +231,14 @@ else
 fi
 
 min_blob_size=${MIN_BLOB_SIZE:-0}
-blob_file_size=${BLOB_FILE_SIZE:-$(( 256 * $M ))}
+blob_file_size=${BLOB_FILE_SIZE:-$((256 * $M))}
 blob_compression_type=${BLOB_COMPRESSION_TYPE:-${compression_type}}
 blob_gc_age_cutoff=${BLOB_GC_AGE_CUTOFF:-"0.25"}
 blob_gc_force_threshold=${BLOB_GC_FORCE_THRESHOLD:-1}
 blob_file_starting_level=${BLOB_FILE_STARTING_LEVEL:-0}
 use_blob_cache=${USE_BLOB_CACHE:-1}
 use_shared_block_and_blob_cache=${USE_SHARED_BLOCK_AND_BLOB_CACHE:-1}
-blob_cache_size=${BLOB_CACHE_SIZE:-$(( 16 * $G ))}
+blob_cache_size=${BLOB_CACHE_SIZE:-$((16 * $G))}
 blob_cache_numshardbits=${BLOB_CACHE_NUMSHARDBITS:-6}
 prepopulate_blob_cache=${PREPOPULATE_BLOB_CACHE:-0}
 
@@ -258,11 +258,11 @@ const_params_base="
   --bytes_per_sync=$((8 * M)) \
   $cache_meta_flags \
   $o_direct_flags \
-  --benchmark_write_rate_limit=$(( 1024 * 1024 * $mb_written_per_sec )) \
+  --benchmark_write_rate_limit=$((1024 * 1024 * $mb_written_per_sec)) \
   \
-  --write_buffer_size=$(( $write_buffer_mb * M)) \
-  --target_file_size_base=$(( $target_file_mb * M)) \
-  --max_bytes_for_level_base=$(( $l1_mb * M)) \
+  --write_buffer_size=$(($write_buffer_mb * M)) \
+  --target_file_size_base=$(($target_file_mb * M)) \
+  --max_bytes_for_level_base=$(($l1_mb * M)) \
   \
   --verify_checksum=1 \
   --delete_obsolete_files_period_micros=$((60 * M)) \
@@ -407,8 +407,8 @@ function get_cmd() {
   # for some versions (v6.10, v6.11).
   timeout_cmd=""
   if [ $duration -gt 0 ]; then
-    if hash timeout ; then
-      timeout_cmd="timeout $(( $duration + 600 ))"
+    if hash timeout; then
+      timeout_cmd="timeout $(($duration + 600))"
     fi
   fi
 
@@ -416,40 +416,43 @@ function get_cmd() {
 }
 
 function month_to_num() {
-    local date_str=$1
-    date_str="${date_str/Jan/01}"
-    date_str="${date_str/Feb/02}"
-    date_str="${date_str/Mar/03}"
-    date_str="${date_str/Apr/04}"
-    date_str="${date_str/May/05}"
-    date_str="${date_str/Jun/06}"
-    date_str="${date_str/Jul/07}"
-    date_str="${date_str/Aug/08}"
-    date_str="${date_str/Sep/09}"
-    date_str="${date_str/Oct/10}"
-    date_str="${date_str/Nov/11}"
-    date_str="${date_str/Dec/12}"
-    echo $date_str
+  local date_str=$1
+  date_str="${date_str/Jan/01}"
+  date_str="${date_str/Feb/02}"
+  date_str="${date_str/Mar/03}"
+  date_str="${date_str/Apr/04}"
+  date_str="${date_str/May/05}"
+  date_str="${date_str/Jun/06}"
+  date_str="${date_str/Jul/07}"
+  date_str="${date_str/Aug/08}"
+  date_str="${date_str/Sep/09}"
+  date_str="${date_str/Oct/10}"
+  date_str="${date_str/Nov/11}"
+  date_str="${date_str/Dec/12}"
+  echo $date_str
 }
 
 function start_stats {
   output=$1
-  iostat -y -mx 1  >& $output.io &
-  vmstat 1 >& $output.vm &
+  iostat -y -mx 1 >&$output.io &
+  vmstat 1 >&$output.vm &
   # tail -1 because "ps | grep db_bench" returns 2 entries and we want the second
-  while :; do ps aux | grep db_bench | grep -v grep | tail -1; sleep 10; done >& $output.ps &
+  while :; do
+    ps aux | grep db_bench | grep -v grep | tail -1
+    sleep 10
+  done >&$output.ps &
   # This sets a global value
   pspid=$!
 
   while :; do
-    b_gb=$( ls -l $DB_DIR 2> /dev/null | grep blob | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }' )
-    s_gb=$( ls -l $DB_DIR 2> /dev/null | grep sst | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }' )
-    l_gb=$( ls -l $WAL_DIR 2> /dev/null | grep log | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }' )
-    a_gb=$( ls -l $DB_DIR 2> /dev/null | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }' )
-    ts=$( date +%H%M%S )
+    b_gb=$(ls -l $DB_DIR 2>/dev/null | grep blob | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }')
+    s_gb=$(ls -l $DB_DIR 2>/dev/null | grep sst | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }')
+    l_gb=$(ls -l $WAL_DIR 2>/dev/null | grep log | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }')
+    a_gb=$(ls -l $DB_DIR 2>/dev/null | awk '{ c += 1; b += $5 } END { printf "%.1f", b / (1024*1024*1024) }')
+    ts=$(date +%H%M%S)
     echo -e "${a_gb}\t${s_gb}\t${l_gb}\t${b_gb}\t${ts}"
     sleep 10
-  done >& $output.sizes &
+  done >&$output.sizes &
   # This sets a global value
   szpid=$!
 }
@@ -464,11 +467,11 @@ function stop_stats {
   gzip $output.io
   gzip $output.vm
 
-  am=$( sort -nk 1,1 $output.sizes | tail -1 | awk '{ print $1 }' )
-  sm=$( sort -nk 2,2 $output.sizes | tail -1 | awk '{ print $2 }' )
-  lm=$( sort -nk 3,3 $output.sizes | tail -1 | awk '{ print $3 }' )
-  bm=$( sort -nk 4,4 $output.sizes | tail -1 | awk '{ print $4 }' )
-  echo -e "max sizes (GB): $am all, $sm sst, $lm log, $bm blob" >> $output.sizes
+  am=$(sort -nk 1,1 $output.sizes | tail -1 | awk '{ print $1 }')
+  sm=$(sort -nk 2,2 $output.sizes | tail -1 | awk '{ print $2 }')
+  lm=$(sort -nk 3,3 $output.sizes | tail -1 | awk '{ print $3 }')
+  bm=$(sort -nk 4,4 $output.sizes | tail -1 | awk '{ print $4 }')
+  echo -e "max sizes (GB): $am all, $sm sst, $lm log, $bm blob" >>$output.sizes
 }
 
 function units_as_gb {
@@ -476,18 +479,18 @@ function units_as_gb {
   units=$2
 
   case $units in
-    MB)
-      echo "$size" | awk '{ printf "%.1f", $1 / 1024.0 }'
-      ;;
-    GB)
-      echo "$size"
-      ;;
-    TB)
-      echo "$size" | awk '{ printf "%.1f", $1 * 1024.0 }'
-      ;;
-    *)
-      echo "NA"
-      ;;
+  MB)
+    echo "$size" | awk '{ printf "%.1f", $1 / 1024.0 }'
+    ;;
+  GB)
+    echo "$size"
+    ;;
+  TB)
+    echo "$size" | awk '{ printf "%.1f", $1 * 1024.0 }'
+    ;;
+  *)
+    echo "NA"
+    ;;
   esac
 }
 
@@ -498,116 +501,116 @@ function summarize_result {
 
   # In recent versions these can be found directly via db_bench --version, --build_info but
   # grepping from the log lets this work on older versions.
-  version="$( grep "RocksDB version:" "$DB_DIR"/LOG | head -1 | awk '{ printf "%s", $5 }' )"
-  git_hash="$( grep "Git sha" "$DB_DIR"/LOG | head -1 | awk '{ printf "%s", substr($5, 1, 10) }' )"
+  version="$(grep "RocksDB version:" "$DB_DIR"/LOG | head -1 | awk '{ printf "%s", $5 }')"
+  git_hash="$(grep "Git sha" "$DB_DIR"/LOG | head -1 | awk '{ printf "%s", substr($5, 1, 10) }')"
 
   # Note that this function assumes that the benchmark executes long enough so
   # that "Compaction Stats" is written to stdout at least once. If it won't
   # happen then empty output from grep when searching for "Sum" will cause
   # syntax errors.
-  date=$( grep ^Date: $test_out | awk '{ print $6 "-" $3 "-" $4 "T" $5 }' )
-  my_date=$( month_to_num $date )
-  uptime=$( grep ^Uptime\(secs $test_out | tail -1 | awk '{ printf "%.0f", $2 }' )
-  stall_pct=$( grep "^Cumulative stall" $test_out| tail -1  | awk '{  print $5 }' )
-  nstall=$( grep ^Stalls\(count\):  $test_out | tail -1 | awk '{ print $2 + $6 + $10 + $14 + $18 + $20 }' )
+  date=$(grep ^Date: $test_out | awk '{ print $6 "-" $3 "-" $4 "T" $5 }')
+  my_date=$(month_to_num $date)
+  uptime=$(grep ^Uptime\(secs $test_out | tail -1 | awk '{ printf "%.0f", $2 }')
+  stall_pct=$(grep "^Cumulative stall" $test_out | tail -1 | awk '{  print $5 }')
+  nstall=$(grep ^Stalls\(count\): $test_out | tail -1 | awk '{ print $2 + $6 + $10 + $14 + $18 + $20 }')
 
   # Output formats
   # V1: overwrite    :       7.939 micros/op 125963 ops/sec;   50.5 MB/s
   # V2: overwrite    :       7.854 micros/op 127320 ops/sec 1800.001 seconds 229176999 operations;   51.0 MB/s
 
-  format_version=$( grep ^${bench_name} $test_out \
-    | awk '{ if (NF >= 10 && $8 == "seconds") { print "V2" } else { print "V1" } }' )
+  format_version=$(grep ^${bench_name} $test_out |
+    awk '{ if (NF >= 10 && $8 == "seconds") { print "V2" } else { print "V1" } }')
   if [ $format_version == "V1" ]; then
-    ops_sec=$( grep ^${bench_name} $test_out | awk '{ print $5 }' )
-    usecs_op=$( grep ^${bench_name} $test_out | awk '{ printf "%.1f", $3 }' )
-    mb_sec=$( grep ^${bench_name} $test_out | awk '{ print $7 }' )
+    ops_sec=$(grep ^${bench_name} $test_out | awk '{ print $5 }')
+    usecs_op=$(grep ^${bench_name} $test_out | awk '{ printf "%.1f", $3 }')
+    mb_sec=$(grep ^${bench_name} $test_out | awk '{ print $7 }')
   else
-    ops_sec=$( grep ^${bench_name} $test_out | awk '{ print $5 }' )
-    usecs_op=$( grep ^${bench_name} $test_out | awk '{ printf "%.1f", $3 }' )
-    mb_sec=$( grep ^${bench_name} $test_out | awk '{ print $11 }' )
+    ops_sec=$(grep ^${bench_name} $test_out | awk '{ print $5 }')
+    usecs_op=$(grep ^${bench_name} $test_out | awk '{ printf "%.1f", $3 }')
+    mb_sec=$(grep ^${bench_name} $test_out | awk '{ print $11 }')
   fi
 
   # For RocksDB version 4.x there are fewer fields but this still parses correctly
   # Cumulative writes: 242M writes, 242M keys, 18M commit groups, 12.9 writes per commit group, ingest: 95.96 GB, 54.69 MB/s
-  cum_writes_gb_orig=$( grep "^Cumulative writes" "$test_out" | tail -1 | awk '{ for (x=1; x<=NF; x++) { if ($x == "ingest:") { printf "%.1f", $(x+1) } } }' )
-  cum_writes_units=$( grep "^Cumulative writes" "$test_out" | tail -1 | awk '{ for (x=1; x<=NF; x++) { if ($x == "ingest:") { print $(x+2) } } }' | sed 's/,//g' )
-  cum_writes_gb=$( units_as_gb "$cum_writes_gb_orig" "$cum_writes_units" )
+  cum_writes_gb_orig=$(grep "^Cumulative writes" "$test_out" | tail -1 | awk '{ for (x=1; x<=NF; x++) { if ($x == "ingest:") { printf "%.1f", $(x+1) } } }')
+  cum_writes_units=$(grep "^Cumulative writes" "$test_out" | tail -1 | awk '{ for (x=1; x<=NF; x++) { if ($x == "ingest:") { print $(x+2) } } }' | sed 's/,//g')
+  cum_writes_gb=$(units_as_gb "$cum_writes_gb_orig" "$cum_writes_units")
 
   # Cumulative compaction: 1159.74 GB write, 661.03 MB/s write, 1108.89 GB read, 632.04 MB/s read, 6284.3 seconds
-  cmb_ps=$( grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ printf "%.1f", $6 }' )
-  sum_wgb_orig=$( grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ printf "%.1f", $3 }' )
-  sum_wgb_units=$( grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ print $4 }' )
-  sum_wgb=$( units_as_gb "$sum_wgb_orig" "$sum_wgb_units" )
+  cmb_ps=$(grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ printf "%.1f", $6 }')
+  sum_wgb_orig=$(grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ printf "%.1f", $3 }')
+  sum_wgb_units=$(grep "^Cumulative compaction" "$test_out" | tail -1 | awk '{ print $4 }')
+  sum_wgb=$(units_as_gb "$sum_wgb_orig" "$sum_wgb_units")
 
   # Flush(GB): cumulative 97.193, interval 1.247
-  flush_wgb=$( grep "^Flush(GB)" "$test_out" | tail -1 | awk '{ print $3 }' | tr ',' ' ' | awk '{ print $1 }' )
+  flush_wgb=$(grep "^Flush(GB)" "$test_out" | tail -1 | awk '{ print $3 }' | tr ',' ' ' | awk '{ print $1 }')
 
-  if [[ "$sum_wgb" == "NA" || \
-        "$cum_writes_gb" == "NA" || \
-        "$cum_writes_gb_orig" == "0.0" || \
-        -z "$cum_writes_gb_orig" || \
-        -z "$flush_wgb" ]]; then
+  if [[ "$sum_wgb" == "NA" ||
+    "$cum_writes_gb" == "NA" ||
+    "$cum_writes_gb_orig" == "0.0" ||
+    -z "$cum_writes_gb_orig" ||
+    -z "$flush_wgb" ]]; then
     wamp="NA"
   else
-    wamp=$( echo "( $sum_wgb + $flush_wgb ) / $cum_writes_gb" | bc -l | awk '{ printf "%.1f", $1 }' )
+    wamp=$(echo "( $sum_wgb + $flush_wgb ) / $cum_writes_gb" | bc -l | awk '{ printf "%.1f", $1 }')
   fi
 
-  c_wsecs=$( grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $15 }' )
-  c_csecs=$( grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $16 }' )
+  c_wsecs=$(grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $15 }')
+  c_csecs=$(grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $16 }')
 
-  lsm_size=$( grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f%s", $3, $4 }' )
-  blob_size=$( grep "^Blob file count:" $test_out | tail -1 | awk '{ printf "%s%s", $7, $8 }' )
+  lsm_size=$(grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f%s", $3, $4 }')
+  blob_size=$(grep "^Blob file count:" $test_out | tail -1 | awk '{ printf "%s%s", $7, $8 }')
 
-  b_rgb=$( grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $21 }' )
-  b_wgb=$( grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $22 }' )
+  b_rgb=$(grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $21 }')
+  b_wgb=$(grep "^ Sum" $test_out | tail -1 | awk '{ printf "%.0f", $22 }')
 
-  p50=$( grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.1f", $3 }' )
-  p99=$( grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $7 }' )
-  p999=$( grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $9 }' )
-  p9999=$( grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $11 }' )
-  pmax=$( grep "^Min: " $test_out | grep Median: | grep Max: | awk '{ printf "%.0f", $6 }' )
+  p50=$(grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.1f", $3 }')
+  p99=$(grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $7 }')
+  p999=$(grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $9 }')
+  p9999=$(grep "^Percentiles:" $test_out | tail -1 | awk '{ printf "%.0f", $11 }')
+  pmax=$(grep "^Min: " $test_out | grep Median: | grep Max: | awk '{ printf "%.0f", $6 }')
 
   time_out=$test_out.time
-  u_cpu=$( awk '{ printf "%.1f", $2 / 1000.0 }' $time_out )
-  s_cpu=$( awk '{ printf "%.1f", $3 / 1000.0  }' $time_out )
+  u_cpu=$(awk '{ printf "%.1f", $2 / 1000.0 }' $time_out)
+  s_cpu=$(awk '{ printf "%.1f", $3 / 1000.0  }' $time_out)
 
   rss="NA"
   if [ -f $test_out.stats.ps ]; then
-    rss=$(  tail -1 $test_out.stats.ps | awk '{ printf "%.1f\n", $6 / (1024 * 1024) }' )
+    rss=$(tail -1 $test_out.stats.ps | awk '{ printf "%.1f\n", $6 / (1024 * 1024) }')
   fi
 
   # if the report TSV (Tab Separate Values) file does not yet exist, create it and write the header row to it
   if [ ! -f "$report" ]; then
-    echo -e "# ops_sec - operations per second" >> $report
-    echo -e "# mb_sec - ops_sec * size-of-operation-in-MB" >> $report
-    echo -e "# lsm_sz - size of LSM tree" >> $report
-    echo -e "# blob_sz - size of BlobDB logs" >> $report
-    echo -e "# c_wgb - GB written by compaction" >> $report
-    echo -e "# w_amp - Write-amplification as (bytes written by compaction / bytes written by memtable flush)" >> $report
-    echo -e "# c_mbps - Average write rate for compaction" >> $report
-    echo -e "# c_wsecs - Wall clock seconds doing compaction" >> $report
-    echo -e "# c_csecs - CPU seconds doing compaction" >> $report
-    echo -e "# b_rgb - Blob compaction read GB" >> $report
-    echo -e "# b_wgb - Blob compaction write GB" >> $report
-    echo -e "# usec_op - Microseconds per operation" >> $report
-    echo -e "# p50, p99, p99.9, p99.99 - 50th, 99th, 99.9th, 99.99th percentile response time in usecs" >> $report
-    echo -e "# pmax - max response time in usecs" >> $report
-    echo -e "# uptime - RocksDB uptime in seconds" >> $report
-    echo -e "# stall% - Percentage of time writes are stalled" >> $report
-    echo -e "# Nstall - Number of stalls" >> $report
-    echo -e "# u_cpu - #seconds/1000 of user CPU" >> $report
-    echo -e "# s_cpu - #seconds/1000 of system CPU" >> $report
-    echo -e "# rss - max RSS in GB for db_bench process" >> $report
-    echo -e "# test - Name of test" >> $report
-    echo -e "# date - Date/time of test" >> $report
-    echo -e "# version - RocksDB version" >> $report
-    echo -e "# job_id - User-provided job ID" >> $report
+    echo -e "# ops_sec - operations per second" >>$report
+    echo -e "# mb_sec - ops_sec * size-of-operation-in-MB" >>$report
+    echo -e "# lsm_sz - size of LSM tree" >>$report
+    echo -e "# blob_sz - size of BlobDB logs" >>$report
+    echo -e "# c_wgb - GB written by compaction" >>$report
+    echo -e "# w_amp - Write-amplification as (bytes written by compaction / bytes written by memtable flush)" >>$report
+    echo -e "# c_mbps - Average write rate for compaction" >>$report
+    echo -e "# c_wsecs - Wall clock seconds doing compaction" >>$report
+    echo -e "# c_csecs - CPU seconds doing compaction" >>$report
+    echo -e "# b_rgb - Blob compaction read GB" >>$report
+    echo -e "# b_wgb - Blob compaction write GB" >>$report
+    echo -e "# usec_op - Microseconds per operation" >>$report
+    echo -e "# p50, p99, p99.9, p99.99 - 50th, 99th, 99.9th, 99.99th percentile response time in usecs" >>$report
+    echo -e "# pmax - max response time in usecs" >>$report
+    echo -e "# uptime - RocksDB uptime in seconds" >>$report
+    echo -e "# stall% - Percentage of time writes are stalled" >>$report
+    echo -e "# Nstall - Number of stalls" >>$report
+    echo -e "# u_cpu - #seconds/1000 of user CPU" >>$report
+    echo -e "# s_cpu - #seconds/1000 of system CPU" >>$report
+    echo -e "# rss - max RSS in GB for db_bench process" >>$report
+    echo -e "# test - Name of test" >>$report
+    echo -e "# date - Date/time of test" >>$report
+    echo -e "# version - RocksDB version" >>$report
+    echo -e "# job_id - User-provided job ID" >>$report
     echo -e "# githash - git hash at which db_bench was compiled"
-    echo -e $tsv_header >> $report
+    echo -e $tsv_header >>$report
   fi
 
   echo -e "$ops_sec\t$mb_sec\t$lsm_size\t$blob_size\t$sum_wgb\t$wamp\t$cmb_ps\t$c_wsecs\t$c_csecs\t$b_rgb\t$b_wgb\t$usecs_op\t$p50\t$p99\t$p999\t$p9999\t$pmax\t$uptime\t$stall_pct\t$nstall\t$u_cpu\t$s_cpu\t$rss\t$test_name\t$my_date\t$version\t$job_id\t$git_hash" \
-    >> $report
+    >>$report
 }
 
 function run_bulkload {
@@ -615,7 +618,7 @@ function run_bulkload {
   # client can discover where to restart a load after a crash. I think this is a good way to load.
   echo "Bulk loading $num_keys random keys"
   log_file_name=$output_dir/benchmark_bulkload_fillrandom.log
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=fillrandom \
        --use_existing_db=0 \
        --disable_auto_compactions=1 \
@@ -625,11 +628,11 @@ function run_bulkload {
        --memtablerep=vector \
        --allow_concurrent_memtable_write=false \
        --disable_wal=1 \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -639,7 +642,7 @@ function run_bulkload {
 
   echo "Compacting..."
   log_file_name=$output_dir/benchmark_bulkload_compact.log
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=compact \
        --use_existing_db=1 \
        --disable_auto_compactions=1 \
@@ -648,7 +651,7 @@ function run_bulkload {
        --threads=1 \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -679,7 +682,7 @@ function run_manual_compaction_worker {
   fi
 
   # Make sure that fillrandom uses the same compaction options as compact.
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=fillrandom \
        --use_existing_db=0 \
        --disable_auto_compactions=0 \
@@ -693,11 +696,11 @@ function run_manual_compaction_worker {
        --allow_concurrent_memtable_write=false \
        --disable_wal=1 \
        --max_background_compactions=$4 \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        2>&1 | tee -a $log_file_name"
 
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -728,7 +731,7 @@ function run_manual_compaction_worker {
        2>&1 | tee -a $log_file_name"
 
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -754,8 +757,7 @@ function run_univ_compaction {
   total=${#subcompactions[@]}
 
   # Execute a set of benchmarks to cover variety of scenarios.
-  while [ "$i" -lt "$total" ]
-  do
+  while [ "$i" -lt "$total" ]; do
     run_manual_compaction_worker $io_stats $compaction_style ${subcompactions[$i]} \
       ${max_background_compactions[$i]}
     ((i++))
@@ -799,7 +801,7 @@ function run_fillseq {
   fi
 
   echo "Loading $num_keys keys sequentially"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=fillseq \
        $params_fillseq \
        $comp_arg \
@@ -809,11 +811,11 @@ function run_fillseq {
        --memtablerep=vector \
        --allow_concurrent_memtable_write=false \
        --disable_wal=$1 \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -842,16 +844,16 @@ function run_lsm {
   fi
 
   log_file_name=$output_dir/benchmark_${job}.log
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=$benchmarks \
        --use_existing_db=1 \
        --sync=0 \
        $params_w \
        --threads=1 \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -870,18 +872,18 @@ function run_change {
   benchmarks=$3
   echo "Do $num_keys random $output_name"
   log_file_name="$output_dir/benchmark_${output_name}.t${num_threads}.s${syncval}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=$benchmarks \
        --use_existing_db=1 \
        --sync=$syncval \
        $params_w \
        --threads=$num_threads \
        --merge_operator=\"put\" \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -895,17 +897,17 @@ function run_change {
 function run_filluniquerandom {
   echo "Loading $num_keys unique keys randomly"
   log_file_name=$output_dir/benchmark_filluniquerandom.log
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=filluniquerandom \
        --use_existing_db=0 \
        --sync=0 \
        $params_w \
        --threads=1 \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -919,16 +921,16 @@ function run_filluniquerandom {
 function run_readrandom {
   echo "Reading $num_keys random keys"
   log_file_name="${output_dir}/benchmark_readrandom.t${num_threads}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=readrandom \
        --use_existing_db=1 \
        $params_w \
        --threads=$num_threads \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -942,17 +944,17 @@ function run_readrandom {
 function run_multireadrandom {
   echo "Multi-Reading $num_keys random keys"
   log_file_name="${output_dir}/benchmark_multireadrandom.t${num_threads}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=multireadrandom \
        --use_existing_db=1 \
        --threads=$num_threads \
        --batch_size=10 \
        $params_w \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -967,18 +969,18 @@ function run_readwhile {
   operation=$1
   echo "Reading $num_keys random keys while $operation"
   log_file_name="${output_dir}/benchmark_readwhile${operation}.t${num_threads}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench --benchmarks=readwhile${operation} \
        --use_existing_db=1 \
        --sync=$syncval \
        $params_w \
        --threads=$num_threads \
        --merge_operator=\"put\" \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -994,7 +996,7 @@ function run_rangewhile {
   full_name=$2
   reverse_arg=$3
   log_file_name="${output_dir}/benchmark_${full_name}.t${num_threads}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   echo "Range scan $num_keys random keys while ${operation} for reverse_iter=${reverse_arg}"
   cmd="$time_cmd ./db_bench --benchmarks=seekrandomwhile${operation} \
        --use_existing_db=1 \
@@ -1004,7 +1006,7 @@ function run_rangewhile {
        --merge_operator=\"put\" \
        --seek_nexts=$num_nexts_per_seek \
        --reverse_iterator=$reverse_arg \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   echo $cmd | tee $log_file_name
@@ -1018,7 +1020,7 @@ function run_range {
   full_name=$1
   reverse_arg=$2
   log_file_name="${output_dir}/benchmark_${full_name}.t${num_threads}.log"
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   echo "Range scan $num_keys random keys for reverse_iter=${reverse_arg}"
   cmd="$time_cmd ./db_bench --benchmarks=seekrandom \
        --use_existing_db=1 \
@@ -1026,11 +1028,11 @@ function run_range {
        --threads=$num_threads \
        --seek_nexts=$num_nexts_per_seek \
        --reverse_iterator=$reverse_arg \
-       --seed=$( date +%s ) \
+       --seed=$(date +%s) \
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee -a $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -1044,7 +1046,7 @@ function run_range {
 function run_randomtransaction {
   echo "..."
   log_file_name=$output_dir/benchmark_randomtransaction.log
-  time_cmd=$( get_cmd $log_file_name.time )
+  time_cmd=$(get_cmd $log_file_name.time)
   cmd="$time_cmd ./db_bench $params_w --benchmarks=randomtransaction \
        --num=$num_keys \
        --transaction_db \
@@ -1053,7 +1055,7 @@ function run_randomtransaction {
        --report_file=${log_file_name}.r.csv \
        2>&1 | tee $log_file_name"
   if [[ "$job_id" != "" ]]; then
-    echo "Job ID: ${job_id}" > $log_file_name
+    echo "Job ID: ${job_id}" >$log_file_name
     echo $cmd | tee -a $log_file_name
   else
     echo $cmd | tee $log_file_name
@@ -1064,19 +1066,18 @@ function run_randomtransaction {
 }
 
 function now() {
-  echo `date +"%s"`
+  echo $(date +"%s")
 }
-
 
 echo "===== Benchmark ====="
 
 # Run!!!
-IFS=',' read -a jobs <<< $bench_cmd
+IFS=',' read -a jobs <<<$bench_cmd
 # shellcheck disable=SC2068
 for job in ${jobs[@]}; do
 
   if [ $job != debug ]; then
-    echo "Starting $job (ID: $job_id) at `date`" | tee -a $schedule
+    echo "Starting $job (ID: $job_id) at $(date)" | tee -a $schedule
   fi
 
   start=$(now)
@@ -1128,7 +1129,7 @@ for job in ${jobs[@]}; do
   elif [ $job = universal_compaction ]; then
     run_univ_compaction
   elif [ $job = debug ]; then
-    num_keys=1000; # debug
+    num_keys=1000 # debug
     echo "Setting num_keys to $num_keys"
   else
     echo "unknown job $job"
@@ -1137,7 +1138,7 @@ for job in ${jobs[@]}; do
   end=$(now)
 
   if [ $job != debug ]; then
-    echo "Completed $job (ID: $job_id) in $((end-start)) seconds" | tee -a $schedule
+    echo "Completed $job (ID: $job_id) in $((end - start)) seconds" | tee -a $schedule
   fi
 
   echo -e $tsv_header

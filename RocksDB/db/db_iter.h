@@ -119,7 +119,7 @@ class DBIter final : public Iterator {
          InternalIterator* iter, const Version* version, SequenceNumber s,
          bool arena_mode, uint64_t max_sequential_skip_in_iterations,
          ReadCallback* read_callback, DBImpl* db_impl, ColumnFamilyData* cfd,
-         bool expose_blob_index);
+         bool expose_blob_index, bool expose_delta_index);
 
   // No copying allowed
   DBIter(const DBIter&) = delete;
@@ -191,6 +191,11 @@ class DBIter final : public Iterator {
   bool IsBlob() const {
     assert(valid_);
     return is_blob_;
+  }
+
+  bool IsDelta() const {
+    assert(valid_);
+    return is_delta_;
   }
 
   Status GetProperty(std::string prop_name, std::string* prop) override;
@@ -302,6 +307,15 @@ class DBIter final : public Iterator {
     blob_value_.Reset();
   }
 
+  // Retrieves the delta value for the specified user key using the given delta
+  // index when using the integrated DeltaDB implementation.
+  bool SetDeltaValueIfNeeded(const Slice& user_key, const Slice& delta_index);
+
+  void ResetDeltaValue() {
+    is_delta_ = false;
+    delta_value_.Reset();
+  }
+
   void SetValueAndColumnsFromPlain(const Slice& slice) {
     assert(value_.empty());
     assert(wide_columns_.empty());
@@ -341,6 +355,7 @@ class DBIter final : public Iterator {
   Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
+  PinnableSlice delta_value_;
   // Value of the default column
   Slice value_;
   // All columns (i.e. name-value pairs)
@@ -382,6 +397,10 @@ class DBIter final : public Iterator {
   bool expose_blob_index_;
   bool is_blob_;
   bool arena_mode_;
+  // Whether the iterator is allowed to expose delta references. Set to true
+  // when the stacked DeltaDB implementation is used, false otherwise.
+  bool expose_delta_index_;
+  bool is_delta_;
   // List of operands for merge operator.
   MergeContext merge_context_;
   LocalStatistics local_stats_;
@@ -413,6 +432,6 @@ extern Iterator* NewDBIterator(
     const Version* version, const SequenceNumber& sequence,
     uint64_t max_sequential_skip_in_iterations, ReadCallback* read_callback,
     DBImpl* db_impl = nullptr, ColumnFamilyData* cfd = nullptr,
-    bool expose_blob_index = false);
+    bool expose_blob_index = false, bool expose_delta_index = false);
 
 }  // namespace ROCKSDB_NAMESPACE

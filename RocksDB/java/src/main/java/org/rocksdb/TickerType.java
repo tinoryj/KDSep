@@ -8,12 +8,17 @@ package org.rocksdb;
 /**
  * The logical mapping of tickers defined in rocksdb::Tickers.
  *
- * Java byte value mappings don't align 1:1 to the c++ values. c++ rocksdb::Tickers enumeration type
- * is uint32_t and java org.rocksdb.TickerType is byte, this causes mapping issues when
- * rocksdb::Tickers value is greater then 127 (0x7F) for jbyte jni interface as range greater is not
+ * Java byte value mappings don't align 1:1 to the c++ values. c++
+ * rocksdb::Tickers enumeration type
+ * is uint32_t and java org.rocksdb.TickerType is byte, this causes mapping
+ * issues when
+ * rocksdb::Tickers value is greater then 127 (0x7F) for jbyte jni interface as
+ * range greater is not
  * available. Without breaking interface in minor versions, value mappings for
- * org.rocksdb.TickerType leverage full byte range [-128 (-0x80), (0x7F)]. Newer tickers added
- * should descend into negative values until TICKER_ENUM_MAX reaches -128 (-0x80).
+ * org.rocksdb.TickerType leverage full byte range [-128 (-0x80), (0x7F)]. Newer
+ * tickers added
+ * should descend into negative values until TICKER_ENUM_MAX reaches -128
+ * (-0x80).
  */
 public enum TickerType {
 
@@ -21,8 +26,8 @@ public enum TickerType {
      * total block cache misses
      *
      * REQUIRES: BLOCK_CACHE_MISS == BLOCK_CACHE_INDEX_MISS +
-     *     BLOCK_CACHE_FILTER_MISS +
-     *     BLOCK_CACHE_DATA_MISS;
+     * BLOCK_CACHE_FILTER_MISS +
+     * BLOCK_CACHE_DATA_MISS;
      */
     BLOCK_CACHE_MISS((byte) 0x0),
 
@@ -30,8 +35,8 @@ public enum TickerType {
      * total block cache hit
      *
      * REQUIRES: BLOCK_CACHE_HIT == BLOCK_CACHE_INDEX_HIT +
-     *     BLOCK_CACHE_FILTER_HIT +
-     *     BLOCK_CACHE_DATA_HIT;
+     * BLOCK_CACHE_FILTER_HIT +
+     * BLOCK_CACHE_DATA_HIT;
      */
     BLOCK_CACHE_HIT((byte) 0x1),
 
@@ -225,7 +230,7 @@ public enum TickerType {
     BYTES_WRITTEN((byte) 0x26),
 
     /**
-     * The number of uncompressed bytes read from DB::Get().  It could be
+     * The number of uncompressed bytes read from DB::Get(). It could be
      * either from memtables, cache, or table files.
      *
      * For the number of logical bytes read from DB::MultiGet(),
@@ -356,7 +361,8 @@ public enum TickerType {
     NUMBER_OF_RESEEKS_IN_ITERATION((byte) 0x40),
 
     /**
-     * Record the number of calls to {@link RocksDB#getUpdatesSince(long)}. Useful to keep track of
+     * Record the number of calls to {@link RocksDB#getUpdatesSince(long)}. Useful
+     * to keep track of
      * transaction log iterator refreshes.
      */
     GET_UPDATES_SINCE_CALLS((byte) 0x41),
@@ -860,7 +866,7 @@ public enum TickerType {
      *
      * @return {@link org.rocksdb.TickerType} instance.
      * @throws java.lang.IllegalArgumentException if an invalid
-     *     value is provided.
+     *                                            value is provided.
      */
     public static TickerType getTickerType(final byte value) {
         for (final TickerType tickerType : TickerType.values()) {
@@ -869,6 +875,6 @@ public enum TickerType {
             }
         }
         throw new IllegalArgumentException(
-            "Illegal value provided for TickerType.");
+                "Illegal value provided for TickerType.");
     }
 }

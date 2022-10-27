@@ -73,6 +73,18 @@ class LDBCommand {
   static const std::string ARG_PREPOPULATE_BLOB_CACHE;
   static const std::string ARG_DECODE_BLOB_INDEX;
   static const std::string ARG_DUMP_UNCOMPRESSED_BLOBS;
+  static const std::string ARG_ENABLE_DELTA_FILES;
+  static const std::string ARG_MIN_DELTA_SIZE;
+  static const std::string ARG_DELTA_FILE_SIZE;
+  static const std::string ARG_DELTA_COMPRESSION_TYPE;
+  static const std::string ARG_ENABLE_DELTA_GARBAGE_COLLECTION;
+  static const std::string ARG_DELTA_GARBAGE_COLLECTION_AGE_CUTOFF;
+  static const std::string ARG_DELTA_GARBAGE_COLLECTION_FORCE_THRESHOLD;
+  static const std::string ARG_DELTA_COMPACTION_READAHEAD_SIZE;
+  static const std::string ARG_DELTA_FILE_STARTING_LEVEL;
+  static const std::string ARG_PREPOPULATE_DELTA_CACHE;
+  static const std::string ARG_DECODE_DELTA_INDEX;
+  static const std::string ARG_DUMP_UNCOMPRESSED_DELTAS;
 
   struct ParsedParams {
     std::string cmd;
@@ -188,6 +200,10 @@ class LDBCommand {
   bool enable_blob_files_;
 
   bool enable_blob_garbage_collection_;
+
+  bool enable_delta_files_;
+
+  bool enable_delta_garbage_collection_;
 
   bool create_if_missing_;
 

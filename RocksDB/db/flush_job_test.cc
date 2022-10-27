@@ -13,6 +13,7 @@
 #include "db/blob/blob_index.h"
 #include "db/column_family.h"
 #include "db/db_impl/db_impl.h"
+#include "db/delta/delta_index.h"
 #include "db/version_set.h"
 #include "file/writable_file_writer.h"
 #include "rocksdb/cache.h"
@@ -214,8 +215,8 @@ TEST_F(FlushJobTest, NonEmpty) {
   // Note: the first two blob references will not be considered when resolving
   // the oldest blob file referenced (the first one is inlined TTL, while the
   // second one is TTL and thus points to a TTL blob file).
-  constexpr std::array<uint64_t, 6> blob_file_numbers{{
-      kInvalidBlobFileNumber, 5, 103, 17, 102, 101}};
+  constexpr std::array<uint64_t, 6> blob_file_numbers{
+      {kInvalidBlobFileNumber, 5, 103, 17, 102, 101}};
   for (size_t i = 0; i < blob_file_numbers.size(); ++i) {
     std::string key(std::to_string(i + 10001));
     std::string blob_index;
@@ -239,6 +240,36 @@ TEST_F(FlushJobTest, NonEmpty) {
     InternalKey internal_key(key, seq, kTypeBlobIndex);
     inserted_keys.push_back({internal_key.Encode().ToString(), blob_index});
   }
+
+  // Note: the first two delta references will not be considered when resolving
+  // the oldest delta file referenced (the first one is inlined TTL, while the
+  // second one is TTL and thus points to a TTL delta file).
+  constexpr std::array<uint64_t, 6> delta_file_numbers{
+      {kInvalidDeltaFileNumber, 5, 103, 17, 102, 101}};
+  for (size_t i = 0; i < delta_file_numbers.size(); ++i) {
+    std::string key(std::to_string(i + 10001));
+    std::string delta_index;
+    if (i == 0) {
+      DeltaIndex::EncodeInlinedTTL(&delta_index, /* expiration */ 1234567890ULL,
+                                   "foo");
+    } else if (i == 1) {
+      DeltaIndex::EncodeDeltaTTL(&delta_index, /* expiration */ 1234567890ULL,
+                                 delta_file_numbers[i], /* offset */ i << 10,
+                                 /* size */ i << 20, kNoCompression);
+    } else {
+      DeltaIndex::EncodeDelta(&delta_index, delta_file_numbers[i],
+                              /* offset */ i << 10, /* size */ i << 20,
+                              kNoCompression);
+    }
+
+    const SequenceNumber seq(i + 10001);
+    ASSERT_OK(new_mem->Add(seq, kTypeDeltaIndex, key, delta_index,
+                           nullptr /* kv_prot_info */));
+
+    InternalKey internal_key(key, seq, kTypeDeltaIndex);
+    inserted_keys.push_back({internal_key.Encode().ToString(), delta_index});
+  }
+
   mock::SortKVVector(&inserted_keys);
 
   autovector<MemTable*> to_delete;
@@ -274,6 +305,7 @@ TEST_F(FlushJobTest, NonEmpty) {
   ASSERT_EQ(1, file_meta.fd.smallest_seqno);
   ASSERT_EQ(10006, file_meta.fd.largest_seqno);
   ASSERT_EQ(17, file_meta.oldest_blob_file_number);
+  ASSERT_EQ(17, file_meta.oldest_delta_file_number);
   mock_table_factory_->AssertSingleFile(inserted_keys);
   job_context.Clean();
 }
@@ -337,7 +369,7 @@ TEST_F(FlushJobTest, FlushMemTablesSingleColumnFamily) {
   ASSERT_EQ(SequenceNumber(num_mems_to_flush * num_keys_per_table - 1),
             file_meta.fd.largest_seqno);
   ASSERT_EQ(kInvalidBlobFileNumber, file_meta.oldest_blob_file_number);
-
+  ASSERT_EQ(kInvalidDeltaFileNumber, file_meta.oldest_delta_file_number);
   for (auto m : to_delete) {
     delete m;
   }

@@ -26,6 +26,7 @@
 #include "cache/cache_reservation_manager.h"
 #include "db/blob/blob_file_meta.h"
 #include "db/dbformat.h"
+#include "db/delta/delta_file_meta.h"
 #include "db/internal_stats.h"
 #include "db/table_cache.h"
 #include "db/version_set.h"
@@ -232,6 +233,155 @@ class VersionBuilder::Rep {
     uint64_t garbage_blob_bytes_ = 0;
   };
 
+  // A class that represents the accumulated changes (like additional garbage or
+  // newly linked/unlinked SST files) for a given delta file after applying a
+  // series of VersionEdits.
+  class DeltaFileMetaDataDelta {
+   public:
+    bool IsEmpty() const {
+      return !additional_garbage_count_ && !additional_garbage_bytes_ &&
+             newly_linked_ssts_.empty() && newly_unlinked_ssts_.empty();
+    }
+
+    uint64_t GetAdditionalGarbageCount() const {
+      return additional_garbage_count_;
+    }
+
+    uint64_t GetAdditionalGarbageBytes() const {
+      return additional_garbage_bytes_;
+    }
+
+    const std::unordered_set<uint64_t>& GetNewlyLinkedSsts() const {
+      return newly_linked_ssts_;
+    }
+
+    const std::unordered_set<uint64_t>& GetNewlyUnlinkedSsts() const {
+      return newly_unlinked_ssts_;
+    }
+
+    void AddGarbage(uint64_t count, uint64_t bytes) {
+      additional_garbage_count_ += count;
+      additional_garbage_bytes_ += bytes;
+    }
+
+    void LinkSst(uint64_t sst_file_number) {
+      assert(newly_linked_ssts_.find(sst_file_number) ==
+             newly_linked_ssts_.end());
+
+      // Reconcile with newly unlinked SSTs on the fly. (Note: an SST can be
+      // linked to and unlinked from the same delta file in the case of a
+      // trivial move.)
+      auto it = newly_unlinked_ssts_.find(sst_file_number);
+
+      if (it != newly_unlinked_ssts_.end()) {
+        newly_unlinked_ssts_.erase(it);
+      } else {
+        newly_linked_ssts_.emplace(sst_file_number);
+      }
+    }
+
+    void UnlinkSst(uint64_t sst_file_number) {
+      assert(newly_unlinked_ssts_.find(sst_file_number) ==
+             newly_unlinked_ssts_.end());
+
+      // Reconcile with newly linked SSTs on the fly. (Note: an SST can be
+      // linked to and unlinked from the same delta file in the case of a
+      // trivial move.)
+      auto it = newly_linked_ssts_.find(sst_file_number);
+
+      if (it != newly_linked_ssts_.end()) {
+        newly_linked_ssts_.erase(it);
+      } else {
+        newly_unlinked_ssts_.emplace(sst_file_number);
+      }
+    }
+
+   private:
+    uint64_t additional_garbage_count_ = 0;
+    uint64_t additional_garbage_bytes_ = 0;
+    std::unordered_set<uint64_t> newly_linked_ssts_;
+    std::unordered_set<uint64_t> newly_unlinked_ssts_;
+  };
+
+  // A class that represents the state of a delta file after applying a series
+  // of VersionEdits. In addition to the resulting state, it also contains the
+  // delta (see DeltaFileMetaDataDelta above). The resulting state can be used
+  // to identify obsolete delta files, while the delta makes it possible to
+  // efficiently detect trivial moves.
+  class MutableDeltaFileMetaData {
+   public:
+    // To be used for brand new delta files
+    explicit MutableDeltaFileMetaData(
+        std::shared_ptr<SharedDeltaFileMetaData>&& shared_meta)
+        : shared_meta_(std::move(shared_meta)) {}
+
+    // To be used for pre-existing delta files
+    explicit MutableDeltaFileMetaData(
+        const std::shared_ptr<DeltaFileMetaData>& meta)
+        : shared_meta_(meta->GetSharedMeta()),
+          linked_ssts_(meta->GetLinkedSsts()),
+          garbage_delta_count_(meta->GetGarbageDeltaCount()),
+          garbage_delta_bytes_(meta->GetGarbageDeltaBytes()) {}
+
+    const std::shared_ptr<SharedDeltaFileMetaData>& GetSharedMeta() const {
+      return shared_meta_;
+    }
+
+    uint64_t GetDeltaFileNumber() const {
+      assert(shared_meta_);
+      return shared_meta_->GetDeltaFileNumber();
+    }
+
+    bool HasDelta() const { return !delta_.IsEmpty(); }
+
+    const std::unordered_set<uint64_t>& GetLinkedSsts() const {
+      return linked_ssts_;
+    }
+
+    uint64_t GetGarbageDeltaCount() const { return garbage_delta_count_; }
+
+    uint64_t GetGarbageDeltaBytes() const { return garbage_delta_bytes_; }
+
+    bool AddGarbage(uint64_t count, uint64_t bytes) {
+      assert(shared_meta_);
+
+      if (garbage_delta_count_ + count > shared_meta_->GetTotalDeltaCount() ||
+          garbage_delta_bytes_ + bytes > shared_meta_->GetTotalDeltaBytes()) {
+        return false;
+      }
+
+      delta_.AddGarbage(count, bytes);
+
+      garbage_delta_count_ += count;
+      garbage_delta_bytes_ += bytes;
+
+      return true;
+    }
+
+    void LinkSst(uint64_t sst_file_number) {
+      delta_.LinkSst(sst_file_number);
+
+      assert(linked_ssts_.find(sst_file_number) == linked_ssts_.end());
+      linked_ssts_.emplace(sst_file_number);
+    }
+
+    void UnlinkSst(uint64_t sst_file_number) {
+      delta_.UnlinkSst(sst_file_number);
+
+      assert(linked_ssts_.find(sst_file_number) != linked_ssts_.end());
+      linked_ssts_.erase(sst_file_number);
+    }
+
+   private:
+    std::shared_ptr<SharedDeltaFileMetaData> shared_meta_;
+    // Accumulated changes
+    DeltaFileMetaDataDelta delta_;
+    // Resulting state after applying the changes
+    DeltaFileMetaData::LinkedSsts linked_ssts_;
+    uint64_t garbage_delta_count_ = 0;
+    uint64_t garbage_delta_bytes_ = 0;
+  };
+
   const FileOptions& file_options_;
   const ImmutableCFOptions* const ioptions_;
   TableCache* table_cache_;
@@ -257,6 +407,10 @@ class VersionBuilder::Rep {
   // Mutable metadata objects for all blob files affected by the series of
   // version edits.
   std::map<uint64_t, MutableBlobFileMetaData> mutable_blob_file_metas_;
+
+  // Mutable metadata objects for all delta files affected by the series of
+  // version edits.
+  std::map<uint64_t, MutableDeltaFileMetaData> mutable_delta_file_metas_;
 
   std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr_;
 
@@ -327,6 +481,25 @@ class VersionBuilder::Rep {
     (*expected_linked_ssts)[blob_file_number].emplace(table_file_number);
   }
 
+  // Mapping used for checking the consistency of links between SST files and
+  // delta files. It is built using the forward links (table file -> delta
+  // file), and is subsequently compared with the inverse mapping stored in the
+  // DeltaFileMetaData objects.
+  using ExpectedLinkedSsts =
+      std::unordered_map<uint64_t, DeltaFileMetaData::LinkedSsts>;
+
+  static void UpdateExpectedLinkedSsts(
+      uint64_t table_file_number, uint64_t delta_file_number,
+      ExpectedLinkedSsts* expected_linked_ssts) {
+    assert(expected_linked_ssts);
+
+    if (delta_file_number == kInvalidDeltaFileNumber) {
+      return;
+    }
+
+    (*expected_linked_ssts)[delta_file_number].emplace(table_file_number);
+  }
+
   template <typename Checker>
   Status CheckConsistencyDetailsForLevel(
       const VersionStorageInfo* vstorage, int level, Checker checker,
@@ -347,14 +520,15 @@ class VersionBuilder::Rep {
     }
 
     assert(level_files[0]);
-    UpdateExpectedLinkedSsts(level_files[0]->fd.GetNumber(),
-                             level_files[0]->oldest_blob_file_number,
-                             expected_linked_ssts);
+    UpdateExpectedLinkedSsts(
+        level_files[0]->fd.GetNumber(), level_files[0]->oldest_blob_file_number,
+        level_files[0]->oldest_delta_file_number, expected_linked_ssts);
 
     for (size_t i = 1; i < level_files.size(); ++i) {
       assert(level_files[i]);
       UpdateExpectedLinkedSsts(level_files[i]->fd.GetNumber(),
                                level_files[i]->oldest_blob_file_number,
+                               level_files[i]->oldest_delta_file_number,
                                expected_linked_ssts);
 
       auto lhs = level_files[i - 1];
@@ -375,7 +549,7 @@ class VersionBuilder::Rep {
   }
 
   // Make sure table files are sorted correctly and that the links between
-  // table files and blob files are consistent.
+  // table files, blob files and delta files are consistent.
   Status CheckConsistencyDetails(const VersionStorageInfo* vstorage) const {
     assert(vstorage);
 
@@ -496,6 +670,33 @@ class VersionBuilder::Rep {
         std::ostringstream oss;
         oss << "Links are inconsistent between table files and blob file #"
             << blob_file_number;
+
+        return Status::Corruption("VersionBuilder", oss.str());
+      }
+    }
+
+    // Make sure that all delta files in the version have non-garbage data and
+    // the links between them and the table files are consistent.
+    const auto& delta_files = vstorage->GetDeltaFiles();
+    for (const auto& delta_file_meta : delta_files) {
+      assert(delta_file_meta);
+
+      const uint64_t delta_file_number = delta_file_meta->GetDeltaFileNumber();
+
+      if (delta_file_meta->GetGarbageDeltaCount() >=
+          delta_file_meta->GetTotalDeltaCount()) {
+        std::ostringstream oss;
+        oss << "Delta file #" << delta_file_number
+            << " consists entirely of garbage";
+
+        return Status::Corruption("VersionBuilder", oss.str());
+      }
+
+      if (delta_file_meta->GetLinkedSsts() !=
+          expected_linked_ssts[delta_file_number]) {
+        std::ostringstream oss;
+        oss << "Links are inconsistent between table files and delta file #"
+            << delta_file_number;
 
         return Status::Corruption("VersionBuilder", oss.str());
       }
@@ -644,6 +845,102 @@ class VersionBuilder::Rep {
     return Status::OK();
   }
 
+  bool IsDeltaFileInVersion(uint64_t delta_file_number) const {
+    auto mutable_it = mutable_delta_file_metas_.find(delta_file_number);
+    if (mutable_it != mutable_delta_file_metas_.end()) {
+      return true;
+    }
+
+    assert(base_vstorage_);
+    const auto meta = base_vstorage_->GetDeltaFileMetaData(delta_file_number);
+
+    return !!meta;
+  }
+
+  MutableDeltaFileMetaData* GetOrCreateMutableDeltaFileMetaData(
+      uint64_t delta_file_number) {
+    auto mutable_it = mutable_delta_file_metas_.find(delta_file_number);
+    if (mutable_it != mutable_delta_file_metas_.end()) {
+      return &mutable_it->second;
+    }
+
+    assert(base_vstorage_);
+    const auto meta = base_vstorage_->GetDeltaFileMetaData(delta_file_number);
+
+    if (meta) {
+      mutable_it =
+          mutable_delta_file_metas_
+              .emplace(delta_file_number, MutableDeltaFileMetaData(meta))
+              .first;
+      return &mutable_it->second;
+    }
+
+    return nullptr;
+  }
+
+  Status ApplyDeltaFileAddition(const DeltaFileAddition& delta_file_addition) {
+    const uint64_t delta_file_number = delta_file_addition.GetDeltaFileNumber();
+
+    if (IsDeltaFileInVersion(delta_file_number)) {
+      std::ostringstream oss;
+      oss << "Delta file #" << delta_file_number << " already added";
+
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    // Note: we use C++11 for now but in C++14, this could be done in a more
+    // elegant way using generalized lambda capture.
+    VersionSet* const vs = version_set_;
+    const ImmutableCFOptions* const ioptions = ioptions_;
+
+    auto deleter = [vs, ioptions](SharedDeltaFileMetaData* shared_meta) {
+      if (vs) {
+        assert(ioptions);
+        assert(!ioptions->cf_paths.empty());
+        assert(shared_meta);
+
+        vs->AddObsoleteDeltaFile(shared_meta->GetDeltaFileNumber(),
+                                 ioptions->cf_paths.front().path);
+      }
+
+      delete shared_meta;
+    };
+
+    auto shared_meta = SharedDeltaFileMetaData::Create(
+        delta_file_number, delta_file_addition.GetTotalDeltaCount(),
+        delta_file_addition.GetTotalDeltaBytes(),
+        delta_file_addition.GetChecksumMethod(),
+        delta_file_addition.GetChecksumValue(), deleter);
+
+    mutable_delta_file_metas_.emplace(
+        delta_file_number, MutableDeltaFileMetaData(std::move(shared_meta)));
+
+    return Status::OK();
+  }
+
+  Status ApplyDeltaFileGarbage(const DeltaFileGarbage& delta_file_garbage) {
+    const uint64_t delta_file_number = delta_file_garbage.GetDeltaFileNumber();
+
+    MutableDeltaFileMetaData* const mutable_meta =
+        GetOrCreateMutableDeltaFileMetaData(delta_file_number);
+
+    if (!mutable_meta) {
+      std::ostringstream oss;
+      oss << "Delta file #" << delta_file_number << " not found";
+
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    if (!mutable_meta->AddGarbage(delta_file_garbage.GetGarbageDeltaCount(),
+                                  delta_file_garbage.GetGarbageDeltaBytes())) {
+      std::ostringstream oss;
+      oss << "Garbage overflow for delta file #" << delta_file_number;
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    return Status::OK();
+  }
+
   int GetCurrentLevelForTableFile(uint64_t file_number) const {
     auto it = table_file_levels_.find(file_number);
     if (it != table_file_levels_.end()) {
@@ -674,6 +971,28 @@ class VersionBuilder::Rep {
     assert(meta);
 
     return meta->oldest_blob_file_number;
+  }
+
+  uint64_t GetOldestDeltaFileNumberForTableFile(int level,
+                                                uint64_t file_number) const {
+    assert(level < num_levels_);
+
+    const auto& added_files = levels_[level].added_files;
+
+    auto it = added_files.find(file_number);
+    if (it != added_files.end()) {
+      const FileMetaData* const meta = it->second;
+      assert(meta);
+
+      return meta->oldest_delta_file_number;
+    }
+
+    assert(base_vstorage_);
+    const FileMetaData* const meta =
+        base_vstorage_->GetFileMetaDataByNumber(file_number);
+    assert(meta);
+
+    return meta->oldest_delta_file_number;
   }
 
   Status ApplyFileDeletion(int level, uint64_t file_number) {
@@ -715,6 +1034,17 @@ class VersionBuilder::Rep {
     if (blob_file_number != kInvalidBlobFileNumber) {
       MutableBlobFileMetaData* const mutable_meta =
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
+      if (mutable_meta) {
+        mutable_meta->UnlinkSst(file_number);
+      }
+    }
+
+    const uint64_t delta_file_number =
+        GetOldestDeltaFileNumberForTableFile(level, file_number);
+
+    if (delta_file_number != kInvalidDeltaFileNumber) {
+      MutableDeltaFileMetaData* const mutable_meta =
+          GetOrCreateMutableDeltaFileMetaData(delta_file_number);
       if (mutable_meta) {
         mutable_meta->UnlinkSst(file_number);
       }
@@ -806,6 +1136,16 @@ class VersionBuilder::Rep {
       }
     }
 
+    const uint64_t delta_file_number = f->oldest_delta_file_number;
+
+    if (delta_file_number != kInvalidDeltaFileNumber) {
+      MutableDeltaFileMetaData* const mutable_meta =
+          GetOrCreateMutableDeltaFileMetaData(delta_file_number);
+      if (mutable_meta) {
+        mutable_meta->LinkSst(file_number);
+      }
+    }
+
     table_file_levels_[file_number] = level;
 
     return Status::OK();
@@ -851,6 +1191,26 @@ class VersionBuilder::Rep {
     // Increase the amount of garbage for blob files affected by GC
     for (const auto& blob_file_garbage : edit->GetBlobFileGarbages()) {
       const Status s = ApplyBlobFileGarbage(blob_file_garbage);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+
+    // Note: we process the delta file related changes first because the
+    // table file addition/deletion logic depends on the delta files
+    // already being there.
+
+    // Add new delta files
+    for (const auto& delta_file_addition : edit->GetDeltaFileAdditions()) {
+      const Status s = ApplyDeltaFileAddition(delta_file_addition);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+
+    // Increase the amount of garbage for delta files affected by GC
+    for (const auto& delta_file_garbage : edit->GetDeltaFileGarbages()) {
+      const Status s = ApplyDeltaFileGarbage(delta_file_garbage);
       if (!s.ok()) {
         return s;
       }
@@ -1100,6 +1460,216 @@ class VersionBuilder::Rep {
                        process_mutable, process_both);
   }
 
+  // Helper function template for merging the delta file metadata from the base
+  // version with the mutable metadata representing the state after applying the
+  // edits. The function objects process_base and process_mutable are
+  // respectively called to handle a base version object when there is no
+  // matching mutable object, and a mutable object when there is no matching
+  // base version object. process_both is called to perform the merge when a
+  // given delta file appears both in the base version and the mutable list. The
+  // helper stops processing objects if a function object returns false. Delta
+  // files with a file number below first_delta_file are not processed.
+  template <typename ProcessBase, typename ProcessMutable, typename ProcessBoth>
+  void MergeDeltaFileMetas(uint64_t first_delta_file, ProcessBase process_base,
+                           ProcessMutable process_mutable,
+                           ProcessBoth process_both) const {
+    assert(base_vstorage_);
+
+    auto base_it = base_vstorage_->GetDeltaFileMetaDataLB(first_delta_file);
+    const auto base_it_end = base_vstorage_->GetDeltaFiles().end();
+
+    auto mutable_it = mutable_delta_file_metas_.lower_bound(first_delta_file);
+    const auto mutable_it_end = mutable_delta_file_metas_.end();
+
+    while (base_it != base_it_end && mutable_it != mutable_it_end) {
+      const auto& base_meta = *base_it;
+      assert(base_meta);
+
+      const uint64_t base_delta_file_number = base_meta->GetDeltaFileNumber();
+      const uint64_t mutable_delta_file_number = mutable_it->first;
+
+      if (base_delta_file_number < mutable_delta_file_number) {
+        if (!process_base(base_meta)) {
+          return;
+        }
+
+        ++base_it;
+      } else if (mutable_delta_file_number < base_delta_file_number) {
+        const auto& mutable_meta = mutable_it->second;
+
+        if (!process_mutable(mutable_meta)) {
+          return;
+        }
+
+        ++mutable_it;
+      } else {
+        assert(base_delta_file_number == mutable_delta_file_number);
+
+        const auto& mutable_meta = mutable_it->second;
+
+        if (!process_both(base_meta, mutable_meta)) {
+          return;
+        }
+
+        ++base_it;
+        ++mutable_it;
+      }
+    }
+
+    while (base_it != base_it_end) {
+      const auto& base_meta = *base_it;
+
+      if (!process_base(base_meta)) {
+        return;
+      }
+
+      ++base_it;
+    }
+
+    while (mutable_it != mutable_it_end) {
+      const auto& mutable_meta = mutable_it->second;
+
+      if (!process_mutable(mutable_meta)) {
+        return;
+      }
+
+      ++mutable_it;
+    }
+  }
+
+  // Helper function template for finding the first delta file that has linked
+  // SSTs.
+  template <typename Meta>
+  static bool CheckLinkedSsts(const Meta& meta,
+                              uint64_t* min_oldest_delta_file_num) {
+    assert(min_oldest_delta_file_num);
+
+    if (!meta.GetLinkedSsts().empty()) {
+      assert(*min_oldest_delta_file_num == kInvalidDeltaFileNumber);
+
+      *min_oldest_delta_file_num = meta.GetDeltaFileNumber();
+
+      return false;
+    }
+
+    return true;
+  }
+
+  // Find the oldest delta file that has linked SSTs.
+  uint64_t GetMinOldestDeltaFileNumber() const {
+    uint64_t min_oldest_delta_file_num = kInvalidDeltaFileNumber;
+
+    auto process_base =
+        [&min_oldest_delta_file_num](
+            const std::shared_ptr<DeltaFileMetaData>& base_meta) {
+          assert(base_meta);
+
+          return CheckLinkedSsts(*base_meta, &min_oldest_delta_file_num);
+        };
+
+    auto process_mutable = [&min_oldest_delta_file_num](
+                               const MutableDeltaFileMetaData& mutable_meta) {
+      return CheckLinkedSsts(mutable_meta, &min_oldest_delta_file_num);
+    };
+
+    auto process_both = [&min_oldest_delta_file_num](
+                            const std::shared_ptr<DeltaFileMetaData>& base_meta,
+                            const MutableDeltaFileMetaData& mutable_meta) {
+#ifndef NDEBUG
+      assert(base_meta);
+      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
+#else
+      (void)base_meta;
+#endif
+
+      // Look at mutable_meta since it supersedes *base_meta
+      return CheckLinkedSsts(mutable_meta, &min_oldest_delta_file_num);
+    };
+
+    MergeDeltaFileMetas(kInvalidDeltaFileNumber, process_base, process_mutable,
+                        process_both);
+
+    return min_oldest_delta_file_num;
+  }
+
+  static std::shared_ptr<DeltaFileMetaData> CreateDeltaFileMetaData(
+      const MutableDeltaFileMetaData& mutable_meta) {
+    return DeltaFileMetaData::Create(mutable_meta.GetSharedMeta(),
+                                     mutable_meta.GetLinkedSsts(),
+                                     mutable_meta.GetGarbageDeltaCount(),
+                                     mutable_meta.GetGarbageDeltaBytes());
+  }
+
+  // Add the delta file specified by meta to *vstorage if it is determined to
+  // contain valid data (deltas).
+  template <typename Meta>
+  static void AddDeltaFileIfNeeded(VersionStorageInfo* vstorage, Meta&& meta) {
+    assert(vstorage);
+    assert(meta);
+
+    if (meta->GetLinkedSsts().empty() &&
+        meta->GetGarbageDeltaCount() >= meta->GetTotalDeltaCount()) {
+      return;
+    }
+
+    vstorage->AddDeltaFile(std::forward<Meta>(meta));
+  }
+
+  // Merge the delta file metadata from the base version with the changes
+  // (edits) applied, and save the result into *vstorage.
+  void SaveDeltaFilesTo(VersionStorageInfo* vstorage) const {
+    assert(vstorage);
+
+    assert(base_vstorage_);
+    vstorage->ReserveDelta(base_vstorage_->GetDeltaFiles().size() +
+                           mutable_delta_file_metas_.size());
+
+    const uint64_t oldest_delta_file_with_linked_ssts =
+        GetMinOldestDeltaFileNumber();
+
+    auto process_base =
+        [vstorage](const std::shared_ptr<DeltaFileMetaData>& base_meta) {
+          assert(base_meta);
+
+          AddDeltaFileIfNeeded(vstorage, base_meta);
+
+          return true;
+        };
+
+    auto process_mutable =
+        [vstorage](const MutableDeltaFileMetaData& mutable_meta) {
+          AddDeltaFileIfNeeded(vstorage, CreateDeltaFileMetaData(mutable_meta));
+
+          return true;
+        };
+
+    auto process_both = [vstorage](
+                            const std::shared_ptr<DeltaFileMetaData>& base_meta,
+                            const MutableDeltaFileMetaData& mutable_meta) {
+      assert(base_meta);
+      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
+
+      if (!mutable_meta.HasDelta()) {
+        assert(base_meta->GetGarbageDeltaCount() ==
+               mutable_meta.GetGarbageDeltaCount());
+        assert(base_meta->GetGarbageDeltaBytes() ==
+               mutable_meta.GetGarbageDeltaBytes());
+        assert(base_meta->GetLinkedSsts() == mutable_meta.GetLinkedSsts());
+
+        AddDeltaFileIfNeeded(vstorage, base_meta);
+
+        return true;
+      }
+
+      AddDeltaFileIfNeeded(vstorage, CreateDeltaFileMetaData(mutable_meta));
+
+      return true;
+    };
+
+    MergeDeltaFileMetas(oldest_delta_file_with_linked_ssts, process_base,
+                        process_mutable, process_both);
+  }
+
   void MaybeAddFile(VersionStorageInfo* vstorage, int level,
                     FileMetaData* f) const {
     const uint64_t file_number = f->fd.GetNumber();
@@ -1197,6 +1767,8 @@ class VersionBuilder::Rep {
     SaveSSTFilesTo(vstorage);
 
     SaveBlobFilesTo(vstorage);
+
+    SaveDeltaFilesTo(vstorage);
 
     SaveCompactCursorsTo(vstorage);
 
@@ -1342,6 +1914,10 @@ Status VersionBuilder::LoadTableHandlers(
 
 uint64_t VersionBuilder::GetMinOldestBlobFileNumber() const {
   return rep_->GetMinOldestBlobFileNumber();
+}
+
+uint64_t VersionBuilder::GetMinOldestDeltaFileNumber() const {
+  return rep_->GetMinOldestDeltaFileNumber();
 }
 
 BaseReferencedVersionBuilder::BaseReferencedVersionBuilder(

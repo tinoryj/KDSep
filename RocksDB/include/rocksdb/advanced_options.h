@@ -240,15 +240,20 @@ enum class CacheTier : uint8_t {
   kNonVolatileBlockTier = 0x01,
 };
 
-enum UpdateStatus {    // Return status For inplace update callback
-  UPDATE_FAILED   = 0, // Nothing to update
-  UPDATED_INPLACE = 1, // Value updated inplace
-  UPDATED         = 2, // No inplace update. Merged value set
+enum UpdateStatus {     // Return status For inplace update callback
+  UPDATE_FAILED = 0,    // Nothing to update
+  UPDATED_INPLACE = 1,  // Value updated inplace
+  UPDATED = 2,          // No inplace update. Merged value set
 };
 
 enum class PrepopulateBlobCache : uint8_t {
   kDisable = 0x0,    // Disable prepopulate blob cache
   kFlushOnly = 0x1,  // Prepopulate blobs during flush only
+};
+
+enum class PrepopulateDeltaCache : uint8_t {
+  kDisable = 0x0,    // Disable prepopulate delta cache
+  kFlushOnly = 0x1,  // Prepopulate deltas during flush only
 };
 
 struct AdvancedColumnFamilyOptions {
@@ -1026,6 +1031,130 @@ struct AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through the SetOptions() API
   PrepopulateBlobCache prepopulate_blob_cache = PrepopulateBlobCache::kDisable;
+
+  // When set, large values (deltas) are written to separate delta files, and
+  // only pointers to them are stored in SST files. This can reduce write
+  // amplification for large-value use cases at the cost of introducing a level
+  // of indirection for reads. See also the options min_delta_size,
+  // delta_file_size, delta_compression_type, enable_delta_garbage_collection,
+  // delta_garbage_collection_age_cutoff,
+  // delta_garbage_collection_force_threshold, and
+  // delta_compaction_readahead_size below.
+  //
+  // Default: false
+  //
+  // Dynamically changeable through the SetOptions() API
+  bool enable_delta_files = false;
+
+  // The size of the smallest value to be stored separately in a delta file.
+  // Values which have an uncompressed size smaller than this threshold are
+  // stored alongside the keys in SST files in the usual fashion. A value of
+  // zero for this option means that all values are stored in delta files. Note
+  // that enable_delta_files has to be set in order for this option to have any
+  // effect.
+  //
+  // Default: 0
+  //
+  // Dynamically changeable through the SetOptions() API
+  uint64_t min_delta_size = 0;
+
+  // The size limit for delta files. When writing delta files, a new file is
+  // opened once this limit is reached. Note that enable_delta_files has to be
+  // set in order for this option to have any effect.
+  //
+  // Default: 256 MB
+  //
+  // Dynamically changeable through the SetOptions() API
+  uint64_t delta_file_size = 1ULL << 28;
+
+  // The compression algorithm to use for large values stored in delta files.
+  // Note that enable_delta_files has to be set in order for this option to have
+  // any effect.
+  //
+  // Default: no compression
+  //
+  // Dynamically changeable through the SetOptions() API
+  CompressionType delta_compression_type = kNoCompression;
+
+  // Enables garbage collection of deltas. delta GC is performed as part of
+  // compaction. Valid deltas residing in delta files older than a cutoff get
+  // relocated to new files as they are encountered during compaction, which
+  // makes it possible to clean up delta files once they contain nothing but
+  // obsolete/garbage deltas. See also delta_garbage_collection_age_cutoff and
+  // delta_garbage_collection_force_threshold below.
+  //
+  // Default: false
+  //
+  // Dynamically changeable through the SetOptions() API
+  bool enable_delta_garbage_collection = false;
+
+  // The cutoff in terms of delta file age for garbage collection. Deltas in
+  // the oldest N delta files will be relocated when encountered during
+  // compaction, where N = garbage_collection_cutoff * number_of_delta_files.
+  // Note that enable_delta_garbage_collection has to be set in order for this
+  // option to have any effect.
+  //
+  // Default: 0.25
+  //
+  // Dynamically changeable through the SetOptions() API
+  double delta_garbage_collection_age_cutoff = 0.25;
+
+  // If the ratio of garbage in the oldest delta files exceeds this threshold,
+  // targeted compactions are scheduled in order to force garbage collecting
+  // the delta files in question, assuming they are all eligible based on the
+  // value of delta_garbage_collection_age_cutoff above. This option is
+  // currently only supported with leveled compactions.
+  // Note that enable_delta_garbage_collection has to be set in order for this
+  // option to have any effect.
+  //
+  // Default: 1.0
+  //
+  // Dynamically changeable through the SetOptions() API
+  double delta_garbage_collection_force_threshold = 1.0;
+
+  // Compaction readahead for delta files.
+  //
+  // Default: 0
+  //
+  // Dynamically changeable through the SetOptions() API
+  uint64_t delta_compaction_readahead_size = 0;
+
+  // Enable delta files starting from a certain LSM tree level.
+  //
+  // For certain use cases that have a mix of short-lived and long-lived values,
+  // it might make sense to support extracting large values only during
+  // compactions whose output level is greater than or equal to a specified LSM
+  // tree level (e.g. compactions into L1/L2/... or above). This could reduce
+  // the space amplification caused by large values that are turned into garbage
+  // shortly after being written at the price of some write amplification
+  // incurred by long-lived values whose extraction to delta files is delayed.
+  //
+  // Default: 0
+  //
+  // Dynamically changeable through the SetOptions() API
+  int delta_file_starting_level = 0;
+
+  // This feature is WORK IN PROGRESS
+  // If non-NULL use the specified cache for deltas.
+  // If NULL, rocksdb will not use a delta cache.
+  //
+  // Default: nullptr (disabled)
+  std::shared_ptr<Cache> delta_cache = nullptr;
+
+  // If enabled, prepopulate warm/hot deltas which are already in memory into
+  // delta cache at the time of flush. On a flush, the delta that is in memory
+  // (in memtables) get flushed to the device. If using Direct IO, additional IO
+  // is incurred to read this delta back into memory again, which is avoided by
+  // enabling this option. This further helps if the workload exhibits high
+  // temporal locality, where most of the reads go to recently written data.
+  // This also helps in case of the remote file system since it involves network
+  // traffic and higher latencies.
+  //
+  // Default: disabled
+  //
+  // Dynamically changeable through the SetOptions() API
+  PrepopulateDeltaCache prepopulate_delta_cache =
+      PrepopulateDeltaCache::kDisable;
 
   // Enable memtable per key-value checksum protection.
   //

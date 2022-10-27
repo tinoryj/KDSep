@@ -5,6 +5,7 @@
 
 #include "db/blob/blob_index.h"
 #include "db/db_test_util.h"
+#include "db/delta/delta_index.h"
 #include "rocksdb/rocksdb_namespace.h"
 
 namespace ROCKSDB_NAMESPACE {

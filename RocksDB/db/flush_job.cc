@@ -48,7 +48,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-const char* GetFlushReasonString (FlushReason flush_reason) {
+const char* GetFlushReasonString(FlushReason flush_reason) {
   switch (flush_reason) {
     case FlushReason::kOthers:
       return "Other Reasons";
@@ -97,7 +97,8 @@ FlushJob::FlushJob(
     Env::Priority thread_pri, const std::shared_ptr<IOTracer>& io_tracer,
     const SeqnoToTimeMapping& seqno_time_mapping, const std::string& db_id,
     const std::string& db_session_id, std::string full_history_ts_low,
-    BlobFileCompletionCallback* blob_callback)
+    BlobFileCompletionCallback* blob_callback,
+    DeltaFileCompletionCallback* delta_callback)
     : dbname_(dbname),
       db_id_(db_id),
       db_session_id_(db_session_id),
@@ -130,23 +131,21 @@ FlushJob::FlushJob(
       clock_(db_options_.clock),
       full_history_ts_low_(std::move(full_history_ts_low)),
       blob_callback_(blob_callback),
+      delta_callback_(delta_callback),
       db_impl_seqno_time_mapping_(seqno_time_mapping) {
   // Update the thread status to indicate flush.
   ReportStartedFlush();
   TEST_SYNC_POINT("FlushJob::FlushJob()");
 }
 
-FlushJob::~FlushJob() {
-  ThreadStatusUtil::ResetThreadStatus();
-}
+FlushJob::~FlushJob() { ThreadStatusUtil::ResetThreadStatus(); }
 
 void FlushJob::ReportStartedFlush() {
   ThreadStatusUtil::SetColumnFamily(cfd_, cfd_->ioptions()->env,
                                     db_options_.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OP_FLUSH);
-  ThreadStatusUtil::SetThreadOperationProperty(
-      ThreadStatus::COMPACTION_JOB_ID,
-      job_context_->job_id);
+  ThreadStatusUtil::SetThreadOperationProperty(ThreadStatus::COMPACTION_JOB_ID,
+                                               job_context_->job_id);
   IOSTATS_RESET(bytes_written);
 }
 
@@ -156,8 +155,7 @@ void FlushJob::ReportFlushInputSize(const autovector<MemTable*>& mems) {
     input_size += mem->ApproximateMemoryUsage();
   }
   ThreadStatusUtil::IncreaseThreadOperationProperty(
-      ThreadStatus::FLUSH_BYTES_MEMTABLES,
-      input_size);
+      ThreadStatus::FLUSH_BYTES_MEMTABLES, input_size);
 }
 
 void FlushJob::RecordFlushIOStats() {
@@ -220,8 +218,7 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   double mempurge_threshold =
       mutable_cf_options_.experimental_mempurge_threshold;
 
-  AutoThreadOperationStageUpdater stage_run(
-      ThreadStatus::STAGE_FLUSH_RUN);
+  AutoThreadOperationStageUpdater stage_run(ThreadStatus::STAGE_FLUSH_RUN);
   if (mems_.empty()) {
     ROCKS_LOG_BUFFER(log_buffer_, "[%s] Nothing in memtable to flush",
                      cfd_->GetName().c_str());
@@ -334,6 +331,15 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
 
     assert(blob_files.back());
     stream << "blob_file_tail" << blob_files.back()->GetBlobFileNumber();
+  }
+
+  const auto& delta_files = vstorage->GetDeltaFiles();
+  if (!delta_files.empty()) {
+    assert(delta_files.front());
+    stream << "delta_file_head" << delta_files.front()->GetDeltaFileNumber();
+
+    assert(delta_files.back());
+    stream << "delta_file_tail" << delta_files.back()->GetDeltaFileNumber();
   }
 
   stream << "immutable_memtables" << cfd_->imm()->NumNotFlushed();
@@ -829,7 +835,7 @@ Status FlushJob::WriteLevel0Table() {
   }
 
   std::vector<BlobFileAddition> blob_file_additions;
-
+  std::vector<DeltaFileAddition> delta_file_additions;
   {
     auto write_hint = cfd_->CalculateSSTWriteHint(0);
     Env::IOPriority io_priority = GetRateLimiterPriorityForWrite();
@@ -905,8 +911,7 @@ Status FlushJob::WriteLevel0Table() {
       }
       const uint64_t current_time = static_cast<uint64_t>(_current_time);
 
-      uint64_t oldest_key_time =
-          mems_.front()->ApproximateOldestKeyTime();
+      uint64_t oldest_key_time = mems_.front()->ApproximateOldestKeyTime();
 
       // It's not clear whether oldest_key_time is always available. In case
       // it is not available, use current_time.
@@ -938,13 +943,14 @@ Status FlushJob::WriteLevel0Table() {
       s = BuildTable(
           dbname_, versions_, db_options_, tboptions, file_options_,
           cfd_->table_cache(), iter.get(), std::move(range_del_iters), &meta_,
-          &blob_file_additions, existing_snapshots_,
+          &blob_file_additions, &delta_file_additions, existing_snapshots_,
           earliest_write_conflict_snapshot_, job_snapshot_seq,
           snapshot_checker_, mutable_cf_options_.paranoid_file_checks,
           cfd_->internal_stats(), &io_s, io_tracer_,
-          BlobFileCreationReason::kFlush, seqno_to_time_mapping_, event_logger_,
-          job_context_->job_id, io_priority, &table_properties_, write_hint,
-          full_history_ts_low, blob_callback_, &num_input_entries,
+          BlobFileCreationReason::kFlush, DeltaFileCreationReason::kFlush,
+          seqno_to_time_mapping_, event_logger_, job_context_->job_id,
+          io_priority, &table_properties_, write_hint, full_history_ts_low,
+          blob_callback_, delta_callback_, &num_input_entries,
           &memtable_payload_bytes, &memtable_garbage_bytes);
       // TODO: Cleanup io_status in BuildTable and table builders
       assert(!s.ok() || io_s.ok());
@@ -1003,11 +1009,13 @@ Status FlushJob::WriteLevel0Table() {
                    meta_.fd.GetFileSize(), meta_.smallest, meta_.largest,
                    meta_.fd.smallest_seqno, meta_.fd.largest_seqno,
                    meta_.marked_for_compaction, meta_.temperature,
-                   meta_.oldest_blob_file_number, meta_.oldest_ancester_time,
+                   meta_.oldest_blob_file_number,
+                   meta_.oldest_delta_file_number, meta_.oldest_ancester_time,
                    meta_.file_creation_time, meta_.file_checksum,
                    meta_.file_checksum_func_name, meta_.unique_id);
 
     edit_->SetBlobFileAdditions(std::move(blob_file_additions));
+    edit_->SetDeltaFileAdditions(std::move(delta_file_additions));
   }
 #ifndef ROCKSDB_LITE
   // Piggyback FlushJobInfo on the first first flushed memtable.
@@ -1039,11 +1047,19 @@ Status FlushJob::WriteLevel0Table() {
 
   stats.num_output_files_blob = static_cast<int>(blobs.size());
 
+  const auto& deltas = edit_->GetDeltaFileAdditions();
+  for (const auto& delta : deltas) {
+    stats.bytes_written_delta += delta.GetTotalDeltaBytes();
+  }
+
+  stats.num_output_files_delta = static_cast<int>(deltas.size());
+
   RecordTimeToHistogram(stats_, FLUSH_TIME, stats.micros);
   cfd_->internal_stats()->AddCompactionStats(0 /* level */, thread_pri_, stats);
-  cfd_->internal_stats()->AddCFStats(
-      InternalStats::BYTES_FLUSHED,
-      stats.bytes_written + stats.bytes_written_blob);
+  cfd_->internal_stats()->AddCFStats(InternalStats::BYTES_FLUSHED,
+                                     stats.bytes_written +
+                                         stats.bytes_written_blob +
+                                         stats.bytes_written_delta);
   RecordFlushIOStats();
 
   return s;
@@ -1074,6 +1090,7 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
       MakeTableFileName(cfd_->ioptions()->cf_paths[0].path, file_number);
   info->file_number = file_number;
   info->oldest_blob_file_number = meta_.oldest_blob_file_number;
+  info->oldest_delta_file_number = meta_.oldest_delta_file_number;
   info->thread_id = db_options_.env->GetThreadID();
   info->job_id = job_context_->job_id;
   info->smallest_seqno = meta_.fd.smallest_seqno;
@@ -1081,7 +1098,7 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
   info->table_properties = table_properties_;
   info->flush_reason = cfd_->GetFlushReason();
   info->blob_compression_type = mutable_cf_options_.blob_compression_type;
-
+  info->delta_compression_type = mutable_cf_options_.delta_compression_type;
   // Update BlobFilesInfo.
   for (const auto& blob_file : edit_->GetBlobFileAdditions()) {
     BlobFileAdditionInfo blob_file_addition_info(
@@ -1091,6 +1108,16 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
         blob_file.GetTotalBlobBytes());
     info->blob_file_addition_infos.emplace_back(
         std::move(blob_file_addition_info));
+  }
+  // Update DeltaFilesInfo.
+  for (const auto& delta_file : edit_->GetDeltaFileAdditions()) {
+    DeltaFileAdditionInfo delta_file_addition_info(
+        DeltaFileName(cfd_->ioptions()->cf_paths.front().path,
+                      delta_file.GetDeltaFileNumber()) /*delta_file_path*/,
+        delta_file.GetDeltaFileNumber(), delta_file.GetTotalDeltaCount(),
+        delta_file.GetTotalDeltaBytes());
+    info->delta_file_addition_infos.emplace_back(
+        std::move(delta_file_addition_info));
   }
   return info;
 }

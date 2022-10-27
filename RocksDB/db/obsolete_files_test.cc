@@ -10,10 +10,12 @@
 #ifndef ROCKSDB_LITE
 
 #include <stdlib.h>
+
 #include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
+
 #include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "db/version_set.h"
@@ -28,7 +30,6 @@
 #include "test_util/testutil.h"
 #include "util/string_util.h"
 
-
 namespace ROCKSDB_NAMESPACE {
 
 class ObsoleteFilesTest : public DBTestBase {
@@ -40,7 +41,7 @@ class ObsoleteFilesTest : public DBTestBase {
   void AddKeys(int numkeys, int startkey) {
     WriteOptions options;
     options.sync = false;
-    for (int i = startkey; i < (numkeys + startkey) ; i++) {
+    for (int i = startkey; i < (numkeys + startkey); i++) {
       std::string temp = std::to_string(i);
       Slice key(temp);
       Slice value(temp);
@@ -117,7 +118,7 @@ TEST_F(ObsoleteFilesTest, RaceForObsoleteFileDeletion) {
        "ObsoleteFilesTest::RaceForObsoleteFileDeletion:1"},
       {"DBImpl::BackgroundCallCompaction:PurgedObsoleteFiles",
        "ObsoleteFilesTest::RaceForObsoleteFileDeletion:2"},
-      });
+  });
   SyncPoint::GetInstance()->SetCallBack(
       "DBImpl::DeleteObsoleteFileImpl:AfterDeletion", [&](void* arg) {
         Status* p_status = reinterpret_cast<Status*>(arg);
@@ -302,6 +303,126 @@ TEST_F(ObsoleteFilesTest, BlobFiles) {
   const std::vector<std::string> expected_deleted_files{
       BlobFileName(path, old_blob_file_number),
       BlobFileName(path, first_blob_file_number)};
+
+  ASSERT_EQ(deleted_files, expected_deleted_files);
+}
+
+TEST_F(ObsoleteFilesTest, DeltaFiles) {
+  ReopenDB();
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+  assert(versions->GetColumnFamilySet());
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  const ImmutableCFOptions* const ioptions = cfd->ioptions();
+  assert(ioptions);
+  assert(!ioptions->cf_paths.empty());
+
+  const std::string& path = ioptions->cf_paths.front().path;
+
+  // Add an obsolete delta file.
+  constexpr uint64_t first_delta_file_number = 234;
+  versions->AddObsoleteDeltaFile(first_delta_file_number, path);
+
+  // Add a live delta file.
+  Version* const version = cfd->current();
+  assert(version);
+
+  VersionStorageInfo* const storage_info = version->storage_info();
+  assert(storage_info);
+
+  constexpr uint64_t second_delta_file_number = 456;
+  constexpr uint64_t second_total_delta_count = 100;
+  constexpr uint64_t second_total_delta_bytes = 2000000;
+  constexpr char second_checksum_method[] = "CRC32B";
+  constexpr char second_checksum_value[] = "\x6d\xbd\xf2\x3a";
+
+  auto shared_meta = SharedDeltaFileMetaData::Create(
+      second_delta_file_number, second_total_delta_count,
+      second_total_delta_bytes, second_checksum_method, second_checksum_value);
+
+  constexpr uint64_t second_garbage_delta_count = 0;
+  constexpr uint64_t second_garbage_delta_bytes = 0;
+
+  auto meta = DeltaFileMetaData::Create(
+      std::move(shared_meta), DeltaFileMetaData::LinkedSsts(),
+      second_garbage_delta_count, second_garbage_delta_bytes);
+
+  storage_info->AddDeltaFile(std::move(meta));
+
+  // Check for obsolete files and make sure the first delta file is picked up
+  // and grabbed for purge. The second delta file should be on the live list.
+  constexpr int job_id = 0;
+  JobContext job_context{job_id};
+
+  dbfull()->TEST_LockMutex();
+  constexpr bool force_full_scan = false;
+  dbfull()->FindObsoleteFiles(&job_context, force_full_scan);
+  dbfull()->TEST_UnlockMutex();
+
+  ASSERT_TRUE(job_context.HaveSomethingToDelete());
+  ASSERT_EQ(job_context.delta_delete_files.size(), 1);
+  ASSERT_EQ(job_context.delta_delete_files[0].GetDeltaFileNumber(),
+            first_delta_file_number);
+
+  const auto& files_grabbed_for_purge =
+      dbfull()->TEST_GetFilesGrabbedForPurge();
+  ASSERT_NE(files_grabbed_for_purge.find(first_delta_file_number),
+            files_grabbed_for_purge.end());
+
+  ASSERT_EQ(job_context.delta_live.size(), 1);
+  ASSERT_EQ(job_context.delta_live[0], second_delta_file_number);
+
+  // Hack the job context a bit by adding a few files to the full scan
+  // list and adjusting the pending file number. We add the two files
+  // above as well as two additional ones, where one is old
+  // and should be cleaned up, and the other is still pending.
+  constexpr uint64_t old_delta_file_number = 123;
+  constexpr uint64_t pending_delta_file_number = 567;
+
+  job_context.full_scan_candidate_files.emplace_back(
+      DeltaFileName(old_delta_file_number), path);
+  job_context.full_scan_candidate_files.emplace_back(
+      DeltaFileName(first_delta_file_number), path);
+  job_context.full_scan_candidate_files.emplace_back(
+      DeltaFileName(second_delta_file_number), path);
+  job_context.full_scan_candidate_files.emplace_back(
+      DeltaFileName(pending_delta_file_number), path);
+
+  job_context.min_pending_output = pending_delta_file_number;
+
+  // Purge obsolete files and make sure we purge the old file and the first file
+  // (and keep the second file and the pending file).
+  std::vector<std::string> deleted_files;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DBImpl::DeleteObsoleteFileImpl::BeforeDeletion", [&](void* arg) {
+        const std::string* file = static_cast<std::string*>(arg);
+        assert(file);
+
+        constexpr char delta_extension[] = ".delta";
+
+        if (file->find(delta_extension) != std::string::npos) {
+          deleted_files.emplace_back(*file);
+        }
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  dbfull()->PurgeObsoleteFiles(job_context);
+  job_context.Clean();
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  ASSERT_EQ(files_grabbed_for_purge.find(first_delta_file_number),
+            files_grabbed_for_purge.end());
+
+  std::sort(deleted_files.begin(), deleted_files.end());
+  const std::vector<std::string> expected_deleted_files{
+      DeltaFileName(path, old_delta_file_number),
+      DeltaFileName(path, first_delta_file_number)};
 
   ASSERT_EQ(deleted_files, expected_deleted_files);
 }

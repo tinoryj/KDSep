@@ -11,6 +11,7 @@
 
 #include "db/blob/blob_index.h"
 #include "db/db_test_util.h"
+#include "db/delta/delta_index.h"
 #include "env/mock_env.h"
 #include "port/port.h"
 #include "port/stack_trace.h"
@@ -248,9 +249,8 @@ Options DeletionTriggerOptions(Options options) {
   return options;
 }
 
-bool HaveOverlappingKeyRanges(
-    const Comparator* c,
-    const SstFileMetaData& a, const SstFileMetaData& b) {
+bool HaveOverlappingKeyRanges(const Comparator* c, const SstFileMetaData& a,
+                              const SstFileMetaData& b) {
   if (c->CompareWithoutTimestamp(a.smallestkey, b.smallestkey) >= 0) {
     if (c->CompareWithoutTimestamp(a.smallestkey, b.largestkey) <= 0) {
       // b.smallestkey <= a.smallestkey <= b.largestkey
@@ -275,18 +275,15 @@ bool HaveOverlappingKeyRanges(
 // Identifies all files between level "min_level" and "max_level"
 // which has overlapping key range with "input_file_meta".
 void GetOverlappingFileNumbersForLevelCompaction(
-    const ColumnFamilyMetaData& cf_meta,
-    const Comparator* comparator,
-    int min_level, int max_level,
-    const SstFileMetaData* input_file_meta,
+    const ColumnFamilyMetaData& cf_meta, const Comparator* comparator,
+    int min_level, int max_level, const SstFileMetaData* input_file_meta,
     std::set<std::string>* overlapping_file_names) {
   std::set<const SstFileMetaData*> overlapping_files;
   overlapping_files.insert(input_file_meta);
   for (int m = min_level; m <= max_level; ++m) {
     for (auto& file : cf_meta.levels[m].files) {
       for (auto* included_file : overlapping_files) {
-        if (HaveOverlappingKeyRanges(
-                comparator, *included_file, file)) {
+        if (HaveOverlappingKeyRanges(comparator, *included_file, file)) {
           overlapping_files.insert(&file);
           overlapping_file_names->insert(file.name);
           break;
@@ -309,12 +306,9 @@ void VerifyCompactionResult(
 #endif
 }
 
-const SstFileMetaData* PickFileRandomly(
-    const ColumnFamilyMetaData& cf_meta,
-    Random* rand,
-    int* level = nullptr) {
-  auto file_id = rand->Uniform(static_cast<int>(
-      cf_meta.file_count)) + 1;
+const SstFileMetaData* PickFileRandomly(const ColumnFamilyMetaData& cf_meta,
+                                        Random* rand, int* level = nullptr) {
+  auto file_id = rand->Uniform(static_cast<int>(cf_meta.file_count)) + 1;
   for (auto& level_meta : cf_meta.levels) {
     if (file_id <= level_meta.files.size()) {
       if (level != nullptr) {
@@ -740,7 +734,6 @@ TEST_F(DBCompactionTest, DisableStatsUpdateReopen) {
   }
 }
 
-
 TEST_P(DBCompactionTestWithParam, CompactionTrigger) {
   const int kNumKeysPerFile = 100;
 
@@ -883,7 +876,7 @@ TEST_F(DBCompactionTest, BGCompactionsAllowed) {
 
 TEST_P(DBCompactionTestWithParam, CompactionsGenerateMultipleFiles) {
   Options options = CurrentOptions();
-  options.write_buffer_size = 100000000;        // Large write buffer
+  options.write_buffer_size = 100000000;  // Large write buffer
   options.max_subcompactions = max_subcompactions_;
   CreateAndReopenWithCF({"pikachu"}, options);
 
@@ -1069,7 +1062,7 @@ TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {
   compact_opt.compression = kNoCompression;
   compact_opt.output_file_size_limit = 4096;
   const size_t key_len =
-    static_cast<size_t>(compact_opt.output_file_size_limit) / 5;
+      static_cast<size_t>(compact_opt.output_file_size_limit) / 5;
 
   DestroyAndReopen(options);
 
@@ -1247,14 +1240,8 @@ TEST_P(DBCompactionTestWithParam, TrivialMoveNonOverlappingFiles) {
   DestroyAndReopen(options);
   // non overlapping ranges
   std::vector<std::pair<int32_t, int32_t>> ranges = {
-    {100, 199},
-    {300, 399},
-    {0, 99},
-    {200, 299},
-    {600, 699},
-    {400, 499},
-    {500, 550},
-    {551, 599},
+      {100, 199}, {300, 399}, {0, 99},    {200, 299},
+      {600, 699}, {400, 499}, {500, 550}, {551, 599},
   };
   int32_t value_size = 10 * 1024;  // 10 KB
 
@@ -1297,14 +1284,15 @@ TEST_P(DBCompactionTestWithParam, TrivialMoveNonOverlappingFiles) {
   DestroyAndReopen(options);
   // Same ranges as above but overlapping
   ranges = {
-    {100, 199},
-    {300, 399},
-    {0, 99},
-    {200, 299},
-    {600, 699},
-    {400, 499},
-    {500, 560},  // this range overlap with the next one
-    {551, 599},
+      {100, 199},
+      {300, 399},
+      {0, 99},
+      {200, 299},
+      {600, 699},
+      {400, 499},
+      {500, 560},  // this range overlap with the next
+                   // one
+      {551, 599},
   };
   for (size_t i = 0; i < ranges.size(); i++) {
     for (int32_t j = ranges[i].first; j <= ranges[i].second; j++) {
@@ -1907,7 +1895,7 @@ TEST_F(DBCompactionTest, DeleteFilesInRanges) {
   ASSERT_EQ("0,0,10", FilesPerLevel(0));
 
   // file [0 => 100), [200 => 300), ... [800, 900)
-  for (auto i = 0; i < 10; i+=2) {
+  for (auto i = 0; i < 10; i += 2) {
     for (auto j = 0; j < 100; j++) {
       auto k = i * 100 + j;
       ASSERT_OK(Put(Key(k), values[k]));
@@ -2349,14 +2337,14 @@ TEST_P(DBCompactionTestWithParam, LevelCompactionCFPathUse) {
   cf_opt1.cf_paths.emplace_back(dbname_ + "cf1_2", 4 * 1024 * 1024);
   cf_opt1.cf_paths.emplace_back(dbname_ + "cf1_3", 1024 * 1024 * 1024);
   option_vector.emplace_back(DBOptions(options), cf_opt1);
-  CreateColumnFamilies({"one"},option_vector[1]);
+  CreateColumnFamilies({"one"}, option_vector[1]);
 
   // Configure CF2 specific paths.
   cf_opt2.cf_paths.emplace_back(dbname_ + "cf2", 500 * 1024);
   cf_opt2.cf_paths.emplace_back(dbname_ + "cf2_2", 4 * 1024 * 1024);
   cf_opt2.cf_paths.emplace_back(dbname_ + "cf2_3", 1024 * 1024 * 1024);
   option_vector.emplace_back(DBOptions(options), cf_opt2);
-  CreateColumnFamilies({"two"},option_vector[2]);
+  CreateColumnFamilies({"two"}, option_vector[2]);
 
   ReopenWithColumnFamilies({"default", "one", "two"}, option_vector);
 
@@ -2729,7 +2717,6 @@ TEST_P(DBCompactionTestWithParam, ManualCompaction) {
   }
 }
 
-
 TEST_P(DBCompactionTestWithParam, ManualLevelCompactionOutputPathId) {
   Options options = CurrentOptions();
   options.db_paths.emplace_back(dbname_ + "_2", 2 * 10485760);
@@ -2866,14 +2853,13 @@ TEST_P(DBCompactionTestWithParam, DISABLED_CompactFilesOnLevelCompaction) {
       auto file_meta = PickFileRandomly(cf_meta, &rnd, &level);
       compaction_input_file_names.push_back(file_meta->name);
       GetOverlappingFileNumbersForLevelCompaction(
-          cf_meta, options.comparator, level, output_level,
-          file_meta, &overlapping_file_names);
+          cf_meta, options.comparator, level, output_level, file_meta,
+          &overlapping_file_names);
     }
 
-    ASSERT_OK(dbfull()->CompactFiles(
-        CompactionOptions(), handles_[1],
-        compaction_input_file_names,
-        output_level));
+    ASSERT_OK(dbfull()->CompactFiles(CompactionOptions(), handles_[1],
+                                     compaction_input_file_names,
+                                     output_level));
 
     // Make sure all overlapping files do not exist after compaction
     dbfull()->GetColumnFamilyMetaData(handles_[1], &cf_meta);
@@ -2896,8 +2882,7 @@ TEST_P(DBCompactionTestWithParam, PartialCompactionFailure) {
   options.write_buffer_size = kKeysPerBuffer * kKvSize;
   options.max_write_buffer_number = 2;
   options.target_file_size_base =
-      options.write_buffer_size *
-      (options.max_write_buffer_number - 1);
+      options.write_buffer_size * (options.max_write_buffer_number - 1);
   options.level0_file_num_compaction_trigger = kNumL1Files;
   options.max_bytes_for_level_base =
       options.level0_file_num_compaction_trigger *
@@ -2917,10 +2902,9 @@ TEST_P(DBCompactionTestWithParam, PartialCompactionFailure) {
 
   DestroyAndReopen(options);
 
-  const int kNumInsertedKeys =
-      options.level0_file_num_compaction_trigger *
-      (options.max_write_buffer_number - 1) *
-      kKeysPerBuffer;
+  const int kNumInsertedKeys = options.level0_file_num_compaction_trigger *
+                               (options.max_write_buffer_number - 1) *
+                               kKeysPerBuffer;
 
   Random rnd(301);
   std::vector<std::string> keys;
@@ -3618,9 +3602,8 @@ TEST_F(DBCompactionTest, CompactFilesPendingL0Bug) {
   ASSERT_EQ(kNumL0Files, cf_meta.levels[0].files.size());
   std::vector<std::string> input_filenames;
   input_filenames.push_back(cf_meta.levels[0].files.front().name);
-  ASSERT_OK(dbfull()
-                  ->CompactFiles(CompactionOptions(), input_filenames,
-                                 0 /* output_level */));
+  ASSERT_OK(dbfull()->CompactFiles(CompactionOptions(), input_filenames,
+                                   0 /* output_level */));
   TEST_SYNC_POINT("DBCompactionTest::CompactFilesPendingL0Bug:ManualCompacted");
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
@@ -4267,9 +4250,9 @@ TEST_F(DBCompactionTest, LevelPeriodicAndTtlCompaction) {
   const int kValueSize = 100;
 
   Options options = CurrentOptions();
-  options.ttl = 10 * 60 * 60;  // 10 hours
+  options.ttl = 10 * 60 * 60;                          // 10 hours
   options.periodic_compaction_seconds = 48 * 60 * 60;  // 2 days
-  options.max_open_files = -1;   // needed for both periodic and ttl compactions
+  options.max_open_files = -1;  // needed for both periodic and ttl compactions
   env_->SetMockSleep();
   options.env = env_;
 
@@ -4691,7 +4674,7 @@ TEST_F(DBCompactionTest, CompactRangeSkipFlushAfterDelay) {
        {"DBImpl::FlushMemTable:StallWaitDone", "CompactionJob::Run():End"}});
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
-  //used for the delayable flushes
+  // used for the delayable flushes
   FlushOptions flush_opts;
   flush_opts.allow_write_stall = true;
   for (int i = 0; i < kNumL0FilesLimit - 1; ++i) {
@@ -4710,7 +4693,8 @@ TEST_F(DBCompactionTest, CompactRangeSkipFlushAfterDelay) {
   ASSERT_OK(Put(std::to_string(0), rnd.RandomString(1024)));
   ASSERT_OK(dbfull()->Flush(flush_opts));
   ASSERT_OK(Put(std::to_string(0), rnd.RandomString(1024)));
-  TEST_SYNC_POINT("DBCompactionTest::CompactRangeSkipFlushAfterDelay:PostFlush");
+  TEST_SYNC_POINT(
+      "DBCompactionTest::CompactRangeSkipFlushAfterDelay:PostFlush");
   manual_compaction_thread.join();
 
   // If CompactRange's flush was skipped, the final Put above will still be
@@ -5003,10 +4987,10 @@ TEST_F(DBCompactionTest, CompactionLimiter) {
   }
 
   std::shared_ptr<ConcurrentTaskLimiter> unique_limiter(
-    NewConcurrentTaskLimiter("unique_limiter", -1));
+      NewConcurrentTaskLimiter("unique_limiter", -1));
 
-  const char* cf_names[] = {"default", "0", "1", "2", "3", "4", "5",
-    "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" };
+  const char* cf_names[] = {"default", "0", "1", "2", "3", "4", "5", "6", "7",
+                            "8",       "9", "a", "b", "c", "d", "e", "f"};
   const unsigned int cf_count = sizeof cf_names / sizeof cf_names[0];
 
   std::unordered_map<std::string, CompactionLimiter*> cf_to_limiter;
@@ -5018,10 +5002,10 @@ TEST_F(DBCompactionTest, CompactionLimiter) {
   options.level0_file_num_compaction_trigger = 4;
   options.level0_slowdown_writes_trigger = 64;
   options.level0_stop_writes_trigger = 64;
-  options.max_background_jobs = kMaxBackgroundThreads; // Enough threads
+  options.max_background_jobs = kMaxBackgroundThreads;  // Enough threads
   options.memtable_factory.reset(
       test::NewSpecialSkipListFactory(kNumKeysPerFile));
-  options.max_write_buffer_number = 10; // Enough memtables
+  options.max_write_buffer_number = 10;  // Enough memtables
   DestroyAndReopen(options);
 
   std::vector<Options> option_vector;
@@ -5049,9 +5033,8 @@ TEST_F(DBCompactionTest, CompactionLimiter) {
     CreateColumnFamilies({cf_names[cf]}, option_vector[cf]);
   }
 
-  ReopenWithColumnFamilies(std::vector<std::string>(cf_names,
-                                                    cf_names + cf_count),
-                           option_vector);
+  ReopenWithColumnFamilies(
+      std::vector<std::string>(cf_names, cf_names + cf_count), option_vector);
 
   port::Mutex mutex;
 
@@ -5113,7 +5096,7 @@ TEST_F(DBCompactionTest, CompactionLimiter) {
   // Enough L0 files to trigger compaction
   for (unsigned int cf = 0; cf < cf_count; cf++) {
     ASSERT_EQ(NumTableFilesAtLevel(0, cf),
-      options.level0_file_num_compaction_trigger);
+              options.level0_file_num_compaction_trigger);
   }
 
   // Create more files for one column family, which triggers speed up
@@ -5156,7 +5139,7 @@ TEST_F(DBCompactionTest, CompactionLimiter) {
 
   // flush one more file to cf 1
   for (int i = 0; i < kNumKeysPerFile; i++) {
-      ASSERT_OK(Put(cf_test, Key(keyIndex++), ""));
+    ASSERT_OK(Put(cf_test, Key(keyIndex++), ""));
   }
   // put extra key to trigger flush
   ASSERT_OK(Put(cf_test, "", ""));
@@ -5191,9 +5174,7 @@ TEST_P(DBCompactionDirectIOTest, DirectIO) {
       });
   if (options.use_direct_io_for_flush_and_compaction) {
     SyncPoint::GetInstance()->SetCallBack(
-        "SanitizeOptions:direct_io", [&](void* /*arg*/) {
-          readahead = true;
-        });
+        "SanitizeOptions:direct_io", [&](void* /*arg*/) { readahead = true; });
   }
   SyncPoint::GetInstance()->EnableProcessing();
   CreateAndReopenWithCF({"pikachu"}, options);
@@ -7113,6 +7094,523 @@ TEST_F(DBCompactionTest, CompactionWithBlobGCError_IndexWithInvalidFileNumber) {
       db_->CompactRange(CompactRangeOptions(), begin, end).IsCorruption());
 }
 
+TEST_F(DBCompactionTest, CompactionWithDelta) {
+  Options options;
+  options.env = env_;
+  options.disable_auto_compactions = true;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char second_key[] = "second_key";
+  constexpr char first_value[] = "first_value";
+  constexpr char second_value[] = "second_value";
+  constexpr char third_value[] = "third_value";
+
+  ASSERT_OK(Put(first_key, first_value));
+  ASSERT_OK(Put(second_key, first_value));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put(first_key, second_value));
+  ASSERT_OK(Put(second_key, second_value));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put(first_key, third_value));
+  ASSERT_OK(Put(second_key, third_value));
+  ASSERT_OK(Flush());
+
+  options.enable_delta_files = true;
+
+  Reopen(options);
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+
+  ASSERT_EQ(Get(first_key), third_value);
+  ASSERT_EQ(Get(second_key), third_value);
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  ASSERT_NE(cfd, nullptr);
+
+  Version* const current = cfd->current();
+  ASSERT_NE(current, nullptr);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  ASSERT_NE(storage_info, nullptr);
+
+  const auto& l1_files = storage_info->LevelFiles(1);
+  ASSERT_EQ(l1_files.size(), 1);
+
+  const FileMetaData* const table_file = l1_files[0];
+  ASSERT_NE(table_file, nullptr);
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_EQ(delta_files.size(), 1);
+
+  const auto& delta_file = delta_files.front();
+  ASSERT_NE(delta_file, nullptr);
+
+  ASSERT_EQ(table_file->smallest.user_key(), first_key);
+  ASSERT_EQ(table_file->largest.user_key(), second_key);
+  ASSERT_EQ(table_file->oldest_delta_file_number,
+            delta_file->GetDeltaFileNumber());
+
+  ASSERT_EQ(delta_file->GetTotalDeltaCount(), 2);
+
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  ASSERT_NE(internal_stats, nullptr);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_GE(compaction_stats.size(), 2);
+  ASSERT_EQ(compaction_stats[1].bytes_read_delta, 0);
+  ASSERT_EQ(compaction_stats[1].bytes_written, table_file->fd.GetFileSize());
+  ASSERT_EQ(compaction_stats[1].bytes_written_delta,
+            delta_file->GetTotalDeltaBytes());
+  ASSERT_EQ(compaction_stats[1].num_output_files, 1);
+  ASSERT_EQ(compaction_stats[1].num_output_files_delta, 1);
+}
+
+class DBCompactionTestDeltaError
+    : public DBCompactionTest,
+      public testing::WithParamInterface<std::string> {
+ public:
+  DBCompactionTestDeltaError() : sync_point_(GetParam()) {}
+
+  std::string sync_point_;
+};
+
+INSTANTIATE_TEST_CASE_P(
+    DBCompactionTestDeltaError, DBCompactionTestDeltaError,
+    ::testing::ValuesIn(std::vector<std::string>{
+        "DeltaFileBuilder::WriteDeltaToFile:AddRecord",
+        "DeltaFileBuilder::WriteDeltaToFile:AppendFooter"}));
+
+TEST_P(DBCompactionTestDeltaError, CompactionError) {
+  Options options;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char second_key[] = "second_key";
+  constexpr char first_value[] = "first_value";
+  constexpr char second_value[] = "second_value";
+  constexpr char third_value[] = "third_value";
+
+  ASSERT_OK(Put(first_key, first_value));
+  ASSERT_OK(Put(second_key, first_value));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put(first_key, second_value));
+  ASSERT_OK(Put(second_key, second_value));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put(first_key, third_value));
+  ASSERT_OK(Put(second_key, third_value));
+  ASSERT_OK(Flush());
+
+  options.enable_delta_files = true;
+
+  Reopen(options);
+
+  SyncPoint::GetInstance()->SetCallBack(sync_point_, [this](void* arg) {
+    Status* const s = static_cast<Status*>(arg);
+    assert(s);
+
+    (*s) = Status::IOError(sync_point_);
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_TRUE(db_->CompactRange(CompactRangeOptions(), begin, end).IsIOError());
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  ASSERT_NE(cfd, nullptr);
+
+  Version* const current = cfd->current();
+  ASSERT_NE(current, nullptr);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  ASSERT_NE(storage_info, nullptr);
+
+  const auto& l1_files = storage_info->LevelFiles(1);
+  ASSERT_TRUE(l1_files.empty());
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_TRUE(delta_files.empty());
+
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  ASSERT_NE(internal_stats, nullptr);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_GE(compaction_stats.size(), 2);
+
+  if (sync_point_ == "DeltaFileBuilder::WriteDeltaToFile:AddRecord") {
+    ASSERT_EQ(compaction_stats[1].bytes_read_delta, 0);
+    ASSERT_EQ(compaction_stats[1].bytes_written, 0);
+    ASSERT_EQ(compaction_stats[1].bytes_written_delta, 0);
+    ASSERT_EQ(compaction_stats[1].num_output_files, 0);
+    ASSERT_EQ(compaction_stats[1].num_output_files_delta, 0);
+  } else {
+    // SST file writing succeeded; delta file writing failed (during Finish)
+    ASSERT_EQ(compaction_stats[1].bytes_read_delta, 0);
+    ASSERT_GT(compaction_stats[1].bytes_written, 0);
+    ASSERT_EQ(compaction_stats[1].bytes_written_delta, 0);
+    ASSERT_EQ(compaction_stats[1].num_output_files, 1);
+    ASSERT_EQ(compaction_stats[1].num_output_files_delta, 0);
+  }
+}
+
+class DBCompactionTestDeltaGC
+    : public DBCompactionTest,
+      public testing::WithParamInterface<std::tuple<double, bool>> {
+ public:
+  DBCompactionTestDeltaGC()
+      : delta_gc_age_cutoff_(std::get<0>(GetParam())),
+        updated_enable_delta_files_(std::get<1>(GetParam())) {}
+
+  double delta_gc_age_cutoff_;
+  bool updated_enable_delta_files_;
+};
+
+INSTANTIATE_TEST_CASE_P(DBCompactionTestDeltaGC, DBCompactionTestDeltaGC,
+                        ::testing::Combine(::testing::Values(0.0, 0.5, 1.0),
+                                           ::testing::Bool()));
+
+TEST_P(DBCompactionTestDeltaGC, CompactionWithDeltaGCOverrides) {
+  Options options = CurrentOptions();
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.delta_file_size = 32;  // one delta per file
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0;
+
+  DestroyAndReopen(options);
+
+  for (int i = 0; i < 128; i += 2) {
+    ASSERT_OK(Put("key" + std::to_string(i), "value" + std::to_string(i)));
+    ASSERT_OK(
+        Put("key" + std::to_string(i + 1), "value" + std::to_string(i + 1)));
+    ASSERT_OK(Flush());
+  }
+
+  std::vector<uint64_t> original_delta_files = GetDeltaFileNumbers();
+  ASSERT_EQ(original_delta_files.size(), 128);
+
+  // Note: turning off enable_delta_files before the compaction results in
+  // garbage collected values getting inlined.
+  ASSERT_OK(db_->SetOptions({{"enable_delta_files", "false"}}));
+
+  CompactRangeOptions cro;
+  cro.delta_garbage_collection_policy = DeltaGarbageCollectionPolicy::kForce;
+  cro.delta_garbage_collection_age_cutoff = delta_gc_age_cutoff_;
+
+  ASSERT_OK(db_->CompactRange(cro, nullptr, nullptr));
+
+  // Check that the GC stats are correct
+  {
+    VersionSet* const versions = dbfull()->GetVersionSet();
+    assert(versions);
+    assert(versions->GetColumnFamilySet());
+
+    ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+    assert(cfd);
+
+    const InternalStats* const internal_stats = cfd->internal_stats();
+    assert(internal_stats);
+
+    const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+    ASSERT_GE(compaction_stats.size(), 2);
+
+    ASSERT_GE(compaction_stats[1].bytes_read_delta, 0);
+    ASSERT_EQ(compaction_stats[1].bytes_written_delta, 0);
+  }
+
+  const size_t cutoff_index = static_cast<size_t>(
+      cro.delta_garbage_collection_age_cutoff * original_delta_files.size());
+  const size_t expected_num_files = original_delta_files.size() - cutoff_index;
+
+  const std::vector<uint64_t> new_delta_files = GetDeltaFileNumbers();
+
+  ASSERT_EQ(new_delta_files.size(), expected_num_files);
+
+  // Original delta files below the cutoff should be gone, original delta files
+  // at or above the cutoff should be still there
+  for (size_t i = cutoff_index; i < original_delta_files.size(); ++i) {
+    ASSERT_EQ(new_delta_files[i - cutoff_index], original_delta_files[i]);
+  }
+
+  for (size_t i = 0; i < 128; ++i) {
+    ASSERT_EQ(Get("key" + std::to_string(i)), "value" + std::to_string(i));
+  }
+}
+
+TEST_P(DBCompactionTestDeltaGC, CompactionWithDeltaGC) {
+  Options options;
+  options.env = env_;
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.delta_file_size = 32;  // one delta per file
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = delta_gc_age_cutoff_;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char first_value[] = "first_value";
+  constexpr char second_key[] = "second_key";
+  constexpr char second_value[] = "second_value";
+
+  ASSERT_OK(Put(first_key, first_value));
+  ASSERT_OK(Put(second_key, second_value));
+  ASSERT_OK(Flush());
+
+  constexpr char third_key[] = "third_key";
+  constexpr char third_value[] = "third_value";
+  constexpr char fourth_key[] = "fourth_key";
+  constexpr char fourth_value[] = "fourth_value";
+
+  ASSERT_OK(Put(third_key, third_value));
+  ASSERT_OK(Put(fourth_key, fourth_value));
+  ASSERT_OK(Flush());
+
+  const std::vector<uint64_t> original_delta_files = GetDeltaFileNumbers();
+
+  ASSERT_EQ(original_delta_files.size(), 4);
+
+  const size_t cutoff_index =
+      static_cast<size_t>(options.delta_garbage_collection_age_cutoff *
+                          original_delta_files.size());
+
+  // Note: turning off enable_delta_files before the compaction results in
+  // garbage collected values getting inlined.
+  size_t expected_number_of_files = original_delta_files.size();
+
+  if (!updated_enable_delta_files_) {
+    ASSERT_OK(db_->SetOptions({{"enable_delta_files", "false"}}));
+
+    expected_number_of_files -= cutoff_index;
+  }
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+
+  ASSERT_EQ(Get(first_key), first_value);
+  ASSERT_EQ(Get(second_key), second_value);
+  ASSERT_EQ(Get(third_key), third_value);
+  ASSERT_EQ(Get(fourth_key), fourth_value);
+
+  const std::vector<uint64_t> new_delta_files = GetDeltaFileNumbers();
+
+  ASSERT_EQ(new_delta_files.size(), expected_number_of_files);
+
+  // Original delta files below the cutoff should be gone, original delta files
+  // at or above the cutoff should be still there
+  for (size_t i = cutoff_index; i < original_delta_files.size(); ++i) {
+    ASSERT_EQ(new_delta_files[i - cutoff_index], original_delta_files[i]);
+  }
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+  assert(versions->GetColumnFamilySet());
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  assert(internal_stats);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_GE(compaction_stats.size(), 2);
+
+  if (delta_gc_age_cutoff_ > 0.0) {
+    ASSERT_GT(compaction_stats[1].bytes_read_delta, 0);
+
+    if (updated_enable_delta_files_) {
+      // GC relocated some deltas to new delta files
+      ASSERT_GT(compaction_stats[1].bytes_written_delta, 0);
+      ASSERT_EQ(compaction_stats[1].bytes_read_delta,
+                compaction_stats[1].bytes_written_delta);
+    } else {
+      // GC moved some deltas back to the LSM, no new delta files
+      ASSERT_EQ(compaction_stats[1].bytes_written_delta, 0);
+    }
+  } else {
+    ASSERT_EQ(compaction_stats[1].bytes_read_delta, 0);
+    ASSERT_EQ(compaction_stats[1].bytes_written_delta, 0);
+  }
+}
+
+TEST_F(DBCompactionTest, CompactionWithDeltaGCError_CorruptIndex) {
+  Options options;
+  options.env = env_;
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 1.0;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char first_value[] = "first_value";
+  ASSERT_OK(Put(first_key, first_value));
+
+  constexpr char second_key[] = "second_key";
+  constexpr char second_value[] = "second_value";
+  ASSERT_OK(Put(second_key, second_value));
+
+  ASSERT_OK(Flush());
+
+  constexpr char third_key[] = "third_key";
+  constexpr char third_value[] = "third_value";
+  ASSERT_OK(Put(third_key, third_value));
+
+  constexpr char fourth_key[] = "fourth_key";
+  constexpr char fourth_value[] = "fourth_value";
+  ASSERT_OK(Put(fourth_key, fourth_value));
+
+  ASSERT_OK(Flush());
+
+  SyncPoint::GetInstance()->SetCallBack(
+      "CompactionIterator::GarbageCollectDeltaIfNeeded::TamperWithDeltaIndex",
+      [](void* arg) {
+        Slice* const delta_index = static_cast<Slice*>(arg);
+        assert(delta_index);
+        assert(!delta_index->empty());
+        delta_index->remove_prefix(1);
+      });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_TRUE(
+      db_->CompactRange(CompactRangeOptions(), begin, end).IsCorruption());
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_F(DBCompactionTest, CompactionWithDeltaGCError_InlinedTTLIndex) {
+  constexpr uint64_t min_delta_size = 10;
+
+  Options options;
+  options.env = env_;
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.min_delta_size = min_delta_size;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 1.0;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char first_value[] = "first_value";
+  ASSERT_OK(Put(first_key, first_value));
+
+  constexpr char second_key[] = "second_key";
+  constexpr char second_value[] = "second_value";
+  ASSERT_OK(Put(second_key, second_value));
+
+  ASSERT_OK(Flush());
+
+  constexpr char third_key[] = "third_key";
+  constexpr char third_value[] = "third_value";
+  ASSERT_OK(Put(third_key, third_value));
+
+  constexpr char fourth_key[] = "fourth_key";
+  constexpr char delta[] = "short";
+  static_assert(sizeof(short) - 1 < min_delta_size,
+                "Delta too long to be inlined");
+
+  // Fake an inlined TTL delta index.
+  std::string delta_index;
+
+  constexpr uint64_t expiration = 1234567890;
+
+  DeltaIndex::EncodeInlinedTTL(&delta_index, expiration, delta);
+
+  WriteBatch batch;
+  ASSERT_OK(
+      WriteBatchInternal::PutDeltaIndex(&batch, 0, fourth_key, delta_index));
+  ASSERT_OK(db_->Write(WriteOptions(), &batch));
+
+  ASSERT_OK(Flush());
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_TRUE(
+      db_->CompactRange(CompactRangeOptions(), begin, end).IsCorruption());
+}
+
+TEST_F(DBCompactionTest,
+       CompactionWithDeltaGCError_IndexWithInvalidFileNumber) {
+  Options options;
+  options.env = env_;
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 1.0;
+
+  Reopen(options);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char first_value[] = "first_value";
+  ASSERT_OK(Put(first_key, first_value));
+
+  constexpr char second_key[] = "second_key";
+  constexpr char second_value[] = "second_value";
+  ASSERT_OK(Put(second_key, second_value));
+
+  ASSERT_OK(Flush());
+
+  constexpr char third_key[] = "third_key";
+  constexpr char third_value[] = "third_value";
+  ASSERT_OK(Put(third_key, third_value));
+
+  constexpr char fourth_key[] = "fourth_key";
+
+  // Fake a delta index referencing a non-existent delta file.
+  std::string delta_index;
+
+  constexpr uint64_t delta_file_number = 1000;
+  constexpr uint64_t offset = 1234;
+  constexpr uint64_t size = 5678;
+
+  DeltaIndex::EncodeDelta(&delta_index, delta_file_number, offset, size,
+                          kNoCompression);
+
+  WriteBatch batch;
+  ASSERT_OK(
+      WriteBatchInternal::PutDeltaIndex(&batch, 0, fourth_key, delta_index));
+  ASSERT_OK(db_->Write(WriteOptions(), &batch));
+
+  ASSERT_OK(Flush());
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_TRUE(
+      db_->CompactRange(CompactRangeOptions(), begin, end).IsCorruption());
+}
+
 TEST_F(DBCompactionTest, CompactionWithChecksumHandoff1) {
   if (mem_env_ || encrypted_env_) {
     ROCKSDB_GTEST_SKIP("Test requires non-mem or non-encrypted environment");
@@ -8004,8 +8502,8 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 #else
-  (void) argc;
-  (void) argv;
+  (void)argc;
+  (void)argv;
   return 0;
 #endif
 }

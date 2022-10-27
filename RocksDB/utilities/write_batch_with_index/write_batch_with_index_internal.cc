@@ -456,9 +456,10 @@ WBWIIteratorImpl::Result WBWIIteratorImpl::FindLatestUpdate(
 Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
                                                   WriteType* type, Slice* Key,
                                                   Slice* value, Slice* blob,
+                                                  Slice* delta,
                                                   Slice* xid) const {
   if (type == nullptr || Key == nullptr || value == nullptr ||
-      blob == nullptr || xid == nullptr) {
+      blob == nullptr || delta == nullptr || xid == nullptr) {
     return Status::InvalidArgument("Output parameters cannot be null");
   }
 
@@ -474,7 +475,7 @@ Status ReadableWriteBatch::GetEntryFromDataOffset(size_t data_offset,
   char tag;
   uint32_t column_family;
   Status s = ReadRecordFromWriteBatch(&input, &tag, &column_family, Key, value,
-                                      blob, xid);
+                                      blob, delta, xid);
   if (!s.ok()) {
     return s;
   }
@@ -603,13 +604,13 @@ const Comparator* WriteBatchEntryComparator::GetComparator(
 
 WriteEntry WBWIIteratorImpl::Entry() const {
   WriteEntry ret;
-  Slice blob, xid;
+  Slice blob, delta, xid;
   const WriteBatchIndexEntry* iter_entry = skip_list_iter_.key();
   // this is guaranteed with Valid()
   assert(iter_entry != nullptr &&
          iter_entry->column_family == column_family_id_);
   auto s = write_batch_->GetEntryFromDataOffset(
-      iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &xid);
+      iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &delta, &xid);
   assert(s.ok());
   assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
          ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||

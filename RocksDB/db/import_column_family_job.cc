@@ -164,9 +164,9 @@ Status ImportColumnFamilyJob::Run() {
                   f.fd.GetFileSize(), f.smallest_internal_key,
                   f.largest_internal_key, file_metadata.smallest_seqno,
                   file_metadata.largest_seqno, false, file_metadata.temperature,
-                  kInvalidBlobFileNumber, oldest_ancester_time, current_time,
-                  kUnknownFileChecksum, kUnknownFileChecksumFuncName,
-                  f.unique_id);
+                  kInvalidBlobFileNumber, kInvalidDeltaFileNumber,
+                  oldest_ancester_time, current_time, kUnknownFileChecksum,
+                  kUnknownFileChecksumFuncName, f.unique_id);
 
     // If incoming sequence number is higher, update local sequence number.
     if (file_metadata.largest_seqno > versions_->LastSequence()) {
@@ -228,8 +228,8 @@ Status ImportColumnFamilyJob::GetIngestedFileInfo(
   std::unique_ptr<FSRandomAccessFile> sst_file;
   std::unique_ptr<RandomAccessFileReader> sst_file_reader;
 
-  status = fs_->NewRandomAccessFile(external_file, env_options_,
-                                    &sst_file, nullptr);
+  status =
+      fs_->NewRandomAccessFile(external_file, env_options_, &sst_file, nullptr);
   if (!status.ok()) {
     return status;
   }

@@ -57,7 +57,7 @@ TEST_F(DBFlushTest, FlushWhileWritingManifest) {
   Reopen(options);
   FlushOptions no_wait;
   no_wait.wait = false;
-  no_wait.allow_write_stall=true;
+  no_wait.allow_write_stall = true;
 
   SyncPoint::GetInstance()->LoadDependency(
       {{"VersionSet::LogAndApply:WriteManifest",
@@ -726,6 +726,7 @@ class TestFlushListener : public EventListener {
                              });
       ASSERT_NE(it, files_by_level[0].end());
       ASSERT_EQ(info.oldest_blob_file_number, it->oldest_blob_file_number);
+      ASSERT_EQ(info.oldest_delta_file_number, it->oldest_delta_file_number);
     }
 
     ASSERT_EQ(db->GetEnv()->GetThreadID(), info.thread_id);
@@ -1822,8 +1823,8 @@ TEST_F(DBFlushTest, ManualFlushFailsInReadOnlyMode) {
   ASSERT_NOK(dbfull()->TEST_WaitForFlushMemTable());
 #ifndef ROCKSDB_LITE
   uint64_t num_bg_errors;
-  ASSERT_TRUE(db_->GetIntProperty(DB::Properties::kBackgroundErrors,
-                                  &num_bg_errors));
+  ASSERT_TRUE(
+      db_->GetIntProperty(DB::Properties::kBackgroundErrors, &num_bg_errors));
   ASSERT_GT(num_bg_errors, 0);
 #endif  // ROCKSDB_LITE
 
@@ -2036,6 +2037,85 @@ TEST_F(DBFlushTest, FlushWithBlob) {
   ASSERT_EQ(cf_stats_value[InternalStats::BYTES_FLUSHED],
             compaction_stats[0].bytes_written +
                 compaction_stats[0].bytes_written_blob);
+#endif  // ROCKSDB_LITE
+}
+
+TEST_F(DBFlushTest, FlushWithDelta) {
+  constexpr uint64_t min_delta_size = 10;
+
+  Options options;
+  options.enable_delta_files = true;
+  options.min_delta_size = min_delta_size;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  Reopen(options);
+
+  constexpr char short_value[] = "short";
+  static_assert(sizeof(short_value) - 1 < min_delta_size,
+                "short_value too long");
+
+  constexpr char long_value[] = "long_value";
+  static_assert(sizeof(long_value) - 1 >= min_delta_size,
+                "long_value too short");
+
+  ASSERT_OK(Put("key1", short_value));
+  ASSERT_OK(Put("key2", long_value));
+
+  ASSERT_OK(Flush());
+
+  ASSERT_EQ(Get("key1"), short_value);
+  ASSERT_EQ(Get("key2"), long_value);
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  Version* const current = cfd->current();
+  assert(current);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  assert(storage_info);
+
+  const auto& l0_files = storage_info->LevelFiles(0);
+  ASSERT_EQ(l0_files.size(), 1);
+
+  const FileMetaData* const table_file = l0_files[0];
+  assert(table_file);
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_EQ(delta_files.size(), 1);
+
+  const auto& delta_file = delta_files.front();
+  assert(delta_file);
+
+  ASSERT_EQ(table_file->smallest.user_key(), "key1");
+  ASSERT_EQ(table_file->largest.user_key(), "key2");
+  ASSERT_EQ(table_file->fd.smallest_seqno, 1);
+  ASSERT_EQ(table_file->fd.largest_seqno, 2);
+  ASSERT_EQ(table_file->oldest_delta_file_number,
+            delta_file->GetDeltaFileNumber());
+
+  ASSERT_EQ(delta_file->GetTotalDeltaCount(), 1);
+
+#ifndef ROCKSDB_LITE
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  assert(internal_stats);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_FALSE(compaction_stats.empty());
+  ASSERT_EQ(compaction_stats[0].bytes_written, table_file->fd.GetFileSize());
+  ASSERT_EQ(compaction_stats[0].bytes_written_delta,
+            delta_file->GetTotalDeltaBytes());
+  ASSERT_EQ(compaction_stats[0].num_output_files, 1);
+  ASSERT_EQ(compaction_stats[0].num_output_files_delta, 1);
+
+  const uint64_t* const cf_stats_value = internal_stats->TEST_GetCFStatsValue();
+  ASSERT_EQ(cf_stats_value[InternalStats::BYTES_FLUSHED],
+            compaction_stats[0].bytes_written +
+                compaction_stats[0].bytes_written_delta);
 #endif  // ROCKSDB_LITE
 }
 
@@ -2374,6 +2454,103 @@ TEST_P(DBFlushTestBlobError, FlushError) {
   ASSERT_EQ(cf_stats_value[InternalStats::BYTES_FLUSHED],
             compaction_stats[0].bytes_written +
                 compaction_stats[0].bytes_written_blob);
+#endif  // ROCKSDB_LITE
+}
+
+class DBFlushTestDeltaError : public DBFlushTest,
+                              public testing::WithParamInterface<std::string> {
+ public:
+  DBFlushTestDeltaError() : sync_point_(GetParam()) {}
+
+  std::string sync_point_;
+};
+
+INSTANTIATE_TEST_CASE_P(
+    DBFlushTestDeltaError, DBFlushTestDeltaError,
+    ::testing::ValuesIn(std::vector<std::string>{
+        "DeltaFileBuilder::WriteDeltaToFile:AddRecord",
+        "DeltaFileBuilder::WriteDeltaToFile:AppendFooter"}));
+
+TEST_P(DBFlushTestDeltaError, FlushError) {
+  Options options;
+  options.enable_delta_files = true;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  Reopen(options);
+
+  ASSERT_OK(Put("key", "delta"));
+
+  SyncPoint::GetInstance()->SetCallBack(sync_point_, [this](void* arg) {
+    Status* const s = static_cast<Status*>(arg);
+    assert(s);
+
+    (*s) = Status::IOError(sync_point_);
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_NOK(Flush());
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  assert(versions);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  Version* const current = cfd->current();
+  assert(current);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  assert(storage_info);
+
+  const auto& l0_files = storage_info->LevelFiles(0);
+  ASSERT_TRUE(l0_files.empty());
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_TRUE(delta_files.empty());
+
+  // Make sure the files generated by the failed job have been deleted
+  std::vector<std::string> files;
+  ASSERT_OK(env_->GetChildren(dbname_, &files));
+  for (const auto& file : files) {
+    uint64_t number = 0;
+    FileType type = kTableFile;
+
+    if (!ParseFileName(file, &number, &type)) {
+      continue;
+    }
+
+    ASSERT_NE(type, kTableFile);
+    ASSERT_NE(type, kDeltaFile);
+  }
+
+#ifndef ROCKSDB_LITE
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  assert(internal_stats);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_FALSE(compaction_stats.empty());
+
+  if (sync_point_ == "DeltaFileBuilder::WriteDeltaToFile:AddRecord") {
+    ASSERT_EQ(compaction_stats[0].bytes_written, 0);
+    ASSERT_EQ(compaction_stats[0].bytes_written_delta, 0);
+    ASSERT_EQ(compaction_stats[0].num_output_files, 0);
+    ASSERT_EQ(compaction_stats[0].num_output_files_delta, 0);
+  } else {
+    // SST file writing succeeded; delta file writing failed (during Finish)
+    ASSERT_GT(compaction_stats[0].bytes_written, 0);
+    ASSERT_EQ(compaction_stats[0].bytes_written_delta, 0);
+    ASSERT_EQ(compaction_stats[0].num_output_files, 1);
+    ASSERT_EQ(compaction_stats[0].num_output_files_delta, 0);
+  }
+
+  const uint64_t* const cf_stats_value = internal_stats->TEST_GetCFStatsValue();
+  ASSERT_EQ(cf_stats_value[InternalStats::BYTES_FLUSHED],
+            compaction_stats[0].bytes_written +
+                compaction_stats[0].bytes_written_delta);
 #endif  // ROCKSDB_LITE
 }
 

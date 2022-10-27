@@ -31,6 +31,8 @@
 #include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "db/dbformat.h"
+#include "db/delta/delta_index.h"
+#include "db/delta/delta_log_format.h"
 #include "db/job_context.h"
 #include "db/version_set.h"
 #include "db/write_batch_internal.h"
@@ -1068,6 +1070,8 @@ void CheckColumnFamilyMeta(
                 file_meta_from_files.largest.user_key().ToString());
       ASSERT_EQ(file_meta_from_cf.oldest_blob_file_number,
                 file_meta_from_files.oldest_blob_file_number);
+      ASSERT_EQ(file_meta_from_cf.oldest_delta_file_number,
+                file_meta_from_files.oldest_delta_file_number);
       ASSERT_EQ(file_meta_from_cf.oldest_ancester_time,
                 file_meta_from_files.oldest_ancester_time);
       ASSERT_EQ(file_meta_from_cf.file_creation_time,
@@ -1124,7 +1128,8 @@ void CheckLiveFilesMeta(
     ASSERT_EQ(meta.largestkey, expected_meta.largest.user_key().ToString());
     ASSERT_EQ(meta.oldest_blob_file_number,
               expected_meta.oldest_blob_file_number);
-
+    ASSERT_EQ(meta.oldest_delta_file_number,
+              expected_meta.oldest_delta_file_number);
     // More from FileStorageInfo
     ASSERT_EQ(meta.file_type, kTableFile);
     ASSERT_EQ(meta.name, "/" + meta.relative_filename);
@@ -1182,6 +1187,53 @@ static void CheckBlobMetaData(
   ASSERT_EQ(bmd.checksum_value, checksum_value);
 }
 
+void AddDeltaFile(const ColumnFamilyHandle* cfh, uint64_t delta_file_number,
+                  uint64_t total_delta_count, uint64_t total_delta_bytes,
+                  const std::string& checksum_method,
+                  const std::string& checksum_value,
+                  uint64_t garbage_delta_count = 0,
+                  uint64_t garbage_delta_bytes = 0) {
+  ColumnFamilyData* cfd =
+      (static_cast<const ColumnFamilyHandleImpl*>(cfh))->cfd();
+  assert(cfd);
+
+  Version* const version = cfd->current();
+  assert(version);
+
+  VersionStorageInfo* const storage_info = version->storage_info();
+  assert(storage_info);
+
+  // Add a live delta file.
+
+  auto shared_meta = SharedDeltaFileMetaData::Create(
+      delta_file_number, total_delta_count, total_delta_bytes, checksum_method,
+      checksum_value);
+
+  auto meta = DeltaFileMetaData::Create(
+      std::move(shared_meta), DeltaFileMetaData::LinkedSsts(),
+      garbage_delta_count, garbage_delta_bytes);
+
+  storage_info->AddDeltaFile(std::move(meta));
+}
+
+static void CheckDeltaMetaData(
+    const DeltaMetaData& bmd, uint64_t delta_file_number,
+    uint64_t total_delta_count, uint64_t total_delta_bytes,
+    const std::string& checksum_method, const std::string& checksum_value,
+    uint64_t garbage_delta_count = 0, uint64_t garbage_delta_bytes = 0) {
+  ASSERT_EQ(bmd.delta_file_number, delta_file_number);
+  ASSERT_EQ(bmd.delta_file_name, DeltaFileName("", delta_file_number));
+  ASSERT_EQ(bmd.delta_file_size,
+            total_delta_bytes + DeltaLogHeader::kSize + DeltaLogFooter::kSize);
+
+  ASSERT_EQ(bmd.total_delta_count, total_delta_count);
+  ASSERT_EQ(bmd.total_delta_bytes, total_delta_bytes);
+  ASSERT_EQ(bmd.garbage_delta_count, garbage_delta_count);
+  ASSERT_EQ(bmd.garbage_delta_bytes, garbage_delta_bytes);
+  ASSERT_EQ(bmd.checksum_method, checksum_method);
+  ASSERT_EQ(bmd.checksum_value, checksum_value);
+}
+
 TEST_F(DBTest, MetaDataTest) {
   Options options = CurrentOptions();
   options.create_if_missing = true;
@@ -1204,6 +1256,16 @@ TEST_F(DBTest, MetaDataTest) {
     WriteBatch batch;
     ASSERT_OK(WriteBatchInternal::PutBlobIndex(&batch, 0, Key(key_index),
                                                blob_index));
+
+    // Add a single delta reference to each file
+    std::string delta_index;
+    DeltaIndex::EncodeDelta(&delta_index, /* delta_file_number */ i + 1000,
+                            /* offset */ 1234, /* size */ 5678, kNoCompression);
+
+    WriteBatch batch;
+    ASSERT_OK(WriteBatchInternal::PutDeltaIndex(&batch, 0, Key(key_index),
+                                                delta_index));
+
     ASSERT_OK(dbfull()->Write(WriteOptions(), &batch));
 
     ++key_index;
@@ -1239,6 +1301,9 @@ TEST_F(DBTest, AllMetaDataTest) {
   constexpr uint64_t blob_file_number = 234;
   constexpr uint64_t total_blob_count = 555;
   constexpr uint64_t total_blob_bytes = 66666;
+  constexpr uint64_t delta_file_number = 234;
+  constexpr uint64_t total_delta_count = 555;
+  constexpr uint64_t total_delta_bytes = 66666;
   constexpr char checksum_method[] = "CRC32";
   constexpr char checksum_value[] = "\x3d\x87\xff\x57";
 
@@ -1252,6 +1317,9 @@ TEST_F(DBTest, AllMetaDataTest) {
     AddBlobFile(handles_[cf], blob_file_number * (cf + 1),
                 total_blob_count * (cf + 1), total_blob_bytes * (cf + 1),
                 checksum_method, checksum_value);
+    AddDeltaFile(handles_[cf], delta_file_number * (cf + 1),
+                 total_delta_count * (cf + 1), total_delta_bytes * (cf + 1),
+                 checksum_method, checksum_value);
   }
   dbfull()->TEST_UnlockMutex();
 
@@ -1284,6 +1352,15 @@ TEST_F(DBTest, AllMetaDataTest) {
     CheckBlobMetaData(bmd, blob_file_number * (cf + 1),
                       total_blob_count * (cf + 1), total_blob_bytes * (cf + 1),
                       checksum_method, checksum_value);
+
+    ASSERT_EQ(cfmd.delta_files.size(), 1U);
+    const auto& bmd = cfmd.delta_files[0];
+    ASSERT_EQ(cfmd.delta_file_count, 1U);
+    ASSERT_EQ(cfmd.delta_file_size, bmd.delta_file_size);
+    ASSERT_EQ(NormalizePath(bmd.delta_file_path), NormalizePath(dbname_));
+    CheckDeltaMetaData(
+        bmd, delta_file_number * (cf + 1), total_delta_count * (cf + 1),
+        total_delta_bytes * (cf + 1), checksum_method, checksum_value);
   }
 }
 
@@ -2535,6 +2612,48 @@ TEST_F(DBTest, GetLiveBlobFiles) {
   ASSERT_EQ(cfmd.blob_file_count, 1U);
   ASSERT_EQ(cfmd.blob_file_size, bmd.blob_file_size);
 }
+
+TEST_F(DBTest, GetLiveDeltaFiles) {
+  // Note: the following prevents an otherwise harmless data race between the
+  // test setup code (AddDeltaFile) below and the periodic stat dumping thread.
+  Options options = CurrentOptions();
+  options.stats_dump_period_sec = 0;
+
+  constexpr uint64_t delta_file_number = 234;
+  constexpr uint64_t total_delta_count = 555;
+  constexpr uint64_t total_delta_bytes = 66666;
+  constexpr char checksum_method[] = "CRC32";
+  constexpr char checksum_value[] = "\x3d\x87\xff\x57";
+  constexpr uint64_t garbage_delta_count = 0;
+  constexpr uint64_t garbage_delta_bytes = 0;
+
+  Reopen(options);
+
+  AddDeltaFile(db_->DefaultColumnFamily(), delta_file_number, total_delta_count,
+               total_delta_bytes, checksum_method, checksum_value,
+               garbage_delta_count, garbage_delta_bytes);
+  // Make sure it appears in the results returned by GetLiveFiles.
+  uint64_t manifest_size = 0;
+  std::vector<std::string> files;
+  ASSERT_OK(dbfull()->GetLiveFiles(files, &manifest_size));
+
+  ASSERT_FALSE(files.empty());
+  ASSERT_EQ(files[0], DeltaFileName("", delta_file_number));
+
+  ColumnFamilyMetaData cfmd;
+
+  db_->GetColumnFamilyMetaData(&cfmd);
+  ASSERT_EQ(cfmd.delta_files.size(), 1);
+  const DeltaMetaData& bmd = cfmd.delta_files[0];
+
+  CheckDeltaMetaData(bmd, delta_file_number, total_delta_count,
+                     total_delta_bytes, checksum_method, checksum_value,
+                     garbage_delta_count, garbage_delta_bytes);
+  ASSERT_EQ(NormalizePath(bmd.delta_file_path), NormalizePath(dbname_));
+  ASSERT_EQ(cfmd.delta_file_count, 1U);
+  ASSERT_EQ(cfmd.delta_file_size, bmd.delta_file_size);
+}
+
 #endif
 
 TEST_F(DBTest, PurgeInfoLogs) {

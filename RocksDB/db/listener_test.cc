@@ -7,6 +7,7 @@
 #include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "db/dbformat.h"
+#include "db/delta/delta_index.h"
 #include "db/version_set.h"
 #include "db/write_batch_internal.h"
 #include "file/filename.h"
@@ -45,6 +46,14 @@ class EventListenerTest : public DBTestBase {
     BlobIndex::EncodeBlob(&blob_index, blob_file_number, offset, size,
                           kNoCompression);
     return blob_index;
+  }
+
+  static std::string DeltaStr(uint64_t delta_file_number, uint64_t offset,
+                              uint64_t size) {
+    std::string delta_index;
+    DeltaIndex::EncodeDelta(&delta_index, delta_file_number, offset, size,
+                            kNoCompression);
+    return delta_index;
   }
 
   const size_t k110KB = 110 << 10;
@@ -89,7 +98,7 @@ class TestCompactionListener : public EventListener {
  public:
   explicit TestCompactionListener(EventListenerTest* test) : test_(test) {}
 
-  void OnCompactionCompleted(DB *db, const CompactionJobInfo& ci) override {
+  void OnCompactionCompleted(DB* db, const CompactionJobInfo& ci) override {
     std::lock_guard<std::mutex> lock(mutex_);
     compacted_dbs_.push_back(db);
     ASSERT_GT(ci.input_files.size(), 0U);
@@ -126,6 +135,8 @@ class TestCompactionListener : public EventListener {
 
       ASSERT_EQ(ci.output_file_infos[i].oldest_blob_file_number,
                 it->oldest_blob_file_number);
+      ASSERT_EQ(ci.output_file_infos[i].oldest_delta_file_number,
+                it->oldest_delta_file_number);
     }
 
     ASSERT_EQ(db->GetEnv()->GetThreadID(), ci.thread_id);
@@ -172,15 +183,17 @@ TEST_F(EventListenerTest, OnSingleDBCompactionTest) {
 
   TestCompactionListener* listener = new TestCompactionListener(this);
   options.listeners.emplace_back(listener);
-  std::vector<std::string> cf_names = {
-      "pikachu", "ilya", "muromec", "dobrynia",
-      "nikitich", "alyosha", "popovich"};
+  std::vector<std::string> cf_names = {"pikachu",  "ilya",     "muromec",
+                                       "dobrynia", "nikitich", "alyosha",
+                                       "popovich"};
   CreateAndReopenWithCF(cf_names, options);
   ASSERT_OK(Put(1, "pikachu", std::string(90000, 'p')));
 
   WriteBatch batch;
   ASSERT_OK(WriteBatchInternal::PutBlobIndex(&batch, 1, "ditto",
                                              BlobStr(123, 0, 1 << 10)));
+  ASSERT_OK(WriteBatchInternal::PutDeltaIndex(&batch, 1, "ditto",
+                                              DeltaStr(123, 0, 1 << 10)));
   ASSERT_OK(dbfull()->Write(WriteOptions(), &batch));
 
   ASSERT_OK(Put(2, "ilya", std::string(90000, 'i')));
@@ -214,8 +227,7 @@ class TestFlushListener : public EventListener {
   virtual ~TestFlushListener() {
     prev_fc_info_.status.PermitUncheckedError();  // Ignore the status
   }
-  void OnTableFileCreated(
-      const TableFileCreationInfo& info) override {
+  void OnTableFileCreated(const TableFileCreationInfo& info) override {
     // remember the info for later checking the FlushJobInfo.
     prev_fc_info_ = info;
     ASSERT_GT(info.db_name.size(), 0U);
@@ -250,8 +262,7 @@ class TestFlushListener : public EventListener {
 #endif  // ROCKSDB_USING_THREAD_STATUS
   }
 
-  void OnFlushCompleted(
-      DB* db, const FlushJobInfo& info) override {
+  void OnFlushCompleted(DB* db, const FlushJobInfo& info) override {
     flushed_dbs_.push_back(db);
     flushed_column_family_names_.push_back(info.cf_name);
     if (info.triggered_writes_slowdown) {
@@ -287,6 +298,7 @@ class TestFlushListener : public EventListener {
                              });
       ASSERT_NE(it, files_by_level[0].end());
       ASSERT_EQ(info.oldest_blob_file_number, it->oldest_blob_file_number);
+      ASSERT_EQ(info.oldest_delta_file_number, it->oldest_delta_file_number);
     }
 
     ASSERT_EQ(db->GetEnv()->GetThreadID(), info.thread_id);
@@ -317,9 +329,9 @@ TEST_F(EventListenerTest, OnSingleDBFlushTest) {
 #endif  // ROCKSDB_USING_THREAD_STATUS
   TestFlushListener* listener = new TestFlushListener(options.env, this);
   options.listeners.emplace_back(listener);
-  std::vector<std::string> cf_names = {
-      "pikachu", "ilya", "muromec", "dobrynia",
-      "nikitich", "alyosha", "popovich"};
+  std::vector<std::string> cf_names = {"pikachu",  "ilya",     "muromec",
+                                       "dobrynia", "nikitich", "alyosha",
+                                       "popovich"};
   options.table_properties_collector_factories.push_back(
       std::make_shared<TestPropertiesCollectorFactory>());
   CreateAndReopenWithCF(cf_names, options);
@@ -329,6 +341,8 @@ TEST_F(EventListenerTest, OnSingleDBFlushTest) {
   WriteBatch batch;
   ASSERT_OK(WriteBatchInternal::PutBlobIndex(&batch, 1, "ditto",
                                              BlobStr(456, 0, 1 << 10)));
+  ASSERT_OK(WriteBatchInternal::PutDeltaIndex(&batch, 1, "ditto",
+                                              DeltaStr(456, 0, 1 << 10)));
   ASSERT_OK(dbfull()->Write(WriteOptions(), &batch));
 
   ASSERT_OK(Put(2, "ilya", std::string(90000, 'i')));
@@ -421,9 +435,9 @@ TEST_F(EventListenerTest, MultiDBMultiListeners) {
     listeners.emplace_back(new TestFlushListener(options.env, this));
   }
 
-  std::vector<std::string> cf_names = {
-      "pikachu", "ilya", "muromec", "dobrynia",
-      "nikitich", "alyosha", "popovich"};
+  std::vector<std::string> cf_names = {"pikachu",  "ilya",     "muromec",
+                                       "dobrynia", "nikitich", "alyosha",
+                                       "popovich"};
 
   options.create_if_missing = true;
   for (int i = 0; i < kNumListeners; ++i) {
@@ -433,7 +447,7 @@ TEST_F(EventListenerTest, MultiDBMultiListeners) {
   ColumnFamilyOptions cf_opts(options);
 
   std::vector<DB*> dbs;
-  std::vector<std::vector<ColumnFamilyHandle *>> vec_handles;
+  std::vector<std::vector<ColumnFamilyHandle*>> vec_handles;
 
   for (int d = 0; d < kNumDBs; ++d) {
     ASSERT_OK(DestroyDB(dbname_ + std::to_string(d), options));
@@ -452,8 +466,8 @@ TEST_F(EventListenerTest, MultiDBMultiListeners) {
 
   for (int d = 0; d < kNumDBs; ++d) {
     for (size_t c = 0; c < cf_names.size(); ++c) {
-      ASSERT_OK(dbs[d]->Put(WriteOptions(), vec_handles[d][c],
-                cf_names[c], cf_names[c]));
+      ASSERT_OK(dbs[d]->Put(WriteOptions(), vec_handles[d][c], cf_names[c],
+                            cf_names[c]));
     }
   }
 
@@ -482,7 +496,6 @@ TEST_F(EventListenerTest, MultiDBMultiListeners) {
       }
     }
   }
-
 
   for (auto handles : vec_handles) {
     for (auto h : handles) {
@@ -887,16 +900,17 @@ TEST_F(EventListenerTest, TableFileCreationListenersTest) {
 }
 
 class MemTableSealedListener : public EventListener {
-private:
+ private:
   SequenceNumber latest_seq_number_;
-public:
+
+ public:
   MemTableSealedListener() {}
   void OnMemTableSealed(const MemTableInfo& info) override {
     latest_seq_number_ = info.first_seqno;
   }
 
   void OnFlushCompleted(DB* /*db*/,
-    const FlushJobInfo& flush_job_info) override {
+                        const FlushJobInfo& flush_job_info) override {
     ASSERT_LE(flush_job_info.smallest_seqno, latest_seq_number_);
   }
 };
@@ -911,8 +925,8 @@ TEST_F(EventListenerTest, MemTableSealedListenerTest) {
 
   for (unsigned int i = 0; i < 10; i++) {
     std::string tag = std::to_string(i);
-    ASSERT_OK(Put("foo"+tag, "aaa"));
-    ASSERT_OK(Put("bar"+tag, "bbb"));
+    ASSERT_OK(Put("foo" + tag, "aaa"));
+    ASSERT_OK(Put("bar" + tag, "bbb"));
 
     ASSERT_OK(Flush());
   }
@@ -1066,6 +1080,12 @@ class TestFileOperationListener : public EventListener {
     blob_file_closes_.store(0);
     blob_file_syncs_.store(0);
     blob_file_truncates_.store(0);
+    delta_file_reads_.store(0);
+    delta_file_writes_.store(0);
+    delta_file_flushes_.store(0);
+    delta_file_closes_.store(0);
+    delta_file_syncs_.store(0);
+    delta_file_truncates_.store(0);
   }
 
   void OnFileReadFinish(const FileOperationInfo& info) override {
@@ -1079,6 +1099,9 @@ class TestFileOperationListener : public EventListener {
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_reads_;
     }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
+    }
     ReportDuration(info);
   }
 
@@ -1089,6 +1112,9 @@ class TestFileOperationListener : public EventListener {
     }
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_writes_;
+    }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
     }
     ReportDuration(info);
   }
@@ -1101,6 +1127,9 @@ class TestFileOperationListener : public EventListener {
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_flushes_;
     }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
+    }
     ReportDuration(info);
   }
 
@@ -1111,6 +1140,9 @@ class TestFileOperationListener : public EventListener {
     }
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_closes_;
+    }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
     }
     ReportDuration(info);
   }
@@ -1123,6 +1155,9 @@ class TestFileOperationListener : public EventListener {
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_syncs_;
     }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
+    }
     ReportDuration(info);
   }
 
@@ -1133,6 +1168,9 @@ class TestFileOperationListener : public EventListener {
     }
     if (EndsWith(info.path, ".blob")) {
       ++blob_file_truncates_;
+    }
+    if (EndsWith(info.path, ".delta")) {
+      ++delta_file_reads_;
     }
     ReportDuration(info);
   }
@@ -1158,6 +1196,12 @@ class TestFileOperationListener : public EventListener {
   std::atomic<size_t> blob_file_closes_;
   std::atomic<size_t> blob_file_syncs_;
   std::atomic<size_t> blob_file_truncates_;
+  std::atomic<size_t> delta_file_reads_;
+  std::atomic<size_t> delta_file_writes_;
+  std::atomic<size_t> delta_file_flushes_;
+  std::atomic<size_t> delta_file_closes_;
+  std::atomic<size_t> delta_file_syncs_;
+  std::atomic<size_t> delta_file_truncates_;
 
  private:
   void ReportDuration(const FileOperationInfo& info) const {
@@ -1244,6 +1288,46 @@ TEST_F(EventListenerTest, OnBlobFileOperationTest) {
   ASSERT_GT(listener->blob_file_syncs_.load(), 0U);
   if (true == options.use_direct_io_for_flush_and_compaction) {
     ASSERT_GT(listener->blob_file_truncates_.load(), 0U);
+  }
+}
+
+TEST_F(EventListenerTest, OnDeltaFileOperationTest) {
+  Options options;
+  options.env = CurrentOptions().env;
+  options.create_if_missing = true;
+  TestFileOperationListener* listener = new TestFileOperationListener();
+  options.listeners.emplace_back(listener);
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  options.min_delta_size = 0;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("Key1", "delta_value1"));
+  ASSERT_OK(Put("Key2", "delta_value2"));
+  ASSERT_OK(Put("Key3", "delta_value3"));
+  ASSERT_OK(Put("Key4", "delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key3", "new_delta_value3"));
+  ASSERT_OK(Put("Key4", "new_delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key5", "delta_value5"));
+  ASSERT_OK(Put("Key6", "delta_value6"));
+  ASSERT_OK(Flush());
+
+  ASSERT_GT(listener->delta_file_writes_.load(), 0U);
+  ASSERT_GT(listener->delta_file_flushes_.load(), 0U);
+  Close();
+
+  Reopen(options);
+  ASSERT_GT(listener->delta_file_closes_.load(), 0U);
+  ASSERT_GT(listener->delta_file_syncs_.load(), 0U);
+  if (true == options.use_direct_io_for_flush_and_compaction) {
+    ASSERT_GT(listener->delta_file_truncates_.load(), 0U);
   }
 }
 
@@ -1584,6 +1668,321 @@ TEST_F(EventListenerTest, BlobDBFileTest) {
   ASSERT_OK(dbfull()->TEST_WaitForCompact());
 
   blob_event_listener->CheckCounters();
+}
+
+class DeltaDBJobLevelEventListenerTest : public EventListener {
+ public:
+  explicit DeltaDBJobLevelEventListenerTest(EventListenerTest* test)
+      : test_(test), call_count_(0) {}
+
+  const VersionStorageInfo* GetVersionStorageInfo() const {
+    VersionSet* const versions = test_->dbfull()->GetVersionSet();
+    assert(versions);
+
+    ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+    EXPECT_NE(cfd, nullptr);
+
+    Version* const current = cfd->current();
+    EXPECT_NE(current, nullptr);
+
+    const VersionStorageInfo* const storage_info = current->storage_info();
+    EXPECT_NE(storage_info, nullptr);
+
+    return storage_info;
+  }
+
+  void CheckDeltaFileAdditions(const std::vector<DeltaFileAdditionInfo>&
+                                   delta_file_addition_infos) const {
+    const auto* vstorage = GetVersionStorageInfo();
+
+    EXPECT_FALSE(delta_file_addition_infos.empty());
+
+    for (const auto& delta_file_addition_info : delta_file_addition_infos) {
+      const auto meta = vstorage->GetDeltaFileMetaData(
+          delta_file_addition_info.delta_file_number);
+
+      EXPECT_NE(meta, nullptr);
+      EXPECT_EQ(meta->GetDeltaFileNumber(),
+                delta_file_addition_info.delta_file_number);
+      EXPECT_EQ(meta->GetTotalDeltaBytes(),
+                delta_file_addition_info.total_delta_bytes);
+      EXPECT_EQ(meta->GetTotalDeltaCount(),
+                delta_file_addition_info.total_delta_count);
+      EXPECT_FALSE(delta_file_addition_info.delta_file_path.empty());
+    }
+  }
+
+  std::vector<std::string> GetFlushedFiles() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> result;
+    for (const auto& fname : flushed_files_) {
+      result.push_back(fname);
+    }
+    return result;
+  }
+
+  void OnFlushCompleted(DB* /*db*/, const FlushJobInfo& info) override {
+    call_count_++;
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      flushed_files_.push_back(info.file_path);
+    }
+
+    EXPECT_EQ(info.delta_compression_type, kNoCompression);
+
+    CheckDeltaFileAdditions(info.delta_file_addition_infos);
+  }
+
+  void OnCompactionCompleted(DB* /*db*/,
+                             const CompactionJobInfo& info) override {
+    call_count_++;
+
+    EXPECT_EQ(info.delta_compression_type, kNoCompression);
+
+    CheckDeltaFileAdditions(info.delta_file_addition_infos);
+
+    EXPECT_FALSE(info.delta_file_garbage_infos.empty());
+
+    for (const auto& delta_file_garbage_info : info.delta_file_garbage_infos) {
+      EXPECT_GT(delta_file_garbage_info.delta_file_number, 0U);
+      EXPECT_GT(delta_file_garbage_info.garbage_delta_count, 0U);
+      EXPECT_GT(delta_file_garbage_info.garbage_delta_bytes, 0U);
+      EXPECT_FALSE(delta_file_garbage_info.delta_file_path.empty());
+    }
+  }
+
+  EventListenerTest* test_;
+  uint32_t call_count_;
+
+ private:
+  std::vector<std::string> flushed_files_;
+  std::mutex mutex_;
+};
+
+// Test OnFlushCompleted EventListener called for delta files
+TEST_F(EventListenerTest, DeltaDBOnFlushCompleted) {
+  Options options;
+  options.env = CurrentOptions().env;
+  options.enable_delta_files = true;
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+
+  options.min_delta_size = 0;
+  DeltaDBJobLevelEventListenerTest* delta_event_listener =
+      new DeltaDBJobLevelEventListenerTest(this);
+  options.listeners.emplace_back(delta_event_listener);
+
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("Key1", "delta_value1"));
+  ASSERT_OK(Put("Key2", "delta_value2"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key3", "delta_value3"));
+  ASSERT_OK(Flush());
+
+  ASSERT_EQ(Get("Key1"), "delta_value1");
+  ASSERT_EQ(Get("Key2"), "delta_value2");
+  ASSERT_EQ(Get("Key3"), "delta_value3");
+
+  ASSERT_GT(delta_event_listener->call_count_, 0U);
+}
+
+// Test OnCompactionCompleted EventListener called for delta files
+TEST_F(EventListenerTest, DeltaDBOnCompactionCompleted) {
+  Options options;
+  options.env = CurrentOptions().env;
+  options.enable_delta_files = true;
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+  options.min_delta_size = 0;
+  DeltaDBJobLevelEventListenerTest* delta_event_listener =
+      new DeltaDBJobLevelEventListenerTest(this);
+  options.listeners.emplace_back(delta_event_listener);
+
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("Key1", "delta_value1"));
+  ASSERT_OK(Put("Key2", "delta_value2"));
+  ASSERT_OK(Put("Key3", "delta_value3"));
+  ASSERT_OK(Put("Key4", "delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key3", "new_delta_value3"));
+  ASSERT_OK(Put("Key4", "new_delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key5", "delta_value5"));
+  ASSERT_OK(Put("Key6", "delta_value6"));
+  ASSERT_OK(Flush());
+
+  delta_event_listener->call_count_ = 0;
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  // On compaction, because of delta_garbage_collection_age_cutoff, it will
+  // delete the oldest delta file and create new delta file during compaction.
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+
+  // Make sure, OnCompactionCompleted is called.
+  ASSERT_GT(delta_event_listener->call_count_, 0U);
+}
+
+// Test CompactFiles calls OnCompactionCompleted EventListener for delta files
+// and populate the delta files info.
+TEST_F(EventListenerTest, DeltaDBCompactFiles) {
+  Options options;
+  options.env = CurrentOptions().env;
+  options.enable_delta_files = true;
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+  options.min_delta_size = 0;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+
+  DeltaDBJobLevelEventListenerTest* delta_event_listener =
+      new DeltaDBJobLevelEventListenerTest(this);
+  options.listeners.emplace_back(delta_event_listener);
+
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("Key1", "delta_value1"));
+  ASSERT_OK(Put("Key2", "delta_value2"));
+  ASSERT_OK(Put("Key3", "delta_value3"));
+  ASSERT_OK(Put("Key4", "delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key3", "new_delta_value3"));
+  ASSERT_OK(Put("Key4", "new_delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key5", "delta_value5"));
+  ASSERT_OK(Put("Key6", "delta_value6"));
+  ASSERT_OK(Flush());
+
+  std::vector<std::string> output_file_names;
+  CompactionJobInfo compaction_job_info;
+
+  // On compaction, because of delta_garbage_collection_age_cutoff, it will
+  // delete the oldest delta file and create new delta file during compaction
+  // which will be populated in output_files_names.
+  ASSERT_OK(dbfull()->CompactFiles(
+      CompactionOptions(), delta_event_listener->GetFlushedFiles(), 1, -1,
+      &output_file_names, &compaction_job_info));
+
+  bool is_delta_in_output = false;
+  for (const auto& file : output_file_names) {
+    if (EndsWith(file, ".delta")) {
+      is_delta_in_output = true;
+    }
+  }
+  ASSERT_TRUE(is_delta_in_output);
+
+  for (const auto& delta_file_addition_info :
+       compaction_job_info.delta_file_addition_infos) {
+    EXPECT_GT(delta_file_addition_info.delta_file_number, 0U);
+    EXPECT_GT(delta_file_addition_info.total_delta_bytes, 0U);
+    EXPECT_GT(delta_file_addition_info.total_delta_count, 0U);
+    EXPECT_FALSE(delta_file_addition_info.delta_file_path.empty());
+  }
+
+  for (const auto& delta_file_garbage_info :
+       compaction_job_info.delta_file_garbage_infos) {
+    EXPECT_GT(delta_file_garbage_info.delta_file_number, 0U);
+    EXPECT_GT(delta_file_garbage_info.garbage_delta_count, 0U);
+    EXPECT_GT(delta_file_garbage_info.garbage_delta_bytes, 0U);
+    EXPECT_FALSE(delta_file_garbage_info.delta_file_path.empty());
+  }
+}
+
+class DeltaDBFileLevelEventListener : public EventListener {
+ public:
+  void OnDeltaFileCreationStarted(
+      const DeltaFileCreationBriefInfo& info) override {
+    files_started_++;
+    EXPECT_FALSE(info.db_name.empty());
+    EXPECT_FALSE(info.cf_name.empty());
+    EXPECT_FALSE(info.file_path.empty());
+    EXPECT_GT(info.job_id, 0);
+  }
+
+  void OnDeltaFileCreated(const DeltaFileCreationInfo& info) override {
+    files_created_++;
+    EXPECT_FALSE(info.db_name.empty());
+    EXPECT_FALSE(info.cf_name.empty());
+    EXPECT_FALSE(info.file_path.empty());
+    EXPECT_GT(info.job_id, 0);
+    EXPECT_GT(info.total_delta_count, 0U);
+    EXPECT_GT(info.total_delta_bytes, 0U);
+    EXPECT_EQ(info.file_checksum, kUnknownFileChecksum);
+    EXPECT_EQ(info.file_checksum_func_name, kUnknownFileChecksumFuncName);
+    EXPECT_TRUE(info.status.ok());
+  }
+
+  void OnDeltaFileDeleted(const DeltaFileDeletionInfo& info) override {
+    files_deleted_++;
+    EXPECT_FALSE(info.db_name.empty());
+    EXPECT_FALSE(info.file_path.empty());
+    EXPECT_GT(info.job_id, 0);
+    EXPECT_TRUE(info.status.ok());
+  }
+
+  void CheckCounters() {
+    EXPECT_EQ(files_started_, files_created_);
+    EXPECT_GT(files_started_, 0U);
+    EXPECT_GT(files_deleted_, 0U);
+    EXPECT_LT(files_deleted_, files_created_);
+  }
+
+ private:
+  std::atomic<uint32_t> files_started_{};
+  std::atomic<uint32_t> files_created_{};
+  std::atomic<uint32_t> files_deleted_{};
+};
+
+TEST_F(EventListenerTest, DeltaDBFileTest) {
+  Options options;
+  options.env = CurrentOptions().env;
+  options.enable_delta_files = true;
+  options.create_if_missing = true;
+  options.disable_auto_compactions = true;
+  options.min_delta_size = 0;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+
+  DeltaDBFileLevelEventListener* delta_event_listener =
+      new DeltaDBFileLevelEventListener();
+  options.listeners.emplace_back(delta_event_listener);
+
+  DestroyAndReopen(options);
+
+  ASSERT_OK(Put("Key1", "delta_value1"));
+  ASSERT_OK(Put("Key2", "delta_value2"));
+  ASSERT_OK(Put("Key3", "delta_value3"));
+  ASSERT_OK(Put("Key4", "delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key3", "new_delta_value3"));
+  ASSERT_OK(Put("Key4", "new_delta_value4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key5", "delta_value5"));
+  ASSERT_OK(Put("Key6", "delta_value6"));
+  ASSERT_OK(Flush());
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  // On compaction, because of delta_garbage_collection_age_cutoff, it will
+  // delete the oldest delta file and create new delta file during compaction.
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+
+  delta_event_listener->CheckCounters();
 }
 
 }  // namespace ROCKSDB_NAMESPACE

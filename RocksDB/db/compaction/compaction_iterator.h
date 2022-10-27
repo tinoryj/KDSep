@@ -278,6 +278,16 @@ class CompactionIterator {
   // algorithm is also called from here.
   void GarbageCollectBlobIfNeeded();
 
+  // Relocates valid deltas residing in the oldest delta files if garbage
+  // collection is enabled. Relocated deltas are written to new delta files or
+  // inlined in the LSM tree depending on the current settings (i.e.
+  // enable_delta_files and min_delta_size). Should only be called for delta
+  // references (kTypeDeltaIndex).
+  //
+  // Note: the stacked DeltaDB implementation's compaction filter based GC
+  // algorithm is also called from here.
+  void GarbageCollectDeltaIfNeeded();
+
   // Invoke compaction filter if needed.
   // Return true on success, false on failures (e.g.: kIOError).
   bool InvokeFilterIfNeeded(bool* need_skip, Slice* skip_until);

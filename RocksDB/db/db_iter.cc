@@ -43,7 +43,8 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                const Version* version, SequenceNumber s, bool arena_mode,
                uint64_t max_sequential_skip_in_iterations,
                ReadCallback* read_callback, DBImpl* db_impl,
-               ColumnFamilyData* cfd, bool expose_blob_index)
+               ColumnFamilyData* cfd, bool expose_blob_index,
+               bool expose_delta_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
       clock_(ioptions.clock),
@@ -76,6 +77,8 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       verify_checksums_(read_options.verify_checksums),
       expose_blob_index_(expose_blob_index),
       is_blob_(false),
+      expose_delta_index_(expose_delta_index),
+      is_delta_(false),
       arena_mode_(arena_mode),
       db_impl_(db_impl),
       cfd_(cfd),
@@ -134,6 +137,7 @@ void DBIter::Next() {
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   local_stats_.skip_count_ += num_internal_keys_skipped_;
   local_stats_.skip_count_--;
@@ -210,6 +214,46 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
   }
 
   is_blob_ = true;
+  return true;
+}
+
+bool DBIter::SetDeltaValueIfNeeded(const Slice& user_key,
+                                   const Slice& delta_index) {
+  assert(!is_delta_);
+  assert(delta_value_.empty());
+
+  if (expose_delta_index_) {  // Stacked DeltaDB implementation
+    is_delta_ = true;
+    return true;
+  }
+
+  if (!version_) {
+    status_ = Status::Corruption("Encountered unexpected delta index.");
+    valid_ = false;
+    return false;
+  }
+
+  // TODO: consider moving ReadOptions from ArenaWrappedDBIter to DBIter to
+  // avoid having to copy options back and forth.
+  ReadOptions read_options;
+  read_options.read_tier = read_tier_;
+  read_options.fill_cache = fill_cache_;
+  read_options.verify_checksums = verify_checksums_;
+
+  constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
+  constexpr uint64_t* bytes_read = nullptr;
+
+  const Status s =
+      version_->GetDelta(read_options, user_key, delta_index, prefetch_buffer,
+                         &delta_value_, bytes_read);
+
+  if (!s.ok()) {
+    status_ = s;
+    valid_ = false;
+    return false;
+  }
+
+  is_delta_ = true;
   return true;
 }
 
@@ -365,6 +409,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             break;
           case kTypeValue:
           case kTypeBlobIndex:
+          case kTypeDeltaIndex:
           case kTypeWideColumnEntity:
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
@@ -381,6 +426,13 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
 
               SetValueAndColumnsFromPlain(expose_blob_index_ ? iter_.value()
                                                              : blob_value_);
+            } else if (ikey_.type == kTypeDeltaIndex) {
+              if (!SetDeltaValueIfNeeded(ikey_.user_key, iter_.value())) {
+                return false;
+              }
+
+              SetValueAndColumnsFromPlain(expose_delta_index_ ? iter_.value()
+                                                              : delta_value_);
             } else if (ikey_.type == kTypeWideColumnEntity) {
               if (!SetValueAndColumnsFromEntity(iter_.value())) {
                 return false;
@@ -585,6 +637,33 @@ bool DBIter::MergeValuesNewToOld() {
         return false;
       }
       return true;
+    } else if (kTypeDeltaIndex == ikey.type) {
+      if (expose_delta_index_) {
+        status_ =
+            Status::NotSupported("DeltaDB does not support merge operator.");
+        valid_ = false;
+        return false;
+      }
+      // hit a put, merge the put value with operands and store the
+      // final result in saved_value_. We are done!
+      if (!SetDeltaValueIfNeeded(ikey.user_key, iter_.value())) {
+        return false;
+      }
+      valid_ = true;
+      Status s = Merge(&delta_value_, ikey.user_key);
+      if (!s.ok()) {
+        return false;
+      }
+
+      ResetDeltaValue();
+
+      // iter_ is positioned after put
+      iter_.Next();
+      if (!iter_.status().ok()) {
+        valid_ = false;
+        return false;
+      }
+      return true;
     } else if (kTypeWideColumnEntity == ikey.type) {
       // TODO: support wide-column entities
       status_ = Status::NotSupported(
@@ -624,6 +703,7 @@ void DBIter::Prev() {
   PERF_CPU_TIMER_GUARD(iter_prev_cpu_nanos, clock_);
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   bool ok = true;
@@ -797,7 +877,7 @@ bool DBIter::FindValueForCurrentKey() {
   current_entry_is_merged_ = false;
   // last entry before merge (could be kTypeDeletion,
   // kTypeDeletionWithTimestamp, kTypeSingleDeletion, kTypeValue,
-  // kTypeBlobIndex, or kTypeWideColumnEntity)
+  // kTypeBlobIndex, kTypeDeltaIndex or kTypeWideColumnEntity)
   ValueType last_not_merge_type = kTypeDeletion;
   ValueType last_key_entry_type = kTypeDeletion;
 
@@ -871,6 +951,7 @@ bool DBIter::FindValueForCurrentKey() {
     switch (last_key_entry_type) {
       case kTypeValue:
       case kTypeBlobIndex:
+      case kTypeDeltaIndex:
       case kTypeWideColumnEntity:
         if (iter_.iter()->IsValuePinned()) {
           pinned_value_ = iter_.value();
@@ -980,6 +1061,25 @@ bool DBIter::FindValueForCurrentKey() {
         ResetBlobValue();
 
         return true;
+      } else if (last_not_merge_type == kTypeDeltaIndex) {
+        if (expose_delta_index_) {
+          status_ =
+              Status::NotSupported("DeltaDB does not support merge operator.");
+          valid_ = false;
+          return false;
+        }
+        if (!SetDeltaValueIfNeeded(saved_key_.GetUserKey(), pinned_value_)) {
+          return false;
+        }
+        valid_ = true;
+        s = Merge(&delta_value_, saved_key_.GetUserKey());
+        if (!s.ok()) {
+          return false;
+        }
+
+        ResetDeltaValue();
+
+        return true;
       } else if (last_not_merge_type == kTypeWideColumnEntity) {
         // TODO: support wide-column entities
         status_ = Status::NotSupported(
@@ -1010,6 +1110,15 @@ bool DBIter::FindValueForCurrentKey() {
 
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
+
+      break;
+    case kTypeDeltaIndex:
+      if (!SetDeltaValueIfNeeded(saved_key_.GetUserKey(), pinned_value_)) {
+        return false;
+      }
+
+      SetValueAndColumnsFromPlain(expose_delta_index_ ? pinned_value_
+                                                      : delta_value_);
 
       break;
     case kTypeWideColumnEntity:
@@ -1111,7 +1220,7 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
     saved_timestamp_.assign(ts.data(), ts.size());
   }
   if (ikey.type == kTypeValue || ikey.type == kTypeBlobIndex ||
-      ikey.type == kTypeWideColumnEntity) {
+      ikey.type == kTypeDeltaIndex || ikey.type == kTypeWideColumnEntity) {
     assert(iter_.iter()->IsValuePinned());
     pinned_value_ = iter_.value();
     if (ikey.type == kTypeBlobIndex) {
@@ -1121,6 +1230,13 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
+    } else if (ikey.type == kTypeDeltaIndex) {
+      if (!SetDeltaValueIfNeeded(ikey.user_key, pinned_value_)) {
+        return false;
+      }
+
+      SetValueAndColumnsFromPlain(expose_delta_index_ ? pinned_value_
+                                                      : delta_value_);
     } else if (ikey.type == kTypeWideColumnEntity) {
       if (!SetValueAndColumnsFromEntity(pinned_value_)) {
         return false;
@@ -1197,6 +1313,25 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       }
 
       ResetBlobValue();
+
+      return true;
+    } else if (ikey.type == kTypeDeltaIndex) {
+      if (expose_delta_index_) {
+        status_ =
+            Status::NotSupported("DeltaDB does not support merge operator.");
+        valid_ = false;
+        return false;
+      }
+      if (!SetDeltaValueIfNeeded(ikey.user_key, iter_.value())) {
+        return false;
+      }
+      valid_ = true;
+      Status s = Merge(&delta_value_, saved_key_.GetUserKey());
+      if (!s.ok()) {
+        return false;
+      }
+
+      ResetDeltaValue();
 
       return true;
     } else if (ikey.type == kTypeWideColumnEntity) {
@@ -1427,6 +1562,7 @@ void DBIter::Seek(const Slice& target) {
   status_ = Status::OK();
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
 
@@ -1504,6 +1640,7 @@ void DBIter::SeekForPrev(const Slice& target) {
   status_ = Status::OK();
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
 
@@ -1564,6 +1701,7 @@ void DBIter::SeekToFirst() {
   direction_ = kForward;
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   ClearSavedValue();
@@ -1612,6 +1750,7 @@ void DBIter::SeekToLast() {
                                /*b_has_ts=*/false)) {
       ReleaseTempPinnedData();
       ResetBlobValue();
+      ResetDeltaValue();
       ResetValueAndColumns();
       PrevInternal(nullptr);
 
@@ -1635,6 +1774,7 @@ void DBIter::SeekToLast() {
   direction_ = kReverse;
   ReleaseTempPinnedData();
   ResetBlobValue();
+  ResetDeltaValue();
   ResetValueAndColumns();
   ResetInternalKeysSkippedCounter();
   ClearSavedValue();
@@ -1668,12 +1808,13 @@ Iterator* NewDBIterator(Env* env, const ReadOptions& read_options,
                         const SequenceNumber& sequence,
                         uint64_t max_sequential_skip_in_iterations,
                         ReadCallback* read_callback, DBImpl* db_impl,
-                        ColumnFamilyData* cfd, bool expose_blob_index) {
+                        ColumnFamilyData* cfd, bool expose_blob_index,
+                        bool expose_delta_index) {
   DBIter* db_iter =
       new DBIter(env, read_options, ioptions, mutable_cf_options,
                  user_key_comparator, internal_iter, version, sequence, false,
                  max_sequential_skip_in_iterations, read_callback, db_impl, cfd,
-                 expose_blob_index);
+                 expose_blob_index, expose_delta_index);
   return db_iter;
 }
 

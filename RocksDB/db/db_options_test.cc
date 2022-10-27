@@ -210,6 +210,7 @@ TEST_F(DBOptionsTest, SetMutableTableOptions) {
   options.create_if_missing = true;
   options.env = env_;
   options.blob_file_size = 16384;
+  options.delta_file_size = 16384;
   BlockBasedTableOptions bbto;
   bbto.no_block_cache = true;
   bbto.block_size = 8192;
@@ -225,6 +226,7 @@ TEST_F(DBOptionsTest, SetMutableTableOptions) {
       c_opts.table_factory->GetOptions<BlockBasedTableOptions>();
   ASSERT_NE(c_bbto, nullptr);
   ASSERT_EQ(c_opts.blob_file_size, 16384);
+  ASSERT_EQ(c_opts.delta_file_size, 16384);
   ASSERT_EQ(c_bbto->no_block_cache, true);
   ASSERT_EQ(c_bbto->block_size, 8192);
   ASSERT_EQ(c_bbto->block_restart_interval, 7);
@@ -268,9 +270,11 @@ TEST_F(DBOptionsTest, SetMutableTableOptions) {
   ASSERT_OK(dbfull()->SetOptions(
       cfh, {{"table_factory.block_size", "16384"},
             {"blob_file_size", "32768"},
+            {"delta_file_size", "32768"},
             {"table_factory.block_restart_interval", "13"}}));
   c_opts = dbfull()->GetOptions(cfh);
   ASSERT_EQ(c_opts.blob_file_size, 32768);
+  ASSERT_EQ(c_opts.delta_file_size, 32768);
   ASSERT_EQ(c_bbto->block_size, 16384);
   ASSERT_EQ(c_bbto->block_restart_interval, 13);
   // Set some on the table and a bad one on the ColumnFamily - options should
@@ -402,7 +406,7 @@ TEST_F(DBOptionsTest, SetWalBytesPerSync) {
   // Do not flush. If we flush here, SwitchWAL will reuse old WAL file since its
   // empty and will not get the new wal_bytes_per_sync value.
   low_bytes_per_sync = counter;
-  //5242880 = 1024 * 1024 * 5
+  // 5242880 = 1024 * 1024 * 5
   ASSERT_OK(dbfull()->SetDBOptions({{"wal_bytes_per_sync", "5242880"}}));
   ASSERT_EQ(5242880, dbfull()->GetDBOptions().wal_bytes_per_sync);
   counter = 0;
@@ -604,7 +608,7 @@ TEST_F(DBOptionsTest, SetOptionsMayTriggerCompaction) {
 TEST_F(DBOptionsTest, SetBackgroundCompactionThreads) {
   Options options;
   options.create_if_missing = true;
-  options.max_background_compactions = 1;   // default value
+  options.max_background_compactions = 1;  // default value
   options.env = env_;
   Reopen(options);
   ASSERT_EQ(1, dbfull()->TEST_BGCompactionsAllowed());
@@ -626,7 +630,6 @@ TEST_F(DBOptionsTest, SetBackgroundFlushThreads) {
   ASSERT_EQ(3, env_->GetBackgroundThreads(Env::Priority::HIGH));
   ASSERT_EQ(3, dbfull()->TEST_BGFlushesAllowed());
 }
-
 
 TEST_F(DBOptionsTest, SetBackgroundJobs) {
   Options options;
@@ -691,7 +694,8 @@ TEST_F(DBOptionsTest, SetDelayedWriteRateOption) {
   options.delayed_write_rate = 2 * 1024U * 1024U;
   options.env = env_;
   Reopen(options);
-  ASSERT_EQ(2 * 1024U * 1024U, dbfull()->TEST_write_controler().max_delayed_write_rate());
+  ASSERT_EQ(2 * 1024U * 1024U,
+            dbfull()->TEST_write_controler().max_delayed_write_rate());
 
   ASSERT_OK(dbfull()->SetDBOptions({{"delayed_write_rate", "20000"}}));
   ASSERT_EQ(20000, dbfull()->TEST_write_controler().max_delayed_write_rate());

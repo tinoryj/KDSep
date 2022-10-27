@@ -144,9 +144,9 @@ class CompactionPickerTestBase : public testing::Test {
     FileMetaData* f = new FileMetaData(
         file_number, path_id, file_size, smallest_ikey, largest_ikey,
         smallest_seq, largest_seq, marked_for_compact, temperature,
-        kInvalidBlobFileNumber, kUnknownOldestAncesterTime,
-        kUnknownFileCreationTime, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName, kNullUniqueId64x2);
+        kInvalidBlobFileNumber, kInvalidDeltaFileNumber,
+        kUnknownOldestAncesterTime, kUnknownFileCreationTime,
+        kUnknownFileChecksum, kUnknownFileChecksumFuncName, kNullUniqueId64x2);
     f->compensated_file_size =
         (compensated_file_size != 0) ? compensated_file_size : file_size;
     f->oldest_ancester_time = oldest_ancestor_time;

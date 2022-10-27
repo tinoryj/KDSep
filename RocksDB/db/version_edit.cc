@@ -10,6 +10,7 @@
 #include "db/version_edit.h"
 
 #include "db/blob/blob_index.h"
+#include "db/delta/delta_index.h"
 #include "db/version_set.h"
 #include "logging/event_logger.h"
 #include "rocksdb/slice.h"
@@ -20,9 +21,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-namespace {
-
-}  // anonymous namespace
+namespace {}  // anonymous namespace
 
 uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
   assert(number <= kFileNumberMask);
@@ -47,6 +46,25 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
       if (oldest_blob_file_number == kInvalidBlobFileNumber ||
           oldest_blob_file_number > blob_index.file_number()) {
         oldest_blob_file_number = blob_index.file_number();
+      }
+    }
+  }
+
+  if (value_type == kTypeDeltaIndex) {
+    DeltaIndex delta_index;
+    const Status s = delta_index.DecodeFrom(value);
+    if (!s.ok()) {
+      return s;
+    }
+
+    if (!delta_index.IsInlined() && !delta_index.HasTTL()) {
+      if (delta_index.file_number() == kInvalidDeltaFileNumber) {
+        return Status::Corruption("Invalid delta file number");
+      }
+
+      if (oldest_delta_file_number == kInvalidDeltaFileNumber ||
+          oldest_delta_file_number > delta_index.file_number()) {
+        oldest_delta_file_number = delta_index.file_number();
       }
     }
   }
@@ -84,6 +102,8 @@ void VersionEdit::Clear() {
   new_files_.clear();
   blob_file_additions_.clear();
   blob_file_garbages_.clear();
+  delta_file_additions_.clear();
+  delta_file_garbages_.clear();
   wal_additions_.clear();
   wal_deletion_.Reset();
   column_family_ = 0;
@@ -220,6 +240,12 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
       PutVarint64(&oldest_blob_file_number, f.oldest_blob_file_number);
       PutLengthPrefixedSlice(dst, Slice(oldest_blob_file_number));
     }
+    if (f.oldest_delta_file_number != kInvalidDeltaFileNumber) {
+      PutVarint32(dst, NewFileCustomTag::kOldestDeltaFileNumber);
+      std::string oldest_delta_file_number;
+      PutVarint64(&oldest_delta_file_number, f.oldest_delta_file_number);
+      PutLengthPrefixedSlice(dst, Slice(oldest_delta_file_number));
+    }
     UniqueId64x2 unique_id = f.unique_id;
     TEST_SYNC_POINT_CALLBACK("VersionEdit::EncodeTo:UniqueId", &unique_id);
     if (unique_id != kNullUniqueId64x2) {
@@ -242,6 +268,16 @@ bool VersionEdit::EncodeTo(std::string* dst) const {
   for (const auto& blob_file_garbage : blob_file_garbages_) {
     PutVarint32(dst, kBlobFileGarbage);
     blob_file_garbage.EncodeTo(dst);
+  }
+
+  for (const auto& delta_file_addition : delta_file_additions_) {
+    PutVarint32(dst, kDeltaFileAddition);
+    delta_file_addition.EncodeTo(dst);
+  }
+
+  for (const auto& delta_file_garbage : delta_file_garbages_) {
+    PutVarint32(dst, kDeltaFileGarbage);
+    delta_file_garbage.EncodeTo(dst);
   }
 
   for (const auto& wal_addition : wal_additions_) {
@@ -379,6 +415,11 @@ const char* VersionEdit::DecodeNewFile4From(Slice* input) {
             return "invalid oldest blob file number";
           }
           break;
+        case kOldestDeltaFileNumber:
+          if (!GetVarint64(&field, &f.oldest_delta_file_number)) {
+            return "invalid oldest delta file number";
+          }
+          break;
         case kTemperature:
           if (field.size() != 1) {
             return "temperature field wrong size";
@@ -501,8 +542,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         break;
 
       case kCompactCursor:
-        if (GetLevel(&input, &level, &msg) &&
-            GetInternalKey(&input, &key)) {
+        if (GetLevel(&input, &level, &msg) && GetInternalKey(&input, &key)) {
           // Here we re-use the output format of compact pointer in LevelDB
           // to persist compact_cursors_
           compact_cursors_.push_back(std::make_pair(level, key));
@@ -615,6 +655,29 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         break;
       }
 
+      case kDeltaFileAddition:
+      case kDeltaFileAddition_DEPRECATED: {
+        DeltaFileAddition delta_file_addition;
+        const Status s = delta_file_addition.DecodeFrom(&input);
+        if (!s.ok()) {
+          return s;
+        }
+
+        AddDeltaFile(std::move(delta_file_addition));
+        break;
+      }
+
+      case kDeltaFileGarbage:
+      case kDeltaFileGarbage_DEPRECATED: {
+        DeltaFileGarbage delta_file_garbage;
+        const Status s = delta_file_garbage.DecodeFrom(&input);
+        if (!s.ok()) {
+          return s;
+        }
+
+        AddDeltaFileGarbage(std::move(delta_file_garbage));
+        break;
+      }
       case kWalAddition: {
         WalAddition wal_addition;
         const Status s = wal_addition.DecodeFrom(&input);
@@ -807,6 +870,10 @@ std::string VersionEdit::DebugString(bool hex_key) const {
       r.append(" blob_file:");
       AppendNumberTo(&r, f.oldest_blob_file_number);
     }
+    if (f.oldest_delta_file_number != kInvalidDeltaFileNumber) {
+      r.append(" delta_file:");
+      AppendNumberTo(&r, f.oldest_delta_file_number);
+    }
     r.append(" oldest_ancester_time:");
     AppendNumberTo(&r, f.oldest_ancester_time);
     r.append(" file_creation_time:");
@@ -839,6 +906,16 @@ std::string VersionEdit::DebugString(bool hex_key) const {
   for (const auto& blob_file_garbage : blob_file_garbages_) {
     r.append("\n  BlobFileGarbage: ");
     r.append(blob_file_garbage.DebugString());
+  }
+
+  for (const auto& delta_file_addition : delta_file_additions_) {
+    r.append("\n  DeltaFileAddition: ");
+    r.append(delta_file_addition.DebugString());
+  }
+
+  for (const auto& delta_file_garbage : delta_file_garbages_) {
+    r.append("\n  DeltaFileGarbage: ");
+    r.append(delta_file_garbage.DebugString());
   }
 
   for (const auto& wal_addition : wal_additions_) {
@@ -938,6 +1015,9 @@ std::string VersionEdit::DebugJSON(int edit_num, bool hex_key) const {
       if (f.oldest_blob_file_number != kInvalidBlobFileNumber) {
         jw << "OldestBlobFile" << f.oldest_blob_file_number;
       }
+      if (f.oldest_delta_file_number != kInvalidDeltaFileNumber) {
+        jw << "OldestDeltaFile" << f.oldest_delta_file_number;
+      }
       if (f.temperature != Temperature::kUnknown) {
         // Maybe change to human readable format whenthe feature becomes
         // permanent
@@ -971,6 +1051,34 @@ std::string VersionEdit::DebugJSON(int edit_num, bool hex_key) const {
     for (const auto& blob_file_garbage : blob_file_garbages_) {
       jw.StartArrayedObject();
       jw << blob_file_garbage;
+      jw.EndArrayedObject();
+    }
+
+    jw.EndArray();
+  }
+
+  if (!delta_file_additions_.empty()) {
+    jw << "DeltaFileAdditions";
+
+    jw.StartArray();
+
+    for (const auto& delta_file_addition : delta_file_additions_) {
+      jw.StartArrayedObject();
+      jw << delta_file_addition;
+      jw.EndArrayedObject();
+    }
+
+    jw.EndArray();
+  }
+
+  if (!delta_file_garbages_.empty()) {
+    jw << "DeltaFileGarbages";
+
+    jw.StartArray();
+
+    for (const auto& delta_file_garbage : delta_file_garbages_) {
+      jw.StartArrayedObject();
+      jw << delta_file_garbage;
       jw.EndArrayedObject();
     }
 

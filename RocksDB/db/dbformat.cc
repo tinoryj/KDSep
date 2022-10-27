@@ -46,6 +46,8 @@ EntryType GetEntryType(ValueType value_type) {
       return kEntryRangeDeletion;
     case kTypeBlobIndex:
       return kEntryBlobIndex;
+    case kTypeDeltaIndex:
+      return kEntryDeltaIndex;
     case kTypeWideColumnEntity:
       return kEntryWideColumnEntity;
     default:

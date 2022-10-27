@@ -82,6 +82,8 @@ struct ImmutableCFOptions {
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
   std::shared_ptr<Cache> blob_cache;
+
+  std::shared_ptr<Cache> delta_cache;
 };
 
 struct ImmutableOptions : public ImmutableDBOptions, public ImmutableCFOptions {
@@ -148,6 +150,20 @@ struct MutableCFOptions {
         blob_compaction_readahead_size(options.blob_compaction_readahead_size),
         blob_file_starting_level(options.blob_file_starting_level),
         prepopulate_blob_cache(options.prepopulate_blob_cache),
+        enable_delta_files(options.enable_delta_files),
+        min_delta_size(options.min_delta_size),
+        delta_file_size(options.delta_file_size),
+        delta_compression_type(options.delta_compression_type),
+        enable_delta_garbage_collection(
+            options.enable_delta_garbage_collection),
+        delta_garbage_collection_age_cutoff(
+            options.delta_garbage_collection_age_cutoff),
+        delta_garbage_collection_force_threshold(
+            options.delta_garbage_collection_force_threshold),
+        delta_compaction_readahead_size(
+            options.delta_compaction_readahead_size),
+        delta_file_starting_level(options.delta_file_starting_level),
+        prepopulate_delta_cache(options.prepopulate_delta_cache),
         max_sequential_skip_in_iterations(
             options.max_sequential_skip_in_iterations),
         check_flush_compaction_key_order(
@@ -205,6 +221,16 @@ struct MutableCFOptions {
         blob_compaction_readahead_size(0),
         blob_file_starting_level(0),
         prepopulate_blob_cache(PrepopulateBlobCache::kDisable),
+        enable_delta_files(false),
+        min_delta_size(0),
+        delta_file_size(0),
+        delta_compression_type(kNoCompression),
+        enable_delta_garbage_collection(false),
+        delta_garbage_collection_age_cutoff(0.0),
+        delta_garbage_collection_force_threshold(0.0),
+        delta_compaction_readahead_size(0),
+        delta_file_starting_level(0),
+        prepopulate_delta_cache(PrepopulateDeltaCache::kDisable),
         max_sequential_skip_in_iterations(0),
         check_flush_compaction_key_order(true),
         paranoid_file_checks(false),
@@ -291,6 +317,18 @@ struct MutableCFOptions {
   int blob_file_starting_level;
   PrepopulateBlobCache prepopulate_blob_cache;
 
+  // Delta log related options
+  bool enable_delta_files;
+  uint64_t min_delta_size;
+  uint64_t delta_file_size;
+  CompressionType delta_compression_type;
+  bool enable_delta_garbage_collection;
+  double delta_garbage_collection_age_cutoff;
+  double delta_garbage_collection_force_threshold;
+  uint64_t delta_compaction_readahead_size;
+  int delta_file_starting_level;
+  PrepopulateDeltaCache prepopulate_delta_cache;
+
   // Misc options
   uint64_t max_sequential_skip_in_iterations;
   bool check_flush_compaction_key_order;
@@ -314,9 +352,10 @@ struct MutableCFOptions {
 uint64_t MultiplyCheckOverflow(uint64_t op1, double op2);
 
 // Get the max file size in a given level.
-uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options,
-    int level, CompactionStyle compaction_style, int base_level = 1,
-    bool level_compaction_dynamic_level_bytes = false);
+uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options, int level,
+                             CompactionStyle compaction_style,
+                             int base_level = 1,
+                             bool level_compaction_dynamic_level_bytes = false);
 
 // Get the max size of an L0 file for which we will pin its meta-blocks when
 // `pin_l0_filter_and_index_blocks_in_cache` is set.

@@ -6,6 +6,7 @@
 #include "table/get_context.h"
 
 #include "db/blob//blob_fetcher.h"
+#include "db/delta/delta_fetcher.h"
 #include "db/merge_helper.h"
 #include "db/pinned_iterators_manager.h"
 #include "db/read_callback.h"

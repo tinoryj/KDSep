@@ -12,6 +12,9 @@
 #include "db/blob/prefetch_buffer_collection.h"
 #include "db/compaction/compaction_iteration_stats.h"
 #include "db/dbformat.h"
+#include "db/delta/delta_fetcher.h"
+#include "db/delta/delta_index.h"
+#include "db/delta/prefetch_buffer_collection.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/likely.h"
@@ -125,6 +128,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
                                const bool at_bottom,
                                const bool allow_data_in_errors,
                                const BlobFetcher* blob_fetcher,
+                               const DeltaFetcher* delta_fetcher,
                                PrefetchBufferCollection* prefetch_buffers,
                                CompactionIterationStats* c_iter_stats) {
   // Get a copy of the internal key, before it's invalidated by iter->Next()
@@ -210,9 +214,10 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // want. Also if we're in compaction and it's a put, it would be nice to
       // run compaction filter on it.
       const Slice val = iter->value();
-      PinnableSlice blob_value;
+      PinnableSlice blob_value, delta_value;
       const Slice* val_ptr;
       if ((kTypeValue == ikey.type || kTypeBlobIndex == ikey.type ||
+           kTypeDeltaIndex == ikey.type ||
            kTypeWideColumnEntity == ikey.type) &&
           (range_del_agg == nullptr ||
            !range_del_agg->ShouldDelete(
@@ -250,6 +255,36 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
           if (c_iter_stats) {
             ++c_iter_stats->num_blobs_read;
             c_iter_stats->total_blob_bytes_read += bytes_read;
+          }
+        } else if (ikey.type == kTypeDeltaIndex) {
+          DeltaIndex delta_index;
+
+          s = delta_index.DecodeFrom(val);
+          if (!s.ok()) {
+            return s;
+          }
+
+          FilePrefetchBuffer* prefetch_buffer =
+              prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
+                                     delta_index.file_number())
+                               : nullptr;
+
+          uint64_t bytes_read = 0;
+
+          assert(delta_fetcher);
+
+          s = delta_fetcher->FetchDelta(ikey.user_key, delta_index,
+                                        prefetch_buffer, &delta_value,
+                                        &bytes_read);
+          if (!s.ok()) {
+            return s;
+          }
+
+          val_ptr = &delta_value;
+
+          if (c_iter_stats) {
+            ++c_iter_stats->num_deltas_read;
+            c_iter_stats->total_delta_bytes_read += bytes_read;
           }
         } else {
           val_ptr = &val;

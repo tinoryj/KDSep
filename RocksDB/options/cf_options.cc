@@ -458,6 +458,48 @@ static std::unordered_map<std::string, OptionTypeInfo>
          OptionTypeInfo::Enum<PrepopulateBlobCache>(
              offsetof(struct MutableCFOptions, prepopulate_blob_cache),
              &prepopulate_blob_cache_string_map, OptionTypeFlags::kMutable)},
+        {"enable_delta_files",
+         {offsetof(struct MutableCFOptions, enable_delta_files),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"min_delta_size",
+         {offsetof(struct MutableCFOptions, min_delta_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_file_size",
+         {offsetof(struct MutableCFOptions, delta_file_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_compression_type",
+         {offsetof(struct MutableCFOptions, delta_compression_type),
+          OptionType::kCompressionType, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"enable_delta_garbage_collection",
+         {offsetof(struct MutableCFOptions, enable_delta_garbage_collection),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_garbage_collection_age_cutoff",
+         {offsetof(struct MutableCFOptions,
+                   delta_garbage_collection_age_cutoff),
+          OptionType::kDouble, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_garbage_collection_force_threshold",
+         {offsetof(struct MutableCFOptions,
+                   delta_garbage_collection_force_threshold),
+          OptionType::kDouble, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_compaction_readahead_size",
+         {offsetof(struct MutableCFOptions, delta_compaction_readahead_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"delta_file_starting_level",
+         {offsetof(struct MutableCFOptions, delta_file_starting_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"prepopulate_delta_cache",
+         OptionTypeInfo::Enum<PrepopulateDeltaCache>(
+             offsetof(struct MutableCFOptions, prepopulate_delta_cache),
+             &prepopulate_delta_cache_string_map, OptionTypeFlags::kMutable)},
         {"sample_for_compression",
          {offsetof(struct MutableCFOptions, sample_for_compression),
           OptionType::kUInt64T, OptionVerificationType::kNormal,
@@ -761,6 +803,16 @@ static std::unordered_map<std::string, OptionTypeInfo>
             auto* cache = static_cast<std::shared_ptr<Cache>*>(addr);
             return Cache::CreateFromString(opts, value, cache);
           }}},
+        {"delta_cache",
+         {offsetof(struct ImmutableCFOptions, delta_cache),
+          OptionType::kUnknown, OptionVerificationType::kNormal,
+          (OptionTypeFlags::kCompareNever | OptionTypeFlags::kDontSerialize),
+          // Parses the input value as a Cache
+          [](const ConfigOptions& opts, const std::string&,
+             const std::string& value, void* addr) {
+            auto* cache = static_cast<std::shared_ptr<Cache>*>(addr);
+            return Cache::CreateFromString(opts, value, cache);
+          }}},
 };
 
 const std::string OptionsHelper::kCFOptionsName = "ColumnFamilyOptions";
@@ -902,7 +954,8 @@ ImmutableCFOptions::ImmutableCFOptions(const ColumnFamilyOptions& cf_options)
       cf_paths(cf_options.cf_paths),
       compaction_thread_limiter(cf_options.compaction_thread_limiter),
       sst_partitioner_factory(cf_options.sst_partitioner_factory),
-      blob_cache(cf_options.blob_cache) {}
+      blob_cache(cf_options.blob_cache),
+      delta_cache(cf_options.delta_cache) {}
 
 ImmutableOptions::ImmutableOptions() : ImmutableOptions(Options()) {}
 
@@ -939,9 +992,9 @@ uint64_t MultiplyCheckOverflow(uint64_t op1, double op2) {
 // when level_compaction_dynamic_level_bytes is true and leveled compaction
 // is used, the base level is not always L1, so precomupted max_file_size can
 // no longer be used. Recompute file_size_for_level from base level.
-uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options,
-    int level, CompactionStyle compaction_style, int base_level,
-    bool level_compaction_dynamic_level_bytes) {
+uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options, int level,
+                             CompactionStyle compaction_style, int base_level,
+                             bool level_compaction_dynamic_level_bytes) {
   if (!level_compaction_dynamic_level_bytes || level < base_level ||
       compaction_style != kCompactionStyleLevel) {
     assert(level >= 0);
@@ -1110,6 +1163,29 @@ void MutableCFOptions::Dump(Logger* log) const {
                  blob_file_starting_level);
   ROCKS_LOG_INFO(log, "                   prepopulate_blob_cache: %s",
                  prepopulate_blob_cache == PrepopulateBlobCache::kFlushOnly
+                     ? "flush only"
+                     : "disable");
+  // Delta file related options
+  ROCKS_LOG_INFO(log, "                        enable_delta_files: %s",
+                 enable_delta_files ? "true" : "false");
+  ROCKS_LOG_INFO(log, "                            min_delta_size: %" PRIu64,
+                 min_delta_size);
+  ROCKS_LOG_INFO(log, "                           delta_file_size: %" PRIu64,
+                 delta_file_size);
+  ROCKS_LOG_INFO(log, "                    delta_compression_type: %s",
+                 CompressionTypeToString(delta_compression_type).c_str());
+  ROCKS_LOG_INFO(log, "           enable_delta_garbage_collection: %s",
+                 enable_delta_garbage_collection ? "true" : "false");
+  ROCKS_LOG_INFO(log, "       delta_garbage_collection_age_cutoff: %f",
+                 delta_garbage_collection_age_cutoff);
+  ROCKS_LOG_INFO(log, "  delta_garbage_collection_force_threshold: %f",
+                 delta_garbage_collection_force_threshold);
+  ROCKS_LOG_INFO(log, "           delta_compaction_readahead_size: %" PRIu64,
+                 delta_compaction_readahead_size);
+  ROCKS_LOG_INFO(log, "                 delta_file_starting_level: %d",
+                 delta_file_starting_level);
+  ROCKS_LOG_INFO(log, "                   prepopulate_delta_cache: %s",
+                 prepopulate_delta_cache == PrepopulateDeltaCache::kFlushOnly
                      ? "flush only"
                      : "disable");
   ROCKS_LOG_INFO(log, "                   last_level_temperature: %d",

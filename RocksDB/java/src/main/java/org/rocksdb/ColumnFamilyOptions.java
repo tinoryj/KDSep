@@ -9,11 +9,13 @@ import java.nio.file.Paths;
 import java.util.*;
 
 /**
- * ColumnFamilyOptions to control the behavior of a database.  It will be used
+ * ColumnFamilyOptions to control the behavior of a database. It will be used
  * during the creation of a {@link org.rocksdb.RocksDB} (i.e., RocksDB.open()).
  *
- * As a descendent of {@link AbstractNativeReference}, this class is {@link AutoCloseable}
- * and will be automatically released if opened in the preamble of a try with resources block.
+ * As a descendent of {@link AbstractNativeReference}, this class is
+ * {@link AutoCloseable}
+ * and will be automatically released if opened in the preamble of a try with
+ * resources block.
  */
 public class ColumnFamilyOptions extends RocksObject
     implements ColumnFamilyOptionsInterface<ColumnFamilyOptions>,
@@ -35,7 +37,8 @@ public class ColumnFamilyOptions extends RocksObject
   /**
    * Copy constructor for ColumnFamilyOptions.
    *
-   * NOTE: This does a shallow copy, which means comparator, merge_operator, compaction_filter,
+   * NOTE: This does a shallow copy, which means comparator, merge_operator,
+   * compaction_filter,
    * compaction_filter_factory and other pointers will be cloned!
    *
    * @param other The ColumnFamilyOptions to copy.
@@ -65,10 +68,12 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * <p>Constructor to be used by
+   * <p>
+   * Constructor to be used by
    * {@link #getColumnFamilyOptionsFromProps(java.util.Properties)},
    * {@link ColumnFamilyDescriptor#getOptions()}
-   * and also called via JNI.</p>
+   * and also called via JNI.
+   * </p>
    *
    * @param handle native handle to ColumnFamilyOptions instance.
    */
@@ -77,29 +82,33 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * <p>Method to get a options instance by using pre-configured
+   * <p>
+   * Method to get a options instance by using pre-configured
    * property values. If one or many values are undefined in
    * the context of RocksDB the method will return a null
-   * value.</p>
+   * value.
+   * </p>
    *
-   * <p><strong>Note</strong>: Property keys can be derived from
+   * <p>
+   * <strong>Note</strong>: Property keys can be derived from
    * getter methods within the options class. Example: the method
    * {@code writeBufferSize()} has a property key:
-   * {@code write_buffer_size}.</p>
+   * {@code write_buffer_size}.
+   * </p>
    *
    * @param properties {@link java.util.Properties} instance.
    *
    * @return {@link org.rocksdb.ColumnFamilyOptions instance}
-   *     or null.
+   *         or null.
    *
    * @throws java.lang.IllegalArgumentException if null or empty
-   *     {@link Properties} instance is passed to the method call.
+   *                                            {@link Properties} instance is
+   *                                            passed to the method call.
    */
   public static ColumnFamilyOptions getColumnFamilyOptionsFromProps(
       final Properties properties) {
     ColumnFamilyOptions columnFamilyOptions = null;
-    final long handle =
-        getColumnFamilyOptionsFromProps(Options.getOptionStringFromProps(properties));
+    final long handle = getColumnFamilyOptionsFromProps(Options.getOptionStringFromProps(properties));
     if (handle != 0) {
       columnFamilyOptions = new ColumnFamilyOptions(handle);
     }
@@ -107,31 +116,36 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * <p>Method to get a options instance by using pre-configured
+   * <p>
+   * Method to get a options instance by using pre-configured
    * property values. If one or many values are undefined in
    * the context of RocksDB the method will return a null
-   * value.</p>
+   * value.
+   * </p>
    *
-   * <p><strong>Note</strong>: Property keys can be derived from
+   * <p>
+   * <strong>Note</strong>: Property keys can be derived from
    * getter methods within the options class. Example: the method
    * {@code writeBufferSize()} has a property key:
-   * {@code write_buffer_size}.</p>
+   * {@code write_buffer_size}.
+   * </p>
    *
-   * @param cfgOpts  ConfigOptions controlling how the properties are parsed.
+   * @param cfgOpts    ConfigOptions controlling how the properties are parsed.
    * @param properties {@link java.util.Properties} instance.
    *
    * @return {@link org.rocksdb.ColumnFamilyOptions instance}
-   *     or null.
+   *         or null.
    *
    * @throws java.lang.IllegalArgumentException if null or empty
-   *     {@link Properties} instance is passed to the method call.
+   *                                            {@link Properties} instance is
+   *                                            passed to the method call.
    */
   public static ColumnFamilyOptions getColumnFamilyOptionsFromProps(
       final ConfigOptions cfgOpts, final Properties properties) {
     ColumnFamilyOptions columnFamilyOptions = null;
     final long handle = getColumnFamilyOptionsFromProps(
         cfgOpts.nativeHandle_, Options.getOptionStringFromProps(properties));
-    if (handle != 0){
+    if (handle != 0) {
       columnFamilyOptions = new ColumnFamilyOptions(handle);
     }
     return columnFamilyOptions;
@@ -196,7 +210,7 @@ public class ColumnFamilyOptions extends RocksObject
   @Override
   public ColumnFamilyOptions setComparator(
       final BuiltinComparator builtinComparator) {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     setComparatorHandle(nativeHandle_, builtinComparator.ordinal());
     return this;
   }
@@ -206,7 +220,7 @@ public class ColumnFamilyOptions extends RocksObject
       final AbstractComparator comparator) {
     assert (isOwningHandle());
     setComparatorHandle(nativeHandle_, comparator.nativeHandle_,
-            comparator.getComparatorType().getValue());
+        comparator.getComparatorType().getValue());
     comparator_ = comparator;
     return this;
   }
@@ -231,8 +245,7 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public ColumnFamilyOptions setCompactionFilter(
-        final AbstractCompactionFilter<? extends AbstractSlice<?>>
-            compactionFilter) {
+      final AbstractCompactionFilter<? extends AbstractSlice<?>> compactionFilter) {
     setCompactionFilterHandle(nativeHandle_, compactionFilter.nativeHandle_);
     compactionFilter_ = compactionFilter;
     return this;
@@ -245,7 +258,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   @Override
-  public ColumnFamilyOptions setCompactionFilterFactory(final AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>> compactionFilterFactory) {
+  public ColumnFamilyOptions setCompactionFilterFactory(
+      final AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>> compactionFilterFactory) {
     assert (isOwningHandle());
     setCompactionFilterFactoryHandle(nativeHandle_, compactionFilterFactory.nativeHandle_);
     compactionFilterFactory_ = compactionFilterFactory;
@@ -260,28 +274,28 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public ColumnFamilyOptions setWriteBufferSize(final long writeBufferSize) {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     setWriteBufferSize(nativeHandle_, writeBufferSize);
     return this;
   }
 
   @Override
-  public long writeBufferSize()  {
-    assert(isOwningHandle());
+  public long writeBufferSize() {
+    assert (isOwningHandle());
     return writeBufferSize(nativeHandle_);
   }
 
   @Override
   public ColumnFamilyOptions setMaxWriteBufferNumber(
       final int maxWriteBufferNumber) {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     setMaxWriteBufferNumber(nativeHandle_, maxWriteBufferNumber);
     return this;
   }
 
   @Override
   public int maxWriteBufferNumber() {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     return maxWriteBufferNumber(nativeHandle_);
   }
 
@@ -299,14 +313,14 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public ColumnFamilyOptions useFixedLengthPrefixExtractor(final int n) {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     useFixedLengthPrefixExtractor(nativeHandle_, n);
     return this;
   }
 
   @Override
   public ColumnFamilyOptions useCappedPrefixExtractor(final int n) {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     useCappedPrefixExtractor(nativeHandle_, n);
     return this;
   }
@@ -326,8 +340,7 @@ public class ColumnFamilyOptions extends RocksObject
   @Override
   public ColumnFamilyOptions setCompressionPerLevel(
       final List<CompressionType> compressionLevels) {
-    final byte[] byteCompressionTypes = new byte[
-        compressionLevels.size()];
+    final byte[] byteCompressionTypes = new byte[compressionLevels.size()];
     for (int i = 0; i < compressionLevels.size(); i++) {
       byteCompressionTypes[i] = compressionLevels.get(i).getValue();
     }
@@ -337,8 +350,7 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public List<CompressionType> compressionPerLevel() {
-    final byte[] byteCompressionTypes =
-        compressionPerLevel(nativeHandle_);
+    final byte[] byteCompressionTypes = compressionPerLevel(nativeHandle_);
     final List<CompressionType> compressionLevels = new ArrayList<>();
     for (final byte byteCompressionType : byteCompressionTypes) {
       compressionLevels.add(CompressionType.getCompressionType(
@@ -545,8 +557,8 @@ public class ColumnFamilyOptions extends RocksObject
   @Override
   public ColumnFamilyOptions setMaxTableFilesSizeFIFO(
       final long maxTableFilesSize) {
-    assert(maxTableFilesSize > 0); // unsigned native type
-    assert(isOwningHandle());
+    assert (maxTableFilesSize > 0); // unsigned native type
+    assert (isOwningHandle());
     setMaxTableFilesSizeFIFO(nativeHandle_, maxTableFilesSize);
     return this;
   }
@@ -585,7 +597,7 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public String memTableFactoryName() {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     return memTableFactoryName(nativeHandle_);
   }
 
@@ -604,7 +616,7 @@ public class ColumnFamilyOptions extends RocksObject
 
   @Override
   public String tableFactoryName() {
-    assert(isOwningHandle());
+    assert (isOwningHandle());
     return tableFactoryName(nativeHandle_);
   }
 
@@ -742,8 +754,7 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   @Override
-  public ColumnFamilyOptions
-  setMemtableHugePageSize(
+  public ColumnFamilyOptions setMemtableHugePageSize(
       long memtableHugePageSize) {
     setMemtableHugePageSize(nativeHandle_,
         memtableHugePageSize);
@@ -1003,7 +1014,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Set the size of the smallest value to be stored separately in a blob file. Values
+   * Set the size of the smallest value to be stored separately in a blob file.
+   * Values
    * which have an uncompressed size smaller than this threshold are stored
    * alongside the keys in SST files in the usual fashion. A value of zero for
    * this option means that all values are stored in blob files. Note that
@@ -1014,7 +1026,8 @@ public class ColumnFamilyOptions extends RocksObject
    * Dynamically changeable through
    * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
    *
-   * @param minBlobSize the size of the smallest value to be stored separately in a blob file
+   * @param minBlobSize the size of the smallest value to be stored separately in
+   *                    a blob file
    * @return these options, updated with the supplied minimum blob size value
    */
   @Override
@@ -1024,7 +1037,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Get the size of the smallest value to be stored separately in a blob file. Values
+   * Get the size of the smallest value to be stored separately in a blob file.
+   * Values
    * which have an uncompressed size smaller than this threshold are stored
    * alongside the keys in SST files in the usual fashion. A value of zero for
    * this option means that all values are stored in blob files. Note that
@@ -1043,7 +1057,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Set the size limit for blob files. When writing blob files, a new file is opened
+   * Set the size limit for blob files. When writing blob files, a new file is
+   * opened
    * once this limit is reached. Note that enable_blob_files has to be set in
    * order for this option to have any effect.
    *
@@ -1063,7 +1078,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Get the size limit for blob files. When writing blob files, a new file is opened
+   * Get the size limit for blob files. When writing blob files, a new file is
+   * opened
    * once this limit is reached. Note that enable_blob_files has to be set in
    * order for this option to have any effect.
    *
@@ -1080,7 +1096,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Set the compression algorithm to use for large values stored in blob files. Note
+   * Set the compression algorithm to use for large values stored in blob files.
+   * Note
    * that enable_blob_files has to be set in order for this option to have any
    * effect.
    *
@@ -1100,7 +1117,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Get the compression algorithm to use for large values stored in blob files. Note
+   * Get the compression algorithm to use for large values stored in blob files.
+   * Note
    * that enable_blob_files has to be set in order for this option to have any
    * effect.
    *
@@ -1125,7 +1143,8 @@ public class ColumnFamilyOptions extends RocksObject
    *
    * Default: false
    *
-   * @param enableBlobGarbageCollection true iff blob garbage collection is to be enabled
+   * @param enableBlobGarbageCollection true iff blob garbage collection is to be
+   *                                    enabled
    *
    * @return the reference to the current options.
    */
@@ -1137,7 +1156,8 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   * Get enabled/disables state for garbage collection of blobs. Blob GC is performed as part of
+   * Get enabled/disables state for garbage collection of blobs. Blob GC is
+   * performed as part of
    * compaction. Valid blobs residing in blob files older than a cutoff get
    * relocated to new files as they are encountered during compaction, which makes
    * it possible to clean up blob files once they contain nothing but
@@ -1161,7 +1181,8 @@ public class ColumnFamilyOptions extends RocksObject
    *
    * Default: 0.25
    *
-   * @param blobGarbageCollectionAgeCutoff the new blob garbage collection age cutoff
+   * @param blobGarbageCollectionAgeCutoff the new blob garbage collection age
+   *                                       cutoff
    *
    * @return the reference to the current options.
    */
@@ -1189,16 +1210,17 @@ public class ColumnFamilyOptions extends RocksObject
   }
 
   /**
-   *  If the ratio of garbage in the oldest blob files exceeds this threshold,
-   *  targeted compactions are scheduled in order to force garbage collecting
-   *  the blob files in question, assuming they are all eligible based on the
-   *  value of {@link #blobGarbageCollectionAgeCutoff} above. This option is
-   *  currently only supported with leveled compactions.
+   * If the ratio of garbage in the oldest blob files exceeds this threshold,
+   * targeted compactions are scheduled in order to force garbage collecting
+   * the blob files in question, assuming they are all eligible based on the
+   * value of {@link #blobGarbageCollectionAgeCutoff} above. This option is
+   * currently only supported with leveled compactions.
    *
-   *  Note that {@link #enableBlobGarbageCollection} has to be set in order for this
-   *  option to have any effect.
+   * Note that {@link #enableBlobGarbageCollection} has to be set in order for
+   * this
+   * option to have any effect.
    *
-   *  Default: 1.0
+   * Default: 1.0
    *
    * Dynamically changeable through the SetOptions() API
    *
@@ -1214,6 +1236,7 @@ public class ColumnFamilyOptions extends RocksObject
 
   /**
    * Get the current value for the {@link #blobGarbageCollectionForceThreshold}
+   * 
    * @return the current threshold at which garbage collection of blobs is forced
    */
   @Override
@@ -1315,222 +1338,779 @@ public class ColumnFamilyOptions extends RocksObject
   // END options for blobs (integrated BlobDB)
   //
 
+  //
+  // BEGIN options for deltas (integrated DeltaDB)
+  //
+
+  /**
+   * When set, large values (deltas) are written to separate delta files, and only
+   * pointers to them are stored in SST files. This can reduce write amplification
+   * for large-value use cases at the cost of introducing a level of indirection
+   * for reads. See also the options min_delta_size, delta_file_size,
+   * delta_compression_type, enable_delta_garbage_collection, and
+   * delta_garbage_collection_age_cutoff below.
+   *
+   * Default: false
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param enableDeltaFiles true iff delta files should be enabled
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setEnableDeltaFiles(final boolean enableDeltaFiles) {
+    setEnableDeltaFiles(nativeHandle_, enableDeltaFiles);
+    return this;
+  }
+
+  /**
+   * When set, large values (deltas) are written to separate delta files, and only
+   * pointers to them are stored in SST files. This can reduce write amplification
+   * for large-value use cases at the cost of introducing a level of indirection
+   * for reads. See also the options min_delta_size, delta_file_size,
+   * delta_compression_type, enable_delta_garbage_collection, and
+   * delta_garbage_collection_age_cutoff below.
+   *
+   * Default: false
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @return true iff delta files are currently enabled
+   */
+  public boolean enableDeltaFiles() {
+    return enableDeltaFiles(nativeHandle_);
+  }
+
+  /**
+   * Set the size of the smallest value to be stored separately in a delta file.
+   * Values
+   * which have an uncompressed size smaller than this threshold are stored
+   * alongside the keys in SST files in the usual fashion. A value of zero for
+   * this option means that all values are stored in delta files. Note that
+   * enable_delta_files has to be set in order for this option to have any effect.
+   *
+   * Default: 0
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param minDeltaSize the size of the smallest value to be stored separately in
+   *                     a delta file
+   * @return these options, updated with the supplied minimum delta size value
+   */
+  @Override
+  public ColumnFamilyOptions setMinDeltaSize(final long minDeltaSize) {
+    setMinDeltaSize(nativeHandle_, minDeltaSize);
+    return this;
+  }
+
+  /**
+   * Get the size of the smallest value to be stored separately in a delta file.
+   * Values
+   * which have an uncompressed size smaller than this threshold are stored
+   * alongside the keys in SST files in the usual fashion. A value of zero for
+   * this option means that all values are stored in delta files. Note that
+   * enable_delta_files has to be set in order for this option to have any effect.
+   *
+   * Default: 0
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @return the current minimum delta size
+   */
+  @Override
+  public long minDeltaSize() {
+    return minDeltaSize(nativeHandle_);
+  }
+
+  /**
+   * Set the size limit for delta files. When writing delta files, a new file is
+   * opened
+   * once this limit is reached. Note that enable_delta_files has to be set in
+   * order for this option to have any effect.
+   *
+   * Default: 256 MB
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param deltaFileSize the new size limit for delta files
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaFileSize(final long deltaFileSize) {
+    setDeltaFileSize(nativeHandle_, deltaFileSize);
+    return this;
+  }
+
+  /**
+   * Get the size limit for delta files. When writing delta files, a new file is
+   * opened
+   * once this limit is reached. Note that enable_delta_files has to be set in
+   * order for this option to have any effect.
+   *
+   * Default: 256 MB
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @return the size limit for delta files
+   */
+  @Override
+  public long deltaFileSize() {
+    return deltaFileSize(nativeHandle_);
+  }
+
+  /**
+   * Set the compression algorithm to use for large values stored in delta files.
+   * Note
+   * that enable_delta_files has to be set in order for this option to have any
+   * effect.
+   *
+   * Default: no compression
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param compressionType the compression algorithm to use
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaCompressionType(final CompressionType compressionType) {
+    setDeltaCompressionType(nativeHandle_, compressionType.getValue());
+    return this;
+  }
+
+  /**
+   * Get the compression algorithm to use for large values stored in delta files.
+   * Note
+   * that enable_delta_files has to be set in order for this option to have any
+   * effect.
+   *
+   * Default: no compression
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @return the compression algorithm currently in use for deltas
+   */
+  @Override
+  public CompressionType deltaCompressionType() {
+    return CompressionType.values()[deltaCompressionType(nativeHandle_)];
+  }
+
+  /**
+   * Enable/disable garbage collection of deltas. Delta GC is performed as part of
+   * compaction. Valid deltas residing in delta files older than a cutoff get
+   * relocated to new files as they are encountered during compaction, which makes
+   * it possible to clean up delta files once they contain nothing but
+   * obsolete/garbage deltas. See also delta_garbage_collection_age_cutoff below.
+   *
+   * Default: false
+   *
+   * @param enableDeltaGarbageCollection true iff delta garbage collection is to
+   *                                     be enabled
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setEnableDeltaGarbageCollection(
+      final boolean enableDeltaGarbageCollection) {
+    setEnableDeltaGarbageCollection(nativeHandle_, enableDeltaGarbageCollection);
+    return this;
+  }
+
+  /**
+   * Get enabled/disables state for garbage collection of deltas. Delta GC is
+   * performed as part of
+   * compaction. Valid deltas residing in delta files older than a cutoff get
+   * relocated to new files as they are encountered during compaction, which makes
+   * it possible to clean up delta files once they contain nothing but
+   * obsolete/garbage deltas. See also delta_garbage_collection_age_cutoff below.
+   *
+   * Default: false
+   *
+   * @return true iff delta garbage collection is currently enabled
+   */
+  @Override
+  public boolean enableDeltaGarbageCollection() {
+    return enableDeltaGarbageCollection(nativeHandle_);
+  }
+
+  /**
+   * Set the cutoff in terms of delta file age for garbage collection. Deltas in
+   * the
+   * oldest N delta files will be relocated when encountered during compaction,
+   * where N = garbage_collection_cutoff * number_of_delta_files. Note that
+   * enable_delta_garbage_collection has to be set in order for this option to
+   * have
+   * any effect.
+   *
+   * Default: 0.25
+   *
+   * @param deltaGarbageCollectionAgeCutoff the new delta garbage collection age
+   *                                        cutoff
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaGarbageCollectionAgeCutoff(
+      final double deltaGarbageCollectionAgeCutoff) {
+    setDeltaGarbageCollectionAgeCutoff(nativeHandle_, deltaGarbageCollectionAgeCutoff);
+    return this;
+  }
+
+  /**
+   * Get the cutoff in terms of delta file age for garbage collection. Deltas in
+   * the
+   * oldest N delta files will be relocated when encountered during compaction,
+   * where N = garbage_collection_cutoff * number_of_delta_files. Note that
+   * enable_delta_garbage_collection has to be set in order for this option to
+   * have
+   * any effect.
+   *
+   * Default: 0.25
+   *
+   * @return the current delta garbage collection age cutoff
+   */
+  @Override
+  public double deltaGarbageCollectionAgeCutoff() {
+    return deltaGarbageCollectionAgeCutoff(nativeHandle_);
+  }
+
+  /**
+   * If the ratio of garbage in the oldest delta files exceeds this threshold,
+   * targeted compactions are scheduled in order to force garbage collecting
+   * the delta files in question, assuming they are all eligible based on the
+   * value of {@link #deltaGarbageCollectionAgeCutoff} above. This option is
+   * currently only supported with leveled compactions.
+   *
+   * Note that {@link #enableDeltaGarbageCollection} has to be set in order for
+   * this
+   * option to have any effect.
+   *
+   * Default: 1.0
+   *
+   * Dynamically changeable through the SetOptions() API
+   *
+   * @param deltaGarbageCollectionForceThreshold new value for the threshold
+   * @return the reference to the current options
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaGarbageCollectionForceThreshold(
+      final double deltaGarbageCollectionForceThreshold) {
+    setDeltaGarbageCollectionForceThreshold(nativeHandle_, deltaGarbageCollectionForceThreshold);
+    return this;
+  }
+
+  /**
+   * Get the current value for the {@link #deltaGarbageCollectionForceThreshold}
+   * 
+   * @return the current threshold at which garbage collection of deltas is forced
+   */
+  @Override
+  public double deltaGarbageCollectionForceThreshold() {
+    return deltaGarbageCollectionForceThreshold(nativeHandle_);
+  }
+
+  /**
+   * Set compaction readahead for delta files.
+   *
+   * Default: 0
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param deltaCompactionReadaheadSize the compaction readahead for delta files
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaCompactionReadaheadSize(
+      final long deltaCompactionReadaheadSize) {
+    setDeltaCompactionReadaheadSize(nativeHandle_, deltaCompactionReadaheadSize);
+    return this;
+  }
+
+  /**
+   * Get compaction readahead for delta files.
+   *
+   * @return the current compaction readahead for delta files
+   */
+  @Override
+  public long deltaCompactionReadaheadSize() {
+    return deltaCompactionReadaheadSize(nativeHandle_);
+  }
+
+  /**
+   * Set a certain LSM tree level to enable delta files.
+   *
+   * Default: 0
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param deltaFileStartingLevel the starting level to enable delta files
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setDeltaFileStartingLevel(final int deltaFileStartingLevel) {
+    setDeltaFileStartingLevel(nativeHandle_, deltaFileStartingLevel);
+    return this;
+  }
+
+  /**
+   * Get the starting LSM tree level to enable delta files.
+   *
+   * Default: 0
+   *
+   * @return the current LSM tree level to enable delta files.
+   */
+  @Override
+  public int deltaFileStartingLevel() {
+    return deltaFileStartingLevel(nativeHandle_);
+  }
+
+  /**
+   * Set a certain prepopulate delta cache option.
+   *
+   * Default: 0
+   *
+   * Dynamically changeable through
+   * {@link RocksDB#setOptions(ColumnFamilyHandle, MutableColumnFamilyOptions)}.
+   *
+   * @param prepopulateDeltaCache the prepopulate delta cache option
+   *
+   * @return the reference to the current options.
+   */
+  @Override
+  public ColumnFamilyOptions setPrepopulateDeltaCache(
+      final PrepopulateDeltaCache prepopulateDeltaCache) {
+    setPrepopulateDeltaCache(nativeHandle_, prepopulateDeltaCache.getValue());
+    return this;
+  }
+
+  /**
+   * Get the prepopulate delta cache option.
+   *
+   * Default: 0
+   *
+   * @return the current prepopulate delta cache option.
+   */
+  @Override
+  public PrepopulateDeltaCache prepopulateDeltaCache() {
+    return PrepopulateDeltaCache.getPrepopulateDeltaCache(prepopulateDeltaCache(nativeHandle_));
+  }
+
+  //
+  // END options for deltas (integrated DeltaDB)
+  //
+
   private static native long getColumnFamilyOptionsFromProps(
       final long cfgHandle, String optString);
+
   private static native long getColumnFamilyOptionsFromProps(final String optString);
 
   private static native long newColumnFamilyOptions();
+
   private static native long copyColumnFamilyOptions(final long handle);
+
   private static native long newColumnFamilyOptionsFromOptions(
       final long optionsHandle);
-  @Override protected final native void disposeInternal(final long handle);
+
+  @Override
+  protected final native void disposeInternal(final long handle);
 
   private static native void oldDefaults(
       final long handle, final int majorVersion, final int minorVersion);
+
   private native void optimizeForSmallDb(final long handle);
+
   private static native void optimizeForSmallDb(final long handle, final long cacheHandle);
+
   private native void optimizeForPointLookup(long handle,
       long blockCacheSizeMb);
+
   private native void optimizeLevelStyleCompaction(long handle,
       long memtableMemoryBudget);
+
   private native void optimizeUniversalStyleCompaction(long handle,
       long memtableMemoryBudget);
+
   private native void setComparatorHandle(long handle, int builtinComparator);
+
   private native void setComparatorHandle(long optHandle,
       long comparatorHandle, byte comparatorType);
+
   private native void setMergeOperatorName(long handle, String name);
+
   private native void setMergeOperator(long handle, long mergeOperatorHandle);
+
   private native void setCompactionFilterHandle(long handle,
       long compactionFilterHandle);
+
   private native void setCompactionFilterFactoryHandle(long handle,
       long compactionFilterFactoryHandle);
+
   private native void setWriteBufferSize(long handle, long writeBufferSize)
       throws IllegalArgumentException;
+
   private native long writeBufferSize(long handle);
+
   private native void setMaxWriteBufferNumber(
       long handle, int maxWriteBufferNumber);
+
   private native int maxWriteBufferNumber(long handle);
+
   private native void setMinWriteBufferNumberToMerge(
       long handle, int minWriteBufferNumberToMerge);
+
   private native int minWriteBufferNumberToMerge(long handle);
+
   private native void setCompressionType(long handle, byte compressionType);
+
   private native byte compressionType(long handle);
+
   private native void setCompressionPerLevel(long handle,
       byte[] compressionLevels);
+
   private native byte[] compressionPerLevel(long handle);
+
   private native void setBottommostCompressionType(long handle,
       byte bottommostCompressionType);
+
   private native byte bottommostCompressionType(long handle);
+
   private native void setBottommostCompressionOptions(final long handle,
       final long bottommostCompressionOptionsHandle);
+
   private native void setCompressionOptions(long handle,
       long compressionOptionsHandle);
+
   private native void useFixedLengthPrefixExtractor(
       long handle, int prefixLength);
+
   private native void useCappedPrefixExtractor(
       long handle, int prefixLength);
+
   private native void setNumLevels(
       long handle, int numLevels);
+
   private native int numLevels(long handle);
+
   private native void setLevelZeroFileNumCompactionTrigger(
       long handle, int numFiles);
+
   private native int levelZeroFileNumCompactionTrigger(long handle);
+
   private native void setLevelZeroSlowdownWritesTrigger(
       long handle, int numFiles);
+
   private native int levelZeroSlowdownWritesTrigger(long handle);
+
   private native void setLevelZeroStopWritesTrigger(
       long handle, int numFiles);
+
   private native int levelZeroStopWritesTrigger(long handle);
+
   private native void setTargetFileSizeBase(
       long handle, long targetFileSizeBase);
+
   private native long targetFileSizeBase(long handle);
+
   private native void setTargetFileSizeMultiplier(
       long handle, int multiplier);
+
   private native int targetFileSizeMultiplier(long handle);
+
   private native void setMaxBytesForLevelBase(
       long handle, long maxBytesForLevelBase);
+
   private native long maxBytesForLevelBase(long handle);
+
   private native void setLevelCompactionDynamicLevelBytes(
       long handle, boolean enableLevelCompactionDynamicLevelBytes);
+
   private native boolean levelCompactionDynamicLevelBytes(
       long handle);
+
   private native void setMaxBytesForLevelMultiplier(long handle, double multiplier);
+
   private native double maxBytesForLevelMultiplier(long handle);
+
   private native void setMaxCompactionBytes(long handle, long maxCompactionBytes);
+
   private native long maxCompactionBytes(long handle);
+
   private native void setArenaBlockSize(
       long handle, long arenaBlockSize)
       throws IllegalArgumentException;
+
   private native long arenaBlockSize(long handle);
+
   private native void setDisableAutoCompactions(
       long handle, boolean disableAutoCompactions);
+
   private native boolean disableAutoCompactions(long handle);
+
   private native void setCompactionStyle(long handle, byte compactionStyle);
+
   private native byte compactionStyle(long handle);
-   private native void setMaxTableFilesSizeFIFO(
+
+  private native void setMaxTableFilesSizeFIFO(
       long handle, long max_table_files_size);
+
   private native long maxTableFilesSizeFIFO(long handle);
+
   private native void setMaxSequentialSkipInIterations(
       long handle, long maxSequentialSkipInIterations);
+
   private native long maxSequentialSkipInIterations(long handle);
+
   private native void setMemTableFactory(long handle, long factoryHandle);
+
   private native String memTableFactoryName(long handle);
+
   private native void setTableFactory(long handle, long factoryHandle);
+
   private native String tableFactoryName(long handle);
+
   private static native void setCfPaths(
       final long handle, final String[] paths, final long[] targetSizes);
+
   private static native long cfPathsLen(final long handle);
+
   private static native void cfPaths(
       final long handle, final String[] paths, final long[] targetSizes);
+
   private native void setInplaceUpdateSupport(
       long handle, boolean inplaceUpdateSupport);
+
   private native boolean inplaceUpdateSupport(long handle);
+
   private native void setInplaceUpdateNumLocks(
       long handle, long inplaceUpdateNumLocks)
       throws IllegalArgumentException;
+
   private native long inplaceUpdateNumLocks(long handle);
+
   private native void setMemtablePrefixBloomSizeRatio(
       long handle, double memtablePrefixBloomSizeRatio);
+
   private native double memtablePrefixBloomSizeRatio(long handle);
+
   private native void setExperimentalMempurgeThreshold(
       long handle, double experimentalMempurgeThreshold);
+
   private native double experimentalMempurgeThreshold(long handle);
+
   private native void setMemtableWholeKeyFiltering(long handle, boolean memtableWholeKeyFiltering);
+
   private native boolean memtableWholeKeyFiltering(long handle);
+
   private native void setBloomLocality(
       long handle, int bloomLocality);
+
   private native int bloomLocality(long handle);
+
   private native void setMaxSuccessiveMerges(
       long handle, long maxSuccessiveMerges)
       throws IllegalArgumentException;
+
   private native long maxSuccessiveMerges(long handle);
+
   private native void setOptimizeFiltersForHits(long handle,
       boolean optimizeFiltersForHits);
+
   private native boolean optimizeFiltersForHits(long handle);
+
   private native void setMemtableHugePageSize(long handle,
       long memtableHugePageSize);
+
   private native long memtableHugePageSize(long handle);
+
   private native void setSoftPendingCompactionBytesLimit(long handle,
       long softPendingCompactionBytesLimit);
+
   private native long softPendingCompactionBytesLimit(long handle);
+
   private native void setHardPendingCompactionBytesLimit(long handle,
       long hardPendingCompactionBytesLimit);
+
   private native long hardPendingCompactionBytesLimit(long handle);
+
   private native void setLevel0FileNumCompactionTrigger(long handle,
       int level0FileNumCompactionTrigger);
+
   private native int level0FileNumCompactionTrigger(long handle);
+
   private native void setLevel0SlowdownWritesTrigger(long handle,
       int level0SlowdownWritesTrigger);
+
   private native int level0SlowdownWritesTrigger(long handle);
+
   private native void setLevel0StopWritesTrigger(long handle,
       int level0StopWritesTrigger);
+
   private native int level0StopWritesTrigger(long handle);
+
   private native void setMaxBytesForLevelMultiplierAdditional(long handle,
       int[] maxBytesForLevelMultiplierAdditional);
+
   private native int[] maxBytesForLevelMultiplierAdditional(long handle);
+
   private native void setParanoidFileChecks(long handle,
       boolean paranoidFileChecks);
+
   private native boolean paranoidFileChecks(long handle);
+
   private native void setMaxWriteBufferNumberToMaintain(final long handle,
       final int maxWriteBufferNumberToMaintain);
+
   private native int maxWriteBufferNumberToMaintain(final long handle);
+
   private native void setCompactionPriority(final long handle,
       final byte compactionPriority);
+
   private native byte compactionPriority(final long handle);
+
   private native void setReportBgIoStats(final long handle,
-    final boolean reportBgIoStats);
+      final boolean reportBgIoStats);
+
   private native boolean reportBgIoStats(final long handle);
+
   private native void setTtl(final long handle, final long ttl);
+
   private native long ttl(final long handle);
+
   private native void setPeriodicCompactionSeconds(
       final long handle, final long periodicCompactionSeconds);
+
   private native long periodicCompactionSeconds(final long handle);
+
   private native void setCompactionOptionsUniversal(final long handle,
-    final long compactionOptionsUniversalHandle);
+      final long compactionOptionsUniversalHandle);
+
   private native void setCompactionOptionsFIFO(final long handle,
-    final long compactionOptionsFIFOHandle);
+      final long compactionOptionsFIFOHandle);
+
   private native void setForceConsistencyChecks(final long handle,
-    final boolean forceConsistencyChecks);
+      final boolean forceConsistencyChecks);
+
   private native boolean forceConsistencyChecks(final long handle);
+
   private native void setSstPartitionerFactory(long nativeHandle_, long newFactoryHandle);
+
   private static native void setCompactionThreadLimiter(
       final long nativeHandle_, final long compactionThreadLimiterHandle);
 
   private native void setEnableBlobFiles(final long nativeHandle_, final boolean enableBlobFiles);
+
   private native boolean enableBlobFiles(final long nativeHandle_);
+
   private native void setMinBlobSize(final long nativeHandle_, final long minBlobSize);
+
   private native long minBlobSize(final long nativeHandle_);
+
   private native void setBlobFileSize(final long nativeHandle_, final long blobFileSize);
+
   private native long blobFileSize(final long nativeHandle_);
+
   private native void setBlobCompressionType(final long nativeHandle_, final byte compressionType);
+
   private native byte blobCompressionType(final long nativeHandle_);
+
   private native void setEnableBlobGarbageCollection(
       final long nativeHandle_, final boolean enableBlobGarbageCollection);
+
   private native boolean enableBlobGarbageCollection(final long nativeHandle_);
+
   private native void setBlobGarbageCollectionAgeCutoff(
       final long nativeHandle_, final double blobGarbageCollectionAgeCutoff);
+
   private native double blobGarbageCollectionAgeCutoff(final long nativeHandle_);
+
   private native void setBlobGarbageCollectionForceThreshold(
       final long nativeHandle_, final double blobGarbageCollectionForceThreshold);
+
   private native double blobGarbageCollectionForceThreshold(final long nativeHandle_);
+
   private native void setBlobCompactionReadaheadSize(
       final long nativeHandle_, final long blobCompactionReadaheadSize);
+
   private native long blobCompactionReadaheadSize(final long nativeHandle_);
+
   private native void setBlobFileStartingLevel(
       final long nativeHandle_, final int blobFileStartingLevel);
+
   private native int blobFileStartingLevel(final long nativeHandle_);
+
   private native void setPrepopulateBlobCache(
       final long nativeHandle_, final byte prepopulateBlobCache);
+
   private native byte prepopulateBlobCache(final long nativeHandle_);
 
+  private native void setEnableDeltaFiles(final long nativeHandle_, final boolean enableDeltaFiles);
+
+  private native boolean enableDeltaFiles(final long nativeHandle_);
+
+  private native void setMinDeltaSize(final long nativeHandle_, final long minDeltaSize);
+
+  private native long minDeltaSize(final long nativeHandle_);
+
+  private native void setDeltaFileSize(final long nativeHandle_, final long deltaFileSize);
+
+  private native long deltaFileSize(final long nativeHandle_);
+
+  private native void setDeltaCompressionType(final long nativeHandle_, final byte compressionType);
+
+  private native byte deltaCompressionType(final long nativeHandle_);
+
+  private native void setEnableDeltaGarbageCollection(
+      final long nativeHandle_, final boolean enableDeltaGarbageCollection);
+
+  private native boolean enableDeltaGarbageCollection(final long nativeHandle_);
+
+  private native void setDeltaGarbageCollectionAgeCutoff(
+      final long nativeHandle_, final double deltaGarbageCollectionAgeCutoff);
+
+  private native double deltaGarbageCollectionAgeCutoff(final long nativeHandle_);
+
+  private native void setDeltaGarbageCollectionForceThreshold(
+      final long nativeHandle_, final double deltaGarbageCollectionForceThreshold);
+
+  private native double deltaGarbageCollectionForceThreshold(final long nativeHandle_);
+
+  private native void setDeltaCompactionReadaheadSize(
+      final long nativeHandle_, final long deltaCompactionReadaheadSize);
+
+  private native long deltaCompactionReadaheadSize(final long nativeHandle_);
+
+  private native void setDeltaFileStartingLevel(
+      final long nativeHandle_, final int deltaFileStartingLevel);
+
+  private native int deltaFileStartingLevel(final long nativeHandle_);
+
+  private native void setPrepopulateDeltaCache(
+      final long nativeHandle_, final byte prepopulateDeltaCache);
+
+  private native byte prepopulateDeltaCache(final long nativeHandle_);
+
   // instance variables
-  // NOTE: If you add new member variables, please update the copy constructor above!
+  // NOTE: If you add new member variables, please update the copy constructor
+  // above!
   private MemTableConfig memTableConfig_;
   private TableFormatConfig tableFormatConfig_;
   private AbstractComparator comparator_;
   private AbstractCompactionFilter<? extends AbstractSlice<?>> compactionFilter_;
-  private AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>>
-      compactionFilterFactory_;
+  private AbstractCompactionFilterFactory<? extends AbstractCompactionFilter<?>> compactionFilterFactory_;
   private CompactionOptionsUniversal compactionOptionsUniversal_;
   private CompactionOptionsFIFO compactionOptionsFIFO_;
   private CompressionOptions bottommostCompressionOptions_;

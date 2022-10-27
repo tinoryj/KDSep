@@ -217,7 +217,9 @@ Compaction::Compaction(
     bool _deletion_compaction, bool l0_files_might_overlap,
     CompactionReason _compaction_reason,
     BlobGarbageCollectionPolicy _blob_garbage_collection_policy,
-    double _blob_garbage_collection_age_cutoff)
+    double _blob_garbage_collection_age_cutoff,
+    DeltaGarbageCollectionPolicy _delta_garbage_collection_policy,
+    double _delta_garbage_collection_age_cutoff)
     : input_vstorage_(vstorage),
       start_level_(_inputs[0].level),
       output_level_(_output_level),
@@ -258,6 +260,19 @@ Compaction::Compaction(
                   _blob_garbage_collection_age_cutoff > 1
               ? mutable_cf_options()->blob_garbage_collection_age_cutoff
               : _blob_garbage_collection_age_cutoff),
+      enable_delta_garbage_collection_(
+          _delta_garbage_collection_policy ==
+                  DeltaGarbageCollectionPolicy::kForce
+              ? true
+              : (_delta_garbage_collection_policy ==
+                         DeltaGarbageCollectionPolicy::kDisable
+                     ? false
+                     : mutable_cf_options()->enable_delta_garbage_collection)),
+      delta_garbage_collection_age_cutoff_(
+          _delta_garbage_collection_age_cutoff < 0 ||
+                  _delta_garbage_collection_age_cutoff > 1
+              ? mutable_cf_options()->delta_garbage_collection_age_cutoff
+              : _delta_garbage_collection_age_cutoff),
       penultimate_level_(EvaluatePenultimateLevel(
           immutable_options_, start_level_, output_level_)) {
   MarkFilesBeingCompacted(true);
@@ -699,6 +714,29 @@ bool Compaction::DoesInputReferenceBlobFiles() const {
       assert(meta);
 
       if (meta->oldest_blob_file_number != kInvalidBlobFileNumber) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool Compaction::DoesInputReferenceDeltaFiles() const {
+  assert(input_version_);
+
+  const VersionStorageInfo* storage_info = input_version_->storage_info();
+  assert(storage_info);
+
+  if (storage_info->GetDeltaFiles().empty()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < inputs_.size(); ++i) {
+    for (const FileMetaData* meta : inputs_[i].files) {
+      assert(meta);
+
+      if (meta->oldest_delta_file_number != kInvalidDeltaFileNumber) {
         return true;
       }
     }

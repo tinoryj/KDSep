@@ -55,9 +55,8 @@ SequenceNumber ReadRecords(std::unique_ptr<TransactionLogIterator>& iter,
   return res.sequence;
 }
 
-void ExpectRecords(
-    const int expected_no_records,
-    std::unique_ptr<TransactionLogIterator>& iter) {
+void ExpectRecords(const int expected_no_records,
+                   std::unique_ptr<TransactionLogIterator>& iter) {
   int num_records;
   ReadRecords(iter, num_records);
   ASSERT_EQ(num_records, expected_no_records);
@@ -95,10 +94,9 @@ TEST_F(DBTestXactLogIterator, TransactionLogIterator) {
 TEST_F(DBTestXactLogIterator, TransactionLogIteratorRace) {
   static const int LOG_ITERATOR_RACE_TEST_COUNT = 2;
   static const char* sync_points[LOG_ITERATOR_RACE_TEST_COUNT][4] = {
-      {"WalManager::GetSortedWalFiles:1",  "WalManager::PurgeObsoleteFiles:1",
+      {"WalManager::GetSortedWalFiles:1", "WalManager::PurgeObsoleteFiles:1",
        "WalManager::PurgeObsoleteFiles:2", "WalManager::GetSortedWalFiles:2"},
-      {"WalManager::GetSortedWalsOfType:1",
-       "WalManager::PurgeObsoleteFiles:1",
+      {"WalManager::GetSortedWalsOfType:1", "WalManager::PurgeObsoleteFiles:1",
        "WalManager::PurgeObsoleteFiles:2",
        "WalManager::GetSortedWalsOfType:2"}};
   for (int test = 0; test < LOG_ITERATOR_RACE_TEST_COUNT; ++test) {
@@ -290,6 +288,54 @@ TEST_F(DBTestXactLogIterator, TransactionLogIteratorBlobs) {
       "Delete(0, key2)",
       handler.seen);
 }
+
+TEST_F(DBTestXactLogIterator, TransactionLogIteratorDeltas) {
+  Options options = OptionsForLogIterTest();
+  DestroyAndReopen(options);
+  CreateAndReopenWithCF({"pikachu"}, options);
+  {
+    WriteBatch batch;
+    ASSERT_OK(batch.Put(handles_[1], "key1", DummyString(1024)));
+    ASSERT_OK(batch.Put(handles_[0], "key2", DummyString(1024)));
+    ASSERT_OK(batch.PutLogData(Slice("delta1")));
+    ASSERT_OK(batch.Put(handles_[1], "key3", DummyString(1024)));
+    ASSERT_OK(batch.PutLogData(Slice("delta2")));
+    ASSERT_OK(batch.Delete(handles_[0], "key2"));
+    ASSERT_OK(dbfull()->Write(WriteOptions(), &batch));
+    ReopenWithColumnFamilies({"default", "pikachu"}, options);
+  }
+
+  auto res = OpenTransactionLogIter(0)->GetBatch();
+  struct Handler : public WriteBatch::Handler {
+    std::string seen;
+    Status PutCF(uint32_t cf, const Slice& key, const Slice& value) override {
+      seen += "Put(" + std::to_string(cf) + ", " + key.ToString() + ", " +
+              std::to_string(value.size()) + ")";
+      return Status::OK();
+    }
+    Status MergeCF(uint32_t cf, const Slice& key, const Slice& value) override {
+      seen += "Merge(" + std::to_string(cf) + ", " + key.ToString() + ", " +
+              std::to_string(value.size()) + ")";
+      return Status::OK();
+    }
+    void LogData(const Slice& delta) override {
+      seen += "LogData(" + delta.ToString() + ")";
+    }
+    Status DeleteCF(uint32_t cf, const Slice& key) override {
+      seen += "Delete(" + std::to_string(cf) + ", " + key.ToString() + ")";
+      return Status::OK();
+    }
+  } handler;
+  ASSERT_OK(res.writeBatchPtr->Iterate(&handler));
+  ASSERT_EQ(
+      "Put(1, key1, 1024)"
+      "Put(0, key2, 1024)"
+      "LogData(delta1)"
+      "Put(1, key3, 1024)"
+      "LogData(delta2)"
+      "Delete(0, key2)",
+      handler.seen);
+}
 }  // namespace ROCKSDB_NAMESPACE
 
 #endif  // !defined(ROCKSDB_LITE)
@@ -300,8 +346,8 @@ int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 #else
-  (void) argc;
-  (void) argv;
+  (void)argc;
+  (void)argv;
   return 0;
 #endif
 }

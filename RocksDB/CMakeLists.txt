@@ -671,6 +671,20 @@ set(SOURCES
         db/blob/blob_log_writer.cc
         db/blob/blob_source.cc
         db/blob/prefetch_buffer_collection.cc
+        db/delta/delta_contents.cc
+        db/delta/delta_fetcher.cc
+        db/delta/delta_file_addition.cc
+        db/delta/delta_file_builder.cc
+        db/delta/delta_file_cache.cc
+        db/delta/delta_file_garbage.cc
+        db/delta/delta_file_meta.cc
+        db/delta/delta_file_reader.cc
+        db/delta/delta_garbage_meter.cc
+        db/delta/delta_log_format.cc
+        db/delta/delta_log_sequential_reader.cc
+        db/delta/delta_log_writer.cc
+        db/delta/delta_source.cc
+        db/delta/prefetch_buffer_collection.cc
         db/builder.cc
         db/c.cc
         db/column_family.cc
@@ -893,6 +907,12 @@ set(SOURCES
         utilities/blob_db/blob_db_impl_filesnapshot.cc
         utilities/blob_db/blob_dump_tool.cc
         utilities/blob_db/blob_file.cc
+        utilities/delta_db/delta_compaction_filter.cc
+        utilities/delta_db/delta_db.cc
+        utilities/delta_db/delta_db_impl.cc
+        utilities/delta_db/delta_db_impl_filesnapshot.cc
+        utilities/delta_db/delta_dump_tool.cc
+        utilities/delta_db/delta_file.cc
         utilities/cache_dump_load.cc
         utilities/cache_dump_load_impl.cc
         utilities/cassandra/cassandra_compaction_filter.cc
@@ -1284,6 +1304,18 @@ if(WITH_TESTS)
         db/blob/db_blob_compaction_test.cc
         db/blob/db_blob_corruption_test.cc
         db/blob/db_blob_index_test.cc
+        db/delta/delta_counting_iterator_test.cc
+        db/delta/delta_file_addition_test.cc
+        db/delta/delta_file_builder_test.cc
+        db/delta/delta_file_cache_test.cc
+        db/delta/delta_file_garbage_test.cc
+        db/delta/delta_file_reader_test.cc
+        db/delta/delta_garbage_meter_test.cc
+        db/delta/delta_source_test.cc
+        db/delta/db_delta_basic_test.cc
+        db/delta/db_delta_compaction_test.cc
+        db/delta/db_delta_corruption_test.cc
+        db/delta/db_delta_index_test.cc
         db/column_family_test.cc
         db/compact_files_test.cc
         db/compaction/clipping_iterator_test.cc
@@ -1436,6 +1468,7 @@ if(WITH_TESTS)
         utilities/agg_merge/agg_merge_test.cc
         utilities/backup/backup_engine_test.cc
         utilities/blob_db/blob_db_test.cc
+        utilities/delta_db/delta_db_test.cc
         utilities/cassandra/cassandra_functional_test.cc
         utilities/cassandra/cassandra_format_test.cc
         utilities/cassandra/cassandra_row_merge_test.cc

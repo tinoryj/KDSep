@@ -660,6 +660,265 @@ TEST_F(DBSSTTest, DBWithSstFileManagerForBlobFilesWithGC) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
+TEST_F(DBSSTTest, DBWithSstFileManagerForDeltaFiles) {
+  std::shared_ptr<SstFileManager> sst_file_manager(NewSstFileManager(env_));
+  auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
+
+  int files_added = 0;
+  int files_deleted = 0;
+  int files_moved = 0;
+  int files_scheduled_to_delete = 0;
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnAddFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          files_added++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnDeleteFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          files_deleted++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::ScheduleFileDeletion", [&](void* arg) {
+        assert(arg);
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          ++files_scheduled_to_delete;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnMoveFile", [&](void* /*arg*/) { files_moved++; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  Options options = CurrentOptions();
+  options.sst_file_manager = sst_file_manager;
+  options.enable_delta_files = true;
+  options.delta_file_size = 32;  // create one delta per file
+  DestroyAndReopen(options);
+  Random rnd(301);
+
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(Put("Key_" + std::to_string(i), "Value_" + std::to_string(i)));
+    ASSERT_OK(Flush());
+    ASSERT_OK(dbfull()->TEST_WaitForFlushMemTable());
+    ASSERT_OK(dbfull()->TEST_WaitForCompact());
+
+    // Verify that we are tracking all sst and delta files in dbname_
+    std::unordered_map<std::string, uint64_t> files_in_db;
+    ASSERT_OK(GetAllDataFiles(kTableFile, &files_in_db));
+    ASSERT_OK(GetAllDataFiles(kDeltaFile, &files_in_db));
+    ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  }
+
+  std::vector<uint64_t> delta_files = GetDeltaFileNumbers();
+  ASSERT_EQ(files_added, delta_files.size());
+  // No delta file is obsoleted.
+  ASSERT_EQ(files_deleted, 0);
+  ASSERT_EQ(files_scheduled_to_delete, 0);
+  // No files were moved.
+  ASSERT_EQ(files_moved, 0);
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+
+  std::unordered_map<std::string, uint64_t> files_in_db;
+  ASSERT_OK(GetAllDataFiles(kTableFile, &files_in_db));
+  ASSERT_OK(GetAllDataFiles(kDeltaFile, &files_in_db));
+
+  // Verify that we are tracking all sst and delta files in dbname_
+  ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  // Verify the total files size
+  uint64_t total_files_size = 0;
+  for (auto& file_to_size : files_in_db) {
+    total_files_size += file_to_size.second;
+  }
+  ASSERT_EQ(sfm->GetTotalSize(), total_files_size);
+  Close();
+
+  Reopen(options);
+  ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  ASSERT_EQ(sfm->GetTotalSize(), total_files_size);
+
+  // Verify that we track all the files again after the DB is closed and opened.
+  Close();
+
+  sst_file_manager.reset(NewSstFileManager(env_));
+  options.sst_file_manager = sst_file_manager;
+  sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
+
+  Reopen(options);
+
+  ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  ASSERT_EQ(sfm->GetTotalSize(), total_files_size);
+
+  // Destroy DB and it will remove all the delta files from sst file manager and
+  // delta files deletion will go through ScheduleFileDeletion.
+  ASSERT_EQ(files_deleted, 0);
+  ASSERT_EQ(files_scheduled_to_delete, 0);
+  Close();
+  ASSERT_OK(DestroyDB(dbname_, options));
+  ASSERT_EQ(files_deleted, delta_files.size());
+  ASSERT_EQ(files_scheduled_to_delete, delta_files.size());
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_F(DBSSTTest, DBWithSstFileManagerForDeltaFilesWithGC) {
+  std::shared_ptr<SstFileManager> sst_file_manager(NewSstFileManager(env_));
+  auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
+  Options options = CurrentOptions();
+  options.sst_file_manager = sst_file_manager;
+  options.enable_delta_files = true;
+  options.delta_file_size = 32;  // create one delta per file
+  options.disable_auto_compactions = true;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+
+  int files_added = 0;
+  int files_deleted = 0;
+  int files_moved = 0;
+  int files_scheduled_to_delete = 0;
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnAddFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          files_added++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnDeleteFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          files_deleted++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::ScheduleFileDeletion", [&](void* arg) {
+        assert(arg);
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (file_path->find(".delta") != std::string::npos) {
+          ++files_scheduled_to_delete;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnMoveFile", [&](void* /*arg*/) { files_moved++; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  DestroyAndReopen(options);
+  Random rnd(301);
+
+  constexpr char first_key[] = "first_key";
+  constexpr char first_value[] = "first_value";
+  constexpr char second_key[] = "second_key";
+  constexpr char second_value[] = "second_value";
+
+  ASSERT_OK(Put(first_key, first_value));
+  ASSERT_OK(Put(second_key, second_value));
+  ASSERT_OK(Flush());
+
+  constexpr char third_key[] = "third_key";
+  constexpr char third_value[] = "third_value";
+  constexpr char fourth_key[] = "fourth_key";
+  constexpr char fourth_value[] = "fourth_value";
+  constexpr char fifth_key[] = "fifth_key";
+  constexpr char fifth_value[] = "fifth_value";
+
+  ASSERT_OK(Put(third_key, third_value));
+  ASSERT_OK(Put(fourth_key, fourth_value));
+  ASSERT_OK(Put(fifth_key, fifth_value));
+  ASSERT_OK(Flush());
+
+  const std::vector<uint64_t> original_delta_files = GetDeltaFileNumbers();
+
+  ASSERT_EQ(original_delta_files.size(), 5);
+  ASSERT_EQ(files_added, 5);
+  ASSERT_EQ(files_deleted, 0);
+  ASSERT_EQ(files_scheduled_to_delete, 0);
+  ASSERT_EQ(files_moved, 0);
+  {
+    // Verify that we are tracking all sst and delta files in dbname_
+    std::unordered_map<std::string, uint64_t> files_in_db;
+    ASSERT_OK(GetAllDataFiles(kTableFile, &files_in_db));
+    ASSERT_OK(GetAllDataFiles(kDeltaFile, &files_in_db));
+    ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  }
+
+  const size_t cutoff_index =
+      static_cast<size_t>(options.delta_garbage_collection_age_cutoff *
+                          original_delta_files.size());
+
+  size_t expected_number_of_files = original_delta_files.size();
+  // Note: turning off enable_delta_files before the compaction results in
+  // garbage collected values getting inlined.
+  ASSERT_OK(db_->SetOptions({{"enable_delta_files", "false"}}));
+  expected_number_of_files -= cutoff_index;
+  files_added = 0;
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+  sfm->WaitForEmptyTrash();
+
+  ASSERT_EQ(Get(first_key), first_value);
+  ASSERT_EQ(Get(second_key), second_value);
+  ASSERT_EQ(Get(third_key), third_value);
+  ASSERT_EQ(Get(fourth_key), fourth_value);
+  ASSERT_EQ(Get(fifth_key), fifth_value);
+
+  const std::vector<uint64_t> new_delta_files = GetDeltaFileNumbers();
+
+  ASSERT_EQ(new_delta_files.size(), expected_number_of_files);
+  // No new file is added.
+  ASSERT_EQ(files_added, 0);
+  ASSERT_EQ(files_deleted, cutoff_index);
+  ASSERT_EQ(files_scheduled_to_delete, cutoff_index);
+  ASSERT_EQ(files_moved, 0);
+
+  // Original delta files below the cutoff should be gone, original delta files
+  // at or above the cutoff should be still there
+  for (size_t i = cutoff_index; i < original_delta_files.size(); ++i) {
+    ASSERT_EQ(new_delta_files[i - cutoff_index], original_delta_files[i]);
+  }
+
+  {
+    // Verify that we are tracking all sst and delta files in dbname_
+    std::unordered_map<std::string, uint64_t> files_in_db;
+    ASSERT_OK(GetAllDataFiles(kTableFile, &files_in_db));
+    ASSERT_OK(GetAllDataFiles(kDeltaFile, &files_in_db));
+    ASSERT_EQ(sfm->GetTrackedFiles(), files_in_db);
+  }
+
+  Close();
+  ASSERT_OK(DestroyDB(dbname_, options));
+  sfm->WaitForEmptyTrash();
+  ASSERT_EQ(files_deleted, 5);
+  ASSERT_EQ(files_scheduled_to_delete, 5);
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
 class DBSSTTestRateLimit : public DBSSTTest,
                            public ::testing::WithParamInterface<bool> {
  public:
@@ -1187,6 +1446,68 @@ TEST_F(DBSSTTest, DBWithMaxSpaceAllowedWithBlobFiles) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }
 
+TEST_F(DBSSTTest, DBWithMaxSpaceAllowedWithDeltaFiles) {
+  std::shared_ptr<SstFileManager> sst_file_manager(NewSstFileManager(env_));
+  auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
+
+  Options options = CurrentOptions();
+  options.sst_file_manager = sst_file_manager;
+  options.disable_auto_compactions = true;
+  options.enable_delta_files = true;
+  DestroyAndReopen(options);
+
+  Random rnd(301);
+
+  // Generate a file containing keys.
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(Put(Key(i), rnd.RandomString(50)));
+  }
+  ASSERT_OK(Flush());
+
+  uint64_t files_size = 0;
+  uint64_t total_files_size = 0;
+  std::unordered_map<std::string, uint64_t> files_in_db;
+
+  ASSERT_OK(GetAllDataFiles(kDeltaFile, &files_in_db, &files_size));
+  // Make sure delta files are considered by SSTFileManage in size limits.
+  ASSERT_GT(files_size, 0);
+  total_files_size = files_size;
+  ASSERT_OK(GetAllDataFiles(kTableFile, &files_in_db, &files_size));
+  total_files_size += files_size;
+  ASSERT_EQ(sfm->GetTotalSize(), total_files_size);
+
+  // Set the maximum allowed space usage to the current total size.
+  sfm->SetMaxAllowedSpaceUsage(total_files_size + 1);
+
+  bool max_allowed_space_reached = false;
+  bool delete_delta_file = false;
+  // Sync point called after delta file is closed and max allowed space is
+  // checked.
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "DeltaFileCompletionCallback::CallBack::MaxAllowedSpaceReached",
+      [&](void* /*arg*/) { max_allowed_space_reached = true; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "BuildTable::AfterDeleteFile",
+      [&](void* /*arg*/) { delete_delta_file = true; });
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->LoadDependency({
+      {
+          "BuildTable::AfterDeleteFile",
+          "DBSSTTest::DBWithMaxSpaceAllowedWithDeltaFiles:1",
+      },
+  });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_OK(Put("key1", "val1"));
+  // This flush will fail
+  ASSERT_NOK(Flush());
+  ASSERT_TRUE(max_allowed_space_reached);
+
+  TEST_SYNC_POINT("DBSSTTest::DBWithMaxSpaceAllowedWithDeltaFiles:1");
+  ASSERT_TRUE(delete_delta_file);
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+}
+
 TEST_F(DBSSTTest, CancellingCompactionsWorks) {
   std::shared_ptr<SstFileManager> sst_file_manager(NewSstFileManager(env_));
   auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
@@ -1639,6 +1960,8 @@ TEST_F(DBSSTTest, OpenDBWithoutGetFileSizeInvocations) {
   options.compression = kNoCompression;
   options.enable_blob_files = true;
   options.blob_file_size = 32;  // create one blob per file
+  options.enable_delta_files = true;
+  options.delta_file_size = 32;  // create one delta per file
   options.skip_checking_sst_file_sizes_on_db_open = true;
 
   DestroyAndReopen(options);
@@ -1657,6 +1980,9 @@ TEST_F(DBSSTTest, OpenDBWithoutGetFileSizeInvocations) {
       "MockFileSystem::GetFileSize:CheckFileType", [&](void* arg) {
         std::string* filename = reinterpret_cast<std::string*>(arg);
         if (filename->find(".blob") != std::string::npos) {
+          is_get_file_size_called = true;
+        }
+        if (filename->find(".delta") != std::string::npos) {
           is_get_file_size_called = true;
         }
       });
@@ -1823,6 +2149,103 @@ TEST_F(DBSSTTest, DBWithSFMForBlobFilesAtomicFlush) {
 
   ASSERT_OK(Put("Key5", "blob_value5"));
   ASSERT_OK(Put("Key6", "blob_value6"));
+  ASSERT_OK(Flush());
+
+  ASSERT_EQ(files_added, 3);
+  ASSERT_EQ(files_deleted, 0);
+  ASSERT_EQ(files_scheduled_to_delete, 0);
+  files_added = 0;
+
+  constexpr Slice* begin = nullptr;
+  constexpr Slice* end = nullptr;
+  // Compaction job will create a new file and delete the older files.
+  ASSERT_OK(db_->CompactRange(CompactRangeOptions(), begin, end));
+  ASSERT_OK(dbfull()->TEST_WaitForCompact());
+
+  ASSERT_EQ(files_added, 1);
+  ASSERT_EQ(files_scheduled_to_delete, 1);
+
+  sfm->WaitForEmptyTrash();
+
+  ASSERT_EQ(files_deleted, 1);
+
+  Close();
+  ASSERT_OK(DestroyDB(dbname_, options));
+
+  ASSERT_EQ(files_scheduled_to_delete, 4);
+
+  sfm->WaitForEmptyTrash();
+
+  ASSERT_EQ(files_deleted, 4);
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+// This test if delta files are recorded by SST File Manager when Compaction job
+// creates/delete them and in case of AtomicFlush.
+TEST_F(DBSSTTest, DBWithSFMForDeltaFilesAtomicFlush) {
+  std::shared_ptr<SstFileManager> sst_file_manager(NewSstFileManager(env_));
+  auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager.get());
+  Options options = CurrentOptions();
+  options.sst_file_manager = sst_file_manager;
+  options.enable_delta_files = true;
+  options.min_delta_size = 0;
+  options.disable_auto_compactions = true;
+  options.enable_delta_garbage_collection = true;
+  options.delta_garbage_collection_age_cutoff = 0.5;
+  options.atomic_flush = true;
+
+  int files_added = 0;
+  int files_deleted = 0;
+  int files_scheduled_to_delete = 0;
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnAddFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (EndsWith(*file_path, ".delta")) {
+          files_added++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::OnDeleteFile", [&](void* arg) {
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (EndsWith(*file_path, ".delta")) {
+          files_deleted++;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
+      "SstFileManagerImpl::ScheduleFileDeletion", [&](void* arg) {
+        assert(arg);
+        const std::string* const file_path =
+            static_cast<const std::string*>(arg);
+        if (EndsWith(*file_path, ".delta")) {
+          ++files_scheduled_to_delete;
+        }
+      });
+
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
+
+  DestroyAndReopen(options);
+  Random rnd(301);
+
+  ASSERT_OK(Put("key_1", "value_1"));
+  ASSERT_OK(Put("key_2", "value_2"));
+  ASSERT_OK(Put("key_3", "value_3"));
+  ASSERT_OK(Put("key_4", "value_4"));
+  ASSERT_OK(Flush());
+
+  // Overwrite will create the garbage data.
+  ASSERT_OK(Put("key_3", "new_value_3"));
+  ASSERT_OK(Put("key_4", "new_value_4"));
+  ASSERT_OK(Flush());
+
+  ASSERT_OK(Put("Key5", "delta_value5"));
+  ASSERT_OK(Put("Key6", "delta_value6"));
   ASSERT_OK(Flush());
 
   ASSERT_EQ(files_added, 3);

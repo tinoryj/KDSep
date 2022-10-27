@@ -32,7 +32,7 @@ class GenerateLevelFilesBriefTest : public testing::Test {
   LevelFilesBrief file_level_;
   Arena arena_;
 
-  GenerateLevelFilesBriefTest() { }
+  GenerateLevelFilesBriefTest() {}
 
   ~GenerateLevelFilesBriefTest() override {
     for (size_t i = 0; i < files_.size(); i++) {
@@ -142,16 +142,19 @@ class VersionStorageInfoTestBase : public testing::Test {
 
   void Add(int level, uint32_t file_number, const char* smallest,
            const char* largest, uint64_t file_size = 0,
-           uint64_t oldest_blob_file_number = kInvalidBlobFileNumber) {
+           uint64_t oldest_blob_file_number = kInvalidBlobFileNumber,
+           uint64_t oldest_delta_file_number = kInvalidDeltaFileNumber) {
     constexpr SequenceNumber dummy_seq = 0;
 
     Add(level, file_number, GetInternalKey(smallest, dummy_seq),
-        GetInternalKey(largest, dummy_seq), file_size, oldest_blob_file_number);
+        GetInternalKey(largest, dummy_seq), file_size, oldest_blob_file_number,
+        oldest_delta_file_number);
   }
 
   void Add(int level, uint32_t file_number, const InternalKey& smallest,
            const InternalKey& largest, uint64_t file_size = 0,
-           uint64_t oldest_blob_file_number = kInvalidBlobFileNumber) {
+           uint64_t oldest_blob_file_number = kInvalidBlobFileNumber,
+           uint64_t oldest_delta_file_number = kInvalidDeltaFileNumber) {
     assert(level < vstorage_.num_levels());
     FileMetaData* f = new FileMetaData(
         file_number, 0, file_size, smallest, largest, /* smallest_seq */ 0,
@@ -176,6 +179,21 @@ class VersionStorageInfoTestBase : public testing::Test {
                                  garbage_blob_count, garbage_blob_bytes);
 
     vstorage_.AddBlobFile(std::move(meta));
+  }
+
+  void AddDelta(uint64_t delta_file_number, uint64_t total_delta_count,
+                uint64_t total_delta_bytes,
+                DeltaFileMetaData::LinkedSsts linked_ssts,
+                uint64_t garbage_delta_count, uint64_t garbage_delta_bytes) {
+    auto shared_meta = SharedDeltaFileMetaData::Create(
+        delta_file_number, total_delta_count, total_delta_bytes,
+        /* checksum_method */ std::string(),
+        /* checksum_value */ std::string());
+    auto meta = DeltaFileMetaData::Create(
+        std::move(shared_meta), std::move(linked_ssts), garbage_delta_count,
+        garbage_delta_bytes);
+
+    vstorage_.AddDeltaFile(std::move(meta));
   }
 
   void UpdateVersionStorageInfo() {
@@ -481,7 +499,8 @@ TEST_F(VersionStorageInfoTest, EstimateLiveDataSize2) {
 
 TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
   // Two files that overlap at the range deletion tombstone sentinel.
-  Add(1, 1U, {"a", 0, kTypeValue}, {"b", kMaxSequenceNumber, kTypeRangeDeletion}, 1);
+  Add(1, 1U, {"a", 0, kTypeValue},
+      {"b", kMaxSequenceNumber, kTypeRangeDeletion}, 1);
   Add(1, 2U, {"b", 0, kTypeValue}, {"c", 0, kTypeValue}, 1);
   // Two files that overlap at the same user key.
   Add(1, 3U, {"d", 0, kTypeValue}, {"e", kMaxSequenceNumber, kTypeValue}, 1);
@@ -492,24 +511,26 @@ TEST_F(VersionStorageInfoTest, GetOverlappingInputs) {
 
   UpdateVersionStorageInfo();
 
-  ASSERT_EQ("1,2", GetOverlappingFiles(
-      1, {"a", 0, kTypeValue}, {"b", 0, kTypeValue}));
-  ASSERT_EQ("1", GetOverlappingFiles(
-      1, {"a", 0, kTypeValue}, {"b", kMaxSequenceNumber, kTypeRangeDeletion}));
-  ASSERT_EQ("2", GetOverlappingFiles(
-      1, {"b", kMaxSequenceNumber, kTypeValue}, {"c", 0, kTypeValue}));
-  ASSERT_EQ("3,4", GetOverlappingFiles(
-      1, {"d", 0, kTypeValue}, {"e", 0, kTypeValue}));
-  ASSERT_EQ("3", GetOverlappingFiles(
-      1, {"d", 0, kTypeValue}, {"e", kMaxSequenceNumber, kTypeRangeDeletion}));
-  ASSERT_EQ("3,4", GetOverlappingFiles(
-      1, {"e", kMaxSequenceNumber, kTypeValue}, {"f", 0, kTypeValue}));
-  ASSERT_EQ("3,4", GetOverlappingFiles(
-      1, {"e", 0, kTypeValue}, {"f", 0, kTypeValue}));
-  ASSERT_EQ("5", GetOverlappingFiles(
-      1, {"g", 0, kTypeValue}, {"h", 0, kTypeValue}));
-  ASSERT_EQ("6", GetOverlappingFiles(
-      1, {"i", 0, kTypeValue}, {"j", 0, kTypeValue}));
+  ASSERT_EQ("1,2",
+            GetOverlappingFiles(1, {"a", 0, kTypeValue}, {"b", 0, kTypeValue}));
+  ASSERT_EQ("1",
+            GetOverlappingFiles(1, {"a", 0, kTypeValue},
+                                {"b", kMaxSequenceNumber, kTypeRangeDeletion}));
+  ASSERT_EQ("2", GetOverlappingFiles(1, {"b", kMaxSequenceNumber, kTypeValue},
+                                     {"c", 0, kTypeValue}));
+  ASSERT_EQ("3,4",
+            GetOverlappingFiles(1, {"d", 0, kTypeValue}, {"e", 0, kTypeValue}));
+  ASSERT_EQ("3",
+            GetOverlappingFiles(1, {"d", 0, kTypeValue},
+                                {"e", kMaxSequenceNumber, kTypeRangeDeletion}));
+  ASSERT_EQ("3,4", GetOverlappingFiles(1, {"e", kMaxSequenceNumber, kTypeValue},
+                                       {"f", 0, kTypeValue}));
+  ASSERT_EQ("3,4",
+            GetOverlappingFiles(1, {"e", 0, kTypeValue}, {"f", 0, kTypeValue}));
+  ASSERT_EQ("5",
+            GetOverlappingFiles(1, {"g", 0, kTypeValue}, {"h", 0, kTypeValue}));
+  ASSERT_EQ("6",
+            GetOverlappingFiles(1, {"i", 0, kTypeValue}, {"j", 0, kTypeValue}));
 }
 
 TEST_F(VersionStorageInfoTest, FileLocationAndMetaDataByNumber) {
@@ -868,6 +889,339 @@ TEST_F(VersionStorageInfoTest, ForcedBlobGCMultipleBatches) {
   }
 }
 
+TEST_F(VersionStorageInfoTest, ForcedDeltaGCEmpty) {
+  // No SST or delta files in VersionStorageInfo
+  UpdateVersionStorageInfo();
+
+  constexpr double age_cutoff = 0.5;
+  constexpr double force_threshold = 0.75;
+  vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+  ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+}
+
+TEST_F(VersionStorageInfoTest, ForcedDeltaGCSingleBatch) {
+  // Test the edge case when all delta files are part of the oldest batch.
+  // We have one L0 SST file #1, and four delta files #10, #11, #12, and #13.
+  // The oldest delta file used by SST #1 is delta file #10.
+
+  constexpr int level = 0;
+
+  constexpr uint64_t sst = 1;
+
+  constexpr uint64_t first_delta = 10;
+  constexpr uint64_t second_delta = 11;
+  constexpr uint64_t third_delta = 12;
+  constexpr uint64_t fourth_delta = 13;
+
+  {
+    constexpr char smallest[] = "bar1";
+    constexpr char largest[] = "foo1";
+    constexpr uint64_t file_size = 1000;
+
+    Add(level, sst, smallest, largest, file_size, first_delta);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 10;
+    constexpr uint64_t total_delta_bytes = 100000;
+    constexpr uint64_t garbage_delta_count = 2;
+    constexpr uint64_t garbage_delta_bytes = 15000;
+
+    AddDelta(first_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{sst}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 4;
+    constexpr uint64_t total_delta_bytes = 400000;
+    constexpr uint64_t garbage_delta_count = 3;
+    constexpr uint64_t garbage_delta_bytes = 235000;
+
+    AddDelta(second_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 20;
+    constexpr uint64_t total_delta_bytes = 1000000;
+    constexpr uint64_t garbage_delta_count = 8;
+    constexpr uint64_t garbage_delta_bytes = 400000;
+
+    AddDelta(third_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 128;
+    constexpr uint64_t total_delta_bytes = 1000000;
+    constexpr uint64_t garbage_delta_count = 67;
+    constexpr uint64_t garbage_delta_bytes = 600000;
+
+    AddDelta(fourth_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  UpdateVersionStorageInfo();
+
+  assert(vstorage_.num_levels() > 0);
+  const auto& level_files = vstorage_.LevelFiles(level);
+
+  assert(level_files.size() == 1);
+  assert(level_files[0] && level_files[0]->fd.GetNumber() == sst);
+
+  // No delta files eligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.1;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Part of the oldest batch of delta files (specifically, #12 and #13) is
+  // ineligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.5;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff but its overall garbage ratio
+  // is below threshold
+
+  {
+    constexpr double age_cutoff = 1.0;
+    constexpr double force_threshold = 0.6;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff and its overall garbage ratio
+  // meets threshold
+
+  {
+    constexpr double age_cutoff = 1.0;
+    constexpr double force_threshold = 0.5;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    auto ssts_to_be_compacted = vstorage_.FilesMarkedForForcedDeltaGC();
+    ASSERT_EQ(ssts_to_be_compacted.size(), 1);
+
+    const autovector<std::pair<int, FileMetaData*>>
+        expected_ssts_to_be_compacted{{level, level_files[0]}};
+
+    ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
+  }
+}
+
+TEST_F(VersionStorageInfoTest, ForcedDeltaGCMultipleBatches) {
+  // Add three L0 SSTs (1, 2, and 3) and four delta files (10, 11, 12, and 13).
+  // The first two SSTs have the same oldest delta file, namely, the very oldest
+  // one (10), while the third SST's oldest delta file reference points to the
+  // third delta file (12). Thus, the oldest batch of delta files contains the
+  // first two delta files 10 and 11, and assuming they are eligible for GC
+  // based on the age cutoff, compacting away the SSTs 1 and 2 will eliminate
+  // them.
+
+  constexpr int level = 0;
+
+  constexpr uint64_t first_sst = 1;
+  constexpr uint64_t second_sst = 2;
+  constexpr uint64_t third_sst = 3;
+
+  constexpr uint64_t first_delta = 10;
+  constexpr uint64_t second_delta = 11;
+  constexpr uint64_t third_delta = 12;
+  constexpr uint64_t fourth_delta = 13;
+
+  {
+    constexpr char smallest[] = "bar1";
+    constexpr char largest[] = "foo1";
+    constexpr uint64_t file_size = 1000;
+
+    Add(level, first_sst, smallest, largest, file_size, first_delta);
+  }
+
+  {
+    constexpr char smallest[] = "bar2";
+    constexpr char largest[] = "foo2";
+    constexpr uint64_t file_size = 2000;
+
+    Add(level, second_sst, smallest, largest, file_size, first_delta);
+  }
+
+  {
+    constexpr char smallest[] = "bar3";
+    constexpr char largest[] = "foo3";
+    constexpr uint64_t file_size = 3000;
+
+    Add(level, third_sst, smallest, largest, file_size, third_delta);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 10;
+    constexpr uint64_t total_delta_bytes = 100000;
+    constexpr uint64_t garbage_delta_count = 2;
+    constexpr uint64_t garbage_delta_bytes = 15000;
+
+    AddDelta(first_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{first_sst, second_sst},
+             garbage_delta_count, garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 4;
+    constexpr uint64_t total_delta_bytes = 400000;
+    constexpr uint64_t garbage_delta_count = 3;
+    constexpr uint64_t garbage_delta_bytes = 235000;
+
+    AddDelta(second_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 20;
+    constexpr uint64_t total_delta_bytes = 1000000;
+    constexpr uint64_t garbage_delta_count = 8;
+    constexpr uint64_t garbage_delta_bytes = 123456;
+
+    AddDelta(third_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{third_sst}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  {
+    constexpr uint64_t total_delta_count = 128;
+    constexpr uint64_t total_delta_bytes = 789012345;
+    constexpr uint64_t garbage_delta_count = 67;
+    constexpr uint64_t garbage_delta_bytes = 88888888;
+
+    AddDelta(fourth_delta, total_delta_count, total_delta_bytes,
+             DeltaFileMetaData::LinkedSsts{}, garbage_delta_count,
+             garbage_delta_bytes);
+  }
+
+  UpdateVersionStorageInfo();
+
+  assert(vstorage_.num_levels() > 0);
+  const auto& level_files = vstorage_.LevelFiles(level);
+
+  assert(level_files.size() == 3);
+  assert(level_files[0] && level_files[0]->fd.GetNumber() == first_sst);
+  assert(level_files[1] && level_files[1]->fd.GetNumber() == second_sst);
+  assert(level_files[2] && level_files[2]->fd.GetNumber() == third_sst);
+
+  // No delta files eligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.1;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Part of the oldest batch of delta files (specifically, the second file) is
+  // ineligible for GC due to the age cutoff
+
+  {
+    constexpr double age_cutoff = 0.25;
+    constexpr double force_threshold = 0.0;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff but its overall garbage ratio
+  // is below threshold
+
+  {
+    constexpr double age_cutoff = 0.5;
+    constexpr double force_threshold = 0.6;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff and its overall garbage ratio
+  // meets threshold
+
+  {
+    constexpr double age_cutoff = 0.5;
+    constexpr double force_threshold = 0.5;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    auto ssts_to_be_compacted = vstorage_.FilesMarkedForForcedDeltaGC();
+    ASSERT_EQ(ssts_to_be_compacted.size(), 2);
+
+    std::sort(ssts_to_be_compacted.begin(), ssts_to_be_compacted.end(),
+              [](const std::pair<int, FileMetaData*>& lhs,
+                 const std::pair<int, FileMetaData*>& rhs) {
+                assert(lhs.second);
+                assert(rhs.second);
+                return lhs.second->fd.GetNumber() < rhs.second->fd.GetNumber();
+              });
+
+    const autovector<std::pair<int, FileMetaData*>>
+        expected_ssts_to_be_compacted{{level, level_files[0]},
+                                      {level, level_files[1]}};
+
+    ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
+    ASSERT_EQ(ssts_to_be_compacted[1], expected_ssts_to_be_compacted[1]);
+  }
+
+  // Now try the last two cases again with a greater than necessary age cutoff
+
+  // Oldest batch is eligible based on age cutoff but its overall garbage ratio
+  // is below threshold
+
+  {
+    constexpr double age_cutoff = 0.75;
+    constexpr double force_threshold = 0.6;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    ASSERT_TRUE(vstorage_.FilesMarkedForForcedDeltaGC().empty());
+  }
+
+  // Oldest batch is eligible based on age cutoff and its overall garbage ratio
+  // meets threshold
+
+  {
+    constexpr double age_cutoff = 0.75;
+    constexpr double force_threshold = 0.5;
+    vstorage_.ComputeFilesMarkedForForcedDeltaGC(age_cutoff, force_threshold);
+
+    auto ssts_to_be_compacted = vstorage_.FilesMarkedForForcedDeltaGC();
+    ASSERT_EQ(ssts_to_be_compacted.size(), 2);
+
+    std::sort(ssts_to_be_compacted.begin(), ssts_to_be_compacted.end(),
+              [](const std::pair<int, FileMetaData*>& lhs,
+                 const std::pair<int, FileMetaData*>& rhs) {
+                assert(lhs.second);
+                assert(rhs.second);
+                return lhs.second->fd.GetNumber() < rhs.second->fd.GetNumber();
+              });
+
+    const autovector<std::pair<int, FileMetaData*>>
+        expected_ssts_to_be_compacted{{level, level_files[0]},
+                                      {level, level_files[1]}};
+
+    ASSERT_EQ(ssts_to_be_compacted[0], expected_ssts_to_be_compacted[0]);
+    ASSERT_EQ(ssts_to_be_compacted[1], expected_ssts_to_be_compacted[1]);
+  }
+}
+
 class VersionStorageInfoTimestampTest : public VersionStorageInfoTestBase {
  public:
   VersionStorageInfoTimestampTest()
@@ -925,13 +1279,13 @@ class FindLevelFileTest : public testing::Test {
   bool disjoint_sorted_files_;
   Arena arena_;
 
-  FindLevelFileTest() : disjoint_sorted_files_(true) { }
+  FindLevelFileTest() : disjoint_sorted_files_(true) {}
 
   ~FindLevelFileTest() override {}
 
   void LevelFileInit(size_t num = 0) {
     char* mem = arena_.AllocateAligned(num * sizeof(FdWithKeyRange));
-    file_level_.files = new (mem)FdWithKeyRange[num];
+    file_level_.files = new (mem) FdWithKeyRange[num];
     file_level_.num_files = 0;
   }
 
@@ -944,19 +1298,18 @@ class FindLevelFileTest : public testing::Test {
     Slice smallest_slice = smallest_key.Encode();
     Slice largest_slice = largest_key.Encode();
 
-    char* mem = arena_.AllocateAligned(
-        smallest_slice.size() + largest_slice.size());
+    char* mem =
+        arena_.AllocateAligned(smallest_slice.size() + largest_slice.size());
     memcpy(mem, smallest_slice.data(), smallest_slice.size());
     memcpy(mem + smallest_slice.size(), largest_slice.data(),
-        largest_slice.size());
+           largest_slice.size());
 
     // add to file_level_
     size_t num = file_level_.num_files;
     auto& file = file_level_.files[num];
     file.fd = FileDescriptor(num + 1, 0, 0);
     file.smallest_key = Slice(mem, smallest_slice.size());
-    file.largest_key = Slice(mem + smallest_slice.size(),
-        largest_slice.size());
+    file.largest_key = Slice(mem + smallest_slice.size(), largest_slice.size());
     file_level_.num_files++;
   }
 
@@ -980,10 +1333,10 @@ TEST_F(FindLevelFileTest, LevelEmpty) {
   LevelFileInit(0);
 
   ASSERT_EQ(0, Find("foo"));
-  ASSERT_TRUE(! Overlaps("a", "z"));
-  ASSERT_TRUE(! Overlaps(nullptr, "z"));
-  ASSERT_TRUE(! Overlaps("a", nullptr));
-  ASSERT_TRUE(! Overlaps(nullptr, nullptr));
+  ASSERT_TRUE(!Overlaps("a", "z"));
+  ASSERT_TRUE(!Overlaps(nullptr, "z"));
+  ASSERT_TRUE(!Overlaps("a", nullptr));
+  ASSERT_TRUE(!Overlaps(nullptr, nullptr));
 }
 
 TEST_F(FindLevelFileTest, LevelSingle) {
@@ -997,8 +1350,8 @@ TEST_F(FindLevelFileTest, LevelSingle) {
   ASSERT_EQ(1, Find("q1"));
   ASSERT_EQ(1, Find("z"));
 
-  ASSERT_TRUE(! Overlaps("a", "b"));
-  ASSERT_TRUE(! Overlaps("z1", "z2"));
+  ASSERT_TRUE(!Overlaps("a", "b"));
+  ASSERT_TRUE(!Overlaps("z1", "z2"));
   ASSERT_TRUE(Overlaps("a", "p"));
   ASSERT_TRUE(Overlaps("a", "q"));
   ASSERT_TRUE(Overlaps("a", "z"));
@@ -1010,8 +1363,8 @@ TEST_F(FindLevelFileTest, LevelSingle) {
   ASSERT_TRUE(Overlaps("q", "q"));
   ASSERT_TRUE(Overlaps("q", "q1"));
 
-  ASSERT_TRUE(! Overlaps(nullptr, "j"));
-  ASSERT_TRUE(! Overlaps("r", nullptr));
+  ASSERT_TRUE(!Overlaps(nullptr, "j"));
+  ASSERT_TRUE(!Overlaps("r", nullptr));
   ASSERT_TRUE(Overlaps(nullptr, "p"));
   ASSERT_TRUE(Overlaps(nullptr, "p1"));
   ASSERT_TRUE(Overlaps("q", nullptr));
@@ -1043,10 +1396,10 @@ TEST_F(FindLevelFileTest, LevelMultiple) {
   ASSERT_EQ(3, Find("450"));
   ASSERT_EQ(4, Find("451"));
 
-  ASSERT_TRUE(! Overlaps("100", "149"));
-  ASSERT_TRUE(! Overlaps("251", "299"));
-  ASSERT_TRUE(! Overlaps("451", "500"));
-  ASSERT_TRUE(! Overlaps("351", "399"));
+  ASSERT_TRUE(!Overlaps("100", "149"));
+  ASSERT_TRUE(!Overlaps("251", "299"));
+  ASSERT_TRUE(!Overlaps("451", "500"));
+  ASSERT_TRUE(!Overlaps("351", "399"));
 
   ASSERT_TRUE(Overlaps("100", "150"));
   ASSERT_TRUE(Overlaps("100", "200"));
@@ -1065,8 +1418,8 @@ TEST_F(FindLevelFileTest, LevelMultipleNullBoundaries) {
   Add("200", "250");
   Add("300", "350");
   Add("400", "450");
-  ASSERT_TRUE(! Overlaps(nullptr, "149"));
-  ASSERT_TRUE(! Overlaps("451", nullptr));
+  ASSERT_TRUE(!Overlaps(nullptr, "149"));
+  ASSERT_TRUE(!Overlaps("451", nullptr));
   ASSERT_TRUE(Overlaps(nullptr, nullptr));
   ASSERT_TRUE(Overlaps(nullptr, "150"));
   ASSERT_TRUE(Overlaps(nullptr, "199"));
@@ -1084,8 +1437,8 @@ TEST_F(FindLevelFileTest, LevelOverlapSequenceChecks) {
   LevelFileInit(1);
 
   Add("200", "200", 5000, 3000);
-  ASSERT_TRUE(! Overlaps("199", "199"));
-  ASSERT_TRUE(! Overlaps("201", "300"));
+  ASSERT_TRUE(!Overlaps("199", "199"));
+  ASSERT_TRUE(!Overlaps("201", "300"));
   ASSERT_TRUE(Overlaps("200", "200"));
   ASSERT_TRUE(Overlaps("190", "200"));
   ASSERT_TRUE(Overlaps("200", "210"));
@@ -1097,8 +1450,8 @@ TEST_F(FindLevelFileTest, LevelOverlappingFiles) {
   Add("150", "600");
   Add("400", "500");
   disjoint_sorted_files_ = false;
-  ASSERT_TRUE(! Overlaps("100", "149"));
-  ASSERT_TRUE(! Overlaps("601", "700"));
+  ASSERT_TRUE(!Overlaps("100", "149"));
+  ASSERT_TRUE(!Overlaps("601", "700"));
   ASSERT_TRUE(Overlaps("100", "150"));
   ASSERT_TRUE(Overlaps("100", "200"));
   ASSERT_TRUE(Overlaps("100", "300"));
@@ -1632,6 +1985,251 @@ TEST_F(VersionSetTest, ObsoleteBlobFile) {
                                 min_pending_output);
 
     ASSERT_TRUE(blob_files.empty());
+  }
+}
+
+TEST_F(VersionSetTest, PersistDeltaFileStateInNewManifest) {
+  // Initialize the database and add a couple of delta files, one with some
+  // garbage in it, and one without any garbage.
+  NewDB();
+
+  assert(versions_);
+  assert(versions_->GetColumnFamilySet());
+
+  ColumnFamilyData* const cfd = versions_->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  Version* const version = cfd->current();
+  assert(version);
+
+  VersionStorageInfo* const storage_info = version->storage_info();
+  assert(storage_info);
+
+  {
+    constexpr uint64_t delta_file_number = 123;
+    constexpr uint64_t total_delta_count = 456;
+    constexpr uint64_t total_delta_bytes = 77777777;
+    constexpr char checksum_method[] = "SHA1";
+    constexpr char checksum_value[] =
+        "\xbd\xb7\xf3\x4a\x59\xdf\xa1\x59\x2c\xe7\xf5\x2e\x99\xf9\x8c\x57\x0c"
+        "\x52\x5c\xbd";
+
+    auto shared_meta = SharedDeltaFileMetaData::Create(
+        delta_file_number, total_delta_count, total_delta_bytes,
+        checksum_method, checksum_value);
+
+    constexpr uint64_t garbage_delta_count = 89;
+    constexpr uint64_t garbage_delta_bytes = 1000000;
+
+    auto meta = DeltaFileMetaData::Create(
+        std::move(shared_meta), DeltaFileMetaData::LinkedSsts(),
+        garbage_delta_count, garbage_delta_bytes);
+
+    storage_info->AddDeltaFile(std::move(meta));
+  }
+
+  {
+    constexpr uint64_t delta_file_number = 234;
+    constexpr uint64_t total_delta_count = 555;
+    constexpr uint64_t total_delta_bytes = 66666;
+    constexpr char checksum_method[] = "CRC32";
+    constexpr char checksum_value[] = "\x3d\x87\xff\x57";
+
+    auto shared_meta = SharedDeltaFileMetaData::Create(
+        delta_file_number, total_delta_count, total_delta_bytes,
+        checksum_method, checksum_value);
+
+    constexpr uint64_t garbage_delta_count = 0;
+    constexpr uint64_t garbage_delta_bytes = 0;
+
+    auto meta = DeltaFileMetaData::Create(
+        std::move(shared_meta), DeltaFileMetaData::LinkedSsts(),
+        garbage_delta_count, garbage_delta_bytes);
+
+    storage_info->AddDeltaFile(std::move(meta));
+  }
+
+  // Force the creation of a new manifest file and make sure metadata for
+  // the delta files is re-persisted.
+  size_t addition_encoded = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DeltaFileAddition::EncodeTo::CustomFields",
+      [&](void* /* arg */) { ++addition_encoded; });
+
+  size_t garbage_encoded = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+      "DeltaFileGarbage::EncodeTo::CustomFields",
+      [&](void* /* arg */) { ++garbage_encoded; });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  CreateNewManifest();
+
+  ASSERT_EQ(addition_encoded, 2);
+  ASSERT_EQ(garbage_encoded, 1);
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST_F(VersionSetTest, AddLiveDeltaFiles) {
+  // Initialize the database and add a delta file.
+  NewDB();
+
+  assert(versions_);
+  assert(versions_->GetColumnFamilySet());
+
+  ColumnFamilyData* const cfd = versions_->GetColumnFamilySet()->GetDefault();
+  assert(cfd);
+
+  Version* const first_version = cfd->current();
+  assert(first_version);
+
+  VersionStorageInfo* const first_storage_info = first_version->storage_info();
+  assert(first_storage_info);
+
+  constexpr uint64_t first_delta_file_number = 234;
+  constexpr uint64_t first_total_delta_count = 555;
+  constexpr uint64_t first_total_delta_bytes = 66666;
+  constexpr char first_checksum_method[] = "CRC32";
+  constexpr char first_checksum_value[] = "\x3d\x87\xff\x57";
+
+  auto first_shared_meta = SharedDeltaFileMetaData::Create(
+      first_delta_file_number, first_total_delta_count, first_total_delta_bytes,
+      first_checksum_method, first_checksum_value);
+
+  constexpr uint64_t garbage_delta_count = 0;
+  constexpr uint64_t garbage_delta_bytes = 0;
+
+  auto first_meta = DeltaFileMetaData::Create(
+      std::move(first_shared_meta), DeltaFileMetaData::LinkedSsts(),
+      garbage_delta_count, garbage_delta_bytes);
+
+  first_storage_info->AddDeltaFile(first_meta);
+
+  // Reference the version so it stays alive even after the following version
+  // edit.
+  first_version->Ref();
+
+  // Get live files directly from version.
+  std::vector<uint64_t> version_table_files;
+  std::vector<uint64_t> version_delta_files;
+
+  first_version->AddLiveFiles(&version_table_files, &version_delta_files);
+
+  ASSERT_EQ(version_delta_files.size(), 1);
+  ASSERT_EQ(version_delta_files[0], first_delta_file_number);
+
+  // Create a new version containing an additional delta file.
+  versions_->TEST_CreateAndAppendVersion(cfd);
+
+  Version* const second_version = cfd->current();
+  assert(second_version);
+  assert(second_version != first_version);
+
+  VersionStorageInfo* const second_storage_info =
+      second_version->storage_info();
+  assert(second_storage_info);
+
+  constexpr uint64_t second_delta_file_number = 456;
+  constexpr uint64_t second_total_delta_count = 100;
+  constexpr uint64_t second_total_delta_bytes = 2000000;
+  constexpr char second_checksum_method[] = "CRC32B";
+  constexpr char second_checksum_value[] = "\x6d\xbd\xf2\x3a";
+
+  auto second_shared_meta = SharedDeltaFileMetaData::Create(
+      second_delta_file_number, second_total_delta_count,
+      second_total_delta_bytes, second_checksum_method, second_checksum_value);
+
+  auto second_meta = DeltaFileMetaData::Create(
+      std::move(second_shared_meta), DeltaFileMetaData::LinkedSsts(),
+      garbage_delta_count, garbage_delta_bytes);
+
+  second_storage_info->AddDeltaFile(std::move(first_meta));
+  second_storage_info->AddDeltaFile(std::move(second_meta));
+
+  // Get all live files from version set. Note that the result contains
+  // duplicates.
+  std::vector<uint64_t> all_table_files;
+  std::vector<uint64_t> all_delta_files;
+
+  versions_->AddLiveFiles(&all_table_files, &all_delta_files);
+
+  ASSERT_EQ(all_delta_files.size(), 3);
+  ASSERT_EQ(all_delta_files[0], first_delta_file_number);
+  ASSERT_EQ(all_delta_files[1], first_delta_file_number);
+  ASSERT_EQ(all_delta_files[2], second_delta_file_number);
+
+  // Clean up previous version.
+  first_version->Unref();
+}
+
+TEST_F(VersionSetTest, ObsoleteDeltaFile) {
+  // Initialize the database and add a delta file that is entirely garbage
+  // and thus can immediately be marked obsolete.
+  NewDB();
+
+  VersionEdit edit;
+
+  constexpr uint64_t delta_file_number = 234;
+  constexpr uint64_t total_delta_count = 555;
+  constexpr uint64_t total_delta_bytes = 66666;
+  constexpr char checksum_method[] = "CRC32";
+  constexpr char checksum_value[] = "\x3d\x87\xff\x57";
+
+  edit.AddDeltaFile(delta_file_number, total_delta_count, total_delta_bytes,
+                    checksum_method, checksum_value);
+
+  edit.AddDeltaFileGarbage(delta_file_number, total_delta_count,
+                           total_delta_bytes);
+
+  mutex_.Lock();
+  Status s =
+      versions_->LogAndApply(versions_->GetColumnFamilySet()->GetDefault(),
+                             mutable_cf_options_, &edit, &mutex_, nullptr);
+  mutex_.Unlock();
+
+  ASSERT_OK(s);
+
+  // Make sure delta files from the pending number range are not returned
+  // as obsolete.
+  {
+    std::vector<ObsoleteFileInfo> table_files;
+    std::vector<ObsoleteDeltaFileInfo> delta_files;
+    std::vector<std::string> manifest_files;
+    constexpr uint64_t min_pending_output = delta_file_number;
+
+    versions_->GetObsoleteFiles(&table_files, &delta_files, &manifest_files,
+                                min_pending_output);
+
+    ASSERT_TRUE(delta_files.empty());
+  }
+
+  // Make sure the delta file is returned as obsolete if it's not in the pending
+  // range.
+  {
+    std::vector<ObsoleteFileInfo> table_files;
+    std::vector<ObsoleteDeltaFileInfo> delta_files;
+    std::vector<std::string> manifest_files;
+    constexpr uint64_t min_pending_output = delta_file_number + 1;
+
+    versions_->GetObsoleteFiles(&table_files, &delta_files, &manifest_files,
+                                min_pending_output);
+
+    ASSERT_EQ(delta_files.size(), 1);
+    ASSERT_EQ(delta_files[0].GetDeltaFileNumber(), delta_file_number);
+  }
+
+  // Make sure it's not returned a second time.
+  {
+    std::vector<ObsoleteFileInfo> table_files;
+    std::vector<ObsoleteDeltaFileInfo> delta_files;
+    std::vector<std::string> manifest_files;
+    constexpr uint64_t min_pending_output = delta_file_number + 1;
+
+    versions_->GetObsoleteFiles(&table_files, &delta_files, &manifest_files,
+                                min_pending_output);
+
+    ASSERT_TRUE(delta_files.empty());
   }
 }
 

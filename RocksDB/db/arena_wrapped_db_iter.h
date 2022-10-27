@@ -9,7 +9,9 @@
 
 #pragma once
 #include <stdint.h>
+
 #include <string>
+
 #include "db/db_impl/db_impl.h"
 #include "db/db_iter.h"
 #include "db/range_del_aggregator.h"
@@ -74,6 +76,7 @@ class ArenaWrappedDBIter : public Iterator {
   Status status() const override { return db_iter_->status(); }
   Slice timestamp() const override { return db_iter_->timestamp(); }
   bool IsBlob() const { return db_iter_->IsBlob(); }
+  bool IsDelta() const { return db_iter_->IsDelta(); }
 
   Status GetProperty(std::string prop_name, std::string* prop) override;
 
@@ -85,16 +88,19 @@ class ArenaWrappedDBIter : public Iterator {
             const SequenceNumber& sequence,
             uint64_t max_sequential_skip_in_iterations, uint64_t version_number,
             ReadCallback* read_callback, DBImpl* db_impl, ColumnFamilyData* cfd,
-            bool expose_blob_index, bool allow_refresh);
+            bool expose_blob_index, bool expose_delta_index,
+            bool allow_refresh);
 
   // Store some parameters so we can refresh the iterator at a later point
   // with these same params
   void StoreRefreshInfo(DBImpl* db_impl, ColumnFamilyData* cfd,
-                        ReadCallback* read_callback, bool expose_blob_index) {
+                        ReadCallback* read_callback, bool expose_blob_index,
+                        bool expose_delta_index) {
     db_impl_ = db_impl;
     cfd_ = cfd;
     read_callback_ = read_callback;
     expose_blob_index_ = expose_blob_index;
+    expose_delta_index_ = expose_delta_index;
   }
 
  private:
@@ -106,6 +112,7 @@ class ArenaWrappedDBIter : public Iterator {
   ReadOptions read_options_;
   ReadCallback* read_callback_;
   bool expose_blob_index_ = false;
+  bool expose_delta_index_ = false;
   bool allow_refresh_ = true;
   // If this is nullptr, it means the mutable memtable does not contain range
   // tombstone when added under this DBIter.
@@ -121,5 +128,6 @@ extern ArenaWrappedDBIter* NewArenaWrappedDbIterator(
     const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
     uint64_t version_number, ReadCallback* read_callback,
     DBImpl* db_impl = nullptr, ColumnFamilyData* cfd = nullptr,
-    bool expose_blob_index = false, bool allow_refresh = true);
+    bool expose_blob_index = false, bool expose_delta_index = false,
+    bool allow_refresh = true);
 }  // namespace ROCKSDB_NAMESPACE

@@ -529,6 +529,173 @@ TEST_F(DBWALTest, RecoverWithBlobMultiSST) {
   ASSERT_EQ(l0_files.size(), blob_files.size());
 }
 
+TEST_F(DBWALTest, RecoverWithDelta) {
+  // Write a value that's below the prospective size limit for deltas and
+  // another one that's above. Note that delta files are not actually enabled at
+  // this point.
+  constexpr uint64_t min_delta_size = 10;
+
+  constexpr char short_value[] = "short";
+  static_assert(sizeof(short_value) - 1 < min_delta_size,
+                "short_value too long");
+
+  constexpr char long_value[] = "long_value";
+  static_assert(sizeof(long_value) - 1 >= min_delta_size,
+                "long_value too short");
+
+  ASSERT_OK(Put("key1", short_value));
+  ASSERT_OK(Put("key2", long_value));
+
+  // There should be no files just yet since we haven't flushed.
+  {
+    VersionSet* const versions = dbfull()->GetVersionSet();
+    ASSERT_NE(versions, nullptr);
+
+    ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+    ASSERT_NE(cfd, nullptr);
+
+    Version* const current = cfd->current();
+    ASSERT_NE(current, nullptr);
+
+    const VersionStorageInfo* const storage_info = current->storage_info();
+    ASSERT_NE(storage_info, nullptr);
+
+    ASSERT_EQ(storage_info->num_non_empty_levels(), 0);
+    ASSERT_TRUE(storage_info->GetDeltaFiles().empty());
+  }
+
+  // Reopen the database with delta files enabled. A new table file/delta file
+  // pair should be written during recovery.
+  Options options;
+  options.enable_delta_files = true;
+  options.min_delta_size = min_delta_size;
+  options.avoid_flush_during_recovery = false;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  Reopen(options);
+
+  ASSERT_EQ(Get("key1"), short_value);
+  ASSERT_EQ(Get("key2"), long_value);
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  ASSERT_NE(versions, nullptr);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  ASSERT_NE(cfd, nullptr);
+
+  Version* const current = cfd->current();
+  ASSERT_NE(current, nullptr);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  ASSERT_NE(storage_info, nullptr);
+
+  const auto& l0_files = storage_info->LevelFiles(0);
+  ASSERT_EQ(l0_files.size(), 1);
+
+  const FileMetaData* const table_file = l0_files[0];
+  ASSERT_NE(table_file, nullptr);
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_EQ(delta_files.size(), 1);
+
+  const auto& delta_file = delta_files.front();
+  ASSERT_NE(delta_file, nullptr);
+
+  ASSERT_EQ(table_file->smallest.user_key(), "key1");
+  ASSERT_EQ(table_file->largest.user_key(), "key2");
+  ASSERT_EQ(table_file->fd.smallest_seqno, 1);
+  ASSERT_EQ(table_file->fd.largest_seqno, 2);
+  ASSERT_EQ(table_file->oldest_delta_file_number,
+            delta_file->GetDeltaFileNumber());
+
+  ASSERT_EQ(delta_file->GetTotalDeltaCount(), 1);
+
+#ifndef ROCKSDB_LITE
+  const InternalStats* const internal_stats = cfd->internal_stats();
+  ASSERT_NE(internal_stats, nullptr);
+
+  const auto& compaction_stats = internal_stats->TEST_GetCompactionStats();
+  ASSERT_FALSE(compaction_stats.empty());
+  ASSERT_EQ(compaction_stats[0].bytes_written, table_file->fd.GetFileSize());
+  ASSERT_EQ(compaction_stats[0].bytes_written_delta,
+            delta_file->GetTotalDeltaBytes());
+  ASSERT_EQ(compaction_stats[0].num_output_files, 1);
+  ASSERT_EQ(compaction_stats[0].num_output_files_delta, 1);
+
+  const uint64_t* const cf_stats_value = internal_stats->TEST_GetCFStatsValue();
+  ASSERT_EQ(cf_stats_value[InternalStats::BYTES_FLUSHED],
+            compaction_stats[0].bytes_written +
+                compaction_stats[0].bytes_written_delta);
+#endif  // ROCKSDB_LITE
+}
+
+TEST_F(DBWALTest, RecoverWithDeltaMultiSST) {
+  // Write several large (4 KB) values without flushing. Note that delta files
+  // are not actually enabled at this point.
+  std::string large_value(1 << 12, 'a');
+
+  constexpr int num_keys = 64;
+
+  for (int i = 0; i < num_keys; ++i) {
+    ASSERT_OK(Put(Key(i), large_value));
+  }
+
+  // There should be no files just yet since we haven't flushed.
+  {
+    VersionSet* const versions = dbfull()->GetVersionSet();
+    ASSERT_NE(versions, nullptr);
+
+    ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+    ASSERT_NE(cfd, nullptr);
+
+    Version* const current = cfd->current();
+    ASSERT_NE(current, nullptr);
+
+    const VersionStorageInfo* const storage_info = current->storage_info();
+    ASSERT_NE(storage_info, nullptr);
+
+    ASSERT_EQ(storage_info->num_non_empty_levels(), 0);
+    ASSERT_TRUE(storage_info->GetDeltaFiles().empty());
+  }
+
+  // Reopen the database with delta files enabled and write buffer size set to a
+  // smaller value. Multiple table files+delta files should be written and added
+  // to the Version during recovery.
+  Options options;
+  options.write_buffer_size = 1 << 16;  // 64 KB
+  options.enable_delta_files = true;
+  options.avoid_flush_during_recovery = false;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  Reopen(options);
+
+  for (int i = 0; i < num_keys; ++i) {
+    ASSERT_EQ(Get(Key(i)), large_value);
+  }
+
+  VersionSet* const versions = dbfull()->GetVersionSet();
+  ASSERT_NE(versions, nullptr);
+
+  ColumnFamilyData* const cfd = versions->GetColumnFamilySet()->GetDefault();
+  ASSERT_NE(cfd, nullptr);
+
+  Version* const current = cfd->current();
+  ASSERT_NE(current, nullptr);
+
+  const VersionStorageInfo* const storage_info = current->storage_info();
+  ASSERT_NE(storage_info, nullptr);
+
+  const auto& l0_files = storage_info->LevelFiles(0);
+  ASSERT_GT(l0_files.size(), 1);
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+  ASSERT_GT(delta_files.size(), 1);
+
+  ASSERT_EQ(l0_files.size(), delta_files.size());
+}
+
 TEST_F(DBWALTest, WALWithChecksumHandoff) {
 #ifndef ROCKSDB_ASSERT_STATUS_CHECKED
   if (mem_env_ || encrypted_env_) {
@@ -662,6 +829,63 @@ TEST_P(DBRecoveryTestBlobError, RecoverWithBlobError) {
 
     ASSERT_NE(type, kTableFile);
     ASSERT_NE(type, kBlobFile);
+  }
+}
+
+class DBRecoveryTestDeltaError
+    : public DBWALTest,
+      public testing::WithParamInterface<std::string> {
+ public:
+  DBRecoveryTestDeltaError() : sync_point_(GetParam()) {}
+
+  std::string sync_point_;
+};
+
+INSTANTIATE_TEST_CASE_P(
+    DBRecoveryTestDeltaError, DBRecoveryTestDeltaError,
+    ::testing::ValuesIn(std::vector<std::string>{
+        "DeltaFileBuilder::WriteDeltaToFile:AddRecord",
+        "DeltaFileBuilder::WriteDeltaToFile:AppendFooter"}));
+
+TEST_P(DBRecoveryTestDeltaError, RecoverWithDeltaError) {
+  // Write a value. Note that delta files are not actually enabled at this
+  // point.
+  ASSERT_OK(Put("key", "delta"));
+
+  // Reopen with delta files enabled but make delta file writing fail during
+  // recovery.
+  SyncPoint::GetInstance()->SetCallBack(sync_point_, [this](void* arg) {
+    Status* const s = static_cast<Status*>(arg);
+    assert(s);
+
+    (*s) = Status::IOError(sync_point_);
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  Options options;
+  options.enable_delta_files = true;
+  options.avoid_flush_during_recovery = false;
+  options.disable_auto_compactions = true;
+  options.env = env_;
+
+  ASSERT_NOK(TryReopen(options));
+
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  // Make sure the files generated by the failed recovery have been deleted.
+  std::vector<std::string> files;
+  ASSERT_OK(env_->GetChildren(dbname_, &files));
+  for (const auto& file : files) {
+    uint64_t number = 0;
+    FileType type = kTableFile;
+
+    if (!ParseFileName(file, &number, &type)) {
+      continue;
+    }
+
+    ASSERT_NE(type, kTableFile);
+    ASSERT_NE(type, kDeltaFile);
   }
 }
 

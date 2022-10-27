@@ -330,9 +330,8 @@ int MemTable::KeyComparator::operator()(const char* prefix_len_key1,
   return comparator.CompareKeySeq(k1, k2);
 }
 
-int MemTable::KeyComparator::operator()(const char* prefix_len_key,
-                                        const KeyComparator::DecodedType& key)
-    const {
+int MemTable::KeyComparator::operator()(
+    const char* prefix_len_key, const KeyComparator::DecodedType& key) const {
   // Internal keys are encoded as length-prefixed strings.
   Slice a = GetLengthPrefixedSlice(prefix_len_key);
   return comparator.CompareKeySeq(a, key);
@@ -904,6 +903,7 @@ struct Saver {
 
   ReadCallback* callback_;
   bool* is_blob_index;
+  bool* is_delta_index;
   bool allow_data_in_errors;
   size_t protection_bytes_per_key;
   bool CheckCallback(SequenceNumber _seq) {
@@ -978,12 +978,13 @@ static bool SaveValue(void* arg, const char* entry) {
     }
 
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
-         type == kTypeWideColumnEntity) &&
+         type == kTypeDeltaIndex || type == kTypeWideColumnEntity) &&
         max_covering_tombstone_seq > seq) {
       type = kTypeRangeDeletion;
     }
     switch (type) {
       case kTypeBlobIndex:
+      case kTypeDeltaIndex:
       case kTypeWideColumnEntity:
         if (*(s->merge_in_progress)) {
           *(s->status) = Status::NotSupported("Merge operator not supported");
@@ -995,6 +996,13 @@ static bool SaveValue(void* arg, const char* entry) {
             *(s->status) = Status::NotSupported(
                 "Encounter unsupported blob value. Please open DB with "
                 "ROCKSDB_NAMESPACE::blob_db::BlobDB instead.");
+          }
+        } else if (type == kTypeDeltaIndex) {
+          if (s->is_delta_index == nullptr) {
+            ROCKS_LOG_ERROR(s->logger, "Encounter unexpected delta index.");
+            *(s->status) = Status::NotSupported(
+                "Encounter unsupported delta value. Please open DB with "
+                "ROCKSDB_NAMESPACE::delta_db::DeltaDB instead.");
           }
         }
 
@@ -1030,7 +1038,8 @@ static bool SaveValue(void* arg, const char* entry) {
               v, s->inplace_update_support == false /* operand_pinned */);
         } else if (s->value) {
           if (type != kTypeWideColumnEntity) {
-            assert(type == kTypeValue || type == kTypeBlobIndex);
+            assert(type == kTypeValue || type == kTypeBlobIndex ||
+                   type == kTypeDeltaIndex);
             s->value->assign(v.data(), v.size());
           } else {
             Slice value;
@@ -1054,6 +1063,9 @@ static bool SaveValue(void* arg, const char* entry) {
         *(s->found_final_value) = true;
         if (s->is_blob_index != nullptr) {
           *(s->is_blob_index) = (type == kTypeBlobIndex);
+        }
+        if (s->is_delta_index != nullptr) {
+          *(s->is_delta_index) = (type == kTypeDeltaIndex);
         }
 
         return false;
@@ -1126,7 +1138,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
                    SequenceNumber* max_covering_tombstone_seq,
                    SequenceNumber* seq, const ReadOptions& read_opts,
                    bool immutable_memtable, ReadCallback* callback,
-                   bool* is_blob_index, bool do_merge) {
+                   bool* is_blob_index, bool* is_delta_index, bool do_merge) {
   // The sequence number is updated synchronously in version_set.h
   if (IsEmpty()) {
     // Avoiding recording stats for speed.
@@ -1175,8 +1187,8 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
       PERF_COUNTER_ADD(bloom_memtable_hit_count, 1);
     }
     GetFromTable(key, *max_covering_tombstone_seq, do_merge, callback,
-                 is_blob_index, value, columns, timestamp, s, merge_context,
-                 seq, &found_final_value, &merge_in_progress);
+                 is_blob_index, is_delta_index, value, columns, timestamp, s,
+                 merge_context, seq, &found_final_value, &merge_in_progress);
   }
 
   // No change to value, since we have not yet found a Put/Delete
@@ -1191,8 +1203,8 @@ bool MemTable::Get(const LookupKey& key, std::string* value,
 void MemTable::GetFromTable(const LookupKey& key,
                             SequenceNumber max_covering_tombstone_seq,
                             bool do_merge, ReadCallback* callback,
-                            bool* is_blob_index, std::string* value,
-                            PinnableWideColumns* columns,
+                            bool* is_blob_index, bool* is_delta_index,
+                            std::string* value, PinnableWideColumns* columns,
                             std::string* timestamp, Status* s,
                             MergeContext* merge_context, SequenceNumber* seq,
                             bool* found_final_value, bool* merge_in_progress) {
@@ -1215,6 +1227,7 @@ void MemTable::GetFromTable(const LookupKey& key,
   saver.clock = clock_;
   saver.callback_ = callback;
   saver.is_blob_index = is_blob_index;
+  saver.is_delta_index = is_delta_index;
   saver.do_merge = do_merge;
   saver.allow_data_in_errors = moptions_.allow_data_in_errors;
   saver.protection_bytes_per_key = moptions_.protection_bytes_per_key;
@@ -1277,11 +1290,11 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           range_del_iter->MaxCoveringTombstoneSeqnum(iter->lkey->user_key()));
     }
     SequenceNumber dummy_seq;
-    GetFromTable(*(iter->lkey), iter->max_covering_tombstone_seq, true,
-                 callback, &iter->is_blob_index, iter->value->GetSelf(),
-                 /*columns=*/nullptr, iter->timestamp, iter->s,
-                 &(iter->merge_context), &dummy_seq, &found_final_value,
-                 &merge_in_progress);
+    GetFromTable(
+        *(iter->lkey), iter->max_covering_tombstone_seq, true, callback,
+        &iter->is_blob_index, &iter->is_delta_index, iter->value->GetSelf(),
+        /*columns=*/nullptr, iter->timestamp, iter->s, &(iter->merge_context),
+        &dummy_seq, &found_final_value, &merge_in_progress);
 
     if (!found_final_value && merge_in_progress) {
       *(iter->s) = Status::MergeInProgress();

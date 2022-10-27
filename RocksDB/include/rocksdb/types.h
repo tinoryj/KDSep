@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdint.h>
+
 #include "rocksdb/slice.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -32,6 +33,12 @@ enum class BlobFileCreationReason {
   kRecovery,
 };
 
+enum class DeltaFileCreationReason {
+  kFlush,
+  kCompaction,
+  kRecovery,
+};
+
 // The types of files RocksDB uses in a DB directory. (Available for
 // advanced options.)
 enum FileType {
@@ -45,7 +52,8 @@ enum FileType {
   kMetaDatabase,
   kIdentityFile,
   kOptionsFile,
-  kBlobFile
+  kBlobFile,
+  kDeltaFile
 };
 
 // User-oriented representation of internal key types.
@@ -57,6 +65,7 @@ enum EntryType {
   kEntryMerge,
   kEntryRangeDeletion,
   kEntryBlobIndex,
+  kEntryDeltaIndex,
   kEntryDeleteWithTimestamp,
   kEntryWideColumnEntity,
   kEntryOther,
