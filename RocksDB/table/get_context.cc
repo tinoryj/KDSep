@@ -5,7 +5,7 @@
 
 #include "table/get_context.h"
 
-#include "db/blob//blob_fetcher.h"
+#include "db/blob/blob_fetcher.h"
 #include "db/delta/delta_fetcher.h"
 #include "db/merge_helper.h"
 #include "db/pinned_iterators_manager.h"
@@ -50,7 +50,8 @@ GetContext::GetContext(
     bool do_merge, SequenceNumber* _max_covering_tombstone_seq,
     SystemClock* clock, SequenceNumber* seq,
     PinnedIteratorsManager* _pinned_iters_mgr, ReadCallback* callback,
-    bool* is_blob_index, uint64_t tracing_get_id, BlobFetcher* blob_fetcher)
+    bool* is_blob_index, bool* is_delta_index, uint64_t tracing_get_id,
+    BlobFetcher* blob_fetcher, DeltaFetcher* delta_fetcher)
     : ucmp_(ucmp),
       merge_operator_(merge_operator),
       logger_(logger),
@@ -70,8 +71,10 @@ GetContext::GetContext(
       callback_(callback),
       do_merge_(do_merge),
       is_blob_index_(is_blob_index),
+      is_delta_index_(is_delta_index),
       tracing_get_id_(tracing_get_id),
-      blob_fetcher_(blob_fetcher) {
+      blob_fetcher_(blob_fetcher),
+      delta_fetcher_(delta_fetcher) {
   if (seq_) {
     *seq_ = kMaxSequenceNumber;
   }
@@ -88,12 +91,13 @@ GetContext::GetContext(const Comparator* ucmp,
                        SystemClock* clock, SequenceNumber* seq,
                        PinnedIteratorsManager* _pinned_iters_mgr,
                        ReadCallback* callback, bool* is_blob_index,
-                       uint64_t tracing_get_id, BlobFetcher* blob_fetcher)
+                       bool* is_delta_index, uint64_t tracing_get_id,
+                       BlobFetcher* blob_fetcher, DeltaFetcher* delta_fetcher)
     : GetContext(ucmp, merge_operator, logger, statistics, init_state, user_key,
                  pinnable_val, columns, /*timestamp=*/nullptr, value_found,
                  merge_context, do_merge, _max_covering_tombstone_seq, clock,
                  seq, _pinned_iters_mgr, callback, is_blob_index,
-                 tracing_get_id, blob_fetcher) {}
+                 is_delta_index, tracing_get_id, blob_fetcher, delta_fetcher) {}
 
 // Called from TableCache::Get and Table::Get when file/block in which
 // key may exist are not there in TableCache/BlockCache respectively. In this
@@ -264,7 +268,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     auto type = parsed_key.type;
     // Key matches. Process it
     if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
-         type == kTypeWideColumnEntity) &&
+         type == kTypeDeltaIndex || type == kTypeWideColumnEntity) &&
         max_covering_tombstone_seq_ != nullptr &&
         *max_covering_tombstone_seq_ > parsed_key.sequence) {
       type = kTypeRangeDeletion;
@@ -272,6 +276,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
     switch (type) {
       case kTypeValue:
       case kTypeBlobIndex:
+      case kTypeDeltaIndex:
       case kTypeWideColumnEntity:
         assert(state_ == kNotFound || state_ == kMerge);
         if (type == kTypeBlobIndex) {
@@ -284,6 +289,17 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
         if (is_blob_index_ != nullptr) {
           *is_blob_index_ = (type == kTypeBlobIndex);
+        }
+        if (type == kTypeDeltaIndex) {
+          if (is_delta_index_ == nullptr) {
+            // Delta value not supported. Stop.
+            state_ = kUnexpectedDeltaIndex;
+            return false;
+          }
+        }
+
+        if (is_delta_index_ != nullptr) {
+          *is_delta_index_ = (type == kTypeDeltaIndex);
         }
 
         if (kNotFound == state_) {
@@ -333,6 +349,13 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               }
               Slice blob_value(pin_val);
               push_operand(blob_value, nullptr);
+            } else if (type == kTypeDeltaIndex) {
+              PinnableSlice pin_val;
+              if (GetDeltaValue(value, &pin_val) == false) {
+                return false;
+              }
+              Slice delta_value(pin_val);
+              push_operand(delta_value, nullptr);
             } else if (type == kTypeWideColumnEntity) {
               // TODO: support wide-column entities
               state_ = kUnexpectedWideColumnEntity;
@@ -358,6 +381,21 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
               // API and the current value should be part of
               // merge_context_->operand_list
               push_operand(blob_value, nullptr);
+            }
+          } else if (type == kTypeDeltaIndex) {
+            PinnableSlice pin_val;
+            if (GetDeltaValue(value, &pin_val) == false) {
+              return false;
+            }
+            Slice delta_value(pin_val);
+            state_ = kFound;
+            if (do_merge_) {
+              Merge(&delta_value);
+            } else {
+              // It means this function is called as part of DB GetMergeOperands
+              // API and the current value should be part of
+              // merge_context_->operand_list
+              push_operand(delta_value, nullptr);
             }
           } else if (type == kTypeWideColumnEntity) {
             // TODO: support wide-column entities
@@ -451,6 +489,26 @@ bool GetContext::GetBlobValue(const Slice& blob_index,
     return false;
   }
   *is_blob_index_ = false;
+  return true;
+}
+
+bool GetContext::GetDeltaValue(const Slice& delta_index,
+                               PinnableSlice* delta_value) {
+  constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
+  constexpr uint64_t* bytes_read = nullptr;
+
+  Status status = delta_fetcher_->FetchDelta(
+      user_key_, delta_index, prefetch_buffer, delta_value, bytes_read);
+  if (!status.ok()) {
+    if (status.IsIncomplete()) {
+      // FIXME: this code is not covered by unit tests
+      MarkKeyMayExist();
+      return false;
+    }
+    state_ = kCorrupt;
+    return false;
+  }
+  *is_delta_index_ = false;
   return true;
 }
 

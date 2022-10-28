@@ -14,7 +14,6 @@
 #include "db/dbformat.h"
 #include "db/delta/delta_fetcher.h"
 #include "db/delta/delta_index.h"
-#include "db/delta/prefetch_buffer_collection.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/likely.h"

@@ -33,7 +33,8 @@ class CompactionFilter : public Customizable {
   enum ValueType {
     kValue,
     kMergeOperand,
-    kBlobIndex,  // used internally by BlobDB.
+    kBlobIndex,   // used internally by BlobDB.
+    kDeltaIndex,  // used internally by DeltaDB.
   };
 
   enum class Decision {
@@ -41,14 +42,15 @@ class CompactionFilter : public Customizable {
     kRemove,
     kChangeValue,
     kRemoveAndSkipUntil,
-    kChangeBlobIndex,  // used internally by BlobDB.
-    kIOError,          // used internally by BlobDB.
-    kPurge,            // used for keys that can only be SingleDelete'ed
+    kChangeBlobIndex,   // used internally by BlobDB.
+    kChangeDeltaIndex,  // used internally by DeltaDB.
+    kIOError,           // used internally by BlobDB and DeltaDB.
+    kPurge,             // used for keys that can only be SingleDelete'ed
     kUndetermined,
   };
 
   enum class BlobDecision { kKeep, kChangeValue, kCorruption, kIOError };
-
+  enum class DeltaDecision { kKeep, kChangeValue, kCorruption, kIOError };
   // Context information for a table file creation.
   struct Context {
     // Whether this table file is created as part of a compaction including all
@@ -181,6 +183,8 @@ class CompactionFilter : public Customizable {
       }
       case ValueType::kBlobIndex:
         return Decision::kKeep;
+      case ValueType::kDeltaIndex:
+        return Decision::kKeep;
     }
     assert(false);
     return Decision::kKeep;
@@ -191,6 +195,13 @@ class CompactionFilter : public Customizable {
                                          const Slice& /* existing_value */,
                                          std::string* /* new_value */) const {
     return BlobDecision::kKeep;
+  }
+
+  // Internal (DeltaDB) use only. Do not override in application code.
+  virtual DeltaDecision PrepareDeltaOutput(const Slice& /* key */,
+                                           const Slice& /* existing_value */,
+                                           std::string* /* new_value */) const {
+    return DeltaDecision::kKeep;
   }
 
   // This function is deprecated. Snapshots will always be ignored for
@@ -207,6 +218,11 @@ class CompactionFilter : public Customizable {
   // Internal (BlobDB) use only. Do not override in application code.
   virtual bool IsStackedBlobDbInternalCompactionFilter() const { return false; }
 
+  // Internal (DeltaDB) use only. Do not override in application code.
+  virtual bool IsStackedDeltaDbInternalCompactionFilter() const {
+    return false;
+  }
+
   // In the case of BlobDB, it may be possible to reach a decision with only
   // the key without reading the actual value. Keys whose value_type is
   // kBlobIndex will be checked by this method.
@@ -215,6 +231,17 @@ class CompactionFilter : public Customizable {
   virtual Decision FilterBlobByKey(int /*level*/, const Slice& /*key*/,
                                    std::string* /*new_value*/,
                                    std::string* /*skip_until*/) const {
+    return Decision::kUndetermined;
+  }
+
+  // In the case of DeltaDB, it may be possible to reach a decision with only
+  // the key without reading the actual value. Keys whose value_type is
+  // kDeltaIndex will be checked by this method.
+  // Returning kUndetermined will cause FilterV2() to be called to make a
+  // decision as usual.
+  virtual Decision FilterDeltaByKey(int /*level*/, const Slice& /*key*/,
+                                    std::string* /*new_value*/,
+                                    std::string* /*skip_until*/) const {
     return Decision::kUndetermined;
   }
 };

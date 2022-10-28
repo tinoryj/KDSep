@@ -217,8 +217,8 @@ Compaction::Compaction(
     bool _deletion_compaction, bool l0_files_might_overlap,
     CompactionReason _compaction_reason,
     BlobGarbageCollectionPolicy _blob_garbage_collection_policy,
-    double _blob_garbage_collection_age_cutoff,
     DeltaGarbageCollectionPolicy _delta_garbage_collection_policy,
+    double _blob_garbage_collection_age_cutoff,
     double _delta_garbage_collection_age_cutoff)
     : input_vstorage_(vstorage),
       start_level_(_inputs[0].level),

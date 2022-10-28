@@ -115,15 +115,15 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        cout << "VALUE: \n\tNumber = " << countResult[VALUE][2]
-             << "\n\tkey size (byte) = " << countResult[VALUE][0]
-             << "\n\tvalue size (byte) = " << countResult[VALUE][1] << endl;
-        cout << "DELTA: \n\tNumber = " << countResult[DELTA][2]
-             << "\n\tkey size (byte) = " << countResult[DELTA][0]
-             << "\n\tvalue size (byte) = " << countResult[DELTA][1] << endl;
-        cout << "POSITION: \n\tNumber = " << countResult[POSITION][2]
-             << "\n\tkey size (byte) = " << countResult[POSITION][0]
-             << "\n\tvalue size (byte) = " << countResult[POSITION][1] << endl
+        cout << "VALUE: \n\tNumber = " << countResult[VALUE][0]
+             << "\n\tkey size (byte) = " << countResult[VALUE][1]
+             << "\n\tvalue size (byte) = " << countResult[VALUE][2] << endl;
+        cout << "DELTA: \n\tNumber = " << countResult[DELTA][0]
+             << "\n\tkey size (byte) = " << countResult[DELTA][1]
+             << "\n\tvalue size (byte) = " << countResult[DELTA][2] << endl;
+        cout << "POSITION: \n\tNumber = " << countResult[POSITION][0]
+             << "\n\tkey size (byte) = " << countResult[POSITION][1]
+             << "\n\tvalue size (byte) = " << countResult[POSITION][2] << endl
              << endl;
     }
 

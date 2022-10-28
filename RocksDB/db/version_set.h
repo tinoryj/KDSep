@@ -12,7 +12,7 @@
 // around to provide a consistent view to live iterators.
 //
 // Each Version keeps track of a set of table files per level, as well as a
-// set of blob files. The entire set of versions is maintained in a
+// set of blob/delta files. The entire set of versions is maintained in a
 // VersionSet.
 //
 // Version,VersionSet are thread-compatible, but require external
@@ -70,6 +70,7 @@ class Writer;
 }
 
 class BlobIndex;
+class DeltaIndex;
 class DeltaIndex;
 class Compaction;
 class LogBuffer;
@@ -1558,6 +1559,8 @@ class VersionSet {
   static uint64_t GetTotalSstFilesSize(Version* dummy_versions);
 
   static uint64_t GetTotalBlobFileSize(Version* dummy_versions);
+
+  static uint64_t GetTotalDeltaFileSize(Version* dummy_versions);
 
   // Get the IO Status returned by written Manifest.
   const IOStatus& io_status() const { return io_status_; }

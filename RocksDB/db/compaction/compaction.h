@@ -85,7 +85,10 @@ class Compaction {
              CompactionReason compaction_reason = CompactionReason::kUnknown,
              BlobGarbageCollectionPolicy blob_garbage_collection_policy =
                  BlobGarbageCollectionPolicy::kUseDefault,
-             double blob_garbage_collection_age_cutoff = -1);
+             DeltaGarbageCollectionPolicy delta_garbage_collection_policy =
+                 DeltaGarbageCollectionPolicy::kUseDefault,
+             double blob_garbage_collection_age_cutoff = -1,
+             double delta_garbage_collection_age_cutoff = -1);
 
   // No copying allowed
   Compaction(const Compaction&) = delete;
@@ -289,6 +292,11 @@ class Compaction {
   // PRE: input version has been set.
   bool DoesInputReferenceBlobFiles() const;
 
+  // Returns true iff at least one input file references a delta file.
+  //
+  // PRE: input version has been set.
+  bool DoesInputReferenceDeltaFiles() const;
+
   // test function to validate the functionality of IsBottommostLevel()
   // function -- determines if compaction with inputs and storage is bottommost
   static bool TEST_IsBottommostLevel(
@@ -345,6 +353,14 @@ class Compaction {
 
   double blob_garbage_collection_age_cutoff() const {
     return blob_garbage_collection_age_cutoff_;
+  }
+
+  bool enable_delta_garbage_collection() const {
+    return enable_delta_garbage_collection_;
+  }
+
+  double delta_garbage_collection_age_cutoff() const {
+    return delta_garbage_collection_age_cutoff_;
   }
 
   // start and end are sub compact range. Null if no boundary.
@@ -487,6 +503,12 @@ class Compaction {
 
   // Blob garbage collection age cutoff.
   double blob_garbage_collection_age_cutoff_;
+
+  // Enable/disable GC collection for deltas during compaction.
+  bool enable_delta_garbage_collection_;
+
+  // Delta garbage collection age cutoff.
+  double delta_garbage_collection_age_cutoff_;
 
   // only set when per_key_placement feature is enabled, -1 (kInvalidLevel)
   // means not supported.

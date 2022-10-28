@@ -12,6 +12,9 @@
 #include "db/blob/blob_file_builder.h"
 #include "db/blob/blob_index.h"
 #include "db/blob/prefetch_buffer_collection.h"
+#include "db/delta/delta_fetcher.h"
+#include "db/delta/delta_file_builder.h"
+#include "db/delta/delta_index.h"
 #include "db/snapshot_checker.h"
 #include "logging/logging.h"
 #include "port/likely.h"
@@ -27,8 +30,8 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-    bool enforce_single_del_contracts,
+    BlobFileBuilder* blob_file_builder, DeltaFileBuilder* delta_file_builder,
+    bool allow_data_in_errors, bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     const Compaction* compaction, const CompactionFilter* compaction_filter,
     const std::atomic<bool>* shutting_down,
@@ -39,8 +42,8 @@ CompactionIterator::CompactionIterator(
           input, cmp, merge_helper, last_sequence, snapshots,
           earliest_write_conflict_snapshot, job_snapshot, snapshot_checker, env,
           report_detailed_time, expect_valid_internal_key, range_del_agg,
-          blob_file_builder, allow_data_in_errors, enforce_single_del_contracts,
-          manual_compaction_canceled,
+          blob_file_builder, delta_file_builder, allow_data_in_errors,
+          enforce_single_del_contracts, manual_compaction_canceled,
           std::unique_ptr<CompactionProxy>(
               compaction ? new RealCompaction(compaction) : nullptr),
           compaction_filter, shutting_down, info_log, full_history_ts_low,
@@ -53,8 +56,8 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-    bool enforce_single_del_contracts,
+    BlobFileBuilder* blob_file_builder, DeltaFileBuilder* delta_file_builder,
+    bool allow_data_in_errors, bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     std::unique_ptr<CompactionProxy> compaction,
     const CompactionFilter* compaction_filter,
@@ -63,7 +66,8 @@ CompactionIterator::CompactionIterator(
     const std::string* full_history_ts_low,
     const SequenceNumber penultimate_level_cutoff_seqno)
     : input_(input, cmp,
-             !compaction || compaction->DoesInputReferenceBlobFiles()),
+             !compaction || compaction->DoesInputReferenceBlobFiles() ||
+                 compaction->DoesInputReferenceDeltaFiles()),
       cmp_(cmp),
       merge_helper_(merge_helper),
       snapshots_(snapshots),
@@ -76,6 +80,7 @@ CompactionIterator::CompactionIterator(
       expect_valid_internal_key_(expect_valid_internal_key),
       range_del_agg_(range_del_agg),
       blob_file_builder_(blob_file_builder),
+      delta_file_builder_(delta_file_builder),
       compaction_(std::move(compaction)),
       compaction_filter_(compaction_filter),
       shutting_down_(shutting_down),
@@ -100,6 +105,9 @@ CompactionIterator::CompactionIterator(
       blob_garbage_collection_cutoff_file_number_(
           ComputeBlobGarbageCollectionCutoffFileNumber(compaction_.get())),
       blob_fetcher_(CreateBlobFetcherIfNeeded(compaction_.get())),
+      delta_garbage_collection_cutoff_file_number_(
+          ComputeDeltaGarbageCollectionCutoffFileNumber(compaction_.get())),
+      delta_fetcher_(CreateDeltaFetcherIfNeeded(compaction_.get())),
       prefetch_buffers_(
           CreatePrefetchBufferCollectionIfNeeded(compaction_.get())),
       current_key_committed_(false),
@@ -197,7 +205,8 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
                                               Slice* skip_until) {
   // TODO: support compaction filter for wide-column entities
   if (!compaction_filter_ ||
-      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex)) {
+      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
+       ikey_.type != kTypeDeltaIndex && ikey_.type != kTypeDeltaIndex)) {
     return true;
   }
   bool error = false;
@@ -210,13 +219,17 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   compaction_filter_skip_until_.Clear();
   CompactionFilter::ValueType value_type =
       ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
-                               : CompactionFilter::ValueType::kBlobIndex;
-  // Hack: pass internal key to BlobIndexCompactionFilter since it needs
-  // to get sequence number.
+      : ikey_.type == CompactionFilter::ValueType::kBlobIndex
+          ? CompactionFilter::ValueType::kBlobIndex
+          : CompactionFilter::ValueType::kDeltaIndex;
+  // Hack: pass internal key to BlobIndexCompactionFilter and
+  // DeltaIndexCompactionFilter since it needs to get sequence number.
   assert(compaction_filter_);
   Slice& filter_key =
       (ikey_.type == kTypeValue ||
-       !compaction_filter_->IsStackedBlobDbInternalCompactionFilter())
+       !compaction_filter_->IsStackedBlobDbInternalCompactionFilter() ||
+       !compaction_filter_->IsStackedDeltaDbInternalCompactionFilter() ||
+       !compaction_filter_->IsStackedDeltaDbInternalCompactionFilter())
           ? ikey_.user_key
           : key_;
   {
@@ -225,11 +238,15 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
       filter = compaction_filter_->FilterBlobByKey(
           level_, filter_key, &compaction_filter_value_,
           compaction_filter_skip_until_.rep());
+      filter = compaction_filter_->FilterDeltaByKey(
+          level_, filter_key, &compaction_filter_value_,
+          compaction_filter_skip_until_.rep());
       if (CompactionFilter::Decision::kUndetermined == filter &&
-          !compaction_filter_->IsStackedBlobDbInternalCompactionFilter()) {
+          !compaction_filter_->IsStackedBlobDbInternalCompactionFilter() &&
+          !compaction_filter_->IsStackedDeltaDbInternalCompactionFilter()) {
         if (compaction_ == nullptr) {
-          status_ =
-              Status::Corruption("Unexpected blob index outside of compaction");
+          status_ = Status::Corruption(
+              "Unexpected blob and delta index outside of compaction");
           validity_info_.Invalidate();
           return false;
         }
@@ -519,6 +536,7 @@ void CompactionIterator::NextFromInput() {
       // not compact out.  We will keep this Put, but can drop it's data.
       // (See Optimization 3, below.)
       if (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
+          ikey_.type != kTypeDeltaIndex &&
           ikey_.type != kTypeWideColumnEntity) {
         ROCKS_LOG_FATAL(info_log_, "Unexpected key %s for compaction output",
                         ikey_.DebugString(allow_data_in_errors_, true).c_str());
@@ -533,7 +551,8 @@ void CompactionIterator::NextFromInput() {
         assert(false);
       }
 
-      if (ikey_.type == kTypeBlobIndex || ikey_.type == kTypeWideColumnEntity) {
+      if (ikey_.type == kTypeBlobIndex || ikey_.type == kTypeDeltaIndex ||
+          ikey_.type == kTypeWideColumnEntity) {
         ikey_.type = kTypeValue;
         current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
       }
@@ -690,6 +709,7 @@ void CompactionIterator::NextFromInput() {
             // happened
             if (next_ikey.type != kTypeValue &&
                 next_ikey.type != kTypeBlobIndex &&
+                next_ikey.type != kTypeDeltaIndex &&
                 next_ikey.type != kTypeWideColumnEntity) {
               ++iter_stats_.num_single_del_mismatch;
             }
@@ -873,8 +893,8 @@ void CompactionIterator::NextFromInput() {
       // object to minimize change to the existing flow.
       Status s = merge_helper_->MergeUntil(
           &input_, range_del_agg_, prev_snapshot, bottommost_level_,
-          allow_data_in_errors_, blob_fetcher_.get(), prefetch_buffers_.get(),
-          &iter_stats_);
+          allow_data_in_errors_, blob_fetcher_.get(), delta_fetcher_.get(),
+          prefetch_buffers_.get(), &iter_stats_);
       merge_out_iter_.SeekToFirst();
 
       if (!s.ok() && !s.IsMergeInProgress()) {
@@ -979,6 +999,41 @@ void CompactionIterator::ExtractLargeValueIfNeeded() {
   current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
 }
 
+bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
+  if (!delta_file_builder_) {
+    return false;
+  }
+
+  delta_index_.clear();
+  const Status s = delta_file_builder_->Add(user_key(), value_, &delta_index_);
+
+  if (!s.ok()) {
+    status_ = s;
+    validity_info_.Invalidate();
+
+    return false;
+  }
+
+  if (delta_index_.empty()) {
+    return false;
+  }
+
+  value_ = delta_index_;
+
+  return true;
+}
+
+void CompactionIterator::ExtractLargeDeltaIfNeeded() {
+  assert(ikey_.type == kTypeValue);
+
+  if (!ExtractLargeDeltaIfNeededImpl()) {
+    return;
+  }
+
+  ikey_.type = kTypeDeltaIndex;
+  current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
+}
+
 void CompactionIterator::GarbageCollectBlobIfNeeded() {
   assert(ikey_.type == kTypeBlobIndex);
 
@@ -1078,6 +1133,105 @@ void CompactionIterator::GarbageCollectBlobIfNeeded() {
   }
 }
 
+void CompactionIterator::GarbageCollectDeltaIfNeeded() {
+  assert(ikey_.type == kTypeDeltIndex);
+
+  if (!compaction_) {
+    return;
+  }
+
+  // GC for integrated DeltDB
+  if (compaction_->enable_delta_garbage_collection()) {
+    TEST_SYNC_POINT_CALLBACK(
+        "CompactionIterator::GarbageCollectDeltaIfNeeded::TamperWithDeltIndex",
+        &value_);
+
+    DeltIndex delta_index;
+
+    {
+      const Status s = delta_index.DecodeFrom(value_);
+
+      if (!s.ok()) {
+        status_ = s;
+        validity_info_.Invalidate();
+
+        return;
+      }
+    }
+
+    if (delta_index.file_number() >=
+        delta_garbage_collection_cutoff_file_number_) {
+      return;
+    }
+
+    FilePrefetchBuffer* prefetch_buffer =
+        prefetch_buffers_ ? prefetch_buffers_->GetOrCreatePrefetchBuffer(
+                                delta_index.file_number())
+                          : nullptr;
+
+    uint64_t bytes_read = 0;
+
+    {
+      assert(delta_fetcher_);
+
+      const Status s = delta_fetcher_->FetchDelt(
+          user_key(), delta_index, prefetch_buffer, &delta_value_, &bytes_read);
+
+      if (!s.ok()) {
+        status_ = s;
+        validity_info_.Invalidate();
+
+        return;
+      }
+    }
+
+    ++iter_stats_.num_deltas_read;
+    iter_stats_.total_delta_bytes_read += bytes_read;
+
+    ++iter_stats_.num_deltas_relocated;
+    iter_stats_.total_delta_bytes_relocated += delta_index.size();
+
+    value_ = delta_value_;
+
+    if (ExtractLargeValueIfNeededImpl()) {
+      return;
+    }
+
+    ikey_.type = kTypeValue;
+    current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
+
+    return;
+  }
+
+  // GC for stacked DeltDB
+  if (compaction_filter_ &&
+      compaction_filter_->IsStackedDeltDbInternalCompactionFilter()) {
+    const auto delta_decision = compaction_filter_->PrepareDeltOutput(
+        user_key(), value_, &compaction_filter_value_);
+
+    if (delta_decision == CompactionFilter::DeltDecision::kCorruption) {
+      status_ =
+          Status::Corruption("Corrupted delta reference encountered during GC");
+      validity_info_.Invalidate();
+
+      return;
+    }
+
+    if (delta_decision == CompactionFilter::DeltDecision::kIOError) {
+      status_ = Status::IOError("Could not relocate delta during GC");
+      validity_info_.Invalidate();
+
+      return;
+    }
+
+    if (delta_decision == CompactionFilter::DeltDecision::kChangeValue) {
+      value_ = compaction_filter_value_;
+
+      return;
+    }
+  }
+}
+
 void CompactionIterator::DecideOutputLevel() {
 #ifndef NDEBUG
   // Could be overridden by unittest
@@ -1130,6 +1284,8 @@ void CompactionIterator::PrepareOutput() {
       ExtractLargeValueIfNeeded();
     } else if (ikey_.type == kTypeBlobIndex) {
       GarbageCollectBlobIfNeeded();
+    } else if (ikey_.type == kTypeDeltaIndex) {
+      GarbageCollectDeltaIfNeeded();
     }
 
     if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {
@@ -1290,6 +1446,54 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
 }
 
+uint64_t CompactionIterator::ComputeDeltaGarbageCollectionCutoffFileNumber(
+    const CompactionProxy* compaction) {
+  if (!compaction) {
+    return 0;
+  }
+
+  if (!compaction->enable_delta_garbage_collection()) {
+    return 0;
+  }
+
+  const Version* const version = compaction->input_version();
+  assert(version);
+
+  const VersionStorageInfo* const storage_info = version->storage_info();
+  assert(storage_info);
+
+  const auto& delta_files = storage_info->GetDeltaFiles();
+
+  const size_t cutoff_index = static_cast<size_t>(
+      compaction->delta_garbage_collection_age_cutoff() * delta_files.size());
+
+  if (cutoff_index >= delta_files.size()) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+
+  const auto& meta = delta_files[cutoff_index];
+  assert(meta);
+
+  return meta->GetDeltaFileNumber();
+}
+
+std::unique_ptr<DeltaFetcher> CompactionIterator::CreateDeltaFetcherIfNeeded(
+    const CompactionProxy* compaction) {
+  if (!compaction) {
+    return nullptr;
+  }
+
+  const Version* const version = compaction->input_version();
+  if (!version) {
+    return nullptr;
+  }
+
+  ReadOptions read_options;
+  read_options.fill_cache = false;
+
+  return std::unique_ptr<DeltaFetcher>(new DeltaFetcher(version, read_options));
+}
+
 std::unique_ptr<PrefetchBufferCollection>
 CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
     const CompactionProxy* compaction) {
@@ -1305,7 +1509,8 @@ CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
     return nullptr;
   }
 
-  const uint64_t readahead_size = compaction->blob_compaction_readahead_size();
+  const uint64_t readahead_size = compaction->blob_compaction_readahead_size() +
+                                  compaction->delta_compaction_readahead_size();
   if (!readahead_size) {
     return nullptr;
   }

@@ -684,7 +684,6 @@ set(SOURCES
         db/delta/delta_log_sequential_reader.cc
         db/delta/delta_log_writer.cc
         db/delta/delta_source.cc
-        db/delta/prefetch_buffer_collection.cc
         db/builder.cc
         db/c.cc
         db/column_family.cc

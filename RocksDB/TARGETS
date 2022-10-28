@@ -47,7 +47,6 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
         "db/delta/delta_log_sequential_reader.cc",
         "db/delta/delta_log_writer.cc",
         "db/delta/delta_source.cc",
-        "db/delta/prefetch_buffer_collection.cc",
         "db/builder.cc",
         "db/c.cc",
         "db/column_family.cc",
@@ -406,7 +405,6 @@ cpp_library_wrapper(name="rocksdb_whole_archive_lib", srcs=[
         "db/delta/delta_log_sequential_reader.cc",
         "db/delta/delta_log_writer.cc",
         "db/delta/delta_source.cc",
-        "db/delta/prefetch_buffer_collection.cc",
         "db/builder.cc",
         "db/c.cc",
         "db/column_family.cc",
@@ -5179,7 +5177,7 @@ cpp_unittest_wrapper(name="db_delta_index_test",
             srcs=["db/delta/db_delta_index_test.cc"],
             deps=[":rocksdb_test_lib"],
             extra_compiler_flags=[])
-            
+
 cpp_unittest_wrapper(name="db_block_cache_test",
             srcs=["db/db_block_cache_test.cc"],
             deps=[":rocksdb_test_lib"],

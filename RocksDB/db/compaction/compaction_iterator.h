@@ -24,6 +24,8 @@ namespace ROCKSDB_NAMESPACE {
 
 class BlobFileBuilder;
 class BlobFetcher;
+class DeltaFileBuilder;
+class DeltaFetcher;
 class PrefetchBufferCollection;
 
 // A wrapper of internal iterator whose purpose is to count how
@@ -100,9 +102,17 @@ class CompactionIterator {
 
     virtual uint64_t blob_compaction_readahead_size() const = 0;
 
+    virtual bool enable_delta_garbage_collection() const = 0;
+
+    virtual double delta_garbage_collection_age_cutoff() const = 0;
+
+    virtual uint64_t delta_compaction_readahead_size() const = 0;
+
     virtual const Version* input_version() const = 0;
 
     virtual bool DoesInputReferenceBlobFiles() const = 0;
+
+    virtual bool DoesInputReferenceDeltaFiles() const = 0;
 
     virtual const Compaction* real_compaction() const = 0;
 
@@ -157,12 +167,28 @@ class CompactionIterator {
       return compaction_->mutable_cf_options()->blob_compaction_readahead_size;
     }
 
+    bool enable_delta_garbage_collection() const override {
+      return compaction_->enable_delta_garbage_collection();
+    }
+
+    double delta_garbage_collection_age_cutoff() const override {
+      return compaction_->delta_garbage_collection_age_cutoff();
+    }
+
+    uint64_t delta_compaction_readahead_size() const override {
+      return compaction_->mutable_cf_options()->delta_compaction_readahead_size;
+    }
+
     const Version* input_version() const override {
       return compaction_->input_version();
     }
 
     bool DoesInputReferenceBlobFiles() const override {
       return compaction_->DoesInputReferenceBlobFiles();
+    }
+
+    bool DoesInputReferenceDeltaFiles() const override {
+      return compaction_->DoesInputReferenceDeltaFiles();
     }
 
     const Compaction* real_compaction() const override { return compaction_; }
@@ -188,8 +214,8 @@ class CompactionIterator {
       SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
       Env* env, bool report_detailed_time, bool expect_valid_internal_key,
       CompactionRangeDelAggregator* range_del_agg,
-      BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-      bool enforce_single_del_contracts,
+      BlobFileBuilder* blob_file_builder, DeltaFileBuilder* delta_file_builder,
+      bool allow_data_in_errors, bool enforce_single_del_contracts,
       const std::atomic<bool>& manual_compaction_canceled,
       const Compaction* compaction = nullptr,
       const CompactionFilter* compaction_filter = nullptr,
@@ -206,8 +232,8 @@ class CompactionIterator {
       SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
       Env* env, bool report_detailed_time, bool expect_valid_internal_key,
       CompactionRangeDelAggregator* range_del_agg,
-      BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
-      bool enforce_single_del_contracts,
+      BlobFileBuilder* blob_file_builder, DeltaFileBuilder* delta_file_builder,
+      bool allow_data_in_errors, bool enforce_single_del_contracts,
       const std::atomic<bool>& manual_compaction_canceled,
       std::unique_ptr<CompactionProxy> compaction,
       const CompactionFilter* compaction_filter = nullptr,
@@ -268,6 +294,17 @@ class CompactionIterator {
   // for regular values (kTypeValue).
   void ExtractLargeValueIfNeeded();
 
+  // Passes the output value to the delta file builder (if any), and replaces it
+  // with the corresponding delta reference if it has been actually written to a
+  // delta file (i.e. if it passed the value size check). Returns true if the
+  // value got extracted to a delta file, false otherwise.
+  bool ExtractLargeDeltaIfNeededImpl();
+
+  // Extracts large values as described above, and updates the internal key's
+  // type to kTypedeltaIndex if the value got extracted. Should only be called
+  // for regular values (kTypeValue).
+  void ExtractLargeDeltaIfNeeded();
+
   // Relocates valid blobs residing in the oldest blob files if garbage
   // collection is enabled. Relocated blobs are written to new blob files or
   // inlined in the LSM tree depending on the current settings (i.e.
@@ -277,6 +314,16 @@ class CompactionIterator {
   // Note: the stacked BlobDB implementation's compaction filter based GC
   // algorithm is also called from here.
   void GarbageCollectBlobIfNeeded();
+
+  // Relocates valid deltas residing in the oldest delta files if garbage
+  // collection is enabled. Relocated deltas are written to new delta files or
+  // inlined in the LSM tree depending on the current settings (i.e.
+  // enable_delta_files and min_delta_size). Should only be called for delta
+  // references (kTypedeltaIndex).
+  //
+  // Note: the stacked deltaDB implementation's compaction filter based GC
+  // algorithm is also called from here.
+  void GarbageCollectDeltaIfNeeded();
 
   // Relocates valid deltas residing in the oldest delta files if garbage
   // collection is enabled. Relocated deltas are written to new delta files or
@@ -329,6 +376,10 @@ class CompactionIterator {
       const CompactionProxy* compaction);
   static std::unique_ptr<BlobFetcher> CreateBlobFetcherIfNeeded(
       const CompactionProxy* compaction);
+  static uint64_t ComputeDeltaGarbageCollectionCutoffFileNumber(
+      const CompactionProxy* compaction);
+  static std::unique_ptr<DeltaFetcher> CreateDeltaFetcherIfNeeded(
+      const CompactionProxy* compaction);
   static std::unique_ptr<PrefetchBufferCollection>
   CreatePrefetchBufferCollectionIfNeeded(const CompactionProxy* compaction);
 
@@ -351,6 +402,7 @@ class CompactionIterator {
   const bool expect_valid_internal_key_;
   CompactionRangeDelAggregator* range_del_agg_;
   BlobFileBuilder* blob_file_builder_;
+  DeltaFileBuilder* delta_file_builder_;
   std::unique_ptr<CompactionProxy> compaction_;
   const CompactionFilter* compaction_filter_;
   const std::atomic<bool>* shutting_down_;
@@ -441,12 +493,16 @@ class CompactionIterator {
   PinnedIteratorsManager pinned_iters_mgr_;
 
   uint64_t blob_garbage_collection_cutoff_file_number_;
+  uint64_t delta_garbage_collection_cutoff_file_number_;
 
   std::unique_ptr<BlobFetcher> blob_fetcher_;
+  std::unique_ptr<DeltaFetcher> delta_fetcher_;
   std::unique_ptr<PrefetchBufferCollection> prefetch_buffers_;
 
   std::string blob_index_;
   PinnableSlice blob_value_;
+  std::string delta_index_;
+  PinnableSlice delta_value_;
   std::string compaction_filter_value_;
   InternalKey compaction_filter_skip_until_;
   // "level_ptrs" holds indices that remember which file of an associated

@@ -1859,6 +1859,17 @@ enum class BlobGarbageCollectionPolicy {
   kUseDefault,
 };
 
+// For manual compaction, we can configure if we want to skip/force garbage
+// collection of blob files.
+enum class DeltaGarbageCollectionPolicy {
+  // Force blob file garbage collection.
+  kForce,
+  // Skip blob file garbage collection.
+  kDisable,
+  // Inherit blob file garbage collection policy from ColumnFamilyOptions.
+  kUseDefault,
+};
+
 // CompactRangeOptions is used by CompactRange() call.
 struct CompactRangeOptions {
   // If true, no other compaction will run at the same time as this
@@ -1914,6 +1925,20 @@ struct CompactRangeOptions {
   // user-provided setting. This enables customers to selectively override the
   // age cutoff.
   double blob_garbage_collection_age_cutoff = -1;
+
+  // If set to kForce, RocksDB will override
+  // enable_delta_file_garbage_collection
+  // to true; if set to kDisable, RocksDB will override it to false, and
+  // kUseDefault leaves the setting in effect. This enables customers to both
+  // force-enable and force-disable GC when calling CompactRange.
+  DeltaGarbageCollectionPolicy delta_garbage_collection_policy =
+      DeltaGarbageCollectionPolicy::kUseDefault;
+
+  // If set to < 0 or > 1, RocksDB leaves delta_garbage_collection_age_cutoff
+  // from ColumnFamilyOptions in effect. Otherwise, it will override the
+  // user-provided setting. This enables customers to selectively override the
+  // age cutoff.
+  double delta_garbage_collection_age_cutoff = -1;
 };
 
 // IngestExternalFileOptions is used by IngestExternalFile()
