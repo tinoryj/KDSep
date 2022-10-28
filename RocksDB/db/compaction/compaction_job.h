@@ -21,6 +21,7 @@
 #include "db/column_family.h"
 #include "db/compaction/compaction_iterator.h"
 #include "db/compaction/compaction_outputs.h"
+#include "db/delta/delta_file_completion_callback.h"
 #include "db/flush_scheduler.h"
 #include "db/internal_stats.h"
 #include "db/job_context.h"
@@ -152,8 +153,9 @@ class CompactionJob {
       const FileOptions& file_options, VersionSet* versions,
       const std::atomic<bool>* shutting_down, LogBuffer* log_buffer,
       FSDirectory* db_directory, FSDirectory* output_directory,
-      FSDirectory* blob_output_directory, Statistics* stats,
-      InstrumentedMutex* db_mutex, ErrorHandler* db_error_handler,
+      FSDirectory* blob_output_directory, FSDirectory* delta_output_directory,
+      Statistics* stats, InstrumentedMutex* db_mutex,
+      ErrorHandler* db_error_handler,
       std::vector<SequenceNumber> existing_snapshots,
       SequenceNumber earliest_write_conflict_snapshot,
       const SnapshotChecker* snapshot_checker, JobContext* job_context,
@@ -165,6 +167,7 @@ class CompactionJob {
       const std::string& db_id = "", const std::string& db_session_id = "",
       std::string full_history_ts_low = "", std::string trim_ts = "",
       BlobFileCompletionCallback* blob_callback = nullptr,
+      DeltaFileCompletionCallback* delta_callback = nullptr,
       int* bg_compaction_scheduled = nullptr,
       int* bg_bottom_compaction_scheduled = nullptr);
 
@@ -261,12 +264,12 @@ class CompactionJob {
   Status OpenCompactionOutputFile(SubcompactionState* sub_compact,
                                   CompactionOutputs& outputs);
   void UpdateCompactionJobStats(
-    const InternalStats::CompactionStats& stats) const;
+      const InternalStats::CompactionStats& stats) const;
   void RecordDroppedKeys(const CompactionIterationStats& c_iter_stats,
                          CompactionJobStats* compaction_job_stats = nullptr);
 
-  void UpdateCompactionInputStatsHelper(
-      int* num_files, uint64_t* bytes_read, int input_level);
+  void UpdateCompactionInputStatsHelper(int* num_files, uint64_t* bytes_read,
+                                        int input_level);
 
   void NotifyOnSubcompactionBegin(SubcompactionState* sub_compact);
 
@@ -290,6 +293,7 @@ class CompactionJob {
   const std::atomic<bool>& manual_compaction_canceled_;
   FSDirectory* db_directory_;
   FSDirectory* blob_output_directory_;
+  FSDirectory* delta_output_directory_;
   InstrumentedMutex* db_mutex_;
   ErrorHandler* db_error_handler_;
   // If there were two snapshots with seq numbers s1 and
@@ -319,6 +323,7 @@ class CompactionJob {
   std::string full_history_ts_low_;
   std::string trim_ts_;
   BlobFileCompletionCallback* blob_callback_;
+  DeltaFileCompletionCallback* delta_callback_;
 
   uint64_t GetCompactionId(SubcompactionState* sub_compact) const;
   // Stores the number of reserved threads in shared env_ for the number of

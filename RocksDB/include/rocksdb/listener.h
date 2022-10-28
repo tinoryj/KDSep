@@ -110,6 +110,46 @@ struct BlobFileCreationInfo : public BlobFileCreationBriefInfo {
   std::string file_checksum_func_name;
 };
 
+struct DeltaFileCreationBriefInfo : public FileCreationBriefInfo {
+  DeltaFileCreationBriefInfo(const std::string& _db_name,
+                             const std::string& _cf_name,
+                             const std::string& _file_path, int _job_id,
+                             DeltaFileCreationReason _reason)
+      : FileCreationBriefInfo(_db_name, _cf_name, _file_path, _job_id),
+        reason(_reason) {}
+  // reason of creating the delta file.
+  DeltaFileCreationReason reason;
+};
+
+struct DeltaFileCreationInfo : public DeltaFileCreationBriefInfo {
+  DeltaFileCreationInfo(const std::string& _db_name,
+                        const std::string& _cf_name,
+                        const std::string& _file_path, int _job_id,
+                        DeltaFileCreationReason _reason,
+                        uint64_t _total_delta_count,
+                        uint64_t _total_delta_bytes, Status _status,
+                        const std::string& _file_checksum,
+                        const std::string& _file_checksum_func_name)
+      : DeltaFileCreationBriefInfo(_db_name, _cf_name, _file_path, _job_id,
+                                   _reason),
+        total_delta_count(_total_delta_count),
+        total_delta_bytes(_total_delta_bytes),
+        status(_status),
+        file_checksum(_file_checksum),
+        file_checksum_func_name(_file_checksum_func_name) {}
+
+  // the number of delta in a file.
+  uint64_t total_delta_count;
+  // the total bytes in a file.
+  uint64_t total_delta_bytes;
+  // The status indicating whether the creation was successful or not.
+  Status status;
+  // The checksum of the delta file being created.
+  std::string file_checksum;
+  // The checksum function name of checksum generator used for this delta file.
+  std::string file_checksum_func_name;
+};
+
 enum class CompactionReason : int {
   kUnknown = 0,
   // [Level] number of L0 files > level0_file_num_compaction_trigger
@@ -148,6 +188,8 @@ enum class CompactionReason : int {
   kChangeTemperature,
   // Compaction scheduled to force garbage collection of blob files
   kForcedBlobGC,
+  // Compaction scheduled to force garbage collection of delta files
+  kForcedDeltaGC,
   // total number of compaction reasons, new reasons must be added above this.
   kNumOfReasons,
 };
@@ -228,6 +270,13 @@ struct BlobFileDeletionInfo : public FileDeletionInfo {
   BlobFileDeletionInfo(const std::string& _db_name,
                        const std::string& _file_path, int _job_id,
                        Status _status)
+      : FileDeletionInfo(_db_name, _file_path, _job_id, _status) {}
+};
+
+struct DeltaFileDeletionInfo : public FileDeletionInfo {
+  DeltaFileDeletionInfo(const std::string& _db_name,
+                        const std::string& _file_path, int _job_id,
+                        Status _status)
       : FileDeletionInfo(_db_name, _file_path, _job_id, _status) {}
 };
 
@@ -318,6 +367,40 @@ struct BlobFileGarbageInfo : public BlobFileInfo {
   uint64_t garbage_blob_bytes;
 };
 
+struct DeltaFileInfo {
+  DeltaFileInfo(const std::string& _delta_file_path,
+                const uint64_t _delta_file_number)
+      : delta_file_path(_delta_file_path),
+        delta_file_number(_delta_file_number) {}
+
+  std::string delta_file_path;
+  uint64_t delta_file_number;
+};
+
+struct DeltaFileAdditionInfo : public DeltaFileInfo {
+  DeltaFileAdditionInfo(const std::string& _delta_file_path,
+                        const uint64_t _delta_file_number,
+                        const uint64_t _total_delta_count,
+                        const uint64_t _total_delta_bytes)
+      : DeltaFileInfo(_delta_file_path, _delta_file_number),
+        total_delta_count(_total_delta_count),
+        total_delta_bytes(_total_delta_bytes) {}
+  uint64_t total_delta_count;
+  uint64_t total_delta_bytes;
+};
+
+struct DeltaFileGarbageInfo : public DeltaFileInfo {
+  DeltaFileGarbageInfo(const std::string& _delta_file_path,
+                       const uint64_t _delta_file_number,
+                       const uint64_t _garbage_delta_count,
+                       const uint64_t _garbage_delta_bytes)
+      : DeltaFileInfo(_delta_file_path, _delta_file_number),
+        garbage_delta_count(_garbage_delta_count),
+        garbage_delta_bytes(_garbage_delta_bytes) {}
+  uint64_t garbage_delta_count;
+  uint64_t garbage_delta_bytes;
+};
+
 struct FlushJobInfo {
   // the id of the column family
   uint32_t cf_id;
@@ -329,6 +412,8 @@ struct FlushJobInfo {
   uint64_t file_number;
   // the oldest blob file referenced by the newly created file
   uint64_t oldest_blob_file_number;
+  // the oldest delta file referenced by the newly created file
+  uint64_t oldest_delta_file_number;
   // the id of the thread that completed this flush job.
   uint64_t thread_id;
   // the job id, which is unique in the same thread.
@@ -355,8 +440,14 @@ struct FlushJobInfo {
   // Compression algorithm used for blob output files
   CompressionType blob_compression_type;
 
+  // Compression algorithm used for delta output files
+  CompressionType delta_compression_type;
+
   // Information about blob files created during flush in Integrated BlobDB.
   std::vector<BlobFileAdditionInfo> blob_file_addition_infos;
+
+  // Information about delta files created during flush in Integrated DeltaDB.
+  std::vector<DeltaFileAdditionInfo> delta_file_addition_infos;
 };
 
 struct CompactionFileInfo {
@@ -368,6 +459,9 @@ struct CompactionFileInfo {
 
   // The file number of the oldest blob file this SST file references.
   uint64_t oldest_blob_file_number;
+
+  // The file number of the oldest delta file this SST file references.
+  uint64_t oldest_delta_file_number;
 };
 
 struct SubcompactionJobInfo {
@@ -404,6 +498,9 @@ struct SubcompactionJobInfo {
 
   // Compression algorithm used for blob output files.
   CompressionType blob_compression_type;
+
+  // Compression algorithm used for delta output files.
+  CompressionType delta_compression_type;
 };
 
 struct CompactionJobInfo {
@@ -465,6 +562,17 @@ struct CompactionJobInfo {
   // Information about blob files deleted during compaction in Integrated
   // BlobDB.
   std::vector<BlobFileGarbageInfo> blob_file_garbage_infos;
+
+  // Compression algorithm used for delta output files.
+  CompressionType delta_compression_type;
+
+  // Information about delta files created during compaction in Integrated
+  // DeltaDB.
+  std::vector<DeltaFileAdditionInfo> delta_file_addition_infos;
+
+  // Information about delta files deleted during compaction in Integrated
+  // DeltaDB.
+  std::vector<DeltaFileGarbageInfo> delta_file_garbage_infos;
 };
 
 struct MemTableInfo {
@@ -826,6 +934,34 @@ class EventListener : public Customizable {
   // outside this function call, they should make copies from these
   // returned value.
   virtual void OnBlobFileDeleted(const BlobFileDeletionInfo& /*info*/) {}
+
+  // A callback function for RocksDB which will be called before
+  // a delta file is being created. It will follow by OnDeltaFileCreated after
+  // the creation finishes.
+  //
+  // Note that if applications would like to use the passed reference
+  // outside this function call, they should make copies from these
+  // returned value.
+  virtual void OnDeltaFileCreationStarted(
+      const DeltaFileCreationBriefInfo& /*info*/) {}
+
+  // A callback function for RocksDB which will be called whenever
+  // a delta file is created.
+  // It will be called whether the file is successfully created or not. User can
+  // check info.status to see if it succeeded or not.
+  //
+  // Note that if applications would like to use the passed reference
+  // outside this function call, they should make copies from these
+  // returned value.
+  virtual void OnDeltaFileCreated(const DeltaFileCreationInfo& /*info*/) {}
+
+  // A callback function for RocksDB which will be called whenever
+  // a delta file is deleted.
+  //
+  // Note that if applications would like to use the passed reference
+  // outside this function call, they should make copies from these
+  // returned value.
+  virtual void OnDeltaFileDeleted(const DeltaFileDeletionInfo& /*info*/) {}
 
   // A callback function for RocksDB which will be called whenever an IO error
   // happens. ShouldBeNotifiedOnFileIO should be set to true to get a callback.

@@ -44,6 +44,12 @@ struct CompactionIterationStats {
   uint64_t total_blob_bytes_read = 0;
   uint64_t num_blobs_relocated = 0;
   uint64_t total_blob_bytes_relocated = 0;
+
+  // Delta related statistics
+  uint64_t num_deltas_read = 0;
+  uint64_t total_delta_bytes_read = 0;
+  uint64_t num_deltas_relocated = 0;
+  uint64_t total_delta_bytes_relocated = 0;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

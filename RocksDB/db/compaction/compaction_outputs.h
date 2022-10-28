@@ -13,6 +13,7 @@
 #include "db/blob/blob_garbage_meter.h"
 #include "db/compaction/compaction.h"
 #include "db/compaction/compaction_iterator.h"
+#include "db/delta/delta_garbage_meter.h"
 #include "db/internal_stats.h"
 #include "db/output_validator.h"
 
@@ -102,6 +103,44 @@ class CompactionOutputs {
     stats_.num_output_files_blob = blob_file_additions_.size();
     for (const auto& blob : blob_file_additions_) {
       stats_.bytes_written_blob += blob.GetTotalBlobBytes();
+    }
+  }
+
+  // TODO: Move the DeltaDB builder into CompactionOutputs
+  const std::vector<DeltaFileAddition>& GetDeltaFileAdditions() const {
+    if (is_penultimate_level_) {
+      assert(delta_file_additions_.empty());
+    }
+    return delta_file_additions_;
+  }
+
+  std::vector<DeltaFileAddition>* GetDeltaFileAdditionsPtr() {
+    assert(!is_penultimate_level_);
+    return &delta_file_additions_;
+  }
+
+  bool HasDeltaFileAdditions() const { return !delta_file_additions_.empty(); }
+
+  DeltaGarbageMeter* CreateDeltaGarbageMeter() {
+    assert(!is_penultimate_level_);
+    delta_garbage_meter_ = std::make_unique<DeltaGarbageMeter>();
+    return delta_garbage_meter_.get();
+  }
+
+  DeltaGarbageMeter* GetDeltaGarbageMeter() const {
+    if (is_penultimate_level_) {
+      // deltadb doesn't support per_key_placement yet
+      assert(delta_garbage_meter_ == nullptr);
+      return nullptr;
+    }
+    return delta_garbage_meter_.get();
+  }
+
+  void UpdateDeltaStats() {
+    assert(!is_penultimate_level_);
+    stats_.num_output_files_delta = delta_file_additions_.size();
+    for (const auto& delta : delta_file_additions_) {
+      stats_.bytes_written_delta += delta.GetTotalDeltaBytes();
     }
   }
 
@@ -281,6 +320,10 @@ class CompactionOutputs {
   // BlobDB info
   std::vector<BlobFileAddition> blob_file_additions_;
   std::unique_ptr<BlobGarbageMeter> blob_garbage_meter_;
+
+  // DeltaDB info
+  std::vector<DeltaFileAddition> delta_file_additions_;
+  std::unique_ptr<DeltaGarbageMeter> delta_garbage_meter_;
 
   // Basic compaction output stats for this level's outputs
   InternalStats::CompactionOutputsStats stats_;

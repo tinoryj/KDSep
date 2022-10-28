@@ -123,7 +123,9 @@ int main(int argc, char **argv) {
              << "\n\tvalue size (byte) = " << countResult[DELTA][2] << endl;
         cout << "POSITION: \n\tNumber = " << countResult[POSITION][0]
              << "\n\tkey size (byte) = " << countResult[POSITION][1]
-             << "\n\tvalue size (byte) = " << countResult[POSITION][2] << endl
+             << "\n\tvalue size (byte) = " << countResult[POSITION][2] << endl;
+        // cout << "Proportion = " << (double)(countResult[DELTA][1] + countResult[DELTA][2]) / (double)(countResult[DELTA][1] + countResult[DELTA][2] + countResult[VALUE][1] + countResult[VALUE][2]) << endl<<endl;
+        cout << "Proportion = " << (double)(countResult[DELTA][1] + countResult[DELTA][2]) / (double)(countResult[DELTA][1] + countResult[DELTA][2] + countResult[POSITION][1] + countResult[POSITION][2]) << endl
              << endl;
     }
 

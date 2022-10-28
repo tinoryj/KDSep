@@ -217,11 +217,14 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
   CompactionFilter::Decision filter = CompactionFilter::Decision::kUndetermined;
   compaction_filter_value_.clear();
   compaction_filter_skip_until_.Clear();
-  CompactionFilter::ValueType value_type =
-      ikey_.type == kTypeValue ? CompactionFilter::ValueType::kValue
-      : ikey_.type == CompactionFilter::ValueType::kBlobIndex
-          ? CompactionFilter::ValueType::kBlobIndex
-          : CompactionFilter::ValueType::kDeltaIndex;
+  CompactionFilter::ValueType value_type;
+  if (ikey_.type == kTypeValue) {
+    value_type = CompactionFilter::ValueType::kValue;
+  } else if (ikey_.type == kTypeBlobIndex) {
+    value_type = CompactionFilter::ValueType::kBlobIndex;
+  } else {
+    value_type = CompactionFilter::ValueType::kDeltaIndex;
+  }
   // Hack: pass internal key to BlobIndexCompactionFilter and
   // DeltaIndexCompactionFilter since it needs to get sequence number.
   assert(compaction_filter_);
@@ -999,30 +1002,6 @@ void CompactionIterator::ExtractLargeValueIfNeeded() {
   current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
 }
 
-bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
-  if (!delta_file_builder_) {
-    return false;
-  }
-
-  delta_index_.clear();
-  const Status s = delta_file_builder_->Add(user_key(), value_, &delta_index_);
-
-  if (!s.ok()) {
-    status_ = s;
-    validity_info_.Invalidate();
-
-    return false;
-  }
-
-  if (delta_index_.empty()) {
-    return false;
-  }
-
-  value_ = delta_index_;
-
-  return true;
-}
-
 void CompactionIterator::ExtractLargeDeltaIfNeeded() {
   assert(ikey_.type == kTypeValue);
 
@@ -1134,19 +1113,19 @@ void CompactionIterator::GarbageCollectBlobIfNeeded() {
 }
 
 void CompactionIterator::GarbageCollectDeltaIfNeeded() {
-  assert(ikey_.type == kTypeDeltIndex);
+  assert(ikey_.type == kTypeDeltaIndex);
 
   if (!compaction_) {
     return;
   }
 
-  // GC for integrated DeltDB
+  // GC for integrated DeltaDB
   if (compaction_->enable_delta_garbage_collection()) {
     TEST_SYNC_POINT_CALLBACK(
-        "CompactionIterator::GarbageCollectDeltaIfNeeded::TamperWithDeltIndex",
+        "CompactionIterator::GarbageCollectDeltaIfNeeded::TamperWithDeltaIndex",
         &value_);
 
-    DeltIndex delta_index;
+    DeltaIndex delta_index;
 
     {
       const Status s = delta_index.DecodeFrom(value_);
@@ -1174,7 +1153,7 @@ void CompactionIterator::GarbageCollectDeltaIfNeeded() {
     {
       assert(delta_fetcher_);
 
-      const Status s = delta_fetcher_->FetchDelt(
+      const Status s = delta_fetcher_->FetchDelta(
           user_key(), delta_index, prefetch_buffer, &delta_value_, &bytes_read);
 
       if (!s.ok()) {
@@ -1203,13 +1182,13 @@ void CompactionIterator::GarbageCollectDeltaIfNeeded() {
     return;
   }
 
-  // GC for stacked DeltDB
+  // GC for stacked DeltaDB
   if (compaction_filter_ &&
-      compaction_filter_->IsStackedDeltDbInternalCompactionFilter()) {
-    const auto delta_decision = compaction_filter_->PrepareDeltOutput(
+      compaction_filter_->IsStackedDeltaDbInternalCompactionFilter()) {
+    const auto delta_decision = compaction_filter_->PrepareDeltaOutput(
         user_key(), value_, &compaction_filter_value_);
 
-    if (delta_decision == CompactionFilter::DeltDecision::kCorruption) {
+    if (delta_decision == CompactionFilter::DeltaDecision::kCorruption) {
       status_ =
           Status::Corruption("Corrupted delta reference encountered during GC");
       validity_info_.Invalidate();
@@ -1217,14 +1196,14 @@ void CompactionIterator::GarbageCollectDeltaIfNeeded() {
       return;
     }
 
-    if (delta_decision == CompactionFilter::DeltDecision::kIOError) {
+    if (delta_decision == CompactionFilter::DeltaDecision::kIOError) {
       status_ = Status::IOError("Could not relocate delta during GC");
       validity_info_.Invalidate();
 
       return;
     }
 
-    if (delta_decision == CompactionFilter::DeltDecision::kChangeValue) {
+    if (delta_decision == CompactionFilter::DeltaDecision::kChangeValue) {
       value_ = compaction_filter_value_;
 
       return;
