@@ -25,6 +25,8 @@ hs_err_pid*
 # VSCode
 .vscode
 Simulator/Databases
+Simulator/SSTAnalysis/sst_dump
+Simulator/SSTAnalysis/ldb
 Simulator/YCSB-C/dbtest
 Simulator/YCSB-C/ResultLogs
 *.sst
