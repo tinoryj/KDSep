@@ -236,14 +236,15 @@ CompactionServiceCompactionJob::CompactionServiceCompactionJob(
     : CompactionJob(
           job_id, compaction, db_options, mutable_db_options, file_options,
           versions, shutting_down, log_buffer, nullptr, output_directory,
-          nullptr, stats, db_mutex, db_error_handler,
+          nullptr, nullptr, stats, db_mutex, db_error_handler,
           std::move(existing_snapshots), kMaxSequenceNumber, nullptr, nullptr,
           std::move(table_cache), event_logger,
           compaction->mutable_cf_options()->paranoid_file_checks,
           compaction->mutable_cf_options()->report_bg_io_stats, dbname,
           &(compaction_service_result->stats), Env::Priority::USER, io_tracer,
           manual_compaction_canceled, db_id, db_session_id,
-          compaction->column_family_data()->GetFullHistoryTsLow()),
+          compaction->column_family_data()->GetFullHistoryTsLow(), nullptr,
+          nullptr, nullptr, nullptr, nullptr),
       output_path_(std::move(output_path)),
       compaction_input_(compaction_service_input),
       compaction_result_(compaction_service_result) {}
