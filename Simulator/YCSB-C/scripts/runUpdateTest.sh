@@ -1,6 +1,6 @@
 #!/bin/bash
 pwd
-ReadRatioSet=(0.1 0.45 0.8)
+ReadRatioSet=(0.2 0.3 0.4 0.5 0.6 0.7)
 OverWriteRatio=0.1
 ResultLogFolder="ResultLogs"
 DB_Name="loadedDB"
@@ -18,6 +18,7 @@ if [ -f workloada-temp.spec ]; then
     rm -rf workloada-temp.spec
     echo "Deleted old workload spec"
 fi
+
 echo "Modify spec for load"
 cp workloads/workloada-test.spec ./workloada-temp.spec
 sed -i "9s/NaN/$KVPairsNumber/g" workloada-temp.spec
@@ -27,9 +28,9 @@ echo "<===================== Loading the database =====================>"
 ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini >$ResultLogFolder/LoadDB.log
 cp -r $DB_Name $DB_Loaded_Path/ # Copy loaded DB
 
-for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
+for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
-    for ReadProportion in ${ReadRatioSet[@]}; do
+    for ReadProportion in "${ReadRatioSet[@]}"; do
         # Running Update
 
         if [ -f workloada-temp.spec ]; then
@@ -62,7 +63,15 @@ for ((roundIndex = 1; roundIndex <= $MAXRunTimes; roundIndex++)); do
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
         ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath configDir/leveldb_config.ini >$ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
-        mv $DB_Name $DB_Loaded_Path/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB
+
+        # Running DB count:
+        echo "<===================== Count the database Info (Round $roundIndex) start =====================>"
+        mkdir -p $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis
+        ./countSST.sh $DB_Name
+        mv SSTablesAnalysis.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        mv manifest.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        mv levelBasedCount.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        echo "<===================== Count the database Info (Round $roundIndex) done =====================>"
 
         # Running RMW
 
