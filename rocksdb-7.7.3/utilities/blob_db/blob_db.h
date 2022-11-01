@@ -155,8 +155,7 @@ class BlobDB : public StackableDB {
 
   using ROCKSDB_NAMESPACE::StackableDB::MultiGet;
   virtual std::vector<Status> MultiGet(
-      const ReadOptions& options,
-      const std::vector<Slice>& keys,
+      const ReadOptions& options, const std::vector<Slice>& keys,
       std::vector<std::string>* values) override = 0;
   virtual std::vector<Status> MultiGet(
       const ReadOptions& options,
@@ -179,8 +178,8 @@ class BlobDB : public StackableDB {
                         PinnableSlice* /*values*/, Status* statuses,
                         const bool /*sorted_input*/ = false) override {
     for (size_t i = 0; i < num_keys; ++i) {
-      statuses[i] = Status::NotSupported(
-          "Blob DB doesn't support batched MultiGet");
+      statuses[i] =
+          Status::NotSupported("Blob DB doesn't support batched MultiGet");
     }
   }
 
@@ -195,6 +194,7 @@ class BlobDB : public StackableDB {
   virtual Status Merge(const WriteOptions& /*options*/,
                        ColumnFamilyHandle* /*column_family*/,
                        const Slice& /*key*/, const Slice& /*value*/) override {
+    printf("Not support Merge opertaion in Blob DB\n");
     return Status::NotSupported("Not supported operation in blob db.");
   }
 

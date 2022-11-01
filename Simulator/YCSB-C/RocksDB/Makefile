@@ -1,6 +1,6 @@
 CC=g++
 CFLAGS=-std=c++17 -c -g -Wall# -fno-rtti
-INCLUDES=-I ../ -I $(shell pwd)/../../Databases/RocksDB/include/ -I ./
+INCLUDES=-I ../ -I $(shell pwd)/../../../rocksdb-7.7.3/include/ -I ./
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
 

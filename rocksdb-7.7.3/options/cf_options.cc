@@ -458,6 +458,49 @@ static std::unordered_map<std::string, OptionTypeInfo>
          OptionTypeInfo::Enum<PrepopulateBlobCache>(
              offsetof(struct MutableCFOptions, prepopulate_blob_cache),
              &prepopulate_blob_cache_string_map, OptionTypeFlags::kMutable)},
+        {"enable_deltaLog_files",
+         {offsetof(struct MutableCFOptions, enable_deltaLog_files),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"min_deltaLog_size",
+         {offsetof(struct MutableCFOptions, min_deltaLog_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_file_size",
+         {offsetof(struct MutableCFOptions, deltaLog_file_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_compression_type",
+         {offsetof(struct MutableCFOptions, deltaLog_compression_type),
+          OptionType::kCompressionType, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"enable_deltaLog_garbage_collection",
+         {offsetof(struct MutableCFOptions, enable_deltaLog_garbage_collection),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_garbage_collection_age_cutoff",
+         {offsetof(struct MutableCFOptions,
+                   deltaLog_garbage_collection_age_cutoff),
+          OptionType::kDouble, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_garbage_collection_force_threshold",
+         {offsetof(struct MutableCFOptions,
+                   deltaLog_garbage_collection_force_threshold),
+          OptionType::kDouble, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_compaction_readahead_size",
+         {offsetof(struct MutableCFOptions, deltaLog_compaction_readahead_size),
+          OptionType::kUInt64T, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"deltaLog_file_starting_level",
+         {offsetof(struct MutableCFOptions, deltaLog_file_starting_level),
+          OptionType::kInt, OptionVerificationType::kNormal,
+          OptionTypeFlags::kMutable}},
+        {"prepopulate_deltaLog_cache",
+         OptionTypeInfo::Enum<PrepopulateBlobCache>(
+             offsetof(struct MutableCFOptions, prepopulate_deltaLog_cache),
+             &prepopulate_deltaLog_cache_string_map,
+             OptionTypeFlags::kMutable)},
         {"sample_for_compression",
          {offsetof(struct MutableCFOptions, sample_for_compression),
           OptionType::kUInt64T, OptionVerificationType::kNormal,
@@ -761,6 +804,16 @@ static std::unordered_map<std::string, OptionTypeInfo>
             auto* cache = static_cast<std::shared_ptr<Cache>*>(addr);
             return Cache::CreateFromString(opts, value, cache);
           }}},
+        {"deltaLog_cache",
+         {offsetof(struct ImmutableCFOptions, deltaLog_cache),
+          OptionType::kUnknown, OptionVerificationType::kNormal,
+          (OptionTypeFlags::kCompareNever | OptionTypeFlags::kDontSerialize),
+          // Parses the input value as a Cache
+          [](const ConfigOptions& opts, const std::string&,
+             const std::string& value, void* addr) {
+            auto* cache = static_cast<std::shared_ptr<Cache>*>(addr);
+            return Cache::CreateFromString(opts, value, cache);
+          }}},
 };
 
 const std::string OptionsHelper::kCFOptionsName = "ColumnFamilyOptions";
@@ -939,9 +992,9 @@ uint64_t MultiplyCheckOverflow(uint64_t op1, double op2) {
 // when level_compaction_dynamic_level_bytes is true and leveled compaction
 // is used, the base level is not always L1, so precomupted max_file_size can
 // no longer be used. Recompute file_size_for_level from base level.
-uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options,
-    int level, CompactionStyle compaction_style, int base_level,
-    bool level_compaction_dynamic_level_bytes) {
+uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options, int level,
+                             CompactionStyle compaction_style, int base_level,
+                             bool level_compaction_dynamic_level_bytes) {
   if (!level_compaction_dynamic_level_bytes || level < base_level ||
       compaction_style != kCompactionStyleLevel) {
     assert(level >= 0);
