@@ -82,6 +82,7 @@ struct ImmutableCFOptions {
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
   std::shared_ptr<Cache> blob_cache;
+  std::shared_ptr<Cache> deltaLog_cache;
 };
 
 struct ImmutableOptions : public ImmutableDBOptions, public ImmutableCFOptions {
@@ -228,7 +229,7 @@ struct MutableCFOptions {
         deltaLog_garbage_collection_force_threshold(0.0),
         deltaLog_compaction_readahead_size(0),
         deltaLog_file_starting_level(0),
-        prepopulate_deltaLog_cache(PrepopulateBlobCache::kDisable),
+        prepopulate_deltaLog_cache(PrepopulateDeltaLogCache::kDisable),
         max_sequential_skip_in_iterations(0),
         check_flush_compaction_key_order(true),
         paranoid_file_checks(false),
@@ -325,7 +326,7 @@ struct MutableCFOptions {
   double deltaLog_garbage_collection_force_threshold;
   uint64_t deltaLog_compaction_readahead_size;
   int deltaLog_file_starting_level;
-  PrepopulateBlobCache prepopulate_deltaLog_cache;
+  PrepopulateDeltaLogCache prepopulate_deltaLog_cache;
 
   // Misc options
   uint64_t max_sequential_skip_in_iterations;

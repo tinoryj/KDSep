@@ -497,7 +497,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionType::kInt, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
         {"prepopulate_deltaLog_cache",
-         OptionTypeInfo::Enum<PrepopulateBlobCache>(
+         OptionTypeInfo::Enum<PrepopulateDeltaLogCache>(
              offsetof(struct MutableCFOptions, prepopulate_deltaLog_cache),
              &prepopulate_deltaLog_cache_string_map,
              OptionTypeFlags::kMutable)},

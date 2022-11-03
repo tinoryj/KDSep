@@ -27,6 +27,7 @@ class MergeOperator;
 class Statistics;
 class SystemClock;
 class BlobFetcher;
+class DeltaLogFetcher;
 class PrefetchBufferCollection;
 struct CompactionIterationStats;
 
@@ -92,6 +93,7 @@ class MergeHelper {
                     const SequenceNumber stop_before, const bool at_bottom,
                     const bool allow_data_in_errors,
                     const BlobFetcher* blob_fetcher,
+                    const DeltaLogFetcher* deltaLog_fetcher,
                     PrefetchBufferCollection* prefetch_buffers,
                     CompactionIterationStats* c_iter_stats);
 

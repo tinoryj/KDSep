@@ -30,12 +30,14 @@ struct FileMetaData;
 
 class VersionSet;
 class BlobFileAddition;
+class DeltaLogFileAddition;
 class SnapshotChecker;
 class TableCache;
 class TableBuilder;
 class WritableFileWriter;
 class InternalStats;
 class BlobFileCompletionCallback;
+class DeltaLogFileCompletionCallback;
 
 // Convenience function for NewTableBuilder on the embedded table_factory.
 TableBuilder* NewTableBuilder(const TableBuilderOptions& tboptions,
@@ -57,12 +59,14 @@ extern Status BuildTable(
     std::vector<std::unique_ptr<FragmentedRangeTombstoneIterator>>
         range_del_iters,
     FileMetaData* meta, std::vector<BlobFileAddition>* blob_file_additions,
+    std::vector<DeltaLogFileAddition>* deltaLog_file_additions,
     std::vector<SequenceNumber> snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
     SequenceNumber job_snapshot, SnapshotChecker* snapshot_checker,
     bool paranoid_file_checks, InternalStats* internal_stats,
     IOStatus* io_status, const std::shared_ptr<IOTracer>& io_tracer,
     BlobFileCreationReason blob_creation_reason,
+    DeltaLogFileCreationReason deltaLog_creation_reason,
     const SeqnoToTimeMapping& seqno_to_time_mapping,
     EventLogger* event_logger = nullptr, int job_id = 0,
     const Env::IOPriority io_priority = Env::IO_HIGH,
@@ -70,6 +74,7 @@ extern Status BuildTable(
     Env::WriteLifeTimeHint write_hint = Env::WLTH_NOT_SET,
     const std::string* full_history_ts_low = nullptr,
     BlobFileCompletionCallback* blob_callback = nullptr,
+    DeltaLogFileCompletionCallback* deltaLog_callback = nullptr,
     uint64_t* num_input_entries = nullptr,
     uint64_t* memtable_payload_bytes = nullptr,
     uint64_t* memtable_garbage_bytes = nullptr);

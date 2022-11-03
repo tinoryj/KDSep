@@ -403,7 +403,7 @@ Status DeltaLogFileBuilder::PutDeltaLogIntoCacheIfNeeded(
   auto deltaLog_cache = immutable_options_->deltaLog_cache;
   auto statistics = immutable_options_->statistics.get();
   bool warm_cache =
-      prepopulate_deltaLog_cache_ == PrepopulateBlobCache::kFlushOnly &&
+      prepopulate_deltaLog_cache_ == PrepopulateDeltaLogCache::kFlushOnly &&
       creation_reason_ == DeltaLogFileCreationReason::kFlush;
 
   if (deltaLog_cache && warm_cache) {

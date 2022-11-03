@@ -11,6 +11,19 @@ LIB_SOURCES =                                                   \
   cache/compressed_secondary_cache.cc                           \
   cache/sharded_cache.cc                                        \
   db/arena_wrapped_db_iter.cc                                   \
+  db/deltaLog/deltaLog_contents.cc                              \
+  db/deltaLog/deltaLog_fetcher.cc                               \
+  db/deltaLog/deltaLog_file_addition.cc                         \
+  db/deltaLog/deltaLog_file_builder.cc                          \
+  db/deltaLog/deltaLog_file_cache.cc                            \
+  db/deltaLog/deltaLog_file_garbage.cc                          \
+  db/deltaLog/deltaLog_file_meta.cc                             \
+  db/deltaLog/deltaLog_file_reader.cc                           \
+  db/deltaLog/deltaLog_garbage_meter.cc                         \
+  db/deltaLog/deltaLog_log_format.cc                            \
+  db/deltaLog/deltaLog_log_sequential_reader.cc                 \
+  db/deltaLog/deltaLog_log_writer.cc                            \
+  db/deltaLog/deltaLog_source.cc                                \
   db/blob/blob_contents.cc                                      \
   db/blob/blob_fetcher.cc                                       \
   db/blob/blob_file_addition.cc                                 \
@@ -434,6 +447,18 @@ TEST_MAIN_SOURCES =                                                     \
   db/blob/db_blob_compaction_test.cc                                    \
   db/blob/db_blob_corruption_test.cc                                    \
   db/blob/db_blob_index_test.cc                                         \
+  db/deltaLog/deltaLog_counting_iterator_test.cc                                \
+  db/deltaLog/deltaLog_file_addition_test.cc                                    \
+  db/deltaLog/deltaLog_file_builder_test.cc                                     \
+  db/deltaLog/deltaLog_file_cache_test.cc                                       \
+  db/deltaLog/deltaLog_file_garbage_test.cc                                     \
+  db/deltaLog/deltaLog_file_reader_test.cc                                      \
+  db/deltaLog/deltaLog_garbage_meter_test.cc                                    \
+  db/deltaLog/deltaLog_source_test.cc                                           \
+  db/deltaLog/db_deltaLog_basic_test.cc                                         \
+  db/deltaLog/db_deltaLog_compaction_test.cc                                    \
+  db/deltaLog/db_deltaLog_corruption_test.cc                                    \
+  db/deltaLog/db_deltaLog_index_test.cc                                         \
   db/column_family_test.cc                                              \
   db/compact_files_test.cc                                              \
   db/compaction/clipping_iterator_test.cc                               \

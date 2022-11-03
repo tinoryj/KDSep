@@ -11,6 +11,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 class BlobFetcher;
+class DeltaLogFetcher;
 class Comparator;
 class Logger;
 class MergeContext;
@@ -75,6 +76,7 @@ class GetContext {
     kCorrupt,
     kMerge,  // saver contains the current merge result (the operands)
     kUnexpectedBlobIndex,
+    kUnexpectedDeltaLogIndex,
     // TODO: remove once wide-column entities are supported by Get/MultiGet
     kUnexpectedWideColumnEntity,
   };
@@ -109,7 +111,9 @@ class GetContext {
              SequenceNumber* seq = nullptr,
              PinnedIteratorsManager* _pinned_iters_mgr = nullptr,
              ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-             uint64_t tracing_get_id = 0, BlobFetcher* blob_fetcher = nullptr);
+             bool* is_deltaLog_index = nullptr, uint64_t tracing_get_id = 0,
+             BlobFetcher* blob_fetcher = nullptr,
+             DeltaLogFetcher* deltaLog_fetcher = nullptr);
   GetContext(const Comparator* ucmp, const MergeOperator* merge_operator,
              Logger* logger, Statistics* statistics, GetState init_state,
              const Slice& user_key, PinnableSlice* value,
@@ -119,7 +123,9 @@ class GetContext {
              SequenceNumber* seq = nullptr,
              PinnedIteratorsManager* _pinned_iters_mgr = nullptr,
              ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-             uint64_t tracing_get_id = 0, BlobFetcher* blob_fetcher = nullptr);
+             bool* is_deltaLog_index = nullptr, uint64_t tracing_get_id = 0,
+             BlobFetcher* blob_fetcher = nullptr,
+             DeltaLogFetcher* deltaLog_fetcher = nullptr);
 
   GetContext() = delete;
 
@@ -178,6 +184,8 @@ class GetContext {
  private:
   void Merge(const Slice* value);
   bool GetBlobValue(const Slice& blob_index, PinnableSlice* blob_value);
+  bool GetDeltaLogValue(const Slice& deltaLog_index,
+                        PinnableSlice* deltaLog_value);
 
   const Comparator* ucmp_;
   const MergeOperator* merge_operator_;
@@ -207,10 +215,12 @@ class GetContext {
   // are never merged.
   bool do_merge_;
   bool* is_blob_index_;
+  bool* is_deltaLog_index_;
   // Used for block cache tracing only. A tracing get id uniquely identifies a
   // Get or a MultiGet.
   const uint64_t tracing_get_id_;
   BlobFetcher* blob_fetcher_;
+  DeltaLogFetcher* deltaLog_fetcher_;
 };
 
 // Call this to replay a log and bring the get_context up to date. The replay

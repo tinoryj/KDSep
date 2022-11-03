@@ -146,7 +146,8 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   // pending files in VersionSet().
   versions_->GetObsoleteFiles(
       &job_context->sst_delete_files, &job_context->blob_delete_files,
-      &job_context->manifest_delete_files, job_context->min_pending_output);
+      &job_context->deltaLog_delete_files, &job_context->manifest_delete_files,
+      job_context->min_pending_output);
 
   // Mark the elements in job_context->sst_delete_files and
   // job_context->blob_delete_files as "grabbed for purge" so that other threads
@@ -158,6 +159,10 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
 
   for (const auto& blob_file : job_context->blob_delete_files) {
     MarkAsGrabbedForPurge(blob_file.GetBlobFileNumber());
+  }
+
+  for (const auto& deltaLog_file : job_context->deltaLog_delete_files) {
+    MarkAsGrabbedForPurge(deltaLog_file.GetdeltaLogFileNumber());
   }
 
   // store the current filenum, lognum, etc
@@ -250,7 +255,8 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
     // usually cheaper to check them against every version, compared to
     // building a map for all files.
     versions_->RemoveLiveFiles(job_context->sst_delete_files,
-                               job_context->blob_delete_files);
+                               job_context->blob_delete_files,
+                               job_context->deltaLog_delete_files);
   }
 
   // Before potentially releasing mutex and waiting on condvar, increment
@@ -343,7 +349,8 @@ void DBImpl::DeleteObsoleteFileImpl(int job_id, const std::string& fname,
                            const_cast<std::string*>(&fname));
 
   Status file_deletion_status;
-  if (type == kTableFile || type == kBlobFile || type == kWalFile) {
+  if (type == kTableFile || type == kBlobFile || type == kDeltaLogFile ||
+      type == kWalFile) {
     // Rate limit WAL deletion only if its in the DB dir
     file_deletion_status = DeleteDBFile(
         &immutable_db_options_, fname, path_to_sync,
@@ -382,6 +389,11 @@ void DBImpl::DeleteObsoleteFileImpl(int job_id, const std::string& fname,
         &event_logger_, immutable_db_options_.listeners, job_id, number, fname,
         file_deletion_status, GetName());
   }
+  if (type == kDeltaLogFile) {
+    EventHelpers::LogAndNotifyDeltaLogFileDeletion(
+        &event_logger_, immutable_db_options_.listeners, job_id, number, fname,
+        file_deletion_status, GetName());
+  }
 }
 
 // Diffs the files listed in filenames and those that do not
@@ -401,6 +413,8 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
                                             state.sst_live.end());
   std::unordered_set<uint64_t> blob_live_set(state.blob_live.begin(),
                                              state.blob_live.end());
+  std::unordered_set<uint64_t> deltaLog_live_set(state.deltaLog_live.begin(),
+                                                 state.deltaLog_live.end());
   std::unordered_set<uint64_t> log_recycle_files_set(
       state.log_recycle_files.begin(), state.log_recycle_files.end());
 
@@ -424,6 +438,12 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
   for (const auto& blob_file : state.blob_delete_files) {
     candidate_files.emplace_back(BlobFileName(blob_file.GetBlobFileNumber()),
                                  blob_file.GetPath());
+  }
+
+  for (const auto& deltaLog_file : state.deltaLog_delete_files) {
+    candidate_files.emplace_back(
+        DeltaLogFileName(deltaLog_file.GetDeltaLogFileNumber()),
+        deltaLog_file.GetPath());
   }
 
   auto wal_dir = immutable_db_options_.GetWalDir();
@@ -535,6 +555,13 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
           files_to_del.insert(number);
         }
         break;
+      case kDeltaLogFile:
+        keep = number >= state.min_pending_output ||
+               (deltaLog_live_set.find(number) != deltaLog_live_set.end());
+        if (!keep) {
+          files_to_del.insert(number);
+        }
+        break;
       case kTempFile:
         // Any temp files that are currently being written to must
         // be recorded in pending_outputs_, which is inserted into "live".
@@ -546,6 +573,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
         //                 remove the temp options files.
         keep = (sst_live_set.find(number) != sst_live_set.end()) ||
                (blob_live_set.find(number) != blob_live_set.end()) ||
+               (deltaLog_live_set.find(number) != deltaLog_live_set.end()) ||
                (number == state.pending_manifest_file_number) ||
                (to_delete.find(kOptionsFileNamePrefix) != std::string::npos);
         break;
@@ -579,6 +607,9 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
       dir_to_sync = candidate_file.file_path;
     } else if (type == kBlobFile) {
       fname = BlobFileName(candidate_file.file_path, number);
+      dir_to_sync = candidate_file.file_path;
+    } else if (type == kDeltaLogFile) {
+      fname = DeltaLogFileName(candidate_file.file_path, number);
       dir_to_sync = candidate_file.file_path;
     } else {
       dir_to_sync = (type == kWalFile) ? wal_dir : dbname_;

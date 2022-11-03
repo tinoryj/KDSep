@@ -29,6 +29,12 @@
 #include "db/compaction/compaction.h"
 #include "db/compaction/file_pri.h"
 #include "db/dbformat.h"
+#include "db/deltaLog/deltaLog_fetcher.h"
+#include "db/deltaLog/deltaLog_file_cache.h"
+#include "db/deltaLog/deltaLog_file_reader.h"
+#include "db/deltaLog/deltaLog_index.h"
+#include "db/deltaLog/deltaLog_log_format.h"
+#include "db/deltaLog/deltaLog_source.h"
 #include "db/internal_stats.h"
 #include "db/log_reader.h"
 #include "db/log_writer.h"
@@ -93,23 +99,19 @@ namespace {
 // Find File in LevelFilesBrief data structure
 // Within an index range defined by left and right
 int FindFileInRange(const InternalKeyComparator& icmp,
-    const LevelFilesBrief& file_level,
-    const Slice& key,
-    uint32_t left,
-    uint32_t right) {
+                    const LevelFilesBrief& file_level, const Slice& key,
+                    uint32_t left, uint32_t right) {
   auto cmp = [&](const FdWithKeyRange& f, const Slice& k) -> bool {
     return icmp.InternalKeyComparator::Compare(f.largest_key, k) < 0;
   };
-  const auto &b = file_level.files;
-  return static_cast<int>(std::lower_bound(b + left,
-                                           b + right, key, cmp) - b);
+  const auto& b = file_level.files;
+  return static_cast<int>(std::lower_bound(b + left, b + right, key, cmp) - b);
 }
 
 Status OverlapWithIterator(const Comparator* ucmp,
-    const Slice& smallest_user_key,
-    const Slice& largest_user_key,
-    InternalIterator* iter,
-    bool* overlap) {
+                           const Slice& smallest_user_key,
+                           const Slice& largest_user_key,
+                           InternalIterator* iter, bool* overlap) {
   InternalKey range_start(smallest_user_key, kMaxSequenceNumber,
                           kValueTypeForSeek);
   iter->Seek(range_start.Encode());
@@ -187,9 +189,9 @@ class FilePicker {
         // Do key range filtering of files or/and fractional cascading if:
         // (1) not all the files are in level 0, or
         // (2) there are more than 3 current level files
-        // If there are only 3 or less current level files in the system, we skip
-        // the key range filtering. In this case, more likely, the system is
-        // highly tuned to minimize number of tables queried by each query,
+        // If there are only 3 or less current level files in the system, we
+        // skip the key range filtering. In this case, more likely, the system
+        // is highly tuned to minimize number of tables queried by each query,
         // so it is unlikely that key range filtering is more efficient than
         // querying the files.
         if (num_levels_ > 1 || curr_file_level_->num_files > 3) {
@@ -211,11 +213,9 @@ class FilePicker {
           // Setup file search bound for the next level based on the
           // comparison results
           if (curr_level_ > 0) {
-            file_indexer_->GetNextLevelIndex(curr_level_,
-                                            curr_index_in_curr_level_,
-                                            cmp_smallest, cmp_largest,
-                                            &search_left_bound_,
-                                            &search_right_bound_);
+            file_indexer_->GetNextLevelIndex(
+                curr_level_, curr_index_in_curr_level_, cmp_smallest,
+                cmp_largest, &search_left_bound_, &search_right_bound_);
           }
           // Key falls out of current file's range
           if (cmp_smallest < 0 || cmp_largest > 0) {
@@ -846,22 +846,21 @@ Version::~Version() {
 }
 
 int FindFile(const InternalKeyComparator& icmp,
-             const LevelFilesBrief& file_level,
-             const Slice& key) {
+             const LevelFilesBrief& file_level, const Slice& key) {
   return FindFileInRange(icmp, file_level, key, 0,
                          static_cast<uint32_t>(file_level.num_files));
 }
 
 void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
-        const std::vector<FileMetaData*>& files,
-        Arena* arena) {
+                               const std::vector<FileMetaData*>& files,
+                               Arena* arena) {
   assert(file_level);
   assert(arena);
 
   size_t num = files.size();
   file_level->num_files = num;
   char* mem = arena->AllocateAligned(num * sizeof(FdWithKeyRange));
-  file_level->files = new (mem)FdWithKeyRange[num];
+  file_level->files = new (mem) FdWithKeyRange[num];
 
   for (size_t i = 0; i < num; i++) {
     Slice smallest_key = files[i]->smallest.Encode();
@@ -882,28 +881,27 @@ void DoGenerateLevelFilesBrief(LevelFilesBrief* file_level,
   }
 }
 
-static bool AfterFile(const Comparator* ucmp,
-                      const Slice* user_key, const FdWithKeyRange* f) {
+static bool AfterFile(const Comparator* ucmp, const Slice* user_key,
+                      const FdWithKeyRange* f) {
   // nullptr user_key occurs before all keys and is therefore never after *f
   return (user_key != nullptr &&
           ucmp->CompareWithoutTimestamp(*user_key,
                                         ExtractUserKey(f->largest_key)) > 0);
 }
 
-static bool BeforeFile(const Comparator* ucmp,
-                       const Slice* user_key, const FdWithKeyRange* f) {
+static bool BeforeFile(const Comparator* ucmp, const Slice* user_key,
+                       const FdWithKeyRange* f) {
   // nullptr user_key occurs after all keys and is therefore never before *f
   return (user_key != nullptr &&
           ucmp->CompareWithoutTimestamp(*user_key,
                                         ExtractUserKey(f->smallest_key)) < 0);
 }
 
-bool SomeFileOverlapsRange(
-    const InternalKeyComparator& icmp,
-    bool disjoint_sorted_files,
-    const LevelFilesBrief& file_level,
-    const Slice* smallest_user_key,
-    const Slice* largest_user_key) {
+bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
+                           bool disjoint_sorted_files,
+                           const LevelFilesBrief& file_level,
+                           const Slice* smallest_user_key,
+                           const Slice* largest_user_key) {
   const Comparator* ucmp = icmp.user_comparator();
   if (!disjoint_sorted_files) {
     // Need to check against all files
@@ -1025,9 +1023,7 @@ class LevelIterator final : public InternalIterator {
     return file_iter_.iter() ? file_iter_.status() : Status::OK();
   }
 
-  bool PrepareValue() override {
-    return file_iter_.PrepareValue();
-  }
+  bool PrepareValue() override { return file_iter_.PrepareValue(); }
 
   inline bool MayBeOutOfLowerBound() override {
     assert(Valid());
@@ -1561,9 +1557,8 @@ Status Version::GetTableProperties(std::shared_ptr<const TableProperties>* tp,
   if (fname != nullptr) {
     file_name = *fname;
   } else {
-    file_name =
-      TableFileName(ioptions->cf_paths, file_meta->fd.GetNumber(),
-                    file_meta->fd.GetPathId());
+    file_name = TableFileName(ioptions->cf_paths, file_meta->fd.GetNumber(),
+                              file_meta->fd.GetPathId());
   }
   s = ioptions->fs->NewRandomAccessFile(file_name, file_options_, &file,
                                         nullptr);
@@ -1689,8 +1684,8 @@ Status Version::GetPropertiesOfTablesInRange(
                                          false);
       for (const auto& file_meta : files) {
         auto fname =
-            TableFileName(cfd_->ioptions()->cf_paths,
-                          file_meta->fd.GetNumber(), file_meta->fd.GetPathId());
+            TableFileName(cfd_->ioptions()->cf_paths, file_meta->fd.GetNumber(),
+                          file_meta->fd.GetPathId());
         if (props->count(fname) == 0) {
           // 1. If the table is already present in table cache, load table
           // properties from there.
@@ -1756,6 +1751,10 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
   cf_meta->blob_file_count = 0;
   cf_meta->blob_files.clear();
 
+  cf_meta->deltaLog_file_size = 0;
+  cf_meta->deltaLog_file_count = 0;
+  cf_meta->deltaLog_files.clear();
+
   auto* ioptions = cfd_->ioptions();
   auto* vstorage = storage_info();
 
@@ -1787,8 +1786,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
       files.back().num_deletions = file->num_deletions;
       level_size += file->fd.GetFileSize();
     }
-    cf_meta->levels.emplace_back(
-        level, level_size, std::move(files));
+    cf_meta->levels.emplace_back(level, level_size, std::move(files));
     cf_meta->size += level_size;
   }
   for (const auto& meta : vstorage->GetBlobFiles()) {
@@ -1802,6 +1800,19 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
         meta->GetChecksumMethod(), meta->GetChecksumValue());
     ++cf_meta->blob_file_count;
     cf_meta->blob_file_size += meta->GetBlobFileSize();
+  }
+  for (const auto& meta : vstorage->GetDeltaLogFiles()) {
+    assert(meta);
+
+    cf_meta->deltaLog_files.emplace_back(
+        meta->GetDeltaLogFileNumber(),
+        DeltaLogFileName("", meta->GetDeltaLogFileNumber()),
+        ioptions->cf_paths.front().path, meta->GetDeltaLogFileSize(),
+        meta->GetTotalDeltaLogCount(), meta->GetTotalDeltaLogBytes(),
+        meta->GetGarbageDeltaLogCount(), meta->GetGarbageDeltaLogBytes(),
+        meta->GetChecksumMethod(), meta->GetChecksumValue());
+    ++cf_meta->deltaLog_file_count;
+    cf_meta->deltaLog_file_size += meta->GetDeltaLogFileSize();
   }
 }
 
@@ -1879,10 +1890,8 @@ uint64_t VersionStorageInfo::GetEstimatedActiveKeys() const {
 
   if (current_num_samples_ < file_count) {
     // casting to avoid overflowing
-    return
-      static_cast<uint64_t>(
-        (est * static_cast<double>(file_count) / current_num_samples_)
-      );
+    return static_cast<uint64_t>(
+        (est * static_cast<double>(file_count) / current_num_samples_));
   } else {
     return est;
   }
@@ -2019,8 +2028,8 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
           /*smallest_compaction_key=*/nullptr,
           /*largest_compaction_key=*/nullptr,
           /*allow_unprepared_value=*/false));
-      status = OverlapWithIterator(
-          ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
+      status = OverlapWithIterator(ucmp, smallest_user_key, largest_user_key,
+                                   iter.get(), overlap);
       if (!status.ok() || *overlap) {
         break;
       }
@@ -2034,8 +2043,8 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
         cfd_->internal_stats()->GetFileReadHist(level),
         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
         &range_del_agg));
-    status = OverlapWithIterator(
-        ucmp, smallest_user_key, largest_user_key, iter.get(), overlap);
+    status = OverlapWithIterator(ucmp, smallest_user_key, largest_user_key,
+                                 iter.get(), overlap);
   }
 
   if (status.ok() && *overlap == false &&
@@ -2106,6 +2115,7 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
       db_statistics_((cfd_ == nullptr) ? nullptr : cfd_->ioptions()->stats),
       table_cache_((cfd_ == nullptr) ? nullptr : cfd_->table_cache()),
       blob_source_(cfd_ ? cfd_->blob_source() : nullptr),
+      deltaLog_source_(cfd_ ? cfd_->deltaLog_source() : nullptr),
       merge_operator_(
           (cfd_ == nullptr) ? nullptr : cfd_->ioptions()->merge_operator.get()),
       storage_info_(
@@ -2236,6 +2246,119 @@ void Version::MultiGetBlob(
   }
 }
 
+Status Version::GetDeltaLog(const ReadOptions& read_options,
+                            const Slice& user_key,
+                            const Slice& deltaLog_index_slice,
+                            FilePrefetchBuffer* prefetch_buffer,
+                            PinnableSlice* value, uint64_t* bytes_read) const {
+  DeltaLogIndex deltaLog_index;
+
+  {
+    Status s = deltaLog_index.DecodeFrom(deltaLog_index_slice);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  return GetDeltaLog(read_options, user_key, deltaLog_index, prefetch_buffer,
+                     value, bytes_read);
+}
+
+Status Version::GetDeltaLog(const ReadOptions& read_options,
+                            const Slice& user_key,
+                            const DeltaLogIndex& deltaLog_index,
+                            FilePrefetchBuffer* prefetch_buffer,
+                            PinnableSlice* value, uint64_t* bytes_read) const {
+  assert(value);
+
+  if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
+    return Status::Corruption("Unexpected TTL/inlined deltaLog index");
+  }
+
+  const uint64_t deltaLog_file_number = deltaLog_index.file_number();
+
+  auto deltaLog_file_meta =
+      storage_info_.GetDeltaLogFileMetaData(deltaLog_file_number);
+  if (!deltaLog_file_meta) {
+    return Status::Corruption("Invalid deltaLog file number");
+  }
+
+  assert(deltaLog_source_);
+  value->Reset();
+  const Status s = deltaLog_source_->GetDeltaLog(
+      read_options, user_key, deltaLog_file_number, deltaLog_index.offset(),
+      deltaLog_file_meta->GetDeltaLogFileSize(), deltaLog_index.size(),
+      deltaLog_index.compression(), prefetch_buffer, value, bytes_read);
+
+  return s;
+}
+
+void Version::MultiGetDeltaLog(
+    const ReadOptions& read_options, MultiGetRange& range,
+    std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs) {
+  assert(!deltaLog_ctxs.empty());
+
+  autovector<DeltaLogFileReadRequests> deltaLog_reqs;
+
+  for (auto& ctx : deltaLog_ctxs) {
+    const auto file_number = ctx.first;
+    const auto deltaLog_file_meta =
+        storage_info_.GetDeltaLogFileMetaData(file_number);
+
+    autovector<DeltaLogReadRequest> deltaLog_reqs_in_file;
+    DeltaLogReadContexts& deltaLogs_in_file = ctx.second;
+    for (const auto& deltaLog : deltaLogs_in_file) {
+      const DeltaLogIndex& deltaLog_index = deltaLog.first;
+      const KeyContext& key_context = deltaLog.second;
+
+      if (!deltaLog_file_meta) {
+        *key_context.s = Status::Corruption("Invalid deltaLog file number");
+        continue;
+      }
+
+      if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
+        *key_context.s =
+            Status::Corruption("Unexpected TTL/inlined deltaLog index");
+        continue;
+      }
+
+      key_context.value->Reset();
+      deltaLog_reqs_in_file.emplace_back(
+          key_context.ukey_with_ts, deltaLog_index.offset(),
+          deltaLog_index.size(), deltaLog_index.compression(),
+          key_context.value, key_context.s);
+    }
+    if (deltaLog_reqs_in_file.size() > 0) {
+      const auto file_size = deltaLog_file_meta->GetDeltaLogFileSize();
+      deltaLog_reqs.emplace_back(file_number, file_size, deltaLog_reqs_in_file);
+    }
+  }
+
+  if (deltaLog_reqs.size() > 0) {
+    deltaLog_source_->MultiGetDeltaLog(read_options, deltaLog_reqs,
+                                       /*bytes_read=*/nullptr);
+  }
+
+  for (auto& ctx : deltaLog_ctxs) {
+    DeltaLogReadContexts& deltaLogs_in_file = ctx.second;
+    for (const auto& deltaLog : deltaLogs_in_file) {
+      const KeyContext& key_context = deltaLog.second;
+      if (key_context.s->ok()) {
+        range.AddValueSize(key_context.value->size());
+        if (range.GetValueSize() > read_options.value_size_soft_limit) {
+          *key_context.s = Status::Aborted();
+        }
+      } else if (key_context.s->IsIncomplete()) {
+        // read_options.read_tier == kBlockCacheTier
+        // Cannot read deltaLog(s): no disk I/O allowed
+        assert(key_context.get_context);
+        auto& get_context = *(key_context.get_context);
+        get_context.MarkKeyMayExist();
+      }
+    }
+  }
+}
+
 void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
@@ -2267,6 +2390,13 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   bool* const is_blob_to_use = is_blob ? is_blob : &is_blob_index;
   BlobFetcher blob_fetcher(this, read_options);
 
+  // Note: for the integrated DeltaLogDB
+  // implementation, we need to provide it here.
+  bool is_deltaLog_index = false;
+  bool* const is_deltaLog_to_use =
+      is_deltaLog ? is_deltaLog : &is_deltaLog_index;
+  DeltaLogFetcher deltaLog_fetcher(this, read_options);
+
   assert(pinned_iters_mgr);
   GetContext get_context(
       user_comparator(), merge_operator_, info_log_, db_statistics_,
@@ -2275,7 +2405,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       do_merge ? timestamp : nullptr, value_found, merge_context, do_merge,
       max_covering_tombstone_seq, clock_, seq,
       merge_operator_ ? pinned_iters_mgr : nullptr, callback, is_blob_to_use,
-      tracing_get_id, &blob_fetcher);
+      is_deltaLog_to_use, tracing_get_id, &blob_fetcher, &deltaLog_fetcher);
 
   // Pin blocks that we read to hold merge operands
   if (merge_operator_) {
@@ -2365,6 +2495,24 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
           }
         }
 
+        if (is_deltaLog_index) {
+          if (do_merge && value) {
+            TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
+                                     value);
+
+            constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
+            constexpr uint64_t* bytes_read = nullptr;
+
+            *status = GetDeltaLog(read_options, user_key, *value,
+                                  prefetch_buffer, value, bytes_read);
+            if (!status->ok()) {
+              if (status->IsIncomplete()) {
+                get_context.MarkKeyMayExist();
+              }
+              return;
+            }
+          }
+        }
         return;
       case GetContext::kDeleted:
         // Use empty error message for speed
@@ -2378,6 +2526,12 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
         *status = Status::NotSupported(
             "Encounter unexpected blob index. Please open DB with "
             "ROCKSDB_NAMESPACE::blob_db::BlobDB instead.");
+        return;
+      case GetContext::kUnexpectedDeltaLogIndex:
+        ROCKS_LOG_ERROR(info_log_, "Encounter unexpected deltaLog index.");
+        *status = Status::NotSupported(
+            "Encounter unexpected deltaLog index. Please open DB with "
+            "ROCKSDB_NAMESPACE::deltaLog_db::DeltaLogDB instead.");
         return;
       case GetContext::kUnexpectedWideColumnEntity:
         *status =
@@ -2395,7 +2549,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       return;
     }
     if (!merge_operator_) {
-      *status =  Status::InvalidArgument(
+      *status = Status::InvalidArgument(
           "merge_operator is not properly initialized.");
       return;
     }
@@ -2413,7 +2567,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     if (key_exists != nullptr) {
       *key_exists = false;
     }
-    *status = Status::NotFound(); // Use an empty error message for speed
+    *status = Status::NotFound();  // Use an empty error message for speed
   }
 }
 
@@ -2436,6 +2590,8 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   // objects, which is expensive
   autovector<GetContext, 16> get_ctx;
   BlobFetcher blob_fetcher(this, read_options);
+  DeltaLogFetcher deltaLog_fetcher(this, read_options);
+  
   for (auto iter = range->begin(); iter != range->end(); ++iter) {
     assert(iter->s->ok() || iter->s->IsMergeInProgress());
     get_ctx.emplace_back(
@@ -2445,7 +2601,8 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
         nullptr, &(iter->merge_context), true,
         &iter->max_covering_tombstone_seq, clock_, nullptr,
         merge_operator_ ? &pinned_iters_mgr : nullptr, callback,
-        &iter->is_blob_index, tracing_mget_id, &blob_fetcher);
+        &iter->is_blob_index, &iter->is_deltaLog_index, tracing_mget_id,
+        &blob_fetcher, &deltaLog_fetcher);
     // MergeInProgress status, if set, has been transferred to the get_context
     // state, so we set status to ok here. From now on, the iter status will
     // be used for IO errors, and get_context state will be used for any
@@ -2899,8 +3056,8 @@ bool Version::IsFilterSkipped(int level, bool is_file_last_in_level) {
 void VersionStorageInfo::GenerateLevelFilesBrief() {
   level_files_brief_.resize(num_non_empty_levels_);
   for (int level = 0; level < num_non_empty_levels_; level++) {
-    DoGenerateLevelFilesBrief(
-        &level_files_brief_[level], files_[level], &arena_);
+    DoGenerateLevelFilesBrief(&level_files_brief_[level], files_[level],
+                              &arena_);
   }
 }
 
@@ -2934,8 +3091,7 @@ void Version::PrepareAppend(const MutableCFOptions& mutable_cf_options,
 }
 
 bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
-  if (file_meta->init_stats_from_file ||
-      file_meta->compensated_file_size > 0) {
+  if (file_meta->init_stats_from_file || file_meta->compensated_file_size > 0) {
     return false;
   }
   std::shared_ptr<const TableProperties> tp;
@@ -3602,9 +3758,9 @@ struct Fsize {
 // In normal mode: descending size
 bool CompareCompensatedSizeDescending(const Fsize& first, const Fsize& second) {
   return (first.file->compensated_file_size >
-      second.file->compensated_file_size);
+          second.file->compensated_file_size);
 }
-} // anonymous namespace
+}  // anonymous namespace
 
 void VersionStorageInfo::AddFile(int level, FileMetaData* f) {
   auto& level_files = files_[level];
@@ -3976,9 +4132,7 @@ void VersionStorageInfo::ComputeBottommostFilesMarkedForCompaction() {
   }
 }
 
-void Version::Ref() {
-  ++refs_;
-}
+void Version::Ref() { ++refs_; }
 
 bool Version::Unref() {
   assert(refs_ >= 1);
@@ -4110,9 +4264,8 @@ void VersionStorageInfo::GetCleanInputsWithinInterval(
     return;
   }
 
-  GetOverlappingInputsRangeBinarySearch(level, begin, end, inputs,
-                                        hint_index, file_index,
-                                        true /* within_interval */);
+  GetOverlappingInputsRangeBinarySearch(level, begin, end, inputs, hint_index,
+                                        file_index, true /* within_interval */);
 }
 
 // Store in "*inputs" all files in "level" that overlap [begin,end]
@@ -4275,8 +4428,7 @@ const char* VersionStorageInfo::LevelFileSummary(FileSummaryStorage* scratch,
                        "#%" PRIu64 "(seq=%" PRIu64 ",sz=%s,%d) ",
                        f->fd.GetNumber(), f->fd.smallest_seqno, sztxt,
                        static_cast<int>(f->being_compacted));
-    if (ret < 0 || ret >= sz)
-      break;
+    if (ret < 0 || ret >= sz) break;
     len += ret;
   }
   // overwrite the last space (only if files_[level].size() is non-zero)
@@ -4454,13 +4606,13 @@ uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
       // no potential overlap, we can safely insert the rest of this level
       // (if the level is not 0) into the map without checking again because
       // the elements in the level are sorted and non-overlapping.
-      auto lb = (found_end && l != 0) ?
-        ranges.end() : ranges.lower_bound(&file->smallest);
+      auto lb = (found_end && l != 0) ? ranges.end()
+                                      : ranges.lower_bound(&file->smallest);
       found_end = (lb == ranges.end());
       if (found_end || internal_comparator_->Compare(
-            file->largest, (*lb).second->smallest) < 0) {
-          ranges.emplace_hint(lb, &file->largest, file);
-          size += file->fd.file_size;
+                           file->largest, (*lb).second->smallest) < 0) {
+        ranges.emplace_hint(lb, &file->largest, file);
+        size += file->fd.file_size;
       }
     }
   }
@@ -5871,7 +6023,7 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
     }
   }
 
-  delete[] vstorage -> files_;
+  delete[] vstorage->files_;
   vstorage->files_ = new_files_list;
   vstorage->num_levels_ = new_levels;
   vstorage->ResizeCompactCursors(new_levels);
@@ -5880,9 +6032,9 @@ Status VersionSet::ReduceNumberOfLevels(const std::string& dbname,
   VersionEdit ve;
   InstrumentedMutex dummy_mutex;
   InstrumentedMutexLock l(&dummy_mutex);
-  return versions.LogAndApply(
-      versions.GetColumnFamilySet()->GetDefault(),
-      mutable_cf_options, &ve, &dummy_mutex, nullptr, true);
+  return versions.LogAndApply(versions.GetColumnFamilySet()->GetDefault(),
+                              mutable_cf_options, &ve, &dummy_mutex, nullptr,
+                              true);
 }
 
 // Get the checksum information including the checksum and checksum function
@@ -5968,9 +6120,7 @@ Status VersionSet::DumpManifest(Options& options, std::string& dscname,
     std::unique_ptr<FSSequentialFile> file;
     const std::shared_ptr<FileSystem>& fs = options.env->GetFileSystem();
     s = fs->NewSequentialFile(
-        dscname,
-        fs->OptimizeForManifestRead(file_options_), &file,
-        nullptr);
+        dscname, fs->OptimizeForManifestRead(file_options_), &file, nullptr);
     if (!s.ok()) {
       return s;
     }
@@ -6073,8 +6223,8 @@ Status VersionSet::WriteCurrentStateToManifest(
           cfd->internal_comparator().user_comparator()->Name());
       std::string record;
       if (!edit.EncodeTo(&record)) {
-        return Status::Corruption(
-            "Unable to Encode VersionEdit:" + edit.DebugString(true));
+        return Status::Corruption("Unable to Encode VersionEdit:" +
+                                  edit.DebugString(true));
       }
       io_s = log->AddRecord(record);
       if (!io_s.ok()) {
@@ -6132,9 +6282,10 @@ Status VersionSet::WriteCurrentStateToManifest(
       edit.SetLogNumber(log_number);
 
       if (cfd->GetID() == 0) {
-        // min_log_number_to_keep is for the whole db, not for specific column family.
-        // So it does not need to be set for every column family, just need to be set once.
-        // Since default CF can never be dropped, we set the min_log to the default CF here.
+        // min_log_number_to_keep is for the whole db, not for specific column
+        // family. So it does not need to be set for every column family, just
+        // need to be set once. Since default CF can never be dropped, we set
+        // the min_log to the default CF here.
         uint64_t min_log = min_log_number_to_keep();
         if (min_log != 0) {
           edit.SetMinLogNumberToKeep(min_log);
@@ -6150,8 +6301,8 @@ Status VersionSet::WriteCurrentStateToManifest(
 
       std::string record;
       if (!edit.EncodeTo(&record)) {
-        return Status::Corruption(
-            "Unable to Encode VersionEdit:" + edit.DebugString(true));
+        return Status::Corruption("Unable to Encode VersionEdit:" +
+                                  edit.DebugString(true));
       }
       io_s = log->AddRecord(record);
       if (!io_s.ok()) {
@@ -6474,7 +6625,7 @@ InternalIterator* VersionSet::MakeInputIterator(
   const size_t space = (c->level() == 0 ? c->input_levels(0)->num_files +
                                               c->num_input_levels() - 1
                                         : c->num_input_levels());
-  InternalIterator** list = new InternalIterator* [space];
+  InternalIterator** list = new InternalIterator*[space];
   size_t num = 0;
   for (size_t which = 0; which < c->num_input_levels(); which++) {
     if (c->input_levels(which)->num_files != 0) {
@@ -6583,8 +6734,8 @@ void VersionSet::GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata) {
         filemetadata.largestkey = file->largest.user_key().ToString();
         filemetadata.smallest_seqno = file->fd.smallest_seqno;
         filemetadata.largest_seqno = file->fd.largest_seqno;
-        filemetadata.num_reads_sampled = file->stats.num_reads_sampled.load(
-            std::memory_order_relaxed);
+        filemetadata.num_reads_sampled =
+            file->stats.num_reads_sampled.load(std::memory_order_relaxed);
         filemetadata.being_compacted = file->being_compacted;
         filemetadata.num_entries = file->num_entries;
         filemetadata.num_deletions = file->num_deletions;

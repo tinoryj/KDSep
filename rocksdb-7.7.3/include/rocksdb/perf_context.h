@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <map>
 #include <string>
 
@@ -68,7 +69,7 @@ struct PerfContext {
   uint64_t block_read_count;           // total number of block reads (with IO)
   uint64_t block_read_byte;            // total number of bytes from block reads
   uint64_t block_read_time;            // total nanos spent on block reads
-  uint64_t block_cache_index_hit_count;   // total number of index block hits
+  uint64_t block_cache_index_hit_count;  // total number of index block hits
   // total number of standalone handles lookup from secondary cache
   uint64_t block_cache_standalone_handle_count;
   // total number of real handles lookup from secondary cache that are inserted
@@ -103,6 +104,14 @@ struct PerfContext {
   uint64_t blob_read_time;        // total nanos spent on blob reads
   uint64_t blob_checksum_time;    // total nanos spent on blob checksum
   uint64_t blob_decompress_time;  // total nanos spent on blob decompression
+
+  uint64_t deltaLog_cache_hit_count;  // total number of deltaLog cache hits
+  uint64_t deltaLog_read_count;     // total number of deltaLog reads (with IO)
+  uint64_t deltaLog_read_byte;      // total number of bytes from deltaLog reads
+  uint64_t deltaLog_read_time;      // total nanos spent on deltaLog reads
+  uint64_t deltaLog_checksum_time;  // total nanos spent on deltaLog checksum
+  uint64_t
+      deltaLog_decompress_time;  // total nanos spent on deltaLog decompression
 
   // total number of internal keys skipped over during iteration.
   // There are several reasons for it:

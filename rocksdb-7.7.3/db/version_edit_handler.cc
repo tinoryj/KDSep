@@ -14,6 +14,8 @@
 
 #include "db/blob/blob_file_reader.h"
 #include "db/blob/blob_source.h"
+#include "db/deltaLog/deltaLog_file_reader.h"
+#include "db/deltaLog/deltaLog_source.h"
 #include "logging/logging.h"
 #include "monitoring/persistent_stats_history.h"
 

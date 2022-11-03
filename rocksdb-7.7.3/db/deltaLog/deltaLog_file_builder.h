@@ -91,7 +91,7 @@ class DeltaLogFileBuilder {
   uint64_t min_deltaLog_size_;
   uint64_t deltaLog_file_size_;
   CompressionType deltaLog_compression_type_;
-  PrepopulateBlobCache prepopulate_deltaLog_cache_;
+  PrepopulateDeltaLogCache prepopulate_deltaLog_cache_;
   const FileOptions* file_options_;
   const std::string db_id_;
   const std::string db_session_id_;

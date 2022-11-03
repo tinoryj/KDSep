@@ -13,6 +13,7 @@
 #include "db/blob/blob_garbage_meter.h"
 #include "db/compaction/compaction.h"
 #include "db/compaction/compaction_iterator.h"
+#include "db/deltaLog/deltaLog_garbage_meter.h"
 #include "db/internal_stats.h"
 #include "db/output_validator.h"
 
@@ -102,6 +103,46 @@ class CompactionOutputs {
     stats_.num_output_files_blob = blob_file_additions_.size();
     for (const auto& blob : blob_file_additions_) {
       stats_.bytes_written_blob += blob.GetTotalBlobBytes();
+    }
+  }
+
+  // TODO: Move the DeltaLogDB builder into CompactionOutputs
+  const std::vector<DeltaLogFileAddition>& GetDeltaLogFileAdditions() const {
+    if (is_penultimate_level_) {
+      assert(deltaLog_file_additions_.empty());
+    }
+    return deltaLog_file_additions_;
+  }
+
+  std::vector<DeltaLogFileAddition>* GetDeltaLogFileAdditionsPtr() {
+    assert(!is_penultimate_level_);
+    return &deltaLog_file_additions_;
+  }
+
+  bool HasDeltaLogFileAdditions() const {
+    return !deltaLog_file_additions_.empty();
+  }
+
+  DeltaLogGarbageMeter* CreateDeltaLogGarbageMeter() {
+    assert(!is_penultimate_level_);
+    deltaLog_garbage_meter_ = std::make_unique<DeltaLogGarbageMeter>();
+    return deltaLog_garbage_meter_.get();
+  }
+
+  DeltaLogGarbageMeter* GetDeltaLogGarbageMeter() const {
+    if (is_penultimate_level_) {
+      // deltaLogdb doesn't support per_key_placement yet
+      assert(deltaLog_garbage_meter_ == nullptr);
+      return nullptr;
+    }
+    return deltaLog_garbage_meter_.get();
+  }
+
+  void UpdateDeltaLogStats() {
+    assert(!is_penultimate_level_);
+    stats_.num_output_files_deltaLog = deltaLog_file_additions_.size();
+    for (const auto& deltaLog : deltaLog_file_additions_) {
+      stats_.bytes_written_deltaLog += deltaLog.GetTotalDeltaLogBytes();
     }
   }
 
@@ -281,6 +322,10 @@ class CompactionOutputs {
   // BlobDB info
   std::vector<BlobFileAddition> blob_file_additions_;
   std::unique_ptr<BlobGarbageMeter> blob_garbage_meter_;
+
+  // DeltaLogDB info
+  std::vector<DeltaLogFileAddition> deltaLog_file_additions_;
+  std::unique_ptr<DeltaLogGarbageMeter> deltaLog_garbage_meter_;
 
   // Basic compaction output stats for this level's outputs
   InternalStats::CompactionOutputsStats stats_;

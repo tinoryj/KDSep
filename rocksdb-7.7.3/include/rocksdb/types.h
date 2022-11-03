@@ -33,6 +33,12 @@ enum class BlobFileCreationReason {
   kRecovery,
 };
 
+enum class DeltaLogFileCreationReason {
+  kFlush,
+  kCompaction,
+  kRecovery,
+};
+
 // The types of files RocksDB uses in a DB directory. (Available for
 // advanced options.)
 enum FileType {
@@ -46,7 +52,8 @@ enum FileType {
   kMetaDatabase,
   kIdentityFile,
   kOptionsFile,
-  kBlobFile
+  kBlobFile,
+  kDeltaLogFile
 };
 
 // User-oriented representation of internal key types.

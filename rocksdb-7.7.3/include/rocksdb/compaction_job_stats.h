@@ -6,6 +6,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+
 #include <string>
 
 #include "rocksdb/rocksdb_namespace.h"
@@ -27,6 +28,8 @@ struct CompactionJobStats {
   uint64_t num_input_records;
   // the number of blobs read from blob files
   uint64_t num_blobs_read;
+  // the number of deltaLogs read from deltaLog files
+  uint64_t num_deltaLogs_read;
   // the number of compaction input files (table files)
   size_t num_input_files;
   // the number of compaction input files at the output level (table files)
@@ -38,7 +41,8 @@ struct CompactionJobStats {
   size_t num_output_files;
   // the number of compaction output files (blob files)
   size_t num_output_files_blob;
-
+  // the number of compaction output files (deltaLog files)
+  size_t num_output_files_deltaLog;
   // true if the compaction is a full compaction (all live SST files input)
   bool is_full_compaction;
   // true if the compaction is a manual compaction
@@ -52,6 +56,10 @@ struct CompactionJobStats {
   uint64_t total_output_bytes;
   // the total size of blob files in the compaction output
   uint64_t total_output_bytes_blob;
+  // the total size of deltaLogs read from deltaLog files
+  uint64_t total_deltaLog_bytes_read;
+  // the total size of deltaLog files in the compaction output
+  uint64_t total_output_bytes_deltaLog;
 
   // number of records being replaced by newer record associated with same key.
   // this could be a new value or a deletion entry for that key so this field

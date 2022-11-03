@@ -5,6 +5,7 @@
 //
 
 #include <sstream>
+
 #include "monitoring/perf_context_imp.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -17,9 +18,7 @@ PerfContext perf_context;
 thread_local PerfContext perf_context;
 #endif
 
-PerfContext* get_perf_context() {
-  return &perf_context;
-}
+PerfContext* get_perf_context() { return &perf_context; }
 
 PerfContext::~PerfContext() {
 #if !defined(NPERF_CONTEXT) && !defined(OS_SOLARIS)
@@ -65,6 +64,13 @@ PerfContext::PerfContext(const PerfContext& other) {
   blob_read_time = other.blob_read_time;
   blob_checksum_time = other.blob_checksum_time;
   blob_decompress_time = other.blob_decompress_time;
+
+  deltaLog_cache_hit_count = other.deltaLog_cache_hit_count;
+  deltaLog_read_count = other.deltaLog_read_count;
+  deltaLog_read_byte = other.deltaLog_read_byte;
+  deltaLog_read_time = other.deltaLog_read_time;
+  deltaLog_checksum_time = other.deltaLog_checksum_time;
+  deltaLog_decompress_time = other.deltaLog_decompress_time;
 
   internal_key_skipped_count = other.internal_key_skipped_count;
   internal_delete_skipped_count = other.internal_delete_skipped_count;
@@ -306,6 +312,13 @@ PerfContext& PerfContext::operator=(const PerfContext& other) {
   blob_checksum_time = other.blob_checksum_time;
   blob_decompress_time = other.blob_decompress_time;
 
+  deltaLog_cache_hit_count = other.deltaLog_cache_hit_count;
+  deltaLog_read_count = other.deltaLog_read_count;
+  deltaLog_read_byte = other.deltaLog_read_byte;
+  deltaLog_read_time = other.deltaLog_read_time;
+  deltaLog_checksum_time = other.deltaLog_checksum_time;
+  deltaLog_decompress_time = other.deltaLog_decompress_time;
+
   internal_key_skipped_count = other.internal_key_skipped_count;
   internal_delete_skipped_count = other.internal_delete_skipped_count;
   internal_recent_skipped_count = other.internal_recent_skipped_count;
@@ -419,6 +432,13 @@ void PerfContext::Reset() {
   blob_checksum_time = 0;
   blob_decompress_time = 0;
 
+  deltaLog_cache_hit_count = 0;
+  deltaLog_read_count = 0;
+  deltaLog_read_byte = 0;
+  deltaLog_read_time = 0;
+  deltaLog_checksum_time = 0;
+  deltaLog_decompress_time = 0;
+
   internal_key_skipped_count = 0;
   internal_delete_skipped_count = 0;
   internal_recent_skipped_count = 0;
@@ -499,15 +519,14 @@ void PerfContext::Reset() {
     ss << #counter << " = " << counter << ", ";  \
   }
 
-#define PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(counter)         \
-  if (per_level_perf_context_enabled && \
-      level_to_perf_context) {                                    \
-    ss << #counter << " = ";                                      \
-    for (auto& kv : *level_to_perf_context) {                     \
-      if (!exclude_zero_counters || (kv.second.counter > 0)) {    \
-        ss << kv.second.counter << "@level" << kv.first << ", ";  \
-      }                                                           \
-    }                                                             \
+#define PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(counter)        \
+  if (per_level_perf_context_enabled && level_to_perf_context) { \
+    ss << #counter << " = ";                                     \
+    for (auto& kv : *level_to_perf_context) {                    \
+      if (!exclude_zero_counters || (kv.second.counter > 0)) {   \
+        ss << kv.second.counter << "@level" << kv.first << ", "; \
+      }                                                          \
+    }                                                            \
   }
 
 void PerfContextByLevel::Reset() {
@@ -554,6 +573,12 @@ std::string PerfContext::ToString(bool exclude_zero_counters) const {
   PERF_CONTEXT_OUTPUT(blob_read_time);
   PERF_CONTEXT_OUTPUT(blob_checksum_time);
   PERF_CONTEXT_OUTPUT(blob_decompress_time);
+  PERF_CONTEXT_OUTPUT(deltaLog_cache_hit_count);
+  PERF_CONTEXT_OUTPUT(deltaLog_read_count);
+  PERF_CONTEXT_OUTPUT(deltaLog_read_byte);
+  PERF_CONTEXT_OUTPUT(deltaLog_read_time);
+  PERF_CONTEXT_OUTPUT(deltaLog_checksum_time);
+  PERF_CONTEXT_OUTPUT(deltaLog_decompress_time);
   PERF_CONTEXT_OUTPUT(internal_key_skipped_count);
   PERF_CONTEXT_OUTPUT(internal_delete_skipped_count);
   PERF_CONTEXT_OUTPUT(internal_recent_skipped_count);
@@ -638,11 +663,11 @@ void PerfContext::EnablePerLevelPerfContext() {
   per_level_perf_context_enabled = true;
 }
 
-void PerfContext::DisablePerLevelPerfContext(){
+void PerfContext::DisablePerLevelPerfContext() {
   per_level_perf_context_enabled = false;
 }
 
-void PerfContext::ClearPerLevelPerfContext(){
+void PerfContext::ClearPerLevelPerfContext() {
   if (level_to_perf_context != nullptr) {
     level_to_perf_context->clear();
     delete level_to_perf_context;

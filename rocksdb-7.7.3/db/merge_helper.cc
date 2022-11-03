@@ -12,6 +12,8 @@
 #include "db/blob/prefetch_buffer_collection.h"
 #include "db/compaction/compaction_iteration_stats.h"
 #include "db/dbformat.h"
+#include "db/deltaLog/deltaLog_fetcher.h"
+#include "db/deltaLog/deltaLog_index.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/likely.h"
@@ -125,6 +127,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
                                const bool at_bottom,
                                const bool allow_data_in_errors,
                                const BlobFetcher* blob_fetcher,
+                               const DeltaLogFetcher* deltaLog_fetcher,
                                PrefetchBufferCollection* prefetch_buffers,
                                CompactionIterationStats* c_iter_stats) {
   // Get a copy of the internal key, before it's invalidated by iter->Next()
@@ -250,6 +253,36 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
           if (c_iter_stats) {
             ++c_iter_stats->num_blobs_read;
             c_iter_stats->total_blob_bytes_read += bytes_read;
+          }
+        } else if (ikey.type == kTypeDeltaLogIndex) {
+          DeltaLogIndex deltaLog_index;
+
+          s = deltaLog_index.DecodeFrom(val);
+          if (!s.ok()) {
+            return s;
+          }
+
+          FilePrefetchBuffer* prefetch_buffer =
+              prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
+                                     deltaLog_index.file_number())
+                               : nullptr;
+
+          uint64_t bytes_read = 0;
+
+          assert(deltaLog_fetcher);
+
+          s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, deltaLog_index,
+                                              prefetch_buffer, &deltaLog_value,
+                                              &bytes_read);
+          if (!s.ok()) {
+            return s;
+          }
+
+          val_ptr = &deltaLog_value;
+
+          if (c_iter_stats) {
+            ++c_iter_stats->num_deltaLogs_read;
+            c_iter_stats->total_deltaLog_bytes_read += bytes_read;
           }
         } else {
           val_ptr = &val;

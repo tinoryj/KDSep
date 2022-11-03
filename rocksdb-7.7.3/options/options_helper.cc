@@ -866,6 +866,11 @@ std::unordered_map<std::string, PrepopulateBlobCache>
         {"kDisable", PrepopulateBlobCache::kDisable},
         {"kFlushOnly", PrepopulateBlobCache::kFlushOnly}};
 
+std::unordered_map<std::string, PrepopulateDeltaLogCache>
+    OptionsHelper::prepopulate_deltaLog_cache_string_map = {
+        {"kDisable", PrepopulateDeltaLogCache::kDisable},
+        {"kFlushOnly", PrepopulateDeltaLogCache::kFlushOnly}};
+
 Status OptionTypeInfo::NextToken(const std::string& opts, char delimiter,
                                  size_t pos, size_t* end, std::string* token) {
   while (pos < opts.size() && isspace(opts[pos])) {

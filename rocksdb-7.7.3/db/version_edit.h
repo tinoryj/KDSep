@@ -17,6 +17,8 @@
 #include "db/blob/blob_file_addition.h"
 #include "db/blob/blob_file_garbage.h"
 #include "db/dbformat.h"
+#include "db/deltaLog/deltaLog_file_addition.h"
+#include "db/deltaLog/deltaLog_file_garbage.h"
 #include "db/wal_edit.h"
 #include "memory/arena.h"
 #include "port/malloc.h"
@@ -57,6 +59,8 @@ enum Tag : uint32_t {
 
   kBlobFileAddition = 400,
   kBlobFileGarbage,
+  kDeltaLogFileAddition = 400,
+  kDeltaLogFileGarbage,
 
   // Mask for an unidentified tag from the future which can be safely ignored.
   kTagSafeIgnoreMask = 1 << 13,
@@ -80,6 +84,7 @@ enum NewFileCustomTag : uint32_t {
   // when manifest becomes forward-compatible.
   kMinLogNumberToKeepHack = 3,
   kOldestBlobFileNumber = 4,
+  kOldestDeltaLogFileNumber = 13,
   kOldestAncesterTime = 5,
   kFileCreationTime = 6,
   kFileChecksum = 7,
@@ -114,7 +119,7 @@ struct FileDescriptor {
   // Table reader in table_reader_handle
   TableReader* table_reader;
   uint64_t packed_number_and_path_id;
-  uint64_t file_size;  // File size in bytes
+  uint64_t file_size;             // File size in bytes
   SequenceNumber smallest_seqno;  // The smallest seqno in this file
   SequenceNumber largest_seqno;   // The largest seqno in this file
 
@@ -146,8 +151,8 @@ struct FileDescriptor {
     return packed_number_and_path_id & kFileNumberMask;
   }
   uint32_t GetPathId() const {
-    return static_cast<uint32_t>(
-        packed_number_and_path_id / (kFileNumberMask + 1));
+    return static_cast<uint32_t>(packed_number_and_path_id /
+                                 (kFileNumberMask + 1));
   }
   uint64_t GetFileSize() const { return file_size; }
 };
@@ -166,8 +171,8 @@ struct FileSampledStats {
 
 struct FileMetaData {
   FileDescriptor fd;
-  InternalKey smallest;            // Smallest internal key served by table
-  InternalKey largest;             // Largest internal key served by table
+  InternalKey smallest;  // Smallest internal key served by table
+  InternalKey largest;   // Largest internal key served by table
 
   // Needs to be disposed when refs becomes 0.
   Cache::Handle* table_reader_handle = nullptr;
@@ -201,6 +206,11 @@ struct FileMetaData {
   // refers to. 0 is an invalid value; BlobDB numbers the files starting from 1.
   uint64_t oldest_blob_file_number = kInvalidBlobFileNumber;
 
+  // Used only in DeltaLogDB. The file number of the oldest deltaLog file this
+  // SST file refers to. 0 is an invalid value; DeltaLogDB numbers the files
+  // starting from 1.
+  uint64_t oldest_deltaLog_file_number = kInvalidDeltaLogFileNumber;
+
   // The file could be the compaction output from other SST files, which could
   // in turn be outputs for compact older SST files. We track the memtable
   // flush timestamp for the oldest SST file that eventually contribute data
@@ -226,8 +236,8 @@ struct FileMetaData {
                const SequenceNumber& smallest_seq,
                const SequenceNumber& largest_seq, bool marked_for_compact,
                Temperature _temperature, uint64_t oldest_blob_file,
-               uint64_t _oldest_ancester_time, uint64_t _file_creation_time,
-               const std::string& _file_checksum,
+               uint64_t oldest_deltaLog_file, uint64_t _oldest_ancester_time,
+               uint64_t _file_creation_time, const std::string& _file_checksum,
                const std::string& _file_checksum_func_name,
                UniqueId64x2 _unique_id)
       : fd(file, file_path_id, file_size, smallest_seq, largest_seq),
@@ -236,6 +246,7 @@ struct FileMetaData {
         marked_for_compaction(marked_for_compact),
         temperature(_temperature),
         oldest_blob_file_number(oldest_blob_file),
+        oldest_deltaLog_file_number(oldest_deltaLog_file),
         oldest_ancester_time(_oldest_ancester_time),
         file_creation_time(_file_creation_time),
         file_checksum(_file_checksum),
@@ -312,15 +323,11 @@ struct FileMetaData {
 struct FdWithKeyRange {
   FileDescriptor fd;
   FileMetaData* file_metadata;  // Point to all metadata
-  Slice smallest_key;    // slice that contain smallest key
-  Slice largest_key;     // slice that contain largest key
+  Slice smallest_key;           // slice that contain smallest key
+  Slice largest_key;            // slice that contain largest key
 
   FdWithKeyRange()
-      : fd(),
-        file_metadata(nullptr),
-        smallest_key(),
-        largest_key() {
-  }
+      : fd(), file_metadata(nullptr), smallest_key(), largest_key() {}
 
   FdWithKeyRange(FileDescriptor _fd, Slice _smallest_key, Slice _largest_key,
                  FileMetaData* _file_metadata)
@@ -423,6 +430,7 @@ class VersionEdit {
                const InternalKey& largest, const SequenceNumber& smallest_seqno,
                const SequenceNumber& largest_seqno, bool marked_for_compaction,
                Temperature temperature, uint64_t oldest_blob_file_number,
+               uint64_t oldest_deltaLog_file_number,
                uint64_t oldest_ancester_time, uint64_t file_creation_time,
                const std::string& file_checksum,
                const std::string& file_checksum_func_name,
@@ -432,7 +440,8 @@ class VersionEdit {
         level,
         FileMetaData(file, file_path_id, file_size, smallest, largest,
                      smallest_seqno, largest_seqno, marked_for_compaction,
-                     temperature, oldest_blob_file_number, oldest_ancester_time,
+                     temperature, oldest_blob_file_number,
+                     oldest_deltaLog_file_number, oldest_ancester_time,
                      file_creation_time, file_checksum, file_checksum_func_name,
                      unique_id));
     if (!HasLastSequence() || largest_seqno > GetLastSequence()) {
@@ -518,6 +527,56 @@ class VersionEdit {
     blob_file_garbages_ = std::move(blob_file_garbages);
   }
 
+  // Add a new deltaLog file.
+  void AddDeltaLogFile(uint64_t deltaLog_file_number,
+                       uint64_t total_deltaLog_count,
+                       uint64_t total_deltaLog_bytes,
+                       std::string checksum_method,
+                       std::string checksum_value) {
+    deltaLog_file_additions_.emplace_back(
+        deltaLog_file_number, total_deltaLog_count, total_deltaLog_bytes,
+        std::move(checksum_method), std::move(checksum_value));
+  }
+
+  void AddDeltaLogFile(DeltaLogFileAddition deltaLog_file_addition) {
+    deltaLog_file_additions_.emplace_back(std::move(deltaLog_file_addition));
+  }
+
+  // Retrieve all the deltaLog files added.
+  using DeltaLogFileAdditions = std::vector<DeltaLogFileAddition>;
+  const DeltaLogFileAdditions& GetDeltaLogFileAdditions() const {
+    return deltaLog_file_additions_;
+  }
+
+  void SetDeltaLogFileAdditions(DeltaLogFileAdditions deltaLog_file_additions) {
+    assert(deltaLog_file_additions_.empty());
+    deltaLog_file_additions_ = std::move(deltaLog_file_additions);
+  }
+
+  // Add garbage for an existing deltaLog file.  Note: intentionally broken
+  // English follows.
+  void AddDeltaLogFileGarbage(uint64_t deltaLog_file_number,
+                              uint64_t garbage_deltaLog_count,
+                              uint64_t garbage_deltaLog_bytes) {
+    deltaLog_file_garbages_.emplace_back(
+        deltaLog_file_number, garbage_deltaLog_count, garbage_deltaLog_bytes);
+  }
+
+  void AddDeltaLogFileGarbage(DeltaLogFileGarbage deltaLog_file_garbage) {
+    deltaLog_file_garbages_.emplace_back(std::move(deltaLog_file_garbage));
+  }
+
+  // Retrieve all the deltaLog file garbage added.
+  using DeltaLogFileGarbages = std::vector<DeltaLogFileGarbage>;
+  const DeltaLogFileGarbages& GetDeltaLogFileGarbages() const {
+    return deltaLog_file_garbages_;
+  }
+
+  void SetDeltaLogFileGarbages(DeltaLogFileGarbages deltaLog_file_garbages) {
+    assert(deltaLog_file_garbages_.empty());
+    deltaLog_file_garbages_ = std::move(deltaLog_file_garbages);
+  }
+
   // Add a WAL (either just created or closed).
   // AddWal and DeleteWalsBefore cannot be called on the same VersionEdit.
   void AddWal(WalNumber number, WalMetadata metadata = WalMetadata()) {
@@ -551,6 +610,7 @@ class VersionEdit {
   size_t NumEntries() const {
     return new_files_.size() + deleted_files_.size() +
            blob_file_additions_.size() + blob_file_garbages_.size() +
+           deltaLog_file_additions_.size() + deltaLog_file_garbages_.size() +
            wal_additions_.size() + !wal_deletion_.IsEmpty();
   }
 
@@ -651,6 +711,9 @@ class VersionEdit {
   BlobFileAdditions blob_file_additions_;
   BlobFileGarbages blob_file_garbages_;
 
+  DeltaLogFileAdditions deltaLog_file_additions_;
+  DeltaLogFileGarbages deltaLog_file_garbages_;
+  
   WalAdditions wal_additions_;
   WalDeletion wal_deletion_;
 

@@ -182,6 +182,76 @@ public enum HistogramType {
 
   ASYNC_READ_BYTES((byte) 0x33),
 
+  /**
+   * Size of keys written to DeltaLogDB.
+   */
+  DELTALOG_DB_KEY_SIZE((byte) 0x34),
+
+  /**
+   * Size of values written to DeltaLogDB.
+   */
+  DELTALOG_DB_VALUE_SIZE((byte) 0x35),
+
+  /**
+   * DeltaLogDB Put/PutWithTTL/PutUntil/Write latency.
+   */
+  DELTALOG_DB_WRITE_MICROS((byte) 0x36),
+
+  /**
+   * DeltaLogDB Get lagency.
+   */
+  DELTALOG_DB_GET_MICROS((byte) 0x37),
+
+  /**
+   * DeltaLogDB MultiGet latency.
+   */
+  DELTALOG_DB_MULTIGET_MICROS((byte) 0x38),
+
+  /**
+   * DeltaLogDB Seek/SeekToFirst/SeekToLast/SeekForPrev latency.
+   */
+  DELTALOG_DB_SEEK_MICROS((byte) 0x39),
+
+  /**
+   * DeltaLogDB Next latency.
+   */
+  DELTALOG_DB_NEXT_MICROS((byte) 0x3A),
+
+  /**
+   * DeltaLogDB Prev latency.
+   */
+  DELTALOG_DB_PREV_MICROS((byte) 0x3B),
+
+  /**
+   * DeltaLog file write latency.
+   */
+  DELTALOG_DB_DELTALOG_FILE_WRITE_MICROS((byte) 0x3C),
+
+  /**
+   * DeltaLog file read latency.
+   */
+  DELTALOG_DB_DELTALOG_FILE_READ_MICROS((byte) 0x3D),
+
+  /**
+   * DeltaLog file sync latency.
+   */
+  DELTALOG_DB_DELTALOG_FILE_SYNC_MICROS((byte) 0x3E),
+
+  /**
+   * DeltaLogDB garbage collection time.
+   */
+  DELTALOG_DB_GC_MICROS((byte) 0x3F),
+
+  /**
+   * DeltaLogDB compression time.
+   */
+  DELTALOG_DB_COMPRESSION_MICROS((byte) 0x40),
+
+  /**
+   * DeltaLogDB decompression time.
+   */
+  DELTALOG_DB_DECOMPRESSION_MICROS((byte) 0x41),
+
   // 0x1F for backwards compatibility on current minor version.
   HISTOGRAM_ENUM_MAX((byte) 0x1F);
 
@@ -207,7 +277,7 @@ public enum HistogramType {
    *
    * @return {@link org.rocksdb.HistogramType} instance.
    * @throws java.lang.IllegalArgumentException if an invalid
-   *     value is provided.
+   *                                            value is provided.
    */
   public static HistogramType getHistogramType(final byte value) {
     for (final HistogramType histogramType : HistogramType.values()) {

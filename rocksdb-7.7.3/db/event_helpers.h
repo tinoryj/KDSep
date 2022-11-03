@@ -34,14 +34,14 @@ class EventHelpers {
       const std::vector<std::shared_ptr<EventListener>>& listeners,
       const std::string& db_name, const std::string& cf_name,
       const std::string& file_path, int job_id, const FileDescriptor& fd,
-      uint64_t oldest_blob_file_number, const TableProperties& table_properties,
-      TableFileCreationReason reason, const Status& s,
-      const std::string& file_checksum,
+      uint64_t oldest_blob_file_number, uint64_t oldest_deltaLog_file_number,
+      const TableProperties& table_properties, TableFileCreationReason reason,
+      const Status& s, const std::string& file_checksum,
       const std::string& file_checksum_func_name);
   static void LogAndNotifyTableFileDeletion(
-      EventLogger* event_logger, int job_id,
-      uint64_t file_number, const std::string& file_path,
-      const Status& status, const std::string& db_name,
+      EventLogger* event_logger, int job_id, uint64_t file_number,
+      const std::string& file_path, const Status& status,
+      const std::string& db_name,
       const std::vector<std::shared_ptr<EventListener>>& listeners);
   static void NotifyOnErrorRecoveryEnd(
       const std::vector<std::shared_ptr<EventListener>>& listeners,
@@ -54,6 +54,11 @@ class EventHelpers {
       const std::string& db_name, const std::string& cf_name,
       const std::string& file_path, int job_id,
       BlobFileCreationReason creation_reason);
+  static void NotifyDeltaLogFileCreationStarted(
+      const std::vector<std::shared_ptr<EventListener>>& listeners,
+      const std::string& db_name, const std::string& cf_name,
+      const std::string& file_path, int job_id,
+      DeltaLogFileCreationReason creation_reason);
 #endif  // !ROCKSDB_LITE
 
   static void LogAndNotifyBlobFileCreationFinished(
@@ -67,6 +72,22 @@ class EventHelpers {
       uint64_t total_blob_bytes);
 
   static void LogAndNotifyBlobFileDeletion(
+      EventLogger* event_logger,
+      const std::vector<std::shared_ptr<EventListener>>& listeners, int job_id,
+      uint64_t file_number, const std::string& file_path, const Status& status,
+      const std::string& db_name);
+
+  static void LogAndNotifyDeltaLogFileCreationFinished(
+      EventLogger* event_logger,
+      const std::vector<std::shared_ptr<EventListener>>& listeners,
+      const std::string& db_name, const std::string& cf_name,
+      const std::string& file_path, int job_id, uint64_t file_number,
+      DeltaLogFileCreationReason creation_reason, const Status& s,
+      const std::string& file_checksum,
+      const std::string& file_checksum_func_name, uint64_t total_deltaLog_count,
+      uint64_t total_deltaLog_bytes);
+
+  static void LogAndNotifyDeltaLogFileDeletion(
       EventLogger* event_logger,
       const std::vector<std::shared_ptr<EventListener>>& listeners, int job_id,
       uint64_t file_number, const std::string& file_path, const Status& status,

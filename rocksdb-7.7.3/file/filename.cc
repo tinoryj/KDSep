@@ -7,11 +7,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include "file/filename.h"
-#include <cinttypes>
 
 #include <ctype.h>
 #include <stdio.h>
+
+#include <cinttypes>
 #include <vector>
+
 #include "file/writable_file_writer.h"
 #include "rocksdb/env.h"
 #include "test_util/sync_point.h"
@@ -27,6 +29,7 @@ const std::string kTempFileNameSuffix = "dbtmp";
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
+static const std::string kRocksDBDeltaLogFileExt = "deltaLog";
 static const std::string kArchivalDirName = "archive";
 
 // Given a path, flatten the path name by replacing all chars not in
@@ -42,10 +45,8 @@ static size_t GetInfoLogPrefix(const std::string& path, char* dest, int len) {
   while (i < src_len && write_idx < len - sizeof(suffix)) {
     if ((path[i] >= 'a' && path[i] <= 'z') ||
         (path[i] >= '0' && path[i] <= '9') ||
-        (path[i] >= 'A' && path[i] <= 'Z') ||
-        path[i] == '-' ||
-        path[i] == '.' ||
-        path[i] == '_'){
+        (path[i] >= 'A' && path[i] <= 'Z') || path[i] == '-' ||
+        path[i] == '.' || path[i] == '_') {
       dest[write_idx++] = path[i];
     } else {
       if (i > 0) {
@@ -98,6 +99,24 @@ std::string BlobFileName(const std::string& dbname, const std::string& blob_dir,
   assert(number > 0);
   return MakeFileName(dbname + "/" + blob_dir, number,
                       kRocksDBBlobFileExt.c_str());
+}
+
+std::string DeltaLogFileName(uint64_t number) {
+  assert(number > 0);
+  return MakeFileName(number, kRocksDBDeltaLogFileExt.c_str());
+}
+
+std::string DeltaLogFileName(const std::string& deltaLogdirname,
+                             uint64_t number) {
+  assert(number > 0);
+  return MakeFileName(deltaLogdirname, number, kRocksDBDeltaLogFileExt.c_str());
+}
+
+std::string DeltaLogFileName(const std::string& dbname,
+                             const std::string& deltaLog_dir, uint64_t number) {
+  assert(number > 0);
+  return MakeFileName(dbname + "/" + deltaLog_dir, number,
+                      kRocksDBDeltaLogFileExt.c_str());
 }
 
 std::string ArchivalDirectory(const std::string& dir) {
@@ -153,9 +172,10 @@ void FormatFileNumber(uint64_t number, uint32_t path_id, char* out_buf,
   if (path_id == 0) {
     snprintf(out_buf, out_buf_size, "%" PRIu64, number);
   } else {
-    snprintf(out_buf, out_buf_size, "%" PRIu64
-                                    "(path "
-                                    "%" PRIu32 ")",
+    snprintf(out_buf, out_buf_size,
+             "%" PRIu64
+             "(path "
+             "%" PRIu32 ")",
              number, path_id);
   }
 }
@@ -176,9 +196,7 @@ std::string CurrentFileName(const std::string& dbname) {
   return dbname + "/" + kCurrentFileName;
 }
 
-std::string LockFileName(const std::string& dbname) {
-  return dbname + "/LOCK";
-}
+std::string LockFileName(const std::string& dbname) { return dbname + "/LOCK"; }
 
 std::string TempFileName(const std::string& dbname, uint64_t number) {
   return MakeFileName(dbname, number, kTempFileNameSuffix.c_str());
@@ -199,7 +217,8 @@ InfoLogPrefix::InfoLogPrefix(bool has_log_dir,
 }
 
 std::string InfoLogFileName(const std::string& dbname,
-    const std::string& db_path, const std::string& log_dir) {
+                            const std::string& db_path,
+                            const std::string& log_dir) {
   if (log_dir.empty()) {
     return dbname + "/LOG";
   }
@@ -210,7 +229,8 @@ std::string InfoLogFileName(const std::string& dbname,
 
 // Return the name of the old info log file for "dbname".
 std::string OldInfoLogFileName(const std::string& dbname, uint64_t ts,
-    const std::string& db_path, const std::string& log_dir) {
+                               const std::string& db_path,
+                               const std::string& log_dir) {
   char buf[50];
   snprintf(buf, sizeof(buf), "%llu", static_cast<unsigned long long>(ts));
 
@@ -258,14 +278,12 @@ std::string IdentityFileName(const std::string& dbname) {
 //    dbname/<info_log_name_prefix>
 //    dbname/<info_log_name_prefix>.old.[0-9]+
 //    dbname/MANIFEST-[0-9]+
-//    dbname/[0-9]+.(log|sst|blob)
+//    dbname/[0-9]+.(log|sst|blob|deltaLog)
 //    dbname/METADB-[0-9]+
 //    dbname/OPTIONS-[0-9]+
 //    dbname/OPTIONS-[0-9]+.dbtmp
 //    Disregards / at the beginning
-bool ParseFileName(const std::string& fname,
-                   uint64_t* number,
-                   FileType* type,
+bool ParseFileName(const std::string& fname, uint64_t* number, FileType* type,
                    WalFileType* log_type) {
   return ParseFileName(fname, number, "", type, log_type);
 }
@@ -370,12 +388,14 @@ bool ParseFileName(const std::string& fname, uint64_t* number,
         *log_type = kAliveLogFile;
       }
     } else if (archive_dir_found) {
-      return false; // Archive dir can contain only log files
+      return false;  // Archive dir can contain only log files
     } else if (suffix == Slice(kRocksDbTFileExt) ||
                suffix == Slice(kLevelDbTFileExt)) {
       *type = kTableFile;
     } else if (suffix == Slice(kRocksDBBlobFileExt)) {
       *type = kBlobFile;
+    } else if (suffix == Slice(kRocksDBDeltaLogFileExt)) {
+      *type = kDeltaLogFile;
     } else if (suffix == Slice(kTempFileNameSuffix)) {
       *type = kTempFile;
     } else {

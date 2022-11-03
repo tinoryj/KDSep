@@ -27,7 +27,8 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
+    BlobFileBuilder* blob_file_builder,
+    DeltaLogFileBuilder* deltaLog_file_builder, bool allow_data_in_errors,
     bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     const Compaction* compaction, const CompactionFilter* compaction_filter,
@@ -39,8 +40,8 @@ CompactionIterator::CompactionIterator(
           input, cmp, merge_helper, last_sequence, snapshots,
           earliest_write_conflict_snapshot, job_snapshot, snapshot_checker, env,
           report_detailed_time, expect_valid_internal_key, range_del_agg,
-          blob_file_builder, allow_data_in_errors, enforce_single_del_contracts,
-          manual_compaction_canceled,
+          blob_file_builder, deltaLog_file_builder, allow_data_in_errors,
+          enforce_single_del_contracts, manual_compaction_canceled,
           std::unique_ptr<CompactionProxy>(
               compaction ? new RealCompaction(compaction) : nullptr),
           compaction_filter, shutting_down, info_log, full_history_ts_low,
@@ -53,7 +54,8 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
+    BlobFileBuilder* blob_file_builder,
+    DeltaLogFileBuilder* deltaLog_file_builder, bool allow_data_in_errors,
     bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     std::unique_ptr<CompactionProxy> compaction,
@@ -63,7 +65,8 @@ CompactionIterator::CompactionIterator(
     const std::string* full_history_ts_low,
     const SequenceNumber penultimate_level_cutoff_seqno)
     : input_(input, cmp,
-             !compaction || compaction->DoesInputReferenceBlobFiles()),
+             !compaction || compaction->DoesInputReferenceBlobFiles() ||
+                 compaction->DoesInputReferenceDeltaLogFiles()),
       cmp_(cmp),
       merge_helper_(merge_helper),
       snapshots_(snapshots),
@@ -76,6 +79,7 @@ CompactionIterator::CompactionIterator(
       expect_valid_internal_key_(expect_valid_internal_key),
       range_del_agg_(range_del_agg),
       blob_file_builder_(blob_file_builder),
+      deltaLog_file_builder_(deltaLog_file_builder),
       compaction_(std::move(compaction)),
       compaction_filter_(compaction_filter),
       shutting_down_(shutting_down),
@@ -100,6 +104,9 @@ CompactionIterator::CompactionIterator(
       blob_garbage_collection_cutoff_file_number_(
           ComputeBlobGarbageCollectionCutoffFileNumber(compaction_.get())),
       blob_fetcher_(CreateBlobFetcherIfNeeded(compaction_.get())),
+      deltaLog_garbage_collection_cutoff_file_number_(
+          ComputeDeltaLogGarbageCollectionCutoffFileNumber(compaction_.get())),
+      deltaLog_fetcher_(CreateDeltaLogFetcherIfNeeded(compaction_.get())),
       prefetch_buffers_(
           CreatePrefetchBufferCollectionIfNeeded(compaction_.get())),
       current_key_committed_(false),
@@ -821,8 +828,8 @@ void CompactionIterator::NextFromInput() {
                  cmp_with_history_ts_low_ < 0)) &&
                bottommost_level_) {
       // Handle the case where we have a delete key at the bottom most level
-      // We can skip outputting the key iff there are no subsequent puts for this
-      // key
+      // We can skip outputting the key iff there are no subsequent puts for
+      // this key
       assert(!compaction_ || compaction_->KeyNotExistsBeyondOutputLevel(
                                  ikey_.user_key, &level_ptrs_));
       ParsedInternalKey next_ikey;
@@ -849,8 +856,8 @@ void CompactionIterator::NextFromInput() {
               DefinitelyNotInSnapshot(next_ikey.sequence, prev_snapshot))) {
         AdvanceInputIter();
       }
-      // If you find you still need to output a row with this key, we need to output the
-      // delete too
+      // If you find you still need to output a row with this key, we need to
+      // output the delete too
       if (input_.Valid() &&
           (ParseInternalKey(input_.key(), &next_ikey, allow_data_in_errors_)
                .ok()) &&
@@ -873,8 +880,8 @@ void CompactionIterator::NextFromInput() {
       // object to minimize change to the existing flow.
       Status s = merge_helper_->MergeUntil(
           &input_, range_del_agg_, prev_snapshot, bottommost_level_,
-          allow_data_in_errors_, blob_fetcher_.get(), prefetch_buffers_.get(),
-          &iter_stats_);
+          allow_data_in_errors_, blob_fetcher_.get(), deltaLog_fetcher_.get(),
+          prefetch_buffers_.get(), &iter_stats_);
       merge_out_iter_.SeekToFirst();
 
       if (!s.ok() && !s.IsMergeInProgress()) {
@@ -1198,8 +1205,8 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     ROCKS_LOG_FATAL(info_log_,
                     "No snapshot left in findEarliestVisibleSnapshot");
   }
-  auto snapshots_iter = std::lower_bound(
-      snapshots_->begin(), snapshots_->end(), in);
+  auto snapshots_iter =
+      std::lower_bound(snapshots_->begin(), snapshots_->end(), in);
   assert(prev_snapshot != nullptr);
   if (snapshots_iter == snapshots_->begin()) {
     *prev_snapshot = 0;
@@ -1214,8 +1221,8 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     }
   }
   if (snapshot_checker_ == nullptr) {
-    return snapshots_iter != snapshots_->end()
-      ? *snapshots_iter : kMaxSequenceNumber;
+    return snapshots_iter != snapshots_->end() ? *snapshots_iter
+                                               : kMaxSequenceNumber;
   }
   bool has_released_snapshot = !released_snapshots_.empty();
   for (; snapshots_iter != snapshots_->end(); ++snapshots_iter) {
@@ -1288,6 +1295,25 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   read_options.fill_cache = false;
 
   return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
+}
+
+std::unique_ptr<DeltaLogFetcher>
+CompactionIterator::CreateDeltaLogFetcherIfNeeded(
+    const CompactionProxy* compaction) {
+  if (!compaction) {
+    return nullptr;
+  }
+
+  const Version* const version = compaction->input_version();
+  if (!version) {
+    return nullptr;
+  }
+
+  ReadOptions read_options;
+  read_options.fill_cache = false;
+
+  return std::unique_ptr<DeltaLogFetcher>(
+      new DeltaLogFetcher(version, read_options));
 }
 
 std::unique_ptr<PrefetchBufferCollection>

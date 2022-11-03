@@ -267,7 +267,8 @@ Status DBImpl::ValidateOptions(const DBOptions& db_options) {
   if (db_options.unordered_write &&
       !db_options.allow_concurrent_memtable_write) {
     return Status::InvalidArgument(
-        "unordered_write is incompatible with !allow_concurrent_memtable_write");
+        "unordered_write is incompatible with "
+        "!allow_concurrent_memtable_write");
   }
 
   if (db_options.unordered_write && db_options.enable_pipelined_write) {
@@ -1043,9 +1044,8 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     std::unique_ptr<SequentialFileReader> file_reader;
     {
       std::unique_ptr<FSSequentialFile> file;
-      status = fs_->NewSequentialFile(fname,
-                                      fs_->OptimizeForLogRead(file_options_),
-                                      &file, nullptr);
+      status = fs_->NewSequentialFile(
+          fname, fs_->OptimizeForLogRead(file_options_), &file, nullptr);
       if (!status.ok()) {
         MaybeIgnoreError(&status);
         if (!status.ok()) {
@@ -1472,6 +1472,7 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
 
   FileMetaData meta;
   std::vector<BlobFileAddition> blob_file_additions;
+  std::vector<DeltaLogFileAddition> deltaLog_file_additions;
 
   std::unique_ptr<std::list<uint64_t>::iterator> pending_outputs_inserted_elem(
       new std::list<uint64_t>::iterator(
@@ -1539,12 +1540,14 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
           dbname_, versions_.get(), immutable_db_options_, tboptions,
           file_options_for_compaction_, cfd->table_cache(), iter.get(),
           std::move(range_del_iters), &meta, &blob_file_additions,
-          snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
+          &deltaLog_file_additions, snapshot_seqs,
+          earliest_write_conflict_snapshot, kMaxSequenceNumber,
           snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
           io_tracer_, BlobFileCreationReason::kRecovery,
-          empty_seqno_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
-          nullptr /* table_properties */, write_hint,
-          nullptr /*full_history_ts_low*/, &blob_callback_);
+          DeltaLogFileCreationReason::kRecovery, empty_seqno_time_mapping,
+          &event_logger_, job_id, Env::IO_HIGH, nullptr /* table_properties */,
+          write_hint, nullptr /*full_history_ts_low*/, &blob_callback_,
+          &deltaLog_callback_);
       LogFlush(immutable_db_options_.info_log);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                       "[%s] [WriteLevel0TableForRecovery]"
@@ -1568,16 +1571,20 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
   constexpr int level = 0;
 
   if (s.ok() && has_output) {
-    edit->AddFile(level, meta.fd.GetNumber(), meta.fd.GetPathId(),
-                  meta.fd.GetFileSize(), meta.smallest, meta.largest,
-                  meta.fd.smallest_seqno, meta.fd.largest_seqno,
-                  meta.marked_for_compaction, meta.temperature,
-                  meta.oldest_blob_file_number, meta.oldest_ancester_time,
-                  meta.file_creation_time, meta.file_checksum,
-                  meta.file_checksum_func_name, meta.unique_id);
+    edit->AddFile(
+        level, meta.fd.GetNumber(), meta.fd.GetPathId(), meta.fd.GetFileSize(),
+        meta.smallest, meta.largest, meta.fd.smallest_seqno,
+        meta.fd.largest_seqno, meta.marked_for_compaction, meta.temperature,
+        meta.oldest_blob_file_number, meta.oldest_deltaLog_file_number,
+        meta.oldest_ancester_time, meta.file_creation_time, meta.file_checksum,
+        meta.file_checksum_func_name, meta.unique_id);
 
     for (const auto& blob : blob_file_additions) {
       edit->AddBlobFile(blob);
+    }
+
+    for (const auto& deltaLog : deltaLog_file_additions) {
+      edit->AddDeltaLogFile(deltaLog);
     }
   }
 
@@ -1596,10 +1603,18 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
 
   stats.num_output_files_blob = static_cast<int>(blobs.size());
 
+  const auto& deltaLogs = edit->GetDeltaLogFileAdditions();
+  for (const auto& deltaLog : deltaLogs) {
+    stats.bytes_written_deltaLog += deltaLog.GetTotalDeltaLogBytes();
+  }
+
+  stats.num_output_files_deltaLog = static_cast<int>(deltaLogs.size());
+
   cfd->internal_stats()->AddCompactionStats(level, Env::Priority::USER, stats);
-  cfd->internal_stats()->AddCFStats(
-      InternalStats::BYTES_FLUSHED,
-      stats.bytes_written + stats.bytes_written_blob);
+  cfd->internal_stats()->AddCFStats(InternalStats::BYTES_FLUSHED,
+                                    stats.bytes_written +
+                                        stats.bytes_written_blob +
+                                        stats.bytes_written_deltaLog);
   RecordTick(stats_, COMPACT_WRITE_BYTES, meta.fd.GetFileSize());
   return s;
 }
@@ -2009,6 +2024,14 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
           name = name.substr(1);
         }
         known_file_sizes[name] = bmd.blob_file_size;
+      }
+      for (const auto& dmd : md.deltaLog_files) {
+        std::string name = dmd.deltaLog_file_name;
+        // The DeltaLogMetaData.deltaLog_file_name may start with "/".
+        if (!name.empty() && name[0] == '/') {
+          name = name.substr(1);
+        }
+        known_file_sizes[name] = dmd.deltaLog_file_size;
       }
     }
 
