@@ -42,6 +42,7 @@ class ExternDBConfig {
     uint64_t blockWriteSize_;
     bool intra_compation_;
     bool key_value_separation_;
+    bool key_delta_separation_;
     uint64_t target_file_size_base_;
     uint64_t blob_file_size_;
 
@@ -76,6 +77,7 @@ class ExternDBConfig {
         blockWriteSize_ = pt_.get<uint64_t>("config.blockWriteSize");
         intra_compation_ = pt_.get<bool>("config.intraCompaction");
         key_value_separation_ = pt_.get<bool>("config.keyValueSeparation");
+        key_delta_separation_ = pt_.get<bool>("config.keyDeltaSeparation");
         target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase");
         blob_file_size_ = pt_.get<uint64_t>("config.blobFileSize");
     }
@@ -163,6 +165,9 @@ class ExternDBConfig {
     }
     bool getKeyValueSeparation() {
         return key_value_separation_;
+    }
+    bool getKeyDeltaSeparation() {
+        return key_delta_separation_;
     }
     uint64_t getTargetFileSizeBase() {
         return target_file_size_base_;

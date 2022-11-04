@@ -112,6 +112,7 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
     bool compression = config.getCompression();
     bool directIO = config.getDirectIO();
     bool keyValueSeparation = config.getKeyValueSeparation();
+    bool keyDeltaSeparation = config.getKeyDeltaSeparation();
     size_t memtable = config.getMemtable();
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -133,6 +134,19 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
         options_.blob_compaction_readahead_size = 0;                       // Default 0
         options_.blob_file_starting_level = 0;                             // Default 0
         options_.blob_cache = nullptr;                                     // Default nullptr
+        // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
+    }
+    if (keyDeltaSeparation == true) {
+        options_.enable_deltaLog_files = true;
+        options_.min_deltaLog_size = 0;                                        // Default 0
+        options_.deltaLog_file_size = config.getBlobFileSize() * 1024 * 1024;  // Default 256*1024*1024
+        options_.deltaLog_compression_type = kNoCompression;                   // Default kNoCompression
+        options_.enable_deltaLog_garbage_collection = false;                   // Default false
+        options_.deltaLog_garbage_collection_age_cutoff = 0.25;                // Default 0.25
+        options_.deltaLog_garbage_collection_force_threshold = 1.0;            // Default 1.0
+        options_.deltaLog_compaction_readahead_size = 0;                       // Default 0
+        options_.deltaLog_file_starting_level = 0;                             // Default 0
+        options_.deltaLog_cache = nullptr;                                     // Default nullptr
         // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
     }
     options_.create_if_missing = true;
