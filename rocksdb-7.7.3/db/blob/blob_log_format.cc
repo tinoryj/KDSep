@@ -15,7 +15,7 @@ void BlobLogHeader::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
   dst->reserve(BlobLogHeader::kSize);
-  PutFixed32(dst, kMagicNumber);
+  PutFixed32(dst, kMagicNumberBlob);
   PutFixed32(dst, version);
   PutFixed32(dst, column_family_id);
   unsigned char flags = (has_ttl ? 1 : 0);
@@ -39,10 +39,10 @@ Status BlobLogHeader::DecodeFrom(Slice src) {
         kErrorMessage,
         "Error decoding magic number, version and column family id");
   }
-  if (magic_number != kMagicNumber) {
+  if (magic_number != kMagicNumberBlob) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
-  if (version != kVersion1) {
+  if (version != kVersion1Blob) {
     return Status::Corruption(kErrorMessage, "Unknown header version");
   }
   flags = src.data()[0];
@@ -60,7 +60,7 @@ void BlobLogFooter::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
   dst->reserve(BlobLogFooter::kSize);
-  PutFixed32(dst, kMagicNumber);
+  PutFixed32(dst, kMagicNumberBlob);
   PutFixed64(dst, blob_count);
   PutFixed64(dst, expiration_range.first);
   PutFixed64(dst, expiration_range.second);
@@ -84,7 +84,7 @@ Status BlobLogFooter::DecodeFrom(Slice src) {
       !GetFixed64(&src, &expiration_range.second) || !GetFixed32(&src, &crc)) {
     return Status::Corruption(kErrorMessage, "Error decoding content");
   }
-  if (magic_number != kMagicNumber) {
+  if (magic_number != kMagicNumberBlob) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
   if (src_crc != crc) {

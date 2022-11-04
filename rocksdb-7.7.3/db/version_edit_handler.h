@@ -184,6 +184,7 @@ class VersionEditHandler : public VersionEditHandlerBase {
   std::unordered_map<uint32_t, std::unordered_set<uint64_t>>
       cf_to_missing_files_;
   std::unordered_map<uint32_t, uint64_t> cf_to_missing_blob_files_high_;
+  std::unordered_map<uint32_t, uint64_t> cf_to_missing_deltaLog_files_high_;
   bool no_error_if_files_missing_;
   std::shared_ptr<IOTracer> io_tracer_;
   bool skip_load_table_files_;
@@ -217,6 +218,9 @@ class VersionEditHandlerPointInTime : public VersionEditHandler {
                             const FileMetaData& fmeta);
   virtual Status VerifyBlobFile(ColumnFamilyData* cfd, uint64_t blob_file_num,
                                 const BlobFileAddition& blob_addition);
+  virtual Status VerifyDeltaLogFile(
+      ColumnFamilyData* cfd, uint64_t deltaLog_file_num,
+      const DeltaLogFileAddition& deltaLog_addition);
 
   std::unordered_map<uint32_t, Version*> versions_;
 };

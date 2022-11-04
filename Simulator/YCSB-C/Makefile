@@ -4,7 +4,7 @@ SEARCH_LIBRARY_ROCKSDB=$(shell pwd)/../../rocksdb-7.7.3/include/
 LD_LIBRARY_ROCKSDB=$(shell pwd)/../../rocksdb-7.7.3/librocksdb.a
 # LD_LIBRARY_LEVELDB=$(shell pwd)/../Databases/LevelDB/libleveldb.a
 INCLUDES= -I ./ -I $(SEARCH_LIBRARY_ROCKSDB) #-I $(SEARCH_LIBRARY_LEVELDB)
-CFLAGS=-O3 -std=c++17 -g -Wall -pthread #-ggdb -fsanitize=address
+CFLAGS=-O3 -std=c++17 -g -Wall -pthread -ggdb -fsanitize=address
 LDFLAGS=$(LD_LIBRARY_ROCKSDB) -lzstd -lpthread -llz4 -lbz2 -lsnappy -lz -ldl  #$(LD_LIBRARY_LEVELDB) 
 SUBDIRS=core db RocksDB #LevelDB 
 SUBSRCS=$(wildcard core/*.cc) $(wildcard db/*.cc) $(wildcard RocksDB/*.cc) # $(wildcard LevelDB/*.cc)

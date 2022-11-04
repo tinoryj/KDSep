@@ -5,6 +5,7 @@
 //
 
 #include "db/deltaLog/deltaLog_log_format.h"
+
 #include "util/coding.h"
 #include "util/crc32c.h"
 
@@ -14,7 +15,7 @@ void DeltaLogLogHeader::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
   dst->reserve(DeltaLogLogHeader::kSize);
-  PutFixed32(dst, kMagicNumber);
+  PutFixed32(dst, kMagicNumberDeltaLog);
   PutFixed32(dst, version);
   PutFixed32(dst, column_family_id);
   unsigned char flags = (has_ttl ? 1 : 0);
@@ -38,10 +39,10 @@ Status DeltaLogLogHeader::DecodeFrom(Slice src) {
         kErrorMessage,
         "Error decoding magic number, version and column family id");
   }
-  if (magic_number != kMagicNumber) {
+  if (magic_number != kMagicNumberDeltaLog) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
-  if (version != kVersion1) {
+  if (version != kVersion1DeltaLog) {
     return Status::Corruption(kErrorMessage, "Unknown header version");
   }
   flags = src.data()[0];
@@ -59,7 +60,7 @@ void DeltaLogLogFooter::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
   dst->reserve(DeltaLogLogFooter::kSize);
-  PutFixed32(dst, kMagicNumber);
+  PutFixed32(dst, kMagicNumberDeltaLog);
   PutFixed64(dst, deltaLog_count);
   PutFixed64(dst, expiration_range.first);
   PutFixed64(dst, expiration_range.second);
@@ -84,7 +85,7 @@ Status DeltaLogLogFooter::DecodeFrom(Slice src) {
       !GetFixed64(&src, &expiration_range.second) || !GetFixed32(&src, &crc)) {
     return Status::Corruption(kErrorMessage, "Error decoding content");
   }
-  if (magic_number != kMagicNumber) {
+  if (magic_number != kMagicNumberDeltaLog) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
   if (src_crc != crc) {

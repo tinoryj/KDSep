@@ -162,7 +162,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   }
 
   for (const auto& deltaLog_file : job_context->deltaLog_delete_files) {
-    MarkAsGrabbedForPurge(deltaLog_file.GetdeltaLogFileNumber());
+    MarkAsGrabbedForPurge(deltaLog_file.GetDeltaLogFileNumber());
   }
 
   // store the current filenum, lognum, etc
@@ -173,7 +173,8 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   job_context->prev_log_number = versions_->prev_log_number();
 
   if (doing_the_full_scan) {
-    versions_->AddLiveFiles(&job_context->sst_live, &job_context->blob_live);
+    versions_->AddLiveFiles(&job_context->sst_live, &job_context->blob_live,
+                            &job_context->deltaLog_live);
     InfoLogPrefix info_log_prefix(!immutable_db_options_.db_log_dir.empty(),
                                   dbname_);
     std::set<std::string> paths;

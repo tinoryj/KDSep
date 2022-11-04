@@ -62,18 +62,18 @@ class MemTableListVersion {
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
            const ReadOptions& read_opts, ReadCallback* callback = nullptr,
-           bool* is_blob_index = nullptr);
+           bool* is_blob_index = nullptr, bool* is_deltaLog_index = nullptr);
 
   bool Get(const LookupKey& key, std::string* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
            const ReadOptions& read_opts, ReadCallback* callback = nullptr,
-           bool* is_blob_index = nullptr) {
+           bool* is_blob_index = nullptr, bool* is_deltaLog_index = nullptr) {
     SequenceNumber seq;
     return Get(key, value, columns, timestamp, s, merge_context,
                max_covering_tombstone_seq, &seq, read_opts, callback,
-               is_blob_index);
+               is_blob_index, is_deltaLog_index);
   }
 
   void MultiGet(const ReadOptions& read_options, MultiGetRange* range,
@@ -95,17 +95,19 @@ class MemTableListVersion {
                       Status* s, MergeContext* merge_context,
                       SequenceNumber* max_covering_tombstone_seq,
                       SequenceNumber* seq, const ReadOptions& read_opts,
-                      bool* is_blob_index = nullptr);
+                      bool* is_blob_index = nullptr,
+                      bool* is_deltaLog_index = nullptr);
   bool GetFromHistory(const LookupKey& key, std::string* value,
                       PinnableWideColumns* columns, std::string* timestamp,
                       Status* s, MergeContext* merge_context,
                       SequenceNumber* max_covering_tombstone_seq,
                       const ReadOptions& read_opts,
-                      bool* is_blob_index = nullptr) {
+                      bool* is_blob_index = nullptr,
+                      bool* is_deltaLog_index = nullptr) {
     SequenceNumber seq;
     return GetFromHistory(key, value, columns, timestamp, s, merge_context,
                           max_covering_tombstone_seq, &seq, read_opts,
-                          is_blob_index);
+                          is_blob_index, is_deltaLog_index);
   }
 
   Status AddRangeTombstoneIterators(const ReadOptions& read_opts, Arena* arena,
@@ -167,7 +169,8 @@ class MemTableListVersion {
                    SequenceNumber* max_covering_tombstone_seq,
                    SequenceNumber* seq, const ReadOptions& read_opts,
                    ReadCallback* callback = nullptr,
-                   bool* is_blob_index = nullptr);
+                   bool* is_blob_index = nullptr,
+                   bool* is_deltaLog_index = nullptr);
 
   void AddMemTable(MemTable* m);
 

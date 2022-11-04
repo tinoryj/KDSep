@@ -88,7 +88,7 @@ class MemTable {
  public:
   struct KeyComparator : public MemTableRep::KeyComparator {
     const InternalKeyComparator comparator;
-    explicit KeyComparator(const InternalKeyComparator& c) : comparator(c) { }
+    explicit KeyComparator(const InternalKeyComparator& c) : comparator(c) {}
     virtual int operator()(const char* prefix_len_key1,
                            const char* prefix_len_key2) const override;
     virtual int operator()(const char* prefix_len_key,
@@ -265,7 +265,7 @@ class MemTable {
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
            const ReadOptions& read_opts, bool immutable_memtable,
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-           bool do_merge = true);
+           bool* is_deltaLog_index = nullptr, bool do_merge = true);
 
   bool Get(const LookupKey& key, std::string* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
@@ -273,11 +273,11 @@ class MemTable {
            SequenceNumber* max_covering_tombstone_seq,
            const ReadOptions& read_opts, bool immutable_memtable,
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-           bool do_merge = true) {
+           bool* is_deltaLog_index = nullptr, bool do_merge = true) {
     SequenceNumber seq;
     return Get(key, value, columns, timestamp, s, merge_context,
                max_covering_tombstone_seq, &seq, read_opts, immutable_memtable,
-               callback, is_blob_index, do_merge);
+               callback, is_blob_index,is_deltaLog_index, do_merge);
   }
 
   // @param immutable_memtable Whether this memtable is immutable. Used
@@ -448,9 +448,7 @@ class MemTable {
   // persisted.
   // REQUIRES: external synchronization to prevent simultaneous
   // operations on the same MemTable.
-  void MarkFlushed() {
-    table_->MarkFlushed();
-  }
+  void MarkFlushed() { table_->MarkFlushed(); }
 
   // return true if the current MemTableRep supports merge operator.
   bool IsMergeOperatorSupported() const {
@@ -562,8 +560,8 @@ class MemTable {
   std::atomic<size_t> write_buffer_size_;
 
   // These are used to manage memtable flushes to storage
-  bool flush_in_progress_; // started the flush
-  bool flush_completed_;   // finished the flush
+  bool flush_in_progress_;  // started the flush
+  bool flush_completed_;    // finished the flush
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this
@@ -630,7 +628,7 @@ class MemTable {
 
   void GetFromTable(const LookupKey& key,
                     SequenceNumber max_covering_tombstone_seq, bool do_merge,
-                    ReadCallback* callback, bool* is_blob_index,
+                    ReadCallback* callback, bool* is_blob_index,bool* is_deltaLog_index,
                     std::string* value, PinnableWideColumns* columns,
                     std::string* timestamp, Status* s,
                     MergeContext* merge_context, SequenceNumber* seq,

@@ -95,7 +95,8 @@ GetContext::GetContext(
                  pinnable_val, columns, /*timestamp=*/nullptr, value_found,
                  merge_context, do_merge, _max_covering_tombstone_seq, clock,
                  seq, _pinned_iters_mgr, callback, is_blob_index,
-                 is_deltaLog_index, tracing_get_id, , deltaLog_fetcher) {}
+                 is_deltaLog_index, tracing_get_id, blob_fetcher,
+                 deltaLog_fetcher) {}
 
 // Called from TableCache::Get and Table::Get when file/block in which
 // key may exist are not there in TableCache/BlockCache respectively. In this

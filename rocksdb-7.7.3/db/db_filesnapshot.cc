@@ -65,8 +65,7 @@ Status DBImpl::FlushForGetLiveFiles() {
 }
 
 Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
-                            uint64_t* manifest_file_size,
-                            bool flush_memtable) {
+                            uint64_t* manifest_file_size, bool flush_memtable) {
   *manifest_file_size = 0;
 
   mutex_.Lock();
@@ -84,15 +83,18 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
   // Make a set of all of the live table and blob files
   std::vector<uint64_t> live_table_files;
   std::vector<uint64_t> live_blob_files;
+  std::vector<uint64_t> live_deltaLog_files;
   for (auto cfd : *versions_->GetColumnFamilySet()) {
     if (cfd->IsDropped()) {
       continue;
     }
-    cfd->current()->AddLiveFiles(&live_table_files, &live_blob_files);
+    cfd->current()->AddLiveFiles(&live_table_files, &live_blob_files,
+                                 &live_deltaLog_files);
   }
 
   ret.clear();
   ret.reserve(live_table_files.size() + live_blob_files.size() +
+              live_deltaLog_files.size() +
               3);  // for CURRENT + MANIFEST + OPTIONS
 
   // create names of the live files. The names are not absolute
@@ -103,6 +105,10 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
 
   for (const auto& blob_file_number : live_blob_files) {
     ret.emplace_back(BlobFileName("", blob_file_number));
+  }
+
+  for (const auto& deltaLog_file_number : live_deltaLog_files) {
+    ret.emplace_back(DeltaLogFileName("", deltaLog_file_number));
   }
 
   ret.emplace_back(CurrentFileName(""));
@@ -301,6 +307,28 @@ Status DBImpl::GetLiveFilesStorageInfo(
       info.file_number = meta->GetBlobFileNumber();
       info.file_type = kBlobFile;
       info.size = meta->GetBlobFileSize();
+      if (opts.include_checksum_info) {
+        info.file_checksum_func_name = meta->GetChecksumMethod();
+        info.file_checksum = meta->GetChecksumValue();
+        if (info.file_checksum_func_name.empty()) {
+          info.file_checksum_func_name = kUnknownFileChecksumFuncName;
+          info.file_checksum = kUnknownFileChecksum;
+        }
+      }
+      // TODO?: info.temperature
+    }
+    const auto& deltaLog_files = vsi.GetDeltaLogFiles();
+    for (const auto& meta : deltaLog_files) {
+      assert(meta);
+
+      results.emplace_back();
+      LiveFileStorageInfo& info = results.back();
+
+      info.relative_filename = DeltaLogFileName(meta->GetDeltaLogFileNumber());
+      info.directory = GetDir(/* path_id */ 0);
+      info.file_number = meta->GetDeltaLogFileNumber();
+      info.file_type = kDeltaLogFile;
+      info.size = meta->GetDeltaLogFileSize();
       if (opts.include_checksum_info) {
         info.file_checksum_func_name = meta->GetChecksumMethod();
         info.file_checksum = meta->GetChecksumValue();

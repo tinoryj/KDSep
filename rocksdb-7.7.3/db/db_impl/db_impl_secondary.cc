@@ -153,8 +153,7 @@ Status DBImplSecondary::MaybeInitLogReader(
     {
       std::unique_ptr<FSSequentialFile> file;
       Status status = fs_->NewSequentialFile(
-          fname, fs_->OptimizeForLogRead(file_options_), &file,
-          nullptr);
+          fname, fs_->OptimizeForLogRead(file_options_), &file, nullptr);
       if (!status.ok()) {
         *log_reader = nullptr;
         return status;
@@ -196,7 +195,7 @@ Status DBImplSecondary::RecoverLogFiles(
     assert(reader != nullptr);
   }
   for (auto log_number : log_numbers) {
-    auto it  = log_readers_.find(log_number);
+    auto it = log_readers_.find(log_number);
     assert(it != log_readers_.end());
     log::FragmentBufferedReader* reader = it->second->reader_;
     Status* wal_read_status = it->second->status_;
@@ -418,6 +417,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
         &merge_context, &max_covering_tombstone_seq, &pinned_iters_mgr,
         /*value_found*/ nullptr,
         /*key_exists*/ nullptr, /*seq*/ nullptr, &read_cb, /*is_blob*/ nullptr,
+        /*is_deltaLog*/ nullptr,
         /*do_merge*/ true);
     RecordTick(stats_, MEMTABLE_MISS);
   }

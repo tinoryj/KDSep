@@ -359,8 +359,8 @@ void EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
     const std::string& file_path, int job_id, uint64_t file_number,
     DeltaLogFileCreationReason creation_reason, const Status& s,
     const std::string& file_checksum,
-    const std::string& file_checksum_func_name, uint64_t total_blob_count,
-    uint64_t total_blob_bytes) {
+    const std::string& file_checksum_func_name, uint64_t total_deltaLog_count,
+    uint64_t total_deltaLog_bytes) {
   if (s.ok() && event_logger) {
     JSONWriter jwriter;
     AppendCurrentTime(&jwriter);

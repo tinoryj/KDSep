@@ -1779,9 +1779,9 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
           file->largest.user_key().ToString(),
           file->stats.num_reads_sampled.load(std::memory_order_relaxed),
           file->being_compacted, file->temperature,
-          file->oldest_blob_file_number, file->TryGetOldestAncesterTime(),
-          file->TryGetFileCreationTime(), file->file_checksum,
-          file->file_checksum_func_name);
+          file->oldest_blob_file_number, file->oldest_deltaLog_file_number,
+          file->TryGetOldestAncesterTime(), file->TryGetFileCreationTime(),
+          file->file_checksum, file->file_checksum_func_name);
       files.back().num_entries = file->num_entries;
       files.back().num_deletions = file->num_deletions;
       level_size += file->fd.GetFileSize();
@@ -2366,7 +2366,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   SequenceNumber* max_covering_tombstone_seq,
                   PinnedIteratorsManager* pinned_iters_mgr, bool* value_found,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
-                  bool* is_blob, bool do_merge) {
+                  bool* is_blob, bool* is_deltaLog, bool do_merge) {
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
 
@@ -2591,7 +2591,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   autovector<GetContext, 16> get_ctx;
   BlobFetcher blob_fetcher(this, read_options);
   DeltaLogFetcher deltaLog_fetcher(this, read_options);
-  
+
   for (auto iter = range->begin(); iter != range->end(); ++iter) {
     assert(iter->s->ok() || iter->s->IsMergeInProgress());
     get_ctx.emplace_back(
@@ -2619,10 +2619,13 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   // blob_file => [[blob_idx, it], ...]
   std::unordered_map<uint64_t, BlobReadContexts> blob_ctxs;
   MultiGetRange keys_with_blobs_range(*range, range->begin(), range->end());
+  // deltaLog_file => [[deltaLog_idx, it], ...]
+  std::unordered_map<uint64_t, DeltaLogReadContexts> deltaLog_ctxs;
+  MultiGetRange keys_with_deltaLogs_range(*range, range->begin(), range->end());
 #if USE_COROUTINES
   if (read_options.async_io && read_options.optimize_multiget_for_io &&
       using_coroutines()) {
-    s = MultiGetAsync(read_options, range, &blob_ctxs);
+    s = MultiGetAsync(read_options, range, &blob_ctxs, &deltaLog_ctxs);
   } else
 #endif  // USE_COROUTINES
   {
@@ -2657,6 +2660,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           s = MultiGetFromSST(read_options, fp.CurrentFileRange(),
                               fp.GetHitFileLevel(), skip_filters,
                               /*skip_range_deletions=*/false, f, blob_ctxs,
+                              deltaLog_ctxs,
                               /*table_handle=*/nullptr, num_filter_read,
                               num_index_read, num_sst_read);
           if (fp.GetHitFileLevel() == 0) {
@@ -2697,7 +2701,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           if (!file_range.empty()) {
             mget_tasks.emplace_back(MultiGetFromSSTCoroutine(
                 read_options, file_range, fp.GetHitFileLevel(), skip_filters,
-                skip_range_deletions, f, blob_ctxs, table_handle,
+                skip_range_deletions, f, blob_ctxs, deltaLog_ctxs, table_handle,
                 num_filter_read, num_index_read, num_sst_read));
           }
           if (fp.KeyMaySpanNextFile()) {
@@ -2777,6 +2781,10 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     MultiGetBlob(read_options, keys_with_blobs_range, blob_ctxs);
   }
 
+  if (s.ok() && !deltaLog_ctxs.empty()) {
+    MultiGetDeltaLog(read_options, keys_with_deltaLogs_range, deltaLog_ctxs);
+  }
+
   // Process any left over keys
   for (auto iter = range->begin(); s.ok() && iter != range->end(); ++iter) {
     GetContext& get_context = *iter->get_context;
@@ -2827,6 +2835,7 @@ Status Version::ProcessBatch(
     const ReadOptions& read_options, FilePickerMultiGet* batch,
     std::vector<folly::coro::Task<Status>>& mget_tasks,
     std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs,
+    std::unordered_map<uint64_t, DeltaLogReadContexts>* deltaLog_ctxs,
     autovector<FilePickerMultiGet, 4>& batches, std::deque<size_t>& waiting,
     std::deque<size_t>& to_process, unsigned int& num_tasks_queued,
     std::unordered_map<int, std::tuple<uint64_t, uint64_t, uint64_t>>&
@@ -2892,15 +2901,15 @@ Status Version::ProcessBatch(
           !fp.RemainingOverlapInLevel() && leftover.empty() &&
           mget_tasks.empty()) {
         // All keys are in one SST file, so take the fast path
-        s = MultiGetFromSST(read_options, file_range, fp.GetHitFileLevel(),
-                            skip_filters, skip_range_deletions, f, *blob_ctxs,
-                            table_handle, std::get<0>(stat->second),
-                            std::get<1>(stat->second),
-                            std::get<2>(stat->second));
+        s = MultiGetFromSST(
+            read_options, file_range, fp.GetHitFileLevel(), skip_filters,
+            skip_range_deletions, f, *blob_ctxs, *deltaLog_ctxs, table_handle,
+            std::get<0>(stat->second), std::get<1>(stat->second),
+            std::get<2>(stat->second));
       } else {
         mget_tasks.emplace_back(MultiGetFromSSTCoroutine(
             read_options, file_range, fp.GetHitFileLevel(), skip_filters,
-            skip_range_deletions, f, *blob_ctxs, table_handle,
+            skip_range_deletions, f, *blob_ctxs, *deltaLog_ctxs, table_handle,
             std::get<0>(stat->second), std::get<1>(stat->second),
             std::get<2>(stat->second)));
         ++num_tasks_queued;
@@ -2934,7 +2943,8 @@ Status Version::ProcessBatch(
 
 Status Version::MultiGetAsync(
     const ReadOptions& options, MultiGetRange* range,
-    std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs) {
+    std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs,
+    std::unordered_map<uint64_t, DeltaLogReadContexts>* deltaLog_ctxs) {
   autovector<FilePickerMultiGet, 4> batches;
   std::deque<size_t> waiting;
   std::deque<size_t> to_process;
@@ -2966,8 +2976,9 @@ Status Version::MultiGetAsync(
     } else {
       // Look through one level. This may split the batch and enqueue it to
       // to_process
-      s = ProcessBatch(options, batch, mget_tasks, blob_ctxs, batches, waiting,
-                       to_process, num_tasks_queued, mget_stats);
+      s = ProcessBatch(options, batch, mget_tasks, blob_ctxs, deltaLog_ctxs,
+                       batches, waiting, to_process, num_tasks_queued,
+                       mget_stats);
       if (!s.ok()) {
         break;
       }
@@ -3531,6 +3542,14 @@ void VersionStorageInfo::ComputeCompactionScore(
         mutable_cf_options.blob_garbage_collection_force_threshold);
   }
 
+  if (mutable_cf_options.enable_deltaLog_garbage_collection &&
+      mutable_cf_options.deltaLog_garbage_collection_age_cutoff > 0.0 &&
+      mutable_cf_options.deltaLog_garbage_collection_force_threshold < 1.0) {
+    ComputeFilesMarkedForForcedDeltaLogGC(
+        mutable_cf_options.deltaLog_garbage_collection_age_cutoff,
+        mutable_cf_options.deltaLog_garbage_collection_force_threshold);
+  }
+
   EstimateCompactionBytesNeeded(mutable_cf_options);
 }
 
@@ -3746,6 +3765,112 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedBlobGC(
   }
 }
 
+void VersionStorageInfo::ComputeFilesMarkedForForcedDeltaLogGC(
+    double deltaLog_garbage_collection_age_cutoff,
+    double deltaLog_garbage_collection_force_threshold) {
+  files_marked_for_forced_deltaLog_gc_.clear();
+
+  if (deltaLog_files_.empty()) {
+    return;
+  }
+
+  // Number of deltaLog files eligible for GC based on age
+  const size_t cutoff_count = static_cast<size_t>(
+      deltaLog_garbage_collection_age_cutoff * deltaLog_files_.size());
+  if (!cutoff_count) {
+    return;
+  }
+
+  // Compute the sum of total and garbage bytes over the oldest batch of
+  // deltaLog files. The oldest batch is defined as the set of deltaLog files
+  // which are kept alive by the same SSTs as the very oldest one. Here is a toy
+  // example. Let's assume we have three SSTs 1, 2, and 3, and four deltaLog
+  // files 10, 11, 12, and 13. Also, let's say SSTs 1 and 2 both rely on
+  // deltaLog file 10 and potentially some higher-numbered ones, while SST 3
+  // relies on deltaLog file 12 and potentially some higher-numbered ones. Then,
+  // the SST to oldest deltaLog file mapping is as follows:
+  //
+  // SST file number               Oldest deltaLog file number
+  // 1                             10
+  // 2                             10
+  // 3                             12
+  //
+  // This is what the same thing looks like from the deltaLog files' POV. (Note
+  // that the linked SSTs simply denote the inverse mapping of the above.)
+  //
+  // DeltaLog file number              Linked SST set
+  // 10                            {1, 2}
+  // 11                            {}
+  // 12                            {3}
+  // 13                            {}
+  //
+  // Then, the oldest batch of deltaLog files consists of deltaLog files 10 and
+  // 11, and we can get rid of them by forcing the compaction of SSTs 1 and 2.
+  //
+  // Note that the overall ratio of garbage computed for the batch has to exceed
+  // deltaLog_garbage_collection_force_threshold and the entire batch has to be
+  // eligible for GC according to deltaLog_garbage_collection_age_cutoff in
+  // order for us to schedule any compactions.
+  const auto& oldest_meta = deltaLog_files_.front();
+  assert(oldest_meta);
+
+  const auto& linked_ssts = oldest_meta->GetLinkedSsts();
+  assert(!linked_ssts.empty());
+
+  size_t count = 1;
+  uint64_t sum_total_deltaLog_bytes = oldest_meta->GetTotalDeltaLogBytes();
+  uint64_t sum_garbage_deltaLog_bytes = oldest_meta->GetGarbageDeltaLogBytes();
+
+  assert(cutoff_count <= deltaLog_files_.size());
+
+  for (; count < cutoff_count; ++count) {
+    const auto& meta = deltaLog_files_[count];
+    assert(meta);
+
+    if (!meta->GetLinkedSsts().empty()) {
+      // Found the beginning of the next batch of deltaLog files
+      break;
+    }
+
+    sum_total_deltaLog_bytes += meta->GetTotalDeltaLogBytes();
+    sum_garbage_deltaLog_bytes += meta->GetGarbageDeltaLogBytes();
+  }
+
+  if (count < deltaLog_files_.size()) {
+    const auto& meta = deltaLog_files_[count];
+    assert(meta);
+
+    if (meta->GetLinkedSsts().empty()) {
+      // Some files in the oldest batch are not eligible for GC
+      return;
+    }
+  }
+
+  if (sum_garbage_deltaLog_bytes <
+      deltaLog_garbage_collection_force_threshold * sum_total_deltaLog_bytes) {
+    return;
+  }
+
+  for (uint64_t sst_file_number : linked_ssts) {
+    const FileLocation location = GetFileLocation(sst_file_number);
+    assert(location.IsValid());
+
+    const int level = location.GetLevel();
+    assert(level >= 0);
+
+    const size_t pos = location.GetPosition();
+
+    FileMetaData* const sst_meta = files_[level][pos];
+    assert(sst_meta);
+
+    if (sst_meta->being_compacted) {
+      continue;
+    }
+
+    files_marked_for_forced_deltaLog_gc_.emplace_back(level, sst_meta);
+  }
+}
+
 namespace {
 
 // used to sort files by size
@@ -3787,6 +3912,29 @@ VersionStorageInfo::GetBlobFileMetaDataLB(uint64_t blob_file_number) const {
       [](const std::shared_ptr<BlobFileMetaData>& lhs, uint64_t rhs) {
         assert(lhs);
         return lhs->GetBlobFileNumber() < rhs;
+      });
+}
+
+void VersionStorageInfo::AddDeltaLogFile(
+    std::shared_ptr<DeltaLogFileMetaData> deltaLog_file_meta) {
+  assert(deltaLog_file_meta);
+
+  assert(deltaLog_files_.empty() ||
+         (deltaLog_files_.back() &&
+          deltaLog_files_.back()->GetDeltaLogFileNumber() <
+              deltaLog_file_meta->GetDeltaLogFileNumber()));
+
+  deltaLog_files_.emplace_back(std::move(deltaLog_file_meta));
+}
+
+VersionStorageInfo::DeltaLogFiles::const_iterator
+VersionStorageInfo::GetDeltaLogFileMetaDataLB(
+    uint64_t deltaLog_file_number) const {
+  return std::lower_bound(
+      deltaLog_files_.begin(), deltaLog_files_.end(), deltaLog_file_number,
+      [](const std::shared_ptr<DeltaLogFileMetaData>& lhs, uint64_t rhs) {
+        assert(lhs);
+        return lhs->GetDeltaLogFileNumber() < rhs;
       });
 }
 
@@ -4626,6 +4774,14 @@ uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
     size -= meta->GetGarbageBlobBytes();
   }
 
+  // For DeltaLogDB, the result also includes the exact value of live bytes in
+  // the deltaLog files of the version.
+  for (const auto& meta : deltaLog_files_) {
+    assert(meta);
+
+    size += meta->GetTotalDeltaLogBytes();
+    size -= meta->GetGarbageDeltaLogBytes();
+  }
   return size;
 }
 
@@ -4661,9 +4817,11 @@ bool VersionStorageInfo::RangeMightExistAfterSortedRun(
 }
 
 void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
-                           std::vector<uint64_t>* live_blob_files) const {
+                           std::vector<uint64_t>* live_blob_files,
+                           std::vector<uint64_t>* live_deltaLog_files) const {
   assert(live_table_files);
   assert(live_blob_files);
+  assert(live_deltaLog_files);
 
   for (int level = 0; level < storage_info_.num_levels(); ++level) {
     const auto& level_files = storage_info_.LevelFiles(level);
@@ -4680,11 +4838,18 @@ void Version::AddLiveFiles(std::vector<uint64_t>* live_table_files,
 
     live_blob_files->emplace_back(meta->GetBlobFileNumber());
   }
+  const auto& deltaLog_files = storage_info_.GetDeltaLogFiles();
+  for (const auto& meta : deltaLog_files) {
+    assert(meta);
+
+    live_deltaLog_files->emplace_back(meta->GetDeltaLogFileNumber());
+  }
 }
 
 void Version::RemoveLiveFiles(
     std::vector<ObsoleteFileInfo>& sst_delete_candidates,
-    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const {
+    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates,
+    std::vector<ObsoleteDeltaLogFileInfo>& deltaLog_delete_candidates) const {
   for (ObsoleteFileInfo& fi : sst_delete_candidates) {
     if (!fi.only_delete_metadata &&
         storage_info()->GetFileLocation(fi.metadata->fd.GetNumber()) !=
@@ -4700,6 +4865,14 @@ void Version::RemoveLiveFiles(
             return storage_info()->GetBlobFileMetaData(x.GetBlobFileNumber());
           }),
       blob_delete_candidates.end());
+  deltaLog_delete_candidates.erase(
+      std::remove_if(deltaLog_delete_candidates.begin(),
+                     deltaLog_delete_candidates.end(),
+                     [this](ObsoleteDeltaLogFileInfo& x) {
+                       return storage_info()->GetDeltaLogFileMetaData(
+                           x.GetDeltaLogFileNumber());
+                     }),
+      deltaLog_delete_candidates.end());
 }
 
 std::string Version::DebugString(bool hex, bool print_stats) const {
@@ -4736,6 +4909,10 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
       if (files[i]->oldest_blob_file_number != kInvalidBlobFileNumber) {
         r.append(" blob_file:");
         AppendNumberTo(&r, files[i]->oldest_blob_file_number);
+      }
+      if (files[i]->oldest_deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+        r.append(" deltaLog_file:");
+        AppendNumberTo(&r, files[i]->oldest_deltaLog_file_number);
       }
       if (print_stats) {
         r.append("(");
@@ -6099,6 +6276,25 @@ Status VersionSet::GetLiveFilesChecksumInfo(FileChecksumList* checksum_list) {
         return s;
       }
     }
+    /* DeltaLog files */
+    const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
+    for (const auto& meta : deltaLog_files) {
+      assert(meta);
+
+      std::string checksum_value = meta->GetChecksumValue();
+      std::string checksum_method = meta->GetChecksumMethod();
+      assert(checksum_value.empty() == checksum_method.empty());
+      if (meta->GetChecksumMethod().empty()) {
+        checksum_value = kUnknownFileChecksum;
+        checksum_method = kUnknownFileChecksumFuncName;
+      }
+
+      s = checksum_list->InsertOneFileChecksum(meta->GetDeltaLogFileNumber(),
+                                               checksum_value, checksum_method);
+      if (!s.ok()) {
+        return s;
+      }
+    }
   }
 
   return s;
@@ -6249,13 +6445,13 @@ Status VersionSet::WriteCurrentStateToManifest(
         for (const auto& f : level_files) {
           assert(f);
 
-          edit.AddFile(level, f->fd.GetNumber(), f->fd.GetPathId(),
-                       f->fd.GetFileSize(), f->smallest, f->largest,
-                       f->fd.smallest_seqno, f->fd.largest_seqno,
-                       f->marked_for_compaction, f->temperature,
-                       f->oldest_blob_file_number, f->oldest_ancester_time,
-                       f->file_creation_time, f->file_checksum,
-                       f->file_checksum_func_name, f->unique_id);
+          edit.AddFile(
+              level, f->fd.GetNumber(), f->fd.GetPathId(), f->fd.GetFileSize(),
+              f->smallest, f->largest, f->fd.smallest_seqno,
+              f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
+              f->oldest_blob_file_number, f->oldest_deltaLog_file_number,
+              f->oldest_ancester_time, f->file_creation_time, f->file_checksum,
+              f->file_checksum_func_name, f->unique_id);
         }
       }
 
@@ -6273,6 +6469,23 @@ Status VersionSet::WriteCurrentStateToManifest(
         if (meta->GetGarbageBlobCount() > 0) {
           edit.AddBlobFileGarbage(blob_file_number, meta->GetGarbageBlobCount(),
                                   meta->GetGarbageBlobBytes());
+        }
+      }
+
+      const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
+      for (const auto& meta : deltaLog_files) {
+        assert(meta);
+
+        const uint64_t deltaLog_file_number = meta->GetDeltaLogFileNumber();
+
+        edit.AddDeltaLogFile(
+            deltaLog_file_number, meta->GetTotalDeltaLogCount(),
+            meta->GetTotalDeltaLogBytes(), meta->GetChecksumMethod(),
+            meta->GetChecksumValue());
+        if (meta->GetGarbageDeltaLogCount() > 0) {
+          edit.AddDeltaLogFileGarbage(deltaLog_file_number,
+                                      meta->GetGarbageDeltaLogCount(),
+                                      meta->GetGarbageDeltaLogBytes());
         }
       }
 
@@ -6514,7 +6727,8 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
 
 void VersionSet::RemoveLiveFiles(
     std::vector<ObsoleteFileInfo>& sst_delete_candidates,
-    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const {
+    std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates,
+    std::vector<ObsoleteDeltaLogFileInfo>& deltaLog_delete_candidates) const {
   assert(column_family_set_);
   for (auto cfd : *column_family_set_) {
     assert(cfd);
@@ -6530,7 +6744,8 @@ void VersionSet::RemoveLiveFiles(
 
     for (Version* v = dummy_versions->next_; v != dummy_versions;
          v = v->next_) {
-      v->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates);
+      v->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates,
+                         deltaLog_delete_candidates);
       if (v == current) {
         found_current = true;
       }
@@ -6539,19 +6754,24 @@ void VersionSet::RemoveLiveFiles(
     if (!found_current && current != nullptr) {
       // Should never happen unless it is a bug.
       assert(false);
-      current->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates);
+      current->RemoveLiveFiles(sst_delete_candidates, blob_delete_candidates,
+                               deltaLog_delete_candidates);
     }
   }
 }
 
-void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
-                              std::vector<uint64_t>* live_blob_files) const {
+void VersionSet::AddLiveFiles(
+    std::vector<uint64_t>* live_table_files,
+    std::vector<uint64_t>* live_blob_files,
+    std::vector<uint64_t>* live_deltaLog_files) const {
   assert(live_table_files);
   assert(live_blob_files);
+  assert(live_deltaLog_files);
 
   // pre-calculate space requirement
   size_t total_table_files = 0;
   size_t total_blob_files = 0;
+  size_t total_deltaLog_files = 0;
 
   assert(column_family_set_);
   for (auto cfd : *column_family_set_) {
@@ -6576,12 +6796,15 @@ void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
       }
 
       total_blob_files += vstorage->GetBlobFiles().size();
+      total_deltaLog_files += vstorage->GetDeltaLogFiles().size();
     }
   }
 
   // just one time extension to the right size
   live_table_files->reserve(live_table_files->size() + total_table_files);
   live_blob_files->reserve(live_blob_files->size() + total_blob_files);
+  live_deltaLog_files->reserve(live_deltaLog_files->size() +
+                               total_deltaLog_files);
 
   assert(column_family_set_);
   for (auto cfd : *column_family_set_) {
@@ -6598,7 +6821,7 @@ void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
 
     for (Version* v = dummy_versions->next_; v != dummy_versions;
          v = v->next_) {
-      v->AddLiveFiles(live_table_files, live_blob_files);
+      v->AddLiveFiles(live_table_files, live_blob_files, live_deltaLog_files);
       if (v == current) {
         found_current = true;
       }
@@ -6607,7 +6830,8 @@ void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
     if (!found_current && current != nullptr) {
       // Should never happen unless it is a bug.
       assert(false);
-      current->AddLiveFiles(live_table_files, live_blob_files);
+      current->AddLiveFiles(live_table_files, live_blob_files,
+                            live_deltaLog_files);
     }
   }
 }
@@ -6740,6 +6964,8 @@ void VersionSet::GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata) {
         filemetadata.num_entries = file->num_entries;
         filemetadata.num_deletions = file->num_deletions;
         filemetadata.oldest_blob_file_number = file->oldest_blob_file_number;
+        filemetadata.oldest_deltaLog_file_number =
+            file->oldest_deltaLog_file_number;
         filemetadata.file_checksum = file->file_checksum;
         filemetadata.file_checksum_func_name = file->file_checksum_func_name;
         filemetadata.temperature = file->temperature;
@@ -6751,15 +6977,18 @@ void VersionSet::GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata) {
   }
 }
 
-void VersionSet::GetObsoleteFiles(std::vector<ObsoleteFileInfo>* files,
-                                  std::vector<ObsoleteBlobFileInfo>* blob_files,
-                                  std::vector<std::string>* manifest_filenames,
-                                  uint64_t min_pending_output) {
+void VersionSet::GetObsoleteFiles(
+    std::vector<ObsoleteFileInfo>* files,
+    std::vector<ObsoleteBlobFileInfo>* blob_files,
+    std::vector<ObsoleteDeltaLogFileInfo>* deltaLog_files,
+    std::vector<std::string>* manifest_filenames, uint64_t min_pending_output) {
   assert(files);
   assert(blob_files);
+  assert(deltaLog_files);
   assert(manifest_filenames);
   assert(files->empty());
   assert(blob_files->empty());
+  assert(deltaLog_files->empty());
   assert(manifest_filenames->empty());
 
   std::vector<ObsoleteFileInfo> pending_files;
@@ -6781,6 +7010,16 @@ void VersionSet::GetObsoleteFiles(std::vector<ObsoleteFileInfo>* files,
     }
   }
   obsolete_blob_files_.swap(pending_blob_files);
+
+  std::vector<ObsoleteDeltaLogFileInfo> pending_deltaLog_files;
+  for (auto& deltaLog_file : obsolete_deltaLog_files_) {
+    if (deltaLog_file.GetDeltaLogFileNumber() < min_pending_output) {
+      deltaLog_files->emplace_back(std::move(deltaLog_file));
+    } else {
+      pending_deltaLog_files.emplace_back(std::move(deltaLog_file));
+    }
+  }
+  obsolete_deltaLog_files_.swap(pending_deltaLog_files);
 
   obsolete_manifests_.swap(*manifest_filenames);
 }
@@ -6868,6 +7107,35 @@ uint64_t VersionSet::GetTotalBlobFileSize(Version* dummy_versions) {
   }
 
   return all_versions_blob_file_size;
+}
+
+uint64_t VersionSet::GetTotalDeltaLogFileSize(Version* dummy_versions) {
+  std::unordered_set<uint64_t> unique_deltaLog_files;
+
+  uint64_t all_versions_deltaLog_file_size = 0;
+
+  for (auto* v = dummy_versions->next_; v != dummy_versions; v = v->next_) {
+    // iterate all the versions
+    const auto* vstorage = v->storage_info();
+    assert(vstorage);
+
+    const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
+
+    for (const auto& meta : deltaLog_files) {
+      assert(meta);
+
+      const uint64_t deltaLog_file_number = meta->GetDeltaLogFileNumber();
+
+      if (unique_deltaLog_files.find(deltaLog_file_number) ==
+          unique_deltaLog_files.end()) {
+        // find DeltaLog file that has not been counted
+        unique_deltaLog_files.insert(deltaLog_file_number);
+        all_versions_deltaLog_file_size += meta->GetDeltaLogFileSize();
+      }
+    }
+  }
+
+  return all_versions_deltaLog_file_size;
 }
 
 Status VersionSet::VerifyFileMetadata(const std::string& fpath,

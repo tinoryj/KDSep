@@ -573,6 +573,7 @@ class ColumnFamilyData {
   std::unique_ptr<TableCache> table_cache_;
   std::unique_ptr<BlobFileCache> blob_file_cache_;
   std::unique_ptr<BlobSource> blob_source_;
+  std::unique_ptr<DeltaLogFileCache> deltaLog_file_cache_;
   std::unique_ptr<DeltaLogSource> deltaLog_source_;
 
   std::unique_ptr<InternalStats> internal_stats_;

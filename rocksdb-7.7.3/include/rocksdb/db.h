@@ -282,7 +282,6 @@ class DB {
       const std::vector<ColumnFamilyDescriptor>& column_families,
       std::vector<ColumnFamilyHandle*>* handles, DB** dbptr);
 
-
   // Open DB and run the compaction.
   // It's a read-only operation, the result won't be installed to the DB, it
   // will be output to the `output_directory`. The API should only be used with
@@ -1116,6 +1115,42 @@ class DB {
     // "rocksdb.blob-cache-pinned-usage" - returns the memory size for the
     //      entries being pinned in blob cache.
     static const std::string kBlobCachePinnedUsage;
+
+    // "rocksdb.num-deltaLog-files" - returns number of deltaLog files in the
+    // current
+    //      version.
+    static const std::string kNumDeltaLogFiles;
+
+    // "rocksdb.deltaLog-stats" - return the total number and size of all
+    // deltaLog
+    //      files, and total amount of garbage (bytes) in the deltaLog files in
+    //      the current version.
+    static const std::string kDeltaLogStats;
+
+    // "rocksdb.total-deltaLog-file-size" - returns the total size of all
+    // deltaLog
+    //      files over all versions.
+    static const std::string kTotalDeltaLogFileSize;
+
+    // "rocksdb.live-deltaLog-file-size" - returns the total size of all
+    // deltaLog
+    //      files in the current version.
+    static const std::string kLiveDeltaLogFileSize;
+
+    // "rocksdb.live-deltaLog-file-garbage-size" - returns the total amount of
+    // garbage in the deltaLog files in the current version.
+    static const std::string kLiveDeltaLogFileGarbageSize;
+
+    //  "rocksdb.deltaLog-cache-capacity" - returns deltaLog cache capacity.
+    static const std::string kDeltaLogCacheCapacity;
+
+    //  "rocksdb.deltaLog-cache-usage" - returns the memory size for the entries
+    //      residing in deltaLog cache.
+    static const std::string kDeltaLogCacheUsage;
+
+    // "rocksdb.deltaLog-cache-pinned-usage" - returns the memory size for the
+    //      entries being pinned in deltaLog cache.
+    static const std::string kDeltaLogCachePinnedUsage;
   };
 #endif /* ROCKSDB_LITE */
 
@@ -1184,6 +1219,13 @@ class DB {
   //  "rocksdb.blob-cache-capacity"
   //  "rocksdb.blob-cache-usage"
   //  "rocksdb.blob-cache-pinned-usage"
+  //  Properties dedicated for DeltaLogDB:
+  //  "rocksdb.num-deltaLog-files"
+  //  "rocksdb.total-deltaLog-file-size"
+  //  "rocksdb.live-deltaLog-file-size"
+  //  "rocksdb.deltaLog-cache-capacity"
+  //  "rocksdb.deltaLog-cache-usage"
+  //  "rocksdb.deltaLog-cache-pinned-usage"
   virtual bool GetIntProperty(ColumnFamilyHandle* column_family,
                               const Slice& property, uint64_t* value) = 0;
   virtual bool GetIntProperty(const Slice& property, uint64_t* value) {

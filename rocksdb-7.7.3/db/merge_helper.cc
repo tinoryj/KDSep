@@ -214,6 +214,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // run compaction filter on it.
       const Slice val = iter->value();
       PinnableSlice blob_value;
+      PinnableSlice deltaLog_value;
       const Slice* val_ptr;
       if ((kTypeValue == ikey.type || kTypeBlobIndex == ikey.type ||
            kTypeWideColumnEntity == ikey.type) &&

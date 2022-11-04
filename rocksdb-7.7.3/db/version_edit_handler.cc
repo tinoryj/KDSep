@@ -149,6 +149,21 @@ Status FileChecksumRetriever::ApplyVersionEdit(VersionEdit& edit,
       return s;
     }
   }
+  for (const auto& new_deltaLog_file : edit.GetDeltaLogFileAdditions()) {
+    std::string checksum_value = new_deltaLog_file.GetChecksumValue();
+    std::string checksum_method = new_deltaLog_file.GetChecksumMethod();
+    assert(checksum_value.empty() == checksum_method.empty());
+    if (checksum_method.empty()) {
+      checksum_value = kUnknownFileChecksum;
+      checksum_method = kUnknownFileChecksumFuncName;
+    }
+    Status s = file_checksum_list_.InsertOneFileChecksum(
+        new_deltaLog_file.GetDeltaLogFileNumber(), checksum_value,
+        checksum_method);
+    if (!s.ok()) {
+      return s;
+    }
+  }
   return Status::OK();
 }
 
@@ -334,6 +349,12 @@ bool VersionEditHandler::HasMissingFiles() const {
         break;
       }
     }
+    for (const auto& elem : cf_to_missing_deltaLog_files_high_) {
+      if (elem.second != kInvalidDeltaLogFileNumber) {
+        ret = true;
+        break;
+      }
+    }
   }
   return ret;
 }
@@ -490,6 +511,8 @@ ColumnFamilyData* VersionEditHandler::CreateCfAndInit(
                                  std::unordered_set<uint64_t>());
     cf_to_missing_blob_files_high_.emplace(edit.column_family_,
                                            kInvalidBlobFileNumber);
+    cf_to_missing_deltaLog_files_high_.emplace(edit.column_family_,
+                                               kInvalidDeltaLogFileNumber);
   }
   return cfd;
 }
@@ -509,6 +532,12 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
     assert(missing_blob_files_high_iter !=
            cf_to_missing_blob_files_high_.end());
     cf_to_missing_blob_files_high_.erase(missing_blob_files_high_iter);
+
+    auto missing_deltaLog_files_high_iter =
+        cf_to_missing_deltaLog_files_high_.find(edit.column_family_);
+    assert(missing_deltaLog_files_high_iter !=
+           cf_to_missing_deltaLog_files_high_.end());
+    cf_to_missing_deltaLog_files_high_.erase(missing_deltaLog_files_high_iter);
   }
   ColumnFamilyData* ret =
       version_set_->GetColumnFamilySet()->GetColumnFamily(edit.column_family_);
@@ -718,12 +747,28 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
     assert(builder != nullptr);
   }
 
+  auto missing_deltaLog_files_high_iter =
+      cf_to_missing_deltaLog_files_high_.find(cfd->GetID());
+  assert(missing_deltaLog_files_high_iter !=
+         cf_to_missing_deltaLog_files_high_.end());
+  const uint64_t prev_missing_deltaLog_file_high =
+      missing_deltaLog_files_high_iter->second;
+
+  if (prev_missing_deltaLog_file_high != kInvalidDeltaLogFileNumber) {
+    auto builder_iter = builders_.find(cfd->GetID());
+    assert(builder_iter != builders_.end());
+    builder = builder_iter->second->version_builder();
+    assert(builder != nullptr);
+  }
   // At this point, we have not yet applied the new version edits read from the
   // MANIFEST. We check whether we have any missing table and blob files.
   const bool prev_has_missing_files =
       !missing_files.empty() ||
       (prev_missing_blob_file_high != kInvalidBlobFileNumber &&
-       prev_missing_blob_file_high >= builder->GetMinOldestBlobFileNumber());
+       prev_missing_blob_file_high >= builder->GetMinOldestBlobFileNumber()) ||
+      (prev_missing_deltaLog_file_high != kInvalidDeltaLogFileNumber &&
+       prev_missing_deltaLog_file_high >=
+           builder->GetMinOldestDeltaLogFileNumber());
 
   for (const auto& file : edit.GetDeletedFiles()) {
     uint64_t file_num = file.second;
@@ -771,13 +816,35 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
     assert(false);
   }
 
+  uint64_t missing_deltaLog_file_num = prev_missing_deltaLog_file_high;
+  for (const auto& elem : edit.GetDeltaLogFileAdditions()) {
+    uint64_t file_num = elem.GetDeltaLogFileNumber();
+    s = VerifyDeltaLogFile(cfd, file_num, elem);
+    if (s.IsPathNotFound() || s.IsNotFound() || s.IsCorruption()) {
+      missing_deltaLog_file_num = std::max(missing_deltaLog_file_num, file_num);
+      s = Status::OK();
+    } else if (!s.ok()) {
+      break;
+    }
+  }
+
+  bool has_missing_deltaLog_files = false;
+  if (missing_deltaLog_file_num != kInvalidDeltaLogFileNumber &&
+      missing_deltaLog_file_num >= prev_missing_deltaLog_file_high) {
+    missing_deltaLog_files_high_iter->second = missing_deltaLog_file_num;
+    has_missing_deltaLog_files = true;
+  } else if (missing_deltaLog_file_num < prev_missing_deltaLog_file_high) {
+    assert(false);
+  }
+
   // We still have not applied the new version edit, but have tried to add new
   // table and blob files after verifying their presence and consistency.
   // Therefore, we know whether we will see new missing table and blob files
   // later after actually applying the version edit. We perform the check here
   // and record the result.
-  const bool has_missing_files =
-      !missing_files.empty() || has_missing_blob_files;
+  const bool has_missing_files = !missing_files.empty() ||
+                                 has_missing_blob_files ||
+                                 has_missing_deltaLog_files;
 
   bool missing_info = !version_edit_params_.has_log_number_ ||
                       !version_edit_params_.has_next_file_number_ ||
@@ -842,6 +909,22 @@ Status VersionEditHandlerPointInTime::VerifyBlobFile(
   }
   // TODO: verify checksum
   (void)blob_addition;
+  return s;
+}
+
+Status VersionEditHandlerPointInTime::VerifyDeltaLogFile(
+    ColumnFamilyData* cfd, uint64_t deltaLog_file_num,
+    const DeltaLogFileAddition& deltaLog_addition) {
+  DeltaLogSource* deltaLog_source = cfd->deltaLog_source();
+  assert(deltaLog_source);
+  CacheHandleGuard<DeltaLogFileReader> deltaLog_file_reader;
+  Status s = deltaLog_source->GetDeltaLogFileReader(deltaLog_file_num,
+                                                    &deltaLog_file_reader);
+  if (!s.ok()) {
+    return s;
+  }
+  // TODO: verify checksum
+  (void)deltaLog_addition;
   return s;
 }
 

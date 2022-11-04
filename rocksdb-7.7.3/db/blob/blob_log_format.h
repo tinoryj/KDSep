@@ -17,8 +17,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-constexpr uint32_t kMagicNumber = 2395959;  // 0x00248f37
-constexpr uint32_t kVersion1 = 1;
+constexpr uint32_t kMagicNumberBlob = 2395959;  // 0x00248f37
+constexpr uint32_t kVersion1Blob = 1;
 
 using ExpirationRange = std::pair<uint64_t, uint64_t>;
 
@@ -46,7 +46,7 @@ struct BlobLogHeader {
         has_ttl(_has_ttl),
         expiration_range(_expiration_range) {}
 
-  uint32_t version = kVersion1;
+  uint32_t version = kVersion1Blob;
   uint32_t column_family_id = 0;
   CompressionType compression = kNoCompression;
   bool has_ttl = false;

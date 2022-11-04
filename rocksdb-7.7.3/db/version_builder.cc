@@ -780,18 +780,19 @@ class VersionBuilder::Rep {
   Status ApplyBlobFileGarbage(const BlobFileGarbage& blob_file_garbage) {
     const uint64_t blob_file_number = blob_file_garbage.GetBlobFileNumber();
 
-    MutableBlobFileMetaData* const mutable_meta =
+    MutableBlobFileMetaData* const mutable_meta_blob =
         GetOrCreateMutableBlobFileMetaData(blob_file_number);
 
-    if (!mutable_meta) {
+    if (!mutable_meta_blob) {
       std::ostringstream oss;
       oss << "Blob file #" << blob_file_number << " not found";
 
       return Status::Corruption("VersionBuilder", oss.str());
     }
 
-    if (!mutable_meta->AddGarbage(blob_file_garbage.GetGarbageBlobCount(),
-                                  blob_file_garbage.GetGarbageBlobBytes())) {
+    if (!mutable_meta_blob->AddGarbage(
+            blob_file_garbage.GetGarbageBlobCount(),
+            blob_file_garbage.GetGarbageBlobBytes())) {
       std::ostringstream oss;
       oss << "Garbage overflow for blob file #" << blob_file_number;
       return Status::Corruption("VersionBuilder", oss.str());
@@ -832,6 +833,132 @@ class VersionBuilder::Rep {
     return meta->oldest_blob_file_number;
   }
 
+  bool IsDeltaLogFileInVersion(uint64_t deltaLog_file_number) const {
+    auto mutable_it = mutable_deltaLog_file_metas_.find(deltaLog_file_number);
+    if (mutable_it != mutable_deltaLog_file_metas_.end()) {
+      return true;
+    }
+
+    assert(base_vstorage_);
+    const auto meta =
+        base_vstorage_->GetDeltaLogFileMetaData(deltaLog_file_number);
+
+    return !!meta;
+  }
+
+  MutableDeltaLogFileMetaData* GetOrCreateMutableDeltaLogFileMetaData(
+      uint64_t deltaLog_file_number) {
+    auto mutable_it = mutable_deltaLog_file_metas_.find(deltaLog_file_number);
+    if (mutable_it != mutable_deltaLog_file_metas_.end()) {
+      return &mutable_it->second;
+    }
+
+    assert(base_vstorage_);
+    const auto meta =
+        base_vstorage_->GetDeltaLogFileMetaData(deltaLog_file_number);
+
+    if (meta) {
+      mutable_it =
+          mutable_deltaLog_file_metas_
+              .emplace(deltaLog_file_number, MutableDeltaLogFileMetaData(meta))
+              .first;
+      return &mutable_it->second;
+    }
+
+    return nullptr;
+  }
+
+  Status ApplyDeltaLogFileAddition(
+      const DeltaLogFileAddition& deltaLog_file_addition) {
+    const uint64_t deltaLog_file_number =
+        deltaLog_file_addition.GetDeltaLogFileNumber();
+
+    if (IsDeltaLogFileInVersion(deltaLog_file_number)) {
+      std::ostringstream oss;
+      oss << "DeltaLog file #" << deltaLog_file_number << " already added";
+
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    // Note: we use C++11 for now but in C++14, this could be done in a more
+    // elegant way using generalized lambda capture.
+    VersionSet* const vs = version_set_;
+    const ImmutableCFOptions* const ioptions = ioptions_;
+
+    auto deleter = [vs, ioptions](SharedDeltaLogFileMetaData* shared_meta) {
+      if (vs) {
+        assert(ioptions);
+        assert(!ioptions->cf_paths.empty());
+        assert(shared_meta);
+
+        vs->AddObsoleteDeltaLogFile(shared_meta->GetDeltaLogFileNumber(),
+                                    ioptions->cf_paths.front().path);
+      }
+
+      delete shared_meta;
+    };
+
+    auto shared_meta = SharedDeltaLogFileMetaData::Create(
+        deltaLog_file_number, deltaLog_file_addition.GetTotalDeltaLogCount(),
+        deltaLog_file_addition.GetTotalDeltaLogBytes(),
+        deltaLog_file_addition.GetChecksumMethod(),
+        deltaLog_file_addition.GetChecksumValue(), deleter);
+
+    mutable_deltaLog_file_metas_.emplace(
+        deltaLog_file_number,
+        MutableDeltaLogFileMetaData(std::move(shared_meta)));
+
+    return Status::OK();
+  }
+
+  Status ApplyDeltaLogFileGarbage(
+      const DeltaLogFileGarbage& deltaLog_file_garbage) {
+    const uint64_t deltaLog_file_number =
+        deltaLog_file_garbage.GetDeltaLogFileNumber();
+
+    MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
+        GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_number);
+
+    if (!mutable_meta_deltaLog) {
+      std::ostringstream oss;
+      oss << "DeltaLog file #" << deltaLog_file_number << " not found";
+
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    if (!mutable_meta_deltaLog->AddGarbage(
+            deltaLog_file_garbage.GetGarbageDeltaLogCount(),
+            deltaLog_file_garbage.GetGarbageDeltaLogBytes())) {
+      std::ostringstream oss;
+      oss << "Garbage overflow for deltaLog file #" << deltaLog_file_number;
+      return Status::Corruption("VersionBuilder", oss.str());
+    }
+
+    return Status::OK();
+  }
+
+  uint64_t GetOldestDeltaLogFileNumberForTableFile(int level,
+                                                   uint64_t file_number) const {
+    assert(level < num_levels_);
+
+    const auto& added_files = levels_[level].added_files;
+
+    auto it = added_files.find(file_number);
+    if (it != added_files.end()) {
+      const FileMetaData* const meta = it->second;
+      assert(meta);
+
+      return meta->oldest_deltaLog_file_number;
+    }
+
+    assert(base_vstorage_);
+    const FileMetaData* const meta =
+        base_vstorage_->GetFileMetaDataByNumber(file_number);
+    assert(meta);
+
+    return meta->oldest_deltaLog_file_number;
+  }
+
   Status ApplyFileDeletion(int level, uint64_t file_number) {
     assert(level != VersionStorageInfo::FileLocation::Invalid().GetLevel());
 
@@ -869,10 +996,21 @@ class VersionBuilder::Rep {
         GetOldestBlobFileNumberForTableFile(level, file_number);
 
     if (blob_file_number != kInvalidBlobFileNumber) {
-      MutableBlobFileMetaData* const mutable_meta =
+      MutableBlobFileMetaData* const mutable_meta_blob =
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
-      if (mutable_meta) {
-        mutable_meta->UnlinkSst(file_number);
+      if (mutable_meta_blob) {
+        mutable_meta_blob->UnlinkSst(file_number);
+      }
+    }
+
+    const uint64_t deltaLog_file_number =
+        GetOldestDeltaLogFileNumberForTableFile(level, file_number);
+
+    if (deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+      MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
+          GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_number);
+      if (mutable_meta_deltaLog) {
+        mutable_meta_deltaLog->UnlinkSst(file_number);
       }
     }
 
@@ -955,10 +1093,20 @@ class VersionBuilder::Rep {
     const uint64_t blob_file_number = f->oldest_blob_file_number;
 
     if (blob_file_number != kInvalidBlobFileNumber) {
-      MutableBlobFileMetaData* const mutable_meta =
+      MutableBlobFileMetaData* const mutable_meta_blob =
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
-      if (mutable_meta) {
-        mutable_meta->LinkSst(file_number);
+      if (mutable_meta_blob) {
+        mutable_meta_blob->LinkSst(file_number);
+      }
+    }
+
+    const uint64_t deltaLog_file_number = f->oldest_deltaLog_file_number;
+
+    if (deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+      MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
+          GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_number);
+      if (mutable_meta_deltaLog) {
+        mutable_meta_deltaLog->LinkSst(file_number);
       }
     }
 
@@ -1007,6 +1155,27 @@ class VersionBuilder::Rep {
     // Increase the amount of garbage for blob files affected by GC
     for (const auto& blob_file_garbage : edit->GetBlobFileGarbages()) {
       const Status s = ApplyBlobFileGarbage(blob_file_garbage);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+
+    // Note: we process the deltaLog file related changes first because the
+    // table file addition/deletion logic depends on the deltaLog files
+    // already being there.
+
+    // Add new deltaLog files
+    for (const auto& deltaLog_file_addition :
+         edit->GetDeltaLogFileAdditions()) {
+      const Status s = ApplyDeltaLogFileAddition(deltaLog_file_addition);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+
+    // Increase the amount of garbage for deltaLog files affected by GC
+    for (const auto& deltaLog_file_garbage : edit->GetDeltaLogFileGarbages()) {
+      const Status s = ApplyDeltaLogFileGarbage(deltaLog_file_garbage);
       if (!s.ok()) {
         return s;
       }
@@ -1082,9 +1251,9 @@ class VersionBuilder::Rep {
 
         ++base_it;
       } else if (mutable_blob_file_number < base_blob_file_number) {
-        const auto& mutable_meta = mutable_it->second;
+        const auto& mutable_meta_blob = mutable_it->second;
 
-        if (!process_mutable(mutable_meta)) {
+        if (!process_mutable(mutable_meta_blob)) {
           return;
         }
 
@@ -1092,9 +1261,9 @@ class VersionBuilder::Rep {
       } else {
         assert(base_blob_file_number == mutable_blob_file_number);
 
-        const auto& mutable_meta = mutable_it->second;
+        const auto& mutable_meta_blob = mutable_it->second;
 
-        if (!process_both(base_meta, mutable_meta)) {
+        if (!process_both(base_meta, mutable_meta_blob)) {
           return;
         }
 
@@ -1114,9 +1283,91 @@ class VersionBuilder::Rep {
     }
 
     while (mutable_it != mutable_it_end) {
-      const auto& mutable_meta = mutable_it->second;
+      const auto& mutable_meta_blob = mutable_it->second;
 
-      if (!process_mutable(mutable_meta)) {
+      if (!process_mutable(mutable_meta_blob)) {
+        return;
+      }
+
+      ++mutable_it;
+    }
+  }
+
+  // Helper function template for merging the deltaLog file metadata from the
+  // base version with the mutable metadata representing the state after
+  // applying the edits. The function objects process_base and process_mutable
+  // are respectively called to handle a base version object when there is no
+  // matching mutable object, and a mutable object when there is no matching
+  // base version object. process_both is called to perform the merge when a
+  // given deltaLog file appears both in the base version and the mutable list.
+  // The helper stops processing objects if a function object returns false.
+  // DeltaLog files with a file number below first_deltaLog_file are not
+  // processed.
+  template <typename ProcessBase, typename ProcessMutable, typename ProcessBoth>
+  void MergeDeltaLogFileMetas(uint64_t first_deltaLog_file,
+                              ProcessBase process_base,
+                              ProcessMutable process_mutable,
+                              ProcessBoth process_both) const {
+    assert(base_vstorage_);
+
+    auto base_it =
+        base_vstorage_->GetDeltaLogFileMetaDataLB(first_deltaLog_file);
+    const auto base_it_end = base_vstorage_->GetDeltaLogFiles().end();
+
+    auto mutable_it =
+        mutable_deltaLog_file_metas_.lower_bound(first_deltaLog_file);
+    const auto mutable_it_end = mutable_deltaLog_file_metas_.end();
+
+    while (base_it != base_it_end && mutable_it != mutable_it_end) {
+      const auto& base_meta = *base_it;
+      assert(base_meta);
+
+      const uint64_t base_deltaLog_file_number =
+          base_meta->GetDeltaLogFileNumber();
+      const uint64_t mutable_deltaLog_file_number = mutable_it->first;
+
+      if (base_deltaLog_file_number < mutable_deltaLog_file_number) {
+        if (!process_base(base_meta)) {
+          return;
+        }
+
+        ++base_it;
+      } else if (mutable_deltaLog_file_number < base_deltaLog_file_number) {
+        const auto& mutable_meta_deltaLog = mutable_it->second;
+
+        if (!process_mutable(mutable_meta_deltaLog)) {
+          return;
+        }
+
+        ++mutable_it;
+      } else {
+        assert(base_deltaLog_file_number == mutable_deltaLog_file_number);
+
+        const auto& mutable_meta_deltaLog = mutable_it->second;
+
+        if (!process_both(base_meta, mutable_meta_deltaLog)) {
+          return;
+        }
+
+        ++base_it;
+        ++mutable_it;
+      }
+    }
+
+    while (base_it != base_it_end) {
+      const auto& base_meta = *base_it;
+
+      if (!process_base(base_meta)) {
+        return;
+      }
+
+      ++base_it;
+    }
+
+    while (mutable_it != mutable_it_end) {
+      const auto& mutable_meta_deltaLog = mutable_it->second;
+
+      if (!process_mutable(mutable_meta_deltaLog)) {
         return;
       }
 
@@ -1154,23 +1405,24 @@ class VersionBuilder::Rep {
           return CheckLinkedSsts(*base_meta, &min_oldest_blob_file_num);
         };
 
-    auto process_mutable = [&min_oldest_blob_file_num](
-                               const MutableBlobFileMetaData& mutable_meta) {
-      return CheckLinkedSsts(mutable_meta, &min_oldest_blob_file_num);
-    };
+    auto process_mutable =
+        [&min_oldest_blob_file_num](
+            const MutableBlobFileMetaData& mutable_meta_blob) {
+          return CheckLinkedSsts(mutable_meta_blob, &min_oldest_blob_file_num);
+        };
 
     auto process_both = [&min_oldest_blob_file_num](
                             const std::shared_ptr<BlobFileMetaData>& base_meta,
-                            const MutableBlobFileMetaData& mutable_meta) {
+                            const MutableBlobFileMetaData& mutable_meta_blob) {
 #ifndef NDEBUG
       assert(base_meta);
-      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
+      assert(base_meta->GetSharedMeta() == mutable_meta_blob.GetSharedMeta());
 #else
       (void)base_meta;
 #endif
 
-      // Look at mutable_meta since it supersedes *base_meta
-      return CheckLinkedSsts(mutable_meta, &min_oldest_blob_file_num);
+      // Look at mutable_meta_blob since it supersedes *base_meta
+      return CheckLinkedSsts(mutable_meta_blob, &min_oldest_blob_file_num);
     };
 
     MergeBlobFileMetas(kInvalidBlobFileNumber, process_base, process_mutable,
@@ -1180,10 +1432,11 @@ class VersionBuilder::Rep {
   }
 
   static std::shared_ptr<BlobFileMetaData> CreateBlobFileMetaData(
-      const MutableBlobFileMetaData& mutable_meta) {
-    return BlobFileMetaData::Create(
-        mutable_meta.GetSharedMeta(), mutable_meta.GetLinkedSsts(),
-        mutable_meta.GetGarbageBlobCount(), mutable_meta.GetGarbageBlobBytes());
+      const MutableBlobFileMetaData& mutable_meta_blob) {
+    return BlobFileMetaData::Create(mutable_meta_blob.GetSharedMeta(),
+                                    mutable_meta_blob.GetLinkedSsts(),
+                                    mutable_meta_blob.GetGarbageBlobCount(),
+                                    mutable_meta_blob.GetGarbageBlobBytes());
   }
 
   // Add the blob file specified by meta to *vstorage if it is determined to
@@ -1223,37 +1476,164 @@ class VersionBuilder::Rep {
         };
 
     auto process_mutable =
-        [vstorage](const MutableBlobFileMetaData& mutable_meta) {
-          AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta));
+        [vstorage](const MutableBlobFileMetaData& mutable_meta_blob) {
+          AddBlobFileIfNeeded(vstorage,
+                              CreateBlobFileMetaData(mutable_meta_blob));
 
           return true;
         };
 
     auto process_both = [vstorage](
                             const std::shared_ptr<BlobFileMetaData>& base_meta,
-                            const MutableBlobFileMetaData& mutable_meta) {
+                            const MutableBlobFileMetaData& mutable_meta_blob) {
       assert(base_meta);
-      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
+      assert(base_meta->GetSharedMeta() == mutable_meta_blob.GetSharedMeta());
 
-      if (!mutable_meta.HasDelta()) {
+      if (!mutable_meta_blob.HasDelta()) {
         assert(base_meta->GetGarbageBlobCount() ==
-               mutable_meta.GetGarbageBlobCount());
+               mutable_meta_blob.GetGarbageBlobCount());
         assert(base_meta->GetGarbageBlobBytes() ==
-               mutable_meta.GetGarbageBlobBytes());
-        assert(base_meta->GetLinkedSsts() == mutable_meta.GetLinkedSsts());
+               mutable_meta_blob.GetGarbageBlobBytes());
+        assert(base_meta->GetLinkedSsts() == mutable_meta_blob.GetLinkedSsts());
 
         AddBlobFileIfNeeded(vstorage, base_meta);
 
         return true;
       }
 
-      AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta));
+      AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta_blob));
 
       return true;
     };
 
     MergeBlobFileMetas(oldest_blob_file_with_linked_ssts, process_base,
                        process_mutable, process_both);
+  }
+
+  // Find the oldest deltaLog file that has linked SSTs.
+  uint64_t GetMinOldestDeltaLogFileNumber() const {
+    uint64_t min_oldest_deltaLog_file_num = kInvalidDeltaLogFileNumber;
+
+    // auto process_base =
+    //     [&min_oldest_deltaLog_file_num](
+    //         const std::shared_ptr<DeltaLogFileMetaData>& base_meta) {
+    //       assert(base_meta);
+
+    //       return CheckLinkedSsts(*base_meta, &min_oldest_deltaLog_file_num);
+    //     };
+
+    // auto process_mutable =
+    //     [&min_oldest_deltaLog_file_num](
+    //         const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
+    //       return CheckLinkedSsts(mutable_meta_deltaLog,
+    //                              &min_oldest_deltaLog_file_num);
+    //     };
+
+    //     auto process_both =
+    //         [&min_oldest_deltaLog_file_num](
+    //             const std::shared_ptr<DeltaLogFileMetaData>& base_meta,
+    //             const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
+    // #ifndef NDEBUG
+    //           assert(base_meta);
+    //           assert(base_meta->GetSharedMeta() ==
+    //                  mutable_meta_deltaLog.GetSharedMeta());
+    // #else
+    //           (void)base_meta;
+    // #endif
+
+    //           // Look at mutable_meta_deltaLog since it supersedes *base_meta
+    //           return CheckLinkedSsts(mutable_meta_deltaLog,
+    //                                  &min_oldest_deltaLog_file_num);
+    //         };
+
+    //     MergeDeltaLogFileMetas(kInvalidDeltaLogFileNumber, process_base,
+    //                            process_mutable, process_both);
+
+    return min_oldest_deltaLog_file_num;
+  }
+
+  static std::shared_ptr<DeltaLogFileMetaData> CreateDeltaLogFileMetaData(
+      const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
+    return DeltaLogFileMetaData::Create(
+        mutable_meta_deltaLog.GetSharedMeta(),
+        mutable_meta_deltaLog.GetLinkedSsts(),
+        mutable_meta_deltaLog.GetGarbageDeltaLogCount(),
+        mutable_meta_deltaLog.GetGarbageDeltaLogBytes());
+  }
+
+  // Add the deltaLog file specified by meta to *vstorage if it is determined to
+  // contain valid data (deltaLogs).
+  template <typename Meta>
+  static void AddDeltaLogFileIfNeeded(VersionStorageInfo* vstorage,
+                                      Meta&& meta) {
+    assert(vstorage);
+    assert(meta);
+
+    if (meta->GetLinkedSsts().empty() &&
+        meta->GetGarbageDeltaLogCount() >= meta->GetTotalDeltaLogCount()) {
+      return;
+    }
+
+    vstorage->AddDeltaLogFile(std::forward<Meta>(meta));
+  }
+
+  // Merge the deltaLog file metadata from the base version with the changes
+  // (edits) applied, and save the result into *vstorage.
+  void SaveDeltaLogFilesTo(VersionStorageInfo* vstorage) const {
+    assert(vstorage);
+
+    assert(base_vstorage_);
+    vstorage->ReserveDeltaLog(base_vstorage_->GetDeltaLogFiles().size() +
+                              mutable_deltaLog_file_metas_.size());
+
+    const uint64_t oldest_deltaLog_file_with_linked_ssts =
+        GetMinOldestDeltaLogFileNumber();
+
+    auto process_base =
+        [vstorage](const std::shared_ptr<DeltaLogFileMetaData>& base_meta) {
+          assert(base_meta);
+
+          AddDeltaLogFileIfNeeded(vstorage, base_meta);
+
+          return true;
+        };
+
+    auto process_mutable =
+        [vstorage](const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
+          AddDeltaLogFileIfNeeded(
+              vstorage, CreateDeltaLogFileMetaData(mutable_meta_deltaLog));
+
+          return true;
+        };
+
+    auto process_both =
+        [vstorage](const std::shared_ptr<DeltaLogFileMetaData>& base_meta,
+                   const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
+          assert(base_meta);
+          assert(base_meta->GetSharedMeta() ==
+                 mutable_meta_deltaLog.GetSharedMeta());
+
+          if (!mutable_meta_deltaLog.HasDelta()) {
+            assert(base_meta->GetGarbageDeltaLogCount() ==
+                   mutable_meta_deltaLog.GetGarbageDeltaLogCount());
+            assert(base_meta->GetGarbageDeltaLogBytes() ==
+                   mutable_meta_deltaLog.GetGarbageDeltaLogBytes());
+            assert(base_meta->GetLinkedSsts() ==
+                   mutable_meta_deltaLog.GetLinkedSsts());
+
+            AddDeltaLogFileIfNeeded(vstorage, base_meta);
+
+            return true;
+          }
+
+          AddDeltaLogFileIfNeeded(
+              vstorage, CreateDeltaLogFileMetaData(mutable_meta_deltaLog));
+
+          return true;
+        };
+
+    MergeDeltaLogFileMetas(oldest_deltaLog_file_with_linked_ssts, process_base,
+                           process_mutable, process_both);
   }
 
   void MaybeAddFile(VersionStorageInfo* vstorage, int level,
@@ -1353,6 +1733,8 @@ class VersionBuilder::Rep {
     SaveSSTFilesTo(vstorage);
 
     SaveBlobFilesTo(vstorage);
+
+    SaveDeltaLogFilesTo(vstorage);
 
     SaveCompactCursorsTo(vstorage);
 

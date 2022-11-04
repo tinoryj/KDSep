@@ -12,6 +12,9 @@
 #include "db/blob/blob_file_builder.h"
 #include "db/blob/blob_index.h"
 #include "db/blob/prefetch_buffer_collection.h"
+#include "db/deltaLog/deltaLog_fetcher.h"
+#include "db/deltaLog/deltaLog_file_builder.h"
+#include "db/deltaLog/deltaLog_index.h"
 #include "db/snapshot_checker.h"
 #include "logging/logging.h"
 #include "port/likely.h"
@@ -204,7 +207,8 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
                                               Slice* skip_until) {
   // TODO: support compaction filter for wide-column entities
   if (!compaction_filter_ ||
-      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex)) {
+      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
+       ikey_.type != kTypeDeltaLogIndex)) {
     return true;
   }
   bool error = false;
@@ -1297,6 +1301,38 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
 }
 
+uint64_t CompactionIterator::ComputeDeltaLogGarbageCollectionCutoffFileNumber(
+    const CompactionProxy* compaction) {
+  if (!compaction) {
+    return 0;
+  }
+
+  if (!compaction->enable_deltaLog_garbage_collection()) {
+    return 0;
+  }
+
+  const Version* const version = compaction->input_version();
+  assert(version);
+
+  const VersionStorageInfo* const storage_info = version->storage_info();
+  assert(storage_info);
+
+  const auto& deltaLog_files = storage_info->GetDeltaLogFiles();
+
+  const size_t cutoff_index =
+      static_cast<size_t>(compaction->deltaLog_garbage_collection_age_cutoff() *
+                          deltaLog_files.size());
+
+  if (cutoff_index >= deltaLog_files.size()) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+
+  const auto& meta = deltaLog_files[cutoff_index];
+  assert(meta);
+
+  return meta->GetDeltaLogFileNumber();
+}
+
 std::unique_ptr<DeltaLogFetcher>
 CompactionIterator::CreateDeltaLogFetcherIfNeeded(
     const CompactionProxy* compaction) {
@@ -1331,7 +1367,8 @@ CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
     return nullptr;
   }
 
-  const uint64_t readahead_size = compaction->blob_compaction_readahead_size();
+  const uint64_t readahead_size =
+      compaction->deltaLog_compaction_readahead_size();
   if (!readahead_size) {
     return nullptr;
   }

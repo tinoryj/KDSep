@@ -48,6 +48,7 @@ class VersionBuilder {
       const std::shared_ptr<const SliceTransform>& prefix_extractor,
       size_t max_file_size_for_l0_meta_pin);
   uint64_t GetMinOldestBlobFileNumber() const;
+  uint64_t GetMinOldestDeltaLogFileNumber() const;
 
  private:
   class Rep;

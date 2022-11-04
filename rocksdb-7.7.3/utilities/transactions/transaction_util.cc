@@ -122,7 +122,8 @@ Status TransactionUtil::CheckKey(DBImpl* db_impl, SuperVersion* sv,
     Status s = db_impl->GetLatestSequenceForKey(
         sv, key, !need_to_read_sst, lower_bound_seq, &seq,
         !read_ts ? nullptr : &timestamp, &found_record_for_key,
-        /*is_blob_index=*/nullptr);
+        /*is_blob_index=*/nullptr,
+        /*is_deltaLog_index=*/nullptr);
 
     if (!(s.ok() || s.IsNotFound() || s.IsMergeInProgress())) {
       result = s;

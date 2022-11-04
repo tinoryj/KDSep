@@ -17,8 +17,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-constexpr uint32_t kMagicNumber = 2395959;  // 0x00248f37
-constexpr uint32_t kVersion1 = 1;
+constexpr uint32_t kMagicNumberDeltaLog = 2395959;  // 0x00248f37
+constexpr uint32_t kVersion1DeltaLog = 1;
 
 using ExpirationRange = std::pair<uint64_t, uint64_t>;
 
@@ -48,7 +48,7 @@ struct DeltaLogLogHeader {
         has_ttl(_has_ttl),
         expiration_range(_expiration_range) {}
 
-  uint32_t version = kVersion1;
+  uint32_t version = kVersion1DeltaLog;
   uint32_t column_family_id = 0;
   CompressionType compression = kNoCompression;
   bool has_ttl = false;
