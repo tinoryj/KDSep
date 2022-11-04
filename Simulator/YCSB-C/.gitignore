@@ -52,3 +52,4 @@ db_size
 __pycache__
 #vscode cache
 .vscode
+loadedDB

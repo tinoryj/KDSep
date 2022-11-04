@@ -29,7 +29,7 @@ const std::string kTempFileNameSuffix = "dbtmp";
 static const std::string kRocksDbTFileExt = "sst";
 static const std::string kLevelDbTFileExt = "ldb";
 static const std::string kRocksDBBlobFileExt = "blob";
-static const std::string kRocksDBDeltaLogFileExt = "deltaLog";
+static const std::string kRocksDBDeltaLogFileExt = "delta";
 static const std::string kArchivalDirName = "archive";
 
 // Given a path, flatten the path name by replacing all chars not in

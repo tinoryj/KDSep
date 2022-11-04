@@ -4603,7 +4603,7 @@ Status DestroyDB(const std::string& dbname, const Options& options,
         if (type == kMetaDatabase) {
           del = DestroyDB(path_to_delete, options);
         } else if (type == kTableFile || type == kWalFile ||
-                   type == kBlobFile) {
+                   type == kBlobFile || type == kDeltaLogFile) {
           del = DeleteDBFile(
               &soptions, path_to_delete, dbname,
               /*force_bg=*/false,
@@ -4630,8 +4630,8 @@ Status DestroyDB(const std::string& dbname, const Options& options,
       if (env->GetChildren(path, &filenames).ok()) {
         for (const auto& fname : filenames) {
           if (ParseFileName(fname, &number, &type) &&
-              (type == kTableFile ||
-               type == kBlobFile)) {  // Lock file will be deleted at end
+              (type == kTableFile || type == kBlobFile ||
+               type == kDeltaLogFile)) {  // Lock file will be deleted at end
             std::string file_path = path + "/" + fname;
             Status del = DeleteDBFile(&soptions, file_path, dbname,
                                       /*force_bg=*/false, /*force_fg=*/false);

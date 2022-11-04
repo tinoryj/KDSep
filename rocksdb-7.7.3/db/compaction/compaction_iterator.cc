@@ -979,6 +979,34 @@ bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
   return true;
 }
 
+bool CompactionIterator::ExtractLargeDeltaIfNeededImpl() {
+  printf("Find delta at line %d\n", __LINE__);
+  if (!deltaLog_file_builder_) {
+    return false;
+  }
+
+  deltaLog_index_.clear();
+  const Status s =
+      deltaLog_file_builder_->Add(user_key(), value_, &deltaLog_index_);
+
+  if (!s.ok()) {
+    status_ = s;
+    validity_info_.Invalidate();
+    printf("Find invalid delta at line %d\n", __LINE__);
+    return false;
+  }
+
+  if (deltaLog_index_.empty()) {
+    printf("Find empty delta log index at line %d\n", __LINE__);
+    return false;
+  }
+
+  value_ = deltaLog_index_;
+  printf("Find final delta at line %d, value = %s\n", __LINE__,
+         value_.ToString().c_str());
+  return true;
+}
+
 void CompactionIterator::ExtractLargeValueIfNeeded() {
   assert(ikey_.type == kTypeValue);
 
@@ -1089,6 +1117,90 @@ void CompactionIterator::GarbageCollectBlobIfNeeded() {
   }
 }
 
+void CompactionIterator::ExtractLargeDeltaIfNeeded() {
+  assert(ikey_.type == kTypeValue);
+
+  if (!ExtractLargeDeltaIfNeededImpl()) {
+    return;
+  }
+
+  ikey_.type = kTypeDeltaLogIndex;
+  current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
+}
+
+void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
+  assert(ikey_.type == kTypeDeltaLogIndex);
+
+  if (!compaction_) {
+    return;
+  }
+
+  // GC for integrated DeltaLogDB
+  if (compaction_->enable_deltaLog_garbage_collection()) {
+    TEST_SYNC_POINT_CALLBACK(
+        "CompactionIterator::GarbageCollectDeltaLogIfNeeded::"
+        "TamperWithDeltaLogIndex",
+        &value_);
+
+    DeltaLogIndex deltaLog_index;
+
+    {
+      const Status s = deltaLog_index.DecodeFrom(value_);
+
+      if (!s.ok()) {
+        status_ = s;
+        validity_info_.Invalidate();
+
+        return;
+      }
+    }
+
+    if (deltaLog_index.file_number() >=
+        deltaLog_garbage_collection_cutoff_file_number_) {
+      return;
+    }
+
+    FilePrefetchBuffer* prefetch_buffer =
+        prefetch_buffers_ ? prefetch_buffers_->GetOrCreatePrefetchBuffer(
+                                deltaLog_index.file_number())
+                          : nullptr;
+
+    uint64_t bytes_read = 0;
+
+    {
+      assert(deltaLog_fetcher_);
+
+      const Status s = deltaLog_fetcher_->FetchDeltaLog(
+          user_key(), deltaLog_index, prefetch_buffer, &deltaLog_value_,
+          &bytes_read);
+
+      if (!s.ok()) {
+        status_ = s;
+        validity_info_.Invalidate();
+
+        return;
+      }
+    }
+
+    ++iter_stats_.num_deltaLogs_read;
+    iter_stats_.total_deltaLog_bytes_read += bytes_read;
+
+    ++iter_stats_.num_deltaLogs_relocated;
+    iter_stats_.total_deltaLog_bytes_relocated += deltaLog_index.size();
+
+    value_ = deltaLog_value_;
+
+    if (ExtractLargeDeltaIfNeededImpl()) {
+      return;
+    }
+
+    ikey_.type = kTypeValue;
+    current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
+
+    return;
+  }
+}
+
 void CompactionIterator::DecideOutputLevel() {
 #ifndef NDEBUG
   // Could be overridden by unittest
@@ -1141,6 +1253,12 @@ void CompactionIterator::PrepareOutput() {
       ExtractLargeValueIfNeeded();
     } else if (ikey_.type == kTypeBlobIndex) {
       GarbageCollectBlobIfNeeded();
+    }
+
+    if (ikey_.type == kTypeMerge) {
+      ExtractLargeDeltaIfNeeded();
+    } else if (ikey_.type == kTypeDeltaLogIndex) {
+      GarbageCollectDeltaLogIfNeeded();
     }
 
     if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {

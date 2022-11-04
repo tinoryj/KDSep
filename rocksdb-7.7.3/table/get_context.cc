@@ -506,6 +506,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         return false;
 
       case kTypeMerge:
+        printf("Find kTypeMerge in get_context:508\n");
         assert(state_ == kNotFound || state_ == kMerge);
         state_ = kMerge;
         // value_pinner is not set from plain_table_reader.cc for example.
