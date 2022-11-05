@@ -266,7 +266,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
     auto type = parsed_key.type;
     // Key matches. Process it
-    if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
+    if ((type == kTypeValue || type == kTypeMerge ||
+         type == kTypeDeltaLogIndex || type == kTypeBlobIndex ||
          type == kTypeWideColumnEntity) &&
         max_covering_tombstone_seq_ != nullptr &&
         *max_covering_tombstone_seq_ > parsed_key.sequence) {
