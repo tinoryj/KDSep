@@ -1011,9 +1011,7 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
   } else if (value_type == kTypeRangeDeletion) {
     r->props.num_deletions++;
     r->props.num_range_deletions++;
-  } else if (value_type == kTypeMerge) {
-    r->props.num_merge_operands++;
-  } else if (value_type == kTypeDeltaLogIndex) {
+  } else if (value_type == kTypeMerge || value_type == kTypeDeltaLogIndex) {
     r->props.num_merge_operands++;
   }
 }

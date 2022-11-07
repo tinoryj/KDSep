@@ -977,7 +977,8 @@ static bool SaveValue(void* arg, const char* entry) {
       }
     }
 
-    if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
+    if ((type == kTypeValue || type == kTypeMerge ||
+         type == kTypeDeltaLogIndex || type == kTypeBlobIndex ||
          type == kTypeWideColumnEntity) &&
         max_covering_tombstone_seq > seq) {
       type = kTypeRangeDeletion;
@@ -1510,7 +1511,7 @@ size_t MemTable::CountSuccessiveMergeEntries(const LookupKey& key) {
     ValueType type;
     uint64_t unused;
     UnPackSequenceAndType(tag, &unused, &type);
-    if (type != kTypeMerge) {
+    if (type != kTypeMerge || type != kTypeDeltaLogIndex) {
       break;
     }
 

@@ -302,6 +302,16 @@ class DBIter final : public Iterator {
     blob_value_.Reset();
   }
 
+  // Retrieves the deltaLog value for the specified user key using the given
+  // deltaLog index when using the integrated DeltaLogDB implementation.
+  bool SetDeltaLogValueIfNeeded(const Slice& user_key,
+                                const Slice& deltaLog_index);
+
+  void ResetDeltaLogValue() {
+    is_deltaLog_ = false;
+    deltaLog_value_.Reset();
+  }
+
   void SetValueAndColumnsFromPlain(const Slice& slice) {
     assert(value_.empty());
     assert(wide_columns_.empty());
@@ -341,6 +351,7 @@ class DBIter final : public Iterator {
   Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
+  PinnableSlice deltaLog_value_;
   // Value of the default column
   Slice value_;
   // All columns (i.e. name-value pairs)
@@ -381,6 +392,7 @@ class DBIter final : public Iterator {
   // the stacked BlobDB implementation is used, false otherwise.
   bool expose_blob_index_;
   bool is_blob_;
+  bool is_deltaLog_;
   bool arena_mode_;
   // List of operands for merge operator.
   MergeContext merge_context_;

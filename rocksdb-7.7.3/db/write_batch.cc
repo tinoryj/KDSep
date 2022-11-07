@@ -88,7 +88,7 @@ enum ContentFlags : uint32_t {
   HAS_BLOB_INDEX = 1 << 10,
   HAS_BEGIN_UNPREPARE = 1 << 11,
   HAS_PUT_ENTITY = 1 << 12,
-  HAS_DELTA_LOG_INDEX = 1 << 10,
+  HAS_DELTA_LOG_INDEX = 1 << 13,
 };
 
 struct BatchContentClassifier : public WriteBatch::Handler {
@@ -419,6 +419,17 @@ Status ReadRecordFromWriteBatch(Slice* input, char* tag,
       if (!GetLengthPrefixedSlice(input, key) ||
           !GetLengthPrefixedSlice(input, value)) {
         return Status::Corruption("bad WriteBatch BlobIndex");
+      }
+      break;
+    case kTypeColumnFamilyDeltaLogIndex:
+      if (!GetVarint32(input, column_family)) {
+        return Status::Corruption("bad WriteBatch DeltaLogIndex");
+      }
+      FALLTHROUGH_INTENDED;
+    case kTypeDeltaLogIndex:
+      if (!GetLengthPrefixedSlice(input, key) ||
+          !GetLengthPrefixedSlice(input, value)) {
+        return Status::Corruption("bad WriteBatch DeltaLogIndex");
       }
       break;
     case kTypeLogData:
