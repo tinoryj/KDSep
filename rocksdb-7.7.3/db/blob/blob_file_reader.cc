@@ -291,6 +291,9 @@ Status BlobFileReader::GetBlob(
     std::unique_ptr<BlobContents>* result, uint64_t* bytes_read) const {
   assert(result);
 
+  printf("Call get blob function (blob_file_reader) for key = %s\n",
+         user_key.ToString().c_str());
+
   const uint64_t key_size = user_key.size();
 
   if (!IsValidBlobOffset(offset, key_size, value_size, file_size_)) {

@@ -166,6 +166,15 @@ Status CheckCompressionSupported(const ColumnFamilyOptions& cf_options) {
     return Status::InvalidArgument(oss.str());
   }
 
+  if (!CompressionTypeSupported(cf_options.deltaLog_compression_type)) {
+    std::ostringstream oss;
+    oss << "The specified deltaLog compression type "
+        << CompressionTypeToString(cf_options.deltaLog_compression_type)
+        << " is not available.";
+
+    return Status::InvalidArgument(oss.str());
+  }
+
   return Status::OK();
 }
 
@@ -601,6 +610,12 @@ ColumnFamilyData::ColumnFamilyData(
                           internal_stats_->GetBlobFileReadHist(), io_tracer));
     blob_source_.reset(new BlobSource(ioptions(), db_id, db_session_id,
                                       blob_file_cache_.get()));
+
+    deltaLog_file_cache_.reset(new DeltaLogFileCache(
+        _table_cache, ioptions(), soptions(), id_,
+        internal_stats_->GetDeltaLogFileReadHist(), io_tracer));
+    deltaLog_source_.reset(new DeltaLogSource(ioptions(), db_id, db_session_id,
+                                              deltaLog_file_cache_.get()));
 
     if (ioptions_.compaction_style == kCompactionStyleLevel) {
       compaction_picker_.reset(
@@ -1428,6 +1443,22 @@ Status ColumnFamilyData::ValidateOptions(
         cf_options.blob_garbage_collection_force_threshold > 1.0) {
       return Status::InvalidArgument(
           "The garbage ratio threshold for forcing blob garbage collection "
+          "should be in the range [0.0, 1.0].");
+    }
+  }
+
+  if (cf_options.enable_deltaLog_garbage_collection) {
+    if (cf_options.deltaLog_garbage_collection_age_cutoff < 0.0 ||
+        cf_options.deltaLog_garbage_collection_age_cutoff > 1.0) {
+      return Status::InvalidArgument(
+          "The age cutoff for deltaLog garbage collection should be in the "
+          "range "
+          "[0.0, 1.0].");
+    }
+    if (cf_options.deltaLog_garbage_collection_force_threshold < 0.0 ||
+        cf_options.deltaLog_garbage_collection_force_threshold > 1.0) {
+      return Status::InvalidArgument(
+          "The garbage ratio threshold for forcing deltaLog garbage collection "
           "should be in the range [0.0, 1.0].");
     }
   }

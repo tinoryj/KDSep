@@ -43,7 +43,8 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                const Version* version, SequenceNumber s, bool arena_mode,
                uint64_t max_sequential_skip_in_iterations,
                ReadCallback* read_callback, DBImpl* db_impl,
-               ColumnFamilyData* cfd, bool expose_blob_index)
+               ColumnFamilyData* cfd, bool expose_blob_index,
+               bool expose_deltaLog_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
       clock_(ioptions.clock),
@@ -75,6 +76,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       fill_cache_(read_options.fill_cache),
       verify_checksums_(read_options.verify_checksums),
       expose_blob_index_(expose_blob_index),
+      expose_deltaLog_index_(expose_deltaLog_index),
       is_blob_(false),
       arena_mode_(arena_mode),
       db_impl_(db_impl),
@@ -444,7 +446,8 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
               printf("Set delta log value error\n");
               return false;
             }
-            SetValueAndColumnsFromPlain(iter_.value());
+            SetValueAndColumnsFromPlain(
+                expose_deltaLog_index_ ? iter_.value() : deltaLog_value_);
             valid_ = true;
             return MergeValuesNewToOld();  // Go to a different state machine
             break;
@@ -608,6 +611,18 @@ bool DBIter::MergeValuesNewToOld() {
       }
       return true;
     } else if (kTypeMerge == ikey.type) {
+      // hit a merge, add the value as an operand and run associative merge.
+      // when complete, add result to operands and continue.
+      merge_context_.PushOperand(
+          iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
+      PERF_COUNTER_ADD(internal_merge_count, 1);
+    } else if (kTypeBlobIndex == ikey.type) {
+      if (expose_deltaLog_index_) {
+        status_ =
+            Status::NotSupported("DeltaLogDB does not support merge operator.");
+        valid_ = false;
+        return false;
+      }
       // hit a merge, add the value as an operand and run associative merge.
       // when complete, add result to operands and continue.
       merge_context_.PushOperand(
@@ -1753,12 +1768,13 @@ Iterator* NewDBIterator(Env* env, const ReadOptions& read_options,
                         const SequenceNumber& sequence,
                         uint64_t max_sequential_skip_in_iterations,
                         ReadCallback* read_callback, DBImpl* db_impl,
-                        ColumnFamilyData* cfd, bool expose_blob_index) {
+                        ColumnFamilyData* cfd, bool expose_blob_index,
+                        bool expose_deltaLog_index) {
   DBIter* db_iter =
       new DBIter(env, read_options, ioptions, mutable_cf_options,
                  user_key_comparator, internal_iter, version, sequence, false,
                  max_sequential_skip_in_iterations, read_callback, db_impl, cfd,
-                 expose_blob_index);
+                 expose_blob_index, expose_deltaLog_index);
   return db_iter;
 }
 

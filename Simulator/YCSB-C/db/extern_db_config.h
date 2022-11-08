@@ -45,6 +45,7 @@ class ExternDBConfig {
     bool key_delta_separation_;
     uint64_t target_file_size_base_;
     uint64_t blob_file_size_;
+    uint64_t deltaLog_file_size_;
 
    public:
     ExternDBConfig(std::string file_path) {
@@ -80,6 +81,7 @@ class ExternDBConfig {
         key_delta_separation_ = pt_.get<bool>("config.keyDeltaSeparation");
         target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase");
         blob_file_size_ = pt_.get<uint64_t>("config.blobFileSize");
+        deltaLog_file_size_ = pt_.get<uint64_t>("config.deltaLogFileSize");
     }
 
     int getBloomBits() {
@@ -174,6 +176,9 @@ class ExternDBConfig {
     }
     uint64_t getBlobFileSize() {
         return blob_file_size_;
+    }
+    uint64_t getDeltaLogFileSize() {
+        return deltaLog_file_size_;
     }
 };
 }  // namespace ycsbc

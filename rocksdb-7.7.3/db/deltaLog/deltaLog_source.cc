@@ -3,6 +3,8 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include "db/deltaLog/deltaLog_source.h"
+
 #include <cassert>
 #include <string>
 
@@ -11,7 +13,6 @@
 #include "db/deltaLog/deltaLog_contents.h"
 #include "db/deltaLog/deltaLog_file_reader.h"
 #include "db/deltaLog/deltaLog_log_format.h"
-#include "db/deltaLog/deltaLog_source.h"
 #include "monitoring/statistics.h"
 #include "options/cf_options.h"
 #include "table/get_context.h"
@@ -195,6 +196,9 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
                                    FilePrefetchBuffer* prefetch_buffer,
                                    PinnableSlice* value, uint64_t* bytes_read) {
   assert(value);
+
+  printf("Call get deltaLog function (deltaLog_source) for key = %s\n",
+         user_key.ToString().c_str());
 
   Status s;
 

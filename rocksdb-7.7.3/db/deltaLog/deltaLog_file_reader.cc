@@ -3,11 +3,12 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include "db/deltaLog/deltaLog_file_reader.h"
+
 #include <cassert>
 #include <string>
 
 #include "db/deltaLog/deltaLog_contents.h"
-#include "db/deltaLog/deltaLog_file_reader.h"
 #include "db/deltaLog/deltaLog_log_format.h"
 #include "file/file_prefetch_buffer.h"
 #include "file/filename.h"
@@ -289,6 +290,9 @@ Status DeltaLogFileReader::GetDeltaLog(
     FilePrefetchBuffer* prefetch_buffer, MemoryAllocator* allocator,
     std::unique_ptr<DeltaLogContents>* result, uint64_t* bytes_read) const {
   assert(result);
+
+  printf("Call get deltaLog function (deltaLog_file_reader) for key = %s\n",
+         user_key.ToString().c_str());
 
   const uint64_t key_size = user_key.size();
 

@@ -6,6 +6,13 @@
 //  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
 //
 
+#include <atomic>
+#include <cstring>
+#include <future>
+#include <iostream>
+#include <string>
+#include <vector>
+
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "core/histogram.h"
@@ -13,12 +20,6 @@
 #include "core/utils.h"
 #include "db/db_factory.h"
 #include "unistd.h"
-#include <atomic>
-#include <cstring>
-#include <future>
-#include <iostream>
-#include <string>
-#include <vector>
 
 using namespace std;
 
@@ -71,27 +72,22 @@ double ops_time[6] = {0.0};
 long ops_cnt[6] = {0};
 
 int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
-                   bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> &histogram)
-{
+                   bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> &histogram) {
     db->Init();
     ycsbc::Client client(*db, *wl);
     int oks = 0;
     ycsbc::Operation operation_type;
     utils::Timer timer;
     int processLabel_base = num_ops / 100;
-    for (int i = 0; i < num_ops; ++i)
-    {
+    for (int i = 0; i < num_ops; ++i) {
         timer.Start();
         // if(i%10000==0){
         //   cerr << "finished ops: "<<i<<"\r";
         // }
-        if (is_loading)
-        {
+        if (is_loading) {
             operation_type = client.DoInsert();
             oks += 1;
-        }
-        else
-        {
+        } else {
             operation_type = client.DoTransaction();
             oks += 1;
         }
@@ -100,8 +96,7 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
             ;
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
-        if (i % processLabel_base == 0)
-        {
+        if (i % processLabel_base == 0) {
             std::cerr << "\r";
             std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%";
         }
@@ -112,14 +107,14 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     return oks;
 }
 
-int main(const int argc, const char *argv[])
-{
+int main(const int argc, const char *argv[]) {
+    setbuf(stdout, nullptr);
+
     utils::Properties props;
     string file_name = ParseCommandLine(argc, argv, props);
 
     ycsbc::DB *db = ycsbc::DBFactory::CreateDB(props);
-    if (!db)
-    {
+    if (!db) {
         cout << "Unknown database name " << props["dbname"] << endl;
         exit(0);
     }
@@ -137,22 +132,19 @@ int main(const int argc, const char *argv[])
     std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> histogram;
     INIT_MAP_HISTOGRAM(histogram);
     // Loads data
-    if (phase == "load" || phase == "both")
-    {
+    if (phase == "load" || phase == "both") {
         ycsbc::CoreWorkload wl;
         wl.Init(props);
         timer.Start();
         total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
-        for (int i = 0; i < num_threads; ++i)
-        {
+        for (int i = 0; i < num_threads; ++i) {
             actual_ops.emplace_back(async(launch::async,
                                           DelegateClient, db, &wl, total_ops / num_threads, true, std::ref(histogram)));
         }
         assert((int)actual_ops.size() == num_threads);
 
         int sum = 0;
-        for (auto &n : actual_ops)
-        {
+        for (auto &n : actual_ops) {
             assert(n.valid());
             sum += n.get();
         }
@@ -202,35 +194,30 @@ int main(const int argc, const char *argv[])
         cout << "\tTime per R-M-W: "
              << ops_time[ycsbc::READMODIFYWRITE] / ops_cnt[ycsbc::READMODIFYWRITE] / 1000
              << " ms" << endl;
-        if (props["dbname"] == "leveldb" || props["dbname"] == "vlog" || props["dbname"] == "expdb" || props["dbname"] == "rocksdb" || props["dbname"] == "titandb" || props["dbname"] == "vtable")
-        {
+        if (props["dbname"] == "leveldb" || props["dbname"] == "vlog" || props["dbname"] == "expdb" || props["dbname"] == "rocksdb" || props["dbname"] == "titandb" || props["dbname"] == "vtable") {
             cout << "============================statistics===========================" << endl;
             db->printStats();
         }
-        for (int i = 0; i < 6; i++)
-        {
+        for (int i = 0; i < 6; i++) {
             ops_cnt[i] = 0;
             ops_time[i] = 0;
         }
     }
     CLEAR_MAP_HISTOGRAM(histogram);
-    if (phase == "run" || phase == "both")
-    {
+    if (phase == "run" || phase == "both") {
         ycsbc::CoreWorkload wl;
         wl.Init(props, true /*run_phase*/);
         // Performs transactions
         total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
         timer.Start();
-        for (int i = 0; i < num_threads; ++i)
-        {
+        for (int i = 0; i < num_threads; ++i) {
             actual_ops.emplace_back(async(launch::async,
                                           DelegateClient, db, &wl, total_ops / num_threads, false, std::ref(histogram)));
         }
         assert((int)actual_ops.size() == num_threads);
 
         int sum = 0;
-        for (auto &n : actual_ops)
-        {
+        for (auto &n : actual_ops) {
             assert(n.valid());
             sum += n.get();
         }
@@ -294,14 +281,12 @@ int main(const int argc, const char *argv[])
       db->printStats();
     }
     */
-        for (int i = 0; i < 6; i++)
-        {
+        for (int i = 0; i < 6; i++) {
             ops_cnt[i] = 0;
             ops_time[i] = 0;
         }
     }
-    if (s > 0)
-    {
+    if (s > 0) {
         std::cout << "sleep " << s << "s for compaction" << std::endl;
         sleep(s);
         db->printStats();
@@ -312,159 +297,117 @@ int main(const int argc, const char *argv[])
     std::cerr << "Deleted db success" << std::endl;
 }
 
-string ParseCommandLine(int argc, const char *argv[], utils::Properties &props)
-{
+string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {
     int argindex = 1;
     string filename;
-    while (argindex < argc && StrStartWith(argv[argindex], "-"))
-    {
-        if (strcmp(argv[argindex], "-threads") == 0)
-        {
+    while (argindex < argc && StrStartWith(argv[argindex], "-")) {
+        if (strcmp(argv[argindex], "-threads") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("threadcount", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-db") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-db") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("dbname", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-host") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-host") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("host", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-port") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-port") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("port", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-skipLoad") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-skipLoad") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("skipLoad", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-phase") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-phase") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("phase", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-sleep") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-sleep") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("sleep", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-slaves") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-slaves") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("slaves", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-dbfilename") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-dbfilename") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("dbfilename", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-help") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-help") == 0) {
             argindex++;
             UsageMessage(argv[0]);
-        }
-        else if (strcmp(argv[argindex], "-configpath") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-configpath") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             props.SetProperty("configpath", argv[argindex]);
             argindex++;
-        }
-        else if (strcmp(argv[argindex], "-P") == 0)
-        {
+        } else if (strcmp(argv[argindex], "-P") == 0) {
             argindex++;
-            if (argindex >= argc)
-            {
+            if (argindex >= argc) {
                 UsageMessage(argv[0]);
                 exit(0);
             }
             filename.assign(argv[argindex]);
             ifstream input(argv[argindex]);
-            try
-            {
+            try {
                 props.Load(input);
-            }
-            catch (const string &message)
-            {
+            } catch (const string &message) {
                 cout << message << endl;
                 exit(0);
             }
             input.close();
             argindex++;
-        }
-        else
-        {
+        } else {
             cout << "Unknown option '" << argv[argindex] << "'" << endl;
             UsageMessage(argv[0]);
             exit(0);
         }
     }
 
-    if (argindex == 1 || argindex != argc)
-    {
+    if (argindex == 1 || argindex != argc) {
         UsageMessage(argv[0]);
         exit(0);
     }
@@ -472,8 +415,7 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props)
     return filename;
 }
 
-void UsageMessage(const char *command)
-{
+void UsageMessage(const char *command) {
     cout << "Usage: " << command << " [options]" << endl;
     cout << "Options:" << endl;
     cout << "  -threads n: execute using n threads (default: 1)" << endl;
@@ -486,7 +428,6 @@ void UsageMessage(const char *command)
     cout << "                   specified, and will be processed in the order specified" << endl;
 }
 
-inline bool StrStartWith(const char *str, const char *pre)
-{
+inline bool StrStartWith(const char *str, const char *pre) {
     return strncmp(str, pre, strlen(pre)) == 0;
 }

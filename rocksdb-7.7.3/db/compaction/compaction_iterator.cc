@@ -980,7 +980,6 @@ bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
 }
 
 bool CompactionIterator::ExtractLargeDeltaIfNeededImpl() {
-  printf("Find delta at line %d\n", __LINE__);
   if (!deltaLog_file_builder_) {
     return false;
   }
@@ -1002,8 +1001,8 @@ bool CompactionIterator::ExtractLargeDeltaIfNeededImpl() {
   }
 
   value_ = deltaLog_index_;
-  printf("Find final delta at line %d, value = %s\n", __LINE__,
-         value_.ToString().c_str());
+  // printf("Find final delta at line %d, value = %s\n", __LINE__,
+  //        value_.ToString().c_str());
   return true;
 }
 

@@ -52,13 +52,15 @@ class FieldUpdateMergeOperator : public MergeOperator {
                    std::string *new_value, Logger *logger) const override {
         counter_full++;
         gettimeofday(&timestartFull, NULL);
-        // cout << existing_value->data() << "\n Size=" << existing_value->size() <<
-        // endl; new_value->assign(existing_value->ToString());
+        // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
+        // new_value->assign(existing_value->ToString());
+        cout << "Merge operation existing value size = " << existing_value->size() << endl;
         vector<std::string> words = split(existing_value->ToString(), ",");
         // for (long unsigned int i = 0; i < words.size(); i++) {
         //     cout << "Index = " << i << ", Words = " << words[i] << endl;
         // }
         for (auto q : operand_list) {
+            // cout << "Operand list content = " << q << endl;
             vector<string> operandVector = split(q, ",");
             for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
                 words[stoi(operandVector[i])] = operandVector[i + 1];
@@ -124,6 +126,7 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
         options_.allow_mmap_writes = true;
     }
     if (keyValueSeparation == true) {
+        cerr << "Enabled Blob based KV separation" << endl;
         options_.enable_blob_files = true;
         options_.min_blob_size = 0;                                        // Default 0
         options_.blob_file_size = config.getBlobFileSize() * 1024 * 1024;  // Default 256*1024*1024
@@ -137,16 +140,17 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
         // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
     }
     if (keyDeltaSeparation == true) {
+        cerr << "Enabled DeltaLog based KD separation" << endl;
         options_.enable_deltaLog_files = true;
-        options_.min_deltaLog_size = 0;                                        // Default 0
-        options_.deltaLog_file_size = config.getBlobFileSize() * 1024 * 1024;  // Default 256*1024*1024
-        options_.deltaLog_compression_type = kNoCompression;                   // Default kNoCompression
-        options_.enable_deltaLog_garbage_collection = false;                   // Default false
-        options_.deltaLog_garbage_collection_age_cutoff = 0.25;                // Default 0.25
-        options_.deltaLog_garbage_collection_force_threshold = 1.0;            // Default 1.0
-        options_.deltaLog_compaction_readahead_size = 0;                       // Default 0
-        options_.deltaLog_file_starting_level = 0;                             // Default 0
-        options_.deltaLog_cache = nullptr;                                     // Default nullptr
+        options_.min_deltaLog_size = 0;                                            // Default 0
+        options_.deltaLog_file_size = config.getDeltaLogFileSize() * 1024 * 1024;  // Default 256*1024*1024
+        options_.deltaLog_compression_type = kNoCompression;                       // Default kNoCompression
+        options_.enable_deltaLog_garbage_collection = false;                       // Default false
+        options_.deltaLog_garbage_collection_age_cutoff = 0.25;                    // Default 0.25
+        options_.deltaLog_garbage_collection_force_threshold = 1.0;                // Default 1.0
+        options_.deltaLog_compaction_readahead_size = 0;                           // Default 0
+        options_.deltaLog_file_starting_level = 0;                                 // Default 0
+        options_.deltaLog_cache = nullptr;                                         // Default nullptr
         // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
     }
     options_.create_if_missing = true;
@@ -165,6 +169,7 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
          << options_.level0_file_num_compaction_trigger << endl;
     cerr << "targe file size base " << options_.target_file_size_base << endl;
     cerr << "level size base " << options_.max_bytes_for_level_base << endl;
+
     if (!compression) options_.compression = rocksdb::kNoCompression;
     if (bloomBits > 0) {
         bbto.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloomBits));
@@ -195,8 +200,10 @@ int RocksDB::Read(const std::string &table, const std::string &key,
                   const std::vector<std::string> *fields,
                   std::vector<KVPair> &result) {
     string value;
+    cout << "[YCSB] Read op, key = " << key << endl;
     rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
     // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
+    cout << "[YCSB] Read op, value = " << value << endl;
     return s.ok();
 }
 

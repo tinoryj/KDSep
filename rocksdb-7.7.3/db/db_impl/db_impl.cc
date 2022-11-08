@@ -3295,12 +3295,10 @@ Iterator* DBImpl::NewIterator(const ReadOptions& read_options,
   return result;
 }
 
-ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
-                                            ColumnFamilyData* cfd,
-                                            SequenceNumber snapshot,
-                                            ReadCallback* read_callback,
-                                            bool expose_blob_index,
-                                            bool allow_refresh) {
+ArenaWrappedDBIter* DBImpl::NewIteratorImpl(
+    const ReadOptions& read_options, ColumnFamilyData* cfd,
+    SequenceNumber snapshot, ReadCallback* read_callback,
+    bool expose_blob_index, bool expose_deltaLog_index, bool allow_refresh) {
   SuperVersion* sv = cfd->GetReferencedSuperVersion(this);
 
   TEST_SYNC_POINT("DBImpl::NewIterator:1");
@@ -3367,6 +3365,7 @@ ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
       env_, read_options, *cfd->ioptions(), sv->mutable_cf_options, sv->current,
       snapshot, sv->mutable_cf_options.max_sequential_skip_in_iterations,
       sv->version_number, read_callback, this, cfd, expose_blob_index,
+      expose_deltaLog_index,
       read_options.snapshot != nullptr ? false : allow_refresh);
 
   InternalIterator* internal_iter = NewInternalIterator(

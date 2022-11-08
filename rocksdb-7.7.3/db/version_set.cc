@@ -2162,6 +2162,9 @@ Status Version::GetBlob(const ReadOptions& read_options, const Slice& user_key,
                         PinnableSlice* value, uint64_t* bytes_read) const {
   assert(value);
 
+  printf("Call get blob function (version_set) for key = %s\n",
+         user_key.ToString().c_str());
+
   if (blob_index.HasTTL() || blob_index.IsInlined()) {
     return Status::Corruption("Unexpected TTL/inlined blob index");
   }
@@ -2270,6 +2273,9 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
                             FilePrefetchBuffer* prefetch_buffer,
                             PinnableSlice* value, uint64_t* bytes_read) const {
   assert(value);
+
+  printf("Call get deltaLog function (version_set) for key = %s\n",
+         user_key.ToString().c_str());
 
   if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
     return Status::Corruption("Unexpected TTL/inlined deltaLog index");
@@ -2419,6 +2425,8 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   FdWithKeyRange* f = fp.GetNextFile();
 
   while (f != nullptr) {
+    printf("Enter in find file while loop for key = %s\n",
+           user_key.ToString().c_str());
     if (*max_covering_tombstone_seq > 0) {
       // The remaining files we look at will only contain covered keys, so we
       // stop here.
@@ -2459,10 +2467,32 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
     switch (get_context.State()) {
       case GetContext::kNotFound:
+        printf("GetContext found kNotFound as return value for key = %s\n",
+               user_key.ToString().c_str());
         // Keep searching in other files
         break;
       case GetContext::kMerge:
+        printf("GetContext found kMerge as return value for key = %s\n",
+               user_key.ToString().c_str());
         // TODO: update per-level perfcontext user_key_return_count for kMerge
+        // if (is_deltaLog_index) {
+        //   if (do_merge && value) {
+        //     TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
+        //                              value);
+
+        //     constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
+        //     constexpr uint64_t* bytes_read = nullptr;
+
+        //     *status = GetDeltaLog(read_options, user_key, *value,
+        //                           prefetch_buffer, value, bytes_read);
+        //     if (!status->ok()) {
+        //       if (status->IsIncomplete()) {
+        //         get_context.MarkKeyMayExist();
+        //       }
+        //       return;
+        //     }
+        //   }
+        // }
         break;
       case GetContext::kFound:
         if (fp.GetHitFileLevel() == 0) {
@@ -2477,6 +2507,10 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                                   fp.GetHitFileLevel());
 
         if (is_blob_index) {
+          printf(
+              "GetContext found kFound as return value, and is_blob_index == "
+              "true for key = %s\n",
+              user_key.ToString().c_str());
           if (do_merge && value) {
             TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithBlobIndex",
                                      value);
@@ -2493,25 +2527,11 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
               return;
             }
           }
-        }
-
-        if (is_deltaLog_index) {
-          if (do_merge && value) {
-            TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
-                                     value);
-
-            constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
-            constexpr uint64_t* bytes_read = nullptr;
-
-            *status = GetDeltaLog(read_options, user_key, *value,
-                                  prefetch_buffer, value, bytes_read);
-            if (!status->ok()) {
-              if (status->IsIncomplete()) {
-                get_context.MarkKeyMayExist();
-              }
-              return;
-            }
-          }
+        } else {
+          printf(
+              "GetContext found kFound as return value, and is_blob_index == "
+              "false for key = %s\n",
+              user_key.ToString().c_str());
         }
         return;
       case GetContext::kDeleted:
@@ -2553,9 +2573,15 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
           "merge_operator is not properly initialized.");
       return;
     }
+
+    printf("Perform merge operation in version_set::Get() function\n");
     // merge_operands are in saver and we hit the beginning of the key history
     // do a final merge of nullptr and operands;
     std::string* str_value = value != nullptr ? value->GetSelf() : nullptr;
+    printf("The str_value = %s\n", str_value->c_str());
+    for (auto q : merge_context->GetOperands()) {
+      printf("The merge operand = %s\n", q.ToString().c_str());
+    }
     *status = MergeHelper::TimedFullMerge(
         merge_operator_, user_key, nullptr, merge_context->GetOperands(),
         str_value, info_log_, db_statistics_, clock_,

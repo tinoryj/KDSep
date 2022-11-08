@@ -135,6 +135,9 @@ class DeltaLogSource {
 
   inline CacheKey GetCacheKey(uint64_t file_number, uint64_t /*file_size*/,
                               uint64_t offset) const {
+    // printf("DeltaLog GetCacheKey db_id_ = %s\n", db_id_.c_str());
+    // printf("DeltaLog GetCacheKey db_session_id_ = %s\n",
+    //        db_session_id_.c_str());
     OffsetableCacheKey base_cache_key(db_id_, db_session_id_, file_number);
     return base_cache_key.WithOffset(offset);
   }

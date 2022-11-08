@@ -126,6 +126,7 @@ class DBImplSecondary : public DBImpl {
                                       SequenceNumber snapshot,
                                       ReadCallback* read_callback,
                                       bool expose_blob_index = false,
+                                      bool expose_deltaLog_index = false,
                                       bool allow_refresh = true);
 
   Status NewIterators(const ReadOptions& options,

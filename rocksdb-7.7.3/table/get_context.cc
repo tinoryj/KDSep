@@ -349,6 +349,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
           if (type == kTypeBlobIndex) {
+            printf("Get value from blob files, start merge\n");
             PinnableSlice pin_val;
             if (GetBlobValue(value, &pin_val) == false) {
               return false;
@@ -369,7 +370,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             return false;
           } else {
             assert(type == kTypeValue);
-
+            printf("Get value from memtables, start merge\n");
             state_ = kFound;
             if (do_merge_) {
               Merge(&value);
@@ -383,111 +384,35 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         }
         return false;
       case kTypeDeltaLogIndex:
+        printf("Find kTypeDeltaLogIndex in get_context:%d\n", __LINE__);
         assert(state_ == kNotFound || state_ == kMerge);
-        if (type == kTypeDeltaLogIndex) {
-          if (is_deltaLog_index_ == nullptr) {
-            // DeltaLog value not supported. Stop.
-            state_ = kUnexpectedDeltaLogIndex;
-            return false;
-          }
-        }
+        state_ = kMerge;
 
-        if (is_deltaLog_index_ != nullptr) {
+        if (is_deltaLog_index_ == nullptr) {
+          // DeltaLog value not supported. Stop.
+          state_ = kUnexpectedDeltaLogIndex;
+          return false;
+        } else {
           *is_deltaLog_index_ = (type == kTypeDeltaLogIndex);
         }
 
-        if (kNotFound == state_) {
-          state_ = kFound;
-          if (do_merge_) {
-            if (LIKELY(pinnable_val_ != nullptr)) {
-              Slice value_to_use = value;
-
-              if (type == kTypeWideColumnEntity) {
-                Slice value_copy = value;
-
-                if (!WideColumnSerialization::GetValueOfDefaultColumn(
-                         value_copy, value_to_use)
-                         .ok()) {
-                  state_ = kCorrupt;
-                  return false;
-                }
-              }
-
-              if (LIKELY(value_pinner != nullptr)) {
-                // If the backing resources for the value are provided, pin them
-                pinnable_val_->PinSlice(value_to_use, value_pinner);
-              } else {
-                TEST_SYNC_POINT_CALLBACK("GetContext::SaveValue::PinSelf",
-                                         this);
-                // Otherwise copy the value
-                pinnable_val_->PinSelf(value_to_use);
-              }
-            } else if (columns_ != nullptr) {
-              if (type == kTypeWideColumnEntity) {
-                if (!columns_->SetWideColumnValue(value, value_pinner).ok()) {
-                  state_ = kCorrupt;
-                  return false;
-                }
-              } else {
-                columns_->SetPlainValue(value, value_pinner);
-              }
-            }
-          } else {
-            // It means this function is called as part of DB GetMergeOperands
-            // API and the current value should be part of
-            // merge_context_->operand_list
-            if (type == kTypeDeltaLogIndex) {
-              PinnableSlice pin_val;
-              if (GetDeltaLogValue(value, &pin_val) == false) {
-                return false;
-              }
-              Slice deltaLog_value(pin_val);
-              push_operand(deltaLog_value, nullptr);
-            } else if (type == kTypeWideColumnEntity) {
-              // TODO: support wide-column entities
-              state_ = kUnexpectedWideColumnEntity;
-              return false;
-            } else {
-              assert(type == kTypeValue);
-              push_operand(value, value_pinner);
-            }
-          }
-        } else if (kMerge == state_) {
-          assert(merge_operator_ != nullptr);
-          if (type == kTypeDeltaLogIndex) {
-            PinnableSlice pin_val;
-            if (GetDeltaLogValue(value, &pin_val) == false) {
-              return false;
-            }
-            Slice deltaLog_value(pin_val);
-            state_ = kFound;
-            if (do_merge_) {
-              Merge(&deltaLog_value);
-            } else {
-              // It means this function is called as part of DB GetMergeOperands
-              // API and the current value should be part of
-              // merge_context_->operand_list
-              push_operand(deltaLog_value, nullptr);
-            }
-          } else if (type == kTypeWideColumnEntity) {
-            // TODO: support wide-column entities
-            state_ = kUnexpectedWideColumnEntity;
+        assert(merge_operator_ != nullptr);
+        {
+          PinnableSlice pin_val;
+          if (GetDeltaLogValue(value, &pin_val) == false) {
             return false;
-          } else {
-            assert(type == kTypeValue);
-
-            state_ = kFound;
-            if (do_merge_) {
-              Merge(&value);
-            } else {
-              // It means this function is called as part of DB GetMergeOperands
-              // API and the current value should be part of
-              // merge_context_->operand_list
-              push_operand(value, value_pinner);
-            }
           }
+          Slice deltaLog_value(pin_val);
+          push_operand(deltaLog_value, nullptr);
         }
-        return false;
+        if (do_merge_ && merge_operator_ != nullptr &&
+            merge_operator_->ShouldMerge(
+                merge_context_->GetOperandsDirectionBackward())) {
+          state_ = kFound;
+          Merge(nullptr);
+          return false;
+        }
+        return true;
 
       case kTypeDeletion:
       case kTypeDeletionWithTimestamp:
@@ -501,8 +426,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         } else if (kMerge == state_) {
           state_ = kFound;
           Merge(nullptr);
-          // If do_merge_ = false then the current value shouldn't be part of
-          // merge_context_->operand_list
+          // If do_merge_ = false then the current value shouldn't be part
+          // of merge_context_->operand_list
         }
         return false;
 
@@ -542,6 +467,8 @@ void GetContext::Merge(const Slice* value) {
         state_ = kCorrupt;
       }
     }
+  } else {
+    printf("Find nullptr value in GetContext Merge operation\n");
   }
 }
 
