@@ -443,11 +443,9 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             // operator
             current_entry_is_merged_ = true;
             if (!SetDeltaLogValueIfNeeded(ikey_.user_key, iter_.value())) {
-              printf("Set delta log value error\n");
+              printf("Set deltaLog value error\n");
               return false;
             }
-            SetValueAndColumnsFromPlain(
-                expose_deltaLog_index_ ? iter_.value() : deltaLog_value_);
             valid_ = true;
             return MergeValuesNewToOld();  // Go to a different state machine
             break;
@@ -616,7 +614,7 @@ bool DBIter::MergeValuesNewToOld() {
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
-    } else if (kTypeBlobIndex == ikey.type) {
+    } else if (kTypeDeltaLogIndex == ikey.type) {
       if (expose_deltaLog_index_) {
         status_ =
             Status::NotSupported("DeltaLogDB does not support merge operator.");
@@ -625,6 +623,10 @@ bool DBIter::MergeValuesNewToOld() {
       }
       // hit a merge, add the value as an operand and run associative merge.
       // when complete, add result to operands and continue.
+      printf(
+          "Find kTypeDeltaLogIndex in db_iter.cc line = %d, iter_.value() = "
+          "%s\n",
+          __LINE__, iter_.value().ToString().c_str());
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
@@ -963,6 +965,12 @@ bool DBIter::FindValueForCurrentKey() {
         last_not_merge_type = last_key_entry_type;
         PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
         break;
+      case kTypeDeltaLogIndex: {
+        assert(merge_operator_ != nullptr);
+        merge_context_.PushOperandBack(
+            iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
+        PERF_COUNTER_ADD(internal_merge_count, 1);
+      } break;
       case kTypeMerge: {
         assert(merge_operator_ != nullptr);
         merge_context_.PushOperandBack(
@@ -1240,7 +1248,13 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
   // kTypeMerge. We need to collect all kTypeMerge values and save them
   // in operands
-  assert(ikey.type == kTypeMerge);
+  assert(ikey.type == kTypeMerge || ikey.type == kTypeDeltaLogIndex);
+  if (ikey.type == kTypeDeltaLogIndex) {
+    printf(
+        "Find kTypeDeltaLogIndex in db_iter.cc line = %d, iter_.value() = "
+        "%s\n",
+        __LINE__, iter_.value().ToString().c_str());
+  }
   current_entry_is_merged_ = true;
   merge_context_.Clear();
   merge_context_.PushOperand(
@@ -1277,6 +1291,19 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       }
       return true;
     } else if (ikey.type == kTypeMerge) {
+      printf(
+          "Find kTypeMerge in db_iter.cc line = %d, iter_.value() = "
+          "%s\n",
+          __LINE__, iter_.value().ToString().c_str());
+
+      merge_context_.PushOperand(
+          iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
+      PERF_COUNTER_ADD(internal_merge_count, 1);
+    } else if (ikey.type == kTypeDeltaLogIndex) {
+      printf(
+          "Find kTypeDeltaLogIndex in db_iter.cc line = %d, iter_.value() = "
+          "%s\n",
+          __LINE__, iter_.value().ToString().c_str());
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
@@ -1291,6 +1318,10 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
         return false;
       }
       valid_ = true;
+      printf(
+          "Find kTypeBlobIndex in db_iter.cc line = %d, blob_value_ = "
+          "%s\n",
+          __LINE__, blob_value_.ToString().c_str());
       Status s = Merge(&blob_value_, saved_key_.GetUserKey());
       if (!s.ok()) {
         return false;

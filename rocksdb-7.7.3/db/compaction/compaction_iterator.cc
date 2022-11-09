@@ -870,6 +870,62 @@ void CompactionIterator::NextFromInput() {
         at_next_ = true;
       }
     } else if (ikey_.type == kTypeMerge) {
+      printf("Find kTypeMerge at compaction_iterator.cc line %d\n", __LINE__);
+      if (!merge_helper_->HasOperator()) {
+        status_ = Status::InvalidArgument(
+            "merge_operator is not properly initialized.");
+        return;
+      }
+
+      pinned_iters_mgr_.StartPinning();
+
+      // We know the merge type entry is not hidden, otherwise we would
+      // have hit (A)
+      // We encapsulate the merge related state machine in a different
+      // object to minimize change to the existing flow.
+      Status s = merge_helper_->MergeUntil(
+          &input_, range_del_agg_, prev_snapshot, bottommost_level_,
+          allow_data_in_errors_, blob_fetcher_.get(), deltaLog_fetcher_.get(),
+          prefetch_buffers_.get(), &iter_stats_);
+      merge_out_iter_.SeekToFirst();
+
+      if (!s.ok() && !s.IsMergeInProgress()) {
+        status_ = s;
+        return;
+      } else if (merge_out_iter_.Valid()) {
+        // NOTE: key, value, and ikey_ refer to old entries.
+        //       These will be correctly set below.
+        key_ = merge_out_iter_.key();
+        value_ = merge_out_iter_.value();
+        pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
+        // MergeUntil stops when it encounters a corrupt key and does not
+        // include them in the result, so we expect the keys here to valid.
+        if (!pik_status.ok()) {
+          ROCKS_LOG_FATAL(
+              info_log_, "Invalid key %s in compaction. %s",
+              allow_data_in_errors_ ? key_.ToString(true).c_str() : "hidden",
+              pik_status.getState());
+          assert(false);
+        }
+        // Keep current_key_ in sync.
+        current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
+        key_ = current_key_.GetInternalKey();
+        ikey_.user_key = current_key_.GetUserKey();
+        validity_info_.SetValid(ValidContext::kMerge2);
+      } else {
+        // all merge operands were filtered out. reset the user key, since the
+        // batch consumed by the merge operator should not shadow any keys
+        // coming after the merges
+        has_current_user_key_ = false;
+        pinned_iters_mgr_.ReleasePinnedData();
+
+        if (merge_helper_->FilteredUntil(&skip_until)) {
+          need_skip = true;
+        }
+      }
+    } else if (ikey_.type == kTypeDeltaLogIndex) {
+      printf("Find kTypeDeltaLogIndex at compaction_iterator.cc line %d\n",
+             __LINE__);
       if (!merge_helper_->HasOperator()) {
         status_ = Status::InvalidArgument(
             "merge_operator is not properly initialized.");
@@ -1257,7 +1313,9 @@ void CompactionIterator::PrepareOutput() {
     if (ikey_.type == kTypeMerge) {
       ExtractLargeDeltaIfNeeded();
     } else if (ikey_.type == kTypeDeltaLogIndex) {
-      GarbageCollectDeltaLogIfNeeded();
+      printf("Call deltaLog GC at compaction_iterator.cc line = %d\n",
+             __LINE__);
+      // GarbageCollectDeltaLogIfNeeded();
     }
 
     if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {

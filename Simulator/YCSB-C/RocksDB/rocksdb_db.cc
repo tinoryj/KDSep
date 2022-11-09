@@ -52,12 +52,13 @@ class FieldUpdateMergeOperator : public MergeOperator {
                    std::string *new_value, Logger *logger) const override {
         counter_full++;
         gettimeofday(&timestartFull, NULL);
+        cout << "Do full merge operation in as field update" << endl;
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
-        if (existing_value == nullptr) {
-            cout << "Merge operation existing value = nullptr" << endl;
-            return false;
-        }
+        // if (existing_value == nullptr) {
+        //     cout << "Merge operation existing value = nullptr" << endl;
+        //     return false;
+        // }
         cout << "Merge operation existing value size = " << existing_value->size() << endl;
         vector<std::string> words = split(existing_value->ToString(), ",");
         // for (long unsigned int i = 0; i < words.size(); i++) {
@@ -90,6 +91,7 @@ class FieldUpdateMergeOperator : public MergeOperator {
     bool PartialMerge(const Slice &key, const Slice &left_operand,
                       const Slice &right_operand, std::string *new_value,
                       Logger *logger) const override {
+        cout << "Do partial merge operation in as field update" << endl;
         counter_part++;
         gettimeofday(&timestartPart, NULL);
         new_value->assign(left_operand.ToString() + "," + right_operand.ToString());

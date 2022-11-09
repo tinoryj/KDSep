@@ -384,7 +384,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         }
         return false;
       case kTypeDeltaLogIndex:
-        printf("Find kTypeDeltaLogIndex in get_context:%d\n", __LINE__);
+        printf("Find kTypeDeltaLogIndex in get_context.cc line = %d\n",
+               __LINE__);
         assert(state_ == kNotFound || state_ == kMerge);
         state_ = kMerge;
 

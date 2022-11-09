@@ -10,6 +10,7 @@
 #include "db/version_edit.h"
 
 #include "db/blob/blob_index.h"
+#include "db/deltaLog/deltaLog_index.h"
 #include "db/version_set.h"
 #include "logging/event_logger.h"
 #include "rocksdb/slice.h"
@@ -20,9 +21,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-namespace {
-
-}  // anonymous namespace
+namespace {}  // anonymous namespace
 
 uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
   assert(number <= kFileNumberMask);
@@ -47,6 +46,29 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
       if (oldest_blob_file_number == kInvalidBlobFileNumber ||
           oldest_blob_file_number > blob_index.file_number()) {
         oldest_blob_file_number = blob_index.file_number();
+      }
+    }
+  }
+
+  if (value_type == kTypeDeltaLogIndex) {
+    printf(
+        "Do boundaries update for kTypeDeltaLogIndex at version_edit.cc line = "
+        "%d\n",
+        __LINE__);
+    DeltaLogIndex deltaLog_index;
+    const Status s = deltaLog_index.DecodeFrom(value);
+    if (!s.ok()) {
+      return s;
+    }
+
+    if (!deltaLog_index.IsInlined() && !deltaLog_index.HasTTL()) {
+      if (deltaLog_index.file_number() == kInvalidDeltaLogFileNumber) {
+        return Status::Corruption("Invalid deltaLog file number");
+      }
+
+      if (oldest_deltaLog_file_number == kInvalidDeltaLogFileNumber ||
+          oldest_deltaLog_file_number > deltaLog_index.file_number()) {
+        oldest_deltaLog_file_number = deltaLog_index.file_number();
       }
     }
   }
@@ -501,8 +523,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         break;
 
       case kCompactCursor:
-        if (GetLevel(&input, &level, &msg) &&
-            GetInternalKey(&input, &key)) {
+        if (GetLevel(&input, &level, &msg) && GetInternalKey(&input, &key)) {
           // Here we re-use the output format of compact pointer in LevelDB
           // to persist compact_cursors_
           compact_cursors_.push_back(std::make_pair(level, key));
