@@ -2250,8 +2250,6 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   // Pre-allocate size of write batch conservatively.
   // 8 bytes are taken by header, 4 bytes for count, 1 byte for type,
   // and we allocate 11 extra bytes for key length, as well as value length.
-  // printf("Call put function at db_impl_write line 2246\n");
-  // std::cout << "Value = " << value.ToString() << std::endl;
   WriteBatch batch(key.size() + value.size() + 24, 0 /* max_bytes */,
                    opt.protection_bytes_per_key, 0 /* default_cf_ts_sz */);
   Status s = batch.Put(column_family, key, value);
@@ -2263,8 +2261,6 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
 
 Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
                const Slice& key, const Slice& ts, const Slice& value) {
-  // printf("Call put function at db_impl_write line 2264\n");
-  // std::cout << "Value = " << value.ToString() << std::endl;
   ColumnFamilyHandle* default_cf = DefaultColumnFamily();
   assert(default_cf);
   const Comparator* const default_cf_ucmp = default_cf->GetComparator();

@@ -51,10 +51,12 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
   }
 
   if (value_type == kTypeDeltaLogIndex) {
+#ifndef NDEBUG
     printf(
         "Do boundaries update for kTypeDeltaLogIndex at version_edit.cc line = "
         "%d\n",
         __LINE__);
+#endif
     DeltaLogIndex deltaLog_index;
     const Status s = deltaLog_index.DecodeFrom(value);
     if (!s.ok()) {

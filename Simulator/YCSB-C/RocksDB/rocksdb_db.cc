@@ -52,14 +52,14 @@ class FieldUpdateMergeOperator : public MergeOperator {
                    std::string *new_value, Logger *logger) const override {
         counter_full++;
         gettimeofday(&timestartFull, NULL);
-        cout << "Do full merge operation in as field update" << endl;
+        // cout << "Do full merge operation in as field update" << endl;
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
         // if (existing_value == nullptr) {
         //     cout << "Merge operation existing value = nullptr" << endl;
         //     return false;
         // }
-        cout << "Merge operation existing value size = " << existing_value->size() << endl;
+        // cout << "Merge operation existing value size = " << existing_value->size() << endl;
         vector<std::string> words = split(existing_value->ToString(), ",");
         // for (long unsigned int i = 0; i < words.size(); i++) {
         //     cout << "Index = " << i << ", Words = " << words[i] << endl;
@@ -91,7 +91,7 @@ class FieldUpdateMergeOperator : public MergeOperator {
     bool PartialMerge(const Slice &key, const Slice &left_operand,
                       const Slice &right_operand, std::string *new_value,
                       Logger *logger) const override {
-        cout << "Do partial merge operation in as field update" << endl;
+        // cout << "Do partial merge operation in as field update" << endl;
         counter_part++;
         gettimeofday(&timestartPart, NULL);
         new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
@@ -206,10 +206,10 @@ int RocksDB::Read(const std::string &table, const std::string &key,
                   const std::vector<std::string> *fields,
                   std::vector<KVPair> &result) {
     string value;
-    cout << "[YCSB] Read op, key = " << key << endl;
+    // cerr << "[YCSB] Read op, key = " << key << endl;
     rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
     // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
-    cout << "[YCSB] Read op, value = " << value << endl;
+    // cerr << "[YCSB] Read op, value = " << value << endl;
     return s.ok();
 }
 

@@ -9,6 +9,11 @@ KVPairsNumber=300000000    #"300000000"
 OperationsNumber=100000000 #"300000000"
 MAXRunTimes=1
 Thread_number=1
+rawConfigPath="configDir/leveldb_config.ini"
+
+cp $rawConfigPath ./temp.ini
+sed -i "30s/NaN/$1/g" temp.ini
+configPath="temp.ini"
 
 if [ ! -d $ResultLogFolder ]; then
     mkdir -p $ResultLogFolder
@@ -25,7 +30,7 @@ sed -i "9s/NaN/$KVPairsNumber/g" workloada-temp.spec
 sed -i "10s/NaN/$OperationsNumber/g" workloada-temp.spec
 
 echo "<===================== Loading the database =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath configDir/leveldb_config.ini >$ResultLogFolder/LoadDB.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath $configPath >$ResultLogFolder/LoadDB.log
 cp -r $DB_Name $DB_Loaded_Path/ # Copy loaded DB
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
@@ -61,17 +66,17 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fi
 
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath configDir/leveldb_config.ini >$ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath >$ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
-        # Running DB count:
-        echo "<===================== Count the database Info (Round $roundIndex) start =====================>"
-        mkdir -p $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis
-        ./countSST.sh $DB_Name
-        mv SSTablesAnalysis.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
-        mv manifest.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
-        mv levelBasedCount.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
-        echo "<===================== Count the database Info (Round $roundIndex) done =====================>"
+        # # Running DB count:
+        # echo "<===================== Count the database Info (Round $roundIndex) start =====================>"
+        # mkdir -p $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis
+        # ./countSST.sh $DB_Name
+        # mv SSTablesAnalysis.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        # mv manifest.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        # mv levelBasedCount.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-DB-Analysis/
+        # echo "<===================== Count the database Info (Round $roundIndex) done =====================>"
 
         # Running RMW
 
@@ -103,7 +108,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fi
 
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
-        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath configDir/leveldb_config.ini >$ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath >$ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
 
         # Cleanup

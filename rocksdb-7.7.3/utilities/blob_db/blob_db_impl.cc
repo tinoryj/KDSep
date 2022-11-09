@@ -1042,7 +1042,10 @@ Status BlobDBImpl::PutUntil(const WriteOptions& options, const Slice& key,
     // flush begin listener, which also require write_mutex_ to sync
     // blob files.
     MutexLock l(&write_mutex_);
-    printf("Call put blov value at utilities blob_db_impl.cc\n");
+#ifndef NDEBUG
+    printf("Call put blov value at utilities blob_db_impl.cc line = %d\n",
+           __LINE__);
+#endif
     s = PutBlobValue(options, key, value, expiration, &batch);
   }
   if (s.ok()) {

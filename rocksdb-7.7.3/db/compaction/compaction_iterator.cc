@@ -870,7 +870,9 @@ void CompactionIterator::NextFromInput() {
         at_next_ = true;
       }
     } else if (ikey_.type == kTypeMerge) {
+#ifndef NDEBUG
       printf("Find kTypeMerge at compaction_iterator.cc line %d\n", __LINE__);
+#endif
       if (!merge_helper_->HasOperator()) {
         status_ = Status::InvalidArgument(
             "merge_operator is not properly initialized.");
@@ -924,8 +926,10 @@ void CompactionIterator::NextFromInput() {
         }
       }
     } else if (ikey_.type == kTypeDeltaLogIndex) {
+#ifndef NDEBUG
       printf("Find kTypeDeltaLogIndex at compaction_iterator.cc line %d\n",
              __LINE__);
+#endif
       if (!merge_helper_->HasOperator()) {
         status_ = Status::InvalidArgument(
             "merge_operator is not properly initialized.");
@@ -1047,18 +1051,14 @@ bool CompactionIterator::ExtractLargeDeltaIfNeededImpl() {
   if (!s.ok()) {
     status_ = s;
     validity_info_.Invalidate();
-    printf("Find invalid delta at line %d\n", __LINE__);
     return false;
   }
 
   if (deltaLog_index_.empty()) {
-    printf("Find empty delta log index at line %d\n", __LINE__);
     return false;
   }
 
   value_ = deltaLog_index_;
-  // printf("Find final delta at line %d, value = %s\n", __LINE__,
-  //        value_.ToString().c_str());
   return true;
 }
 
@@ -1313,9 +1313,11 @@ void CompactionIterator::PrepareOutput() {
     if (ikey_.type == kTypeMerge) {
       ExtractLargeDeltaIfNeeded();
     } else if (ikey_.type == kTypeDeltaLogIndex) {
+#ifndef NDEBUG
       printf("Call deltaLog GC at compaction_iterator.cc line = %d\n",
              __LINE__);
-      // GarbageCollectDeltaLogIfNeeded();
+#endif
+      GarbageCollectDeltaLogIfNeeded();
     }
 
     if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {

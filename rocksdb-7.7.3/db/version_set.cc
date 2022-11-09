@@ -2161,10 +2161,10 @@ Status Version::GetBlob(const ReadOptions& read_options, const Slice& user_key,
                         FilePrefetchBuffer* prefetch_buffer,
                         PinnableSlice* value, uint64_t* bytes_read) const {
   assert(value);
-
+#ifndef NDEBUG
   printf("Call get blob function (version_set) for key = %s\n",
          user_key.ToString().c_str());
-
+#endif
   if (blob_index.HasTTL() || blob_index.IsInlined()) {
     return Status::Corruption("Unexpected TTL/inlined blob index");
   }
@@ -2273,10 +2273,10 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
                             FilePrefetchBuffer* prefetch_buffer,
                             PinnableSlice* value, uint64_t* bytes_read) const {
   assert(value);
-
+#ifndef NDEBUG
   printf("Call get deltaLog function (version_set) for key = %s\n",
          user_key.ToString().c_str());
-
+#endif
   if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
     return Status::Corruption("Unexpected TTL/inlined deltaLog index");
   }
@@ -2425,9 +2425,11 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   FdWithKeyRange* f = fp.GetNextFile();
 
   while (f != nullptr) {
+#ifndef NDEBUG
     printf("Enter in find file while loop for key = %s file id = %d\n",
            user_key.ToString().c_str(),
            (int)(f->fd.packed_number_and_path_id % 256));
+#endif
     if (*max_covering_tombstone_seq > 0) {
       // The remaining files we look at will only contain covered keys, so we
       // stop here.
@@ -2468,32 +2470,36 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     }
     switch (get_context.State()) {
       case GetContext::kNotFound:
+#ifndef NDEBUG
         printf("GetContext found kNotFound as return value for key = %s\n",
                user_key.ToString().c_str());
+#endif
         // Keep searching in other files
         break;
       case GetContext::kMerge:
+#ifndef NDEBUG
         printf("GetContext found kMerge as return value for key = %s\n",
                user_key.ToString().c_str());
+#endif
         // TODO: update per-level perfcontext user_key_return_count for kMerge
-        // if (is_deltaLog_index) {
-        //   if (do_merge && value) {
-        //     TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
-        //                              value);
+        if (is_deltaLog_index) {
+          if (do_merge && value) {
+            TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
+                                     value);
 
-        //     constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
-        //     constexpr uint64_t* bytes_read = nullptr;
+            constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
+            constexpr uint64_t* bytes_read = nullptr;
 
-        //     *status = GetDeltaLog(read_options, user_key, *value,
-        //                           prefetch_buffer, value, bytes_read);
-        //     if (!status->ok()) {
-        //       if (status->IsIncomplete()) {
-        //         get_context.MarkKeyMayExist();
-        //       }
-        //       return;
-        //     }
-        //   }
-        // }
+            *status = GetDeltaLog(read_options, user_key, *value,
+                                  prefetch_buffer, value, bytes_read);
+            if (!status->ok()) {
+              if (status->IsIncomplete()) {
+                get_context.MarkKeyMayExist();
+              }
+              return;
+            }
+          }
+        }
         break;
       case GetContext::kFound:
         if (fp.GetHitFileLevel() == 0) {
@@ -2508,10 +2514,12 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                                   fp.GetHitFileLevel());
 
         if (is_blob_index) {
+#ifndef NDEBUG
           printf(
               "GetContext found kFound as return value, and is_blob_index == "
               "true for key = %s\n",
               user_key.ToString().c_str());
+#endif
           if (do_merge && value) {
             TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithBlobIndex",
                                      value);
@@ -2528,12 +2536,15 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
               return;
             }
           }
-        } else {
+        }
+#ifndef NDEBUG
+        else {
           printf(
               "GetContext found kFound as return value, and is_blob_index == "
               "false for key = %s\n",
               user_key.ToString().c_str());
         }
+#endif
         return;
       case GetContext::kDeleted:
         // Use empty error message for speed

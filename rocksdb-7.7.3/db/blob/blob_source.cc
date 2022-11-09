@@ -194,10 +194,10 @@ Status BlobSource::GetBlob(const ReadOptions& read_options,
                            FilePrefetchBuffer* prefetch_buffer,
                            PinnableSlice* value, uint64_t* bytes_read) {
   assert(value);
-
+#ifndef NDEBUG
   printf("Call get blob function (blob_source) for key = %s\n",
          user_key.ToString().c_str());
-
+#endif
   Status s;
 
   const CacheKey cache_key = GetCacheKey(file_number, file_size, offset);
