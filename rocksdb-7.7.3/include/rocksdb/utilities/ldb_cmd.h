@@ -73,6 +73,18 @@ class LDBCommand {
   static const std::string ARG_PREPOPULATE_BLOB_CACHE;
   static const std::string ARG_DECODE_BLOB_INDEX;
   static const std::string ARG_DUMP_UNCOMPRESSED_BLOBS;
+  static const std::string ARG_ENABLE_DELTALOG_FILES;
+  static const std::string ARG_MIN_DELTALOG_SIZE;
+  static const std::string ARG_DELTALOG_FILE_SIZE;
+  static const std::string ARG_DELTALOG_COMPRESSION_TYPE;
+  static const std::string ARG_ENABLE_DELTALOG_GARBAGE_COLLECTION;
+  static const std::string ARG_DELTALOG_GARBAGE_COLLECTION_AGE_CUTOFF;
+  static const std::string ARG_DELTALOG_GARBAGE_COLLECTION_FORCE_THRESHOLD;
+  static const std::string ARG_DELTALOG_COMPACTION_READAHEAD_SIZE;
+  static const std::string ARG_DELTALOG_FILE_STARTING_LEVEL;
+  static const std::string ARG_PREPOPULATE_DELTALOG_CACHE;
+  static const std::string ARG_DECODE_DELTALOG_INDEX;
+  static const std::string ARG_DUMP_UNCOMPRESSED_DELTALOGS;
 
   struct ParsedParams {
     std::string cmd;
@@ -188,6 +200,10 @@ class LDBCommand {
   bool enable_blob_files_;
 
   bool enable_blob_garbage_collection_;
+
+  bool enable_deltaLog_files_;
+
+  bool enable_deltaLog_garbage_collection_;
 
   bool create_if_missing_;
 

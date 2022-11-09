@@ -21,6 +21,7 @@
 #include "db/blob/blob_index.h"
 #include "db/db_impl/db_impl.h"
 #include "db/dbformat.h"
+#include "db/deltaLog/deltaLog_index.h"
 #include "db/log_reader.h"
 #include "db/version_util.h"
 #include "db/write_batch_internal.h"
@@ -46,6 +47,7 @@
 #include "util/stderr_logger.h"
 #include "util/string_util.h"
 #include "utilities/blob_db/blob_dump_tool.h"
+#include "utilities/deltaLog_db/deltaLog_dump_tool.h"
 #include "utilities/merge_operators.h"
 #include "utilities/ttl/db_ttl_impl.h"
 
@@ -107,7 +109,28 @@ const std::string LDBCommand::ARG_PREPOPULATE_BLOB_CACHE =
 const std::string LDBCommand::ARG_DECODE_BLOB_INDEX = "decode_blob_index";
 const std::string LDBCommand::ARG_DUMP_UNCOMPRESSED_BLOBS =
     "dump_uncompressed_blobs";
-
+const std::string LDBCommand::ARG_ENABLE_DELTALOG_FILES =
+    "enable_deltaLog_files";
+const std::string LDBCommand::ARG_MIN_DELTALOG_SIZE = "min_deltaLog_size";
+const std::string LDBCommand::ARG_DELTALOG_FILE_SIZE = "deltaLog_file_size";
+const std::string LDBCommand::ARG_DELTALOG_COMPRESSION_TYPE =
+    "deltaLog_compression_type";
+const std::string LDBCommand::ARG_ENABLE_DELTALOG_GARBAGE_COLLECTION =
+    "enable_deltaLog_garbage_collection";
+const std::string LDBCommand::ARG_DELTALOG_GARBAGE_COLLECTION_AGE_CUTOFF =
+    "deltaLog_garbage_collection_age_cutoff";
+const std::string LDBCommand::ARG_DELTALOG_GARBAGE_COLLECTION_FORCE_THRESHOLD =
+    "deltaLog_garbage_collection_force_threshold";
+const std::string LDBCommand::ARG_DELTALOG_COMPACTION_READAHEAD_SIZE =
+    "deltaLog_compaction_readahead_size";
+const std::string LDBCommand::ARG_DELTALOG_FILE_STARTING_LEVEL =
+    "deltaLog_file_starting_level";
+const std::string LDBCommand::ARG_PREPOPULATE_DELTALOG_CACHE =
+    "prepopulate_deltaLog_cache";
+const std::string LDBCommand::ARG_DECODE_DELTALOG_INDEX =
+    "decode_deltaLog_index";
+const std::string LDBCommand::ARG_DUMP_UNCOMPRESSED_DELTALOGS =
+    "dump_uncompressed_deltaLogs";
 const char* LDBCommand::DELIM = " ==> ";
 
 namespace {
@@ -118,11 +141,15 @@ void DumpWalFile(Options options, std::string wal_file, bool print_header,
 
 void DumpSstFile(Options options, std::string filename, bool output_hex,
                  bool show_properties, bool decode_blob_index,
-                 std::string from_key = "", std::string to_key = "");
+                 bool decode_deltaLog_index, std::string from_key = "",
+                 std::string to_key = "");
 
 void DumpBlobFile(const std::string& filename, bool is_key_hex,
                   bool is_value_hex, bool dump_uncompressed_blobs);
-};
+
+void DumpDeltaLogFile(const std::string& filename, bool is_key_hex,
+                      bool is_value_hex, bool dump_uncompressed_deltaLogs);
+};  // namespace
 
 LDBCommand* LDBCommand::InitFromCmdLineArgs(
     int argc, char const* const* argv, const Options& options,
@@ -165,7 +192,7 @@ LDBCommand* LDBCommand::InitFromCmdLineArgs(
   const std::string OPTION_PREFIX = "--";
 
   for (const auto& arg : args) {
-    if (arg[0] == '-' && arg[1] == '-'){
+    if (arg[0] == '-' && arg[1] == '-') {
       std::vector<std::string> splits = StringSplit(arg, '=');
       // --option_name=option_value
       if (splits.size() == 2) {
@@ -295,8 +322,7 @@ LDBCommand* LDBCommand::SelectCommand(const ParsedParams& parsed_params) {
                                        parsed_params.flags);
   } else if (parsed_params.cmd == CheckPointCommand::Name()) {
     return new CheckPointCommand(parsed_params.cmd_params,
-                                 parsed_params.option_map,
-                                 parsed_params.flags);
+                                 parsed_params.option_map, parsed_params.flags);
   } else if (parsed_params.cmd == RepairCommand::Name()) {
     return new RepairCommand(parsed_params.cmd_params, parsed_params.option_map,
                              parsed_params.flags);
@@ -423,6 +449,9 @@ LDBCommand::LDBCommand(const std::map<std::string, std::string>& options,
   enable_blob_files_ = IsFlagPresent(flags, ARG_ENABLE_BLOB_FILES);
   enable_blob_garbage_collection_ =
       IsFlagPresent(flags, ARG_ENABLE_BLOB_GARBAGE_COLLECTION);
+  enable_deltaLog_files_ = IsFlagPresent(flags, ARG_ENABLE_DELTALOG_FILES);
+  enable_deltaLog_garbage_collection_ =
+      IsFlagPresent(flags, ARG_ENABLE_DELTALOG_GARBAGE_COLLECTION);
   config_options_.ignore_unknown_options =
       IsFlagPresent(flags, ARG_IGNORE_UNKNOWN_OPTIONS);
 }
@@ -536,32 +565,43 @@ ColumnFamilyHandle* LDBCommand::GetCfHandle() {
 
 std::vector<std::string> LDBCommand::BuildCmdLineOptions(
     std::vector<std::string> options) {
-  std::vector<std::string> ret = {ARG_ENV_URI,
-                                  ARG_FS_URI,
-                                  ARG_DB,
-                                  ARG_SECONDARY_PATH,
-                                  ARG_BLOOM_BITS,
-                                  ARG_BLOCK_SIZE,
-                                  ARG_AUTO_COMPACTION,
-                                  ARG_COMPRESSION_TYPE,
-                                  ARG_COMPRESSION_MAX_DICT_BYTES,
-                                  ARG_WRITE_BUFFER_SIZE,
-                                  ARG_FILE_SIZE,
-                                  ARG_FIX_PREFIX_LEN,
-                                  ARG_TRY_LOAD_OPTIONS,
-                                  ARG_DISABLE_CONSISTENCY_CHECKS,
-                                  ARG_ENABLE_BLOB_FILES,
-                                  ARG_MIN_BLOB_SIZE,
-                                  ARG_BLOB_FILE_SIZE,
-                                  ARG_BLOB_COMPRESSION_TYPE,
-                                  ARG_ENABLE_BLOB_GARBAGE_COLLECTION,
-                                  ARG_BLOB_GARBAGE_COLLECTION_AGE_CUTOFF,
-                                  ARG_BLOB_GARBAGE_COLLECTION_FORCE_THRESHOLD,
-                                  ARG_BLOB_COMPACTION_READAHEAD_SIZE,
-                                  ARG_BLOB_FILE_STARTING_LEVEL,
-                                  ARG_PREPOPULATE_BLOB_CACHE,
-                                  ARG_IGNORE_UNKNOWN_OPTIONS,
-                                  ARG_CF_NAME};
+  std::vector<std::string> ret = {
+      ARG_ENV_URI,
+      ARG_FS_URI,
+      ARG_DB,
+      ARG_SECONDARY_PATH,
+      ARG_BLOOM_BITS,
+      ARG_BLOCK_SIZE,
+      ARG_AUTO_COMPACTION,
+      ARG_COMPRESSION_TYPE,
+      ARG_COMPRESSION_MAX_DICT_BYTES,
+      ARG_WRITE_BUFFER_SIZE,
+      ARG_FILE_SIZE,
+      ARG_FIX_PREFIX_LEN,
+      ARG_TRY_LOAD_OPTIONS,
+      ARG_DISABLE_CONSISTENCY_CHECKS,
+      ARG_ENABLE_BLOB_FILES,
+      ARG_MIN_BLOB_SIZE,
+      ARG_BLOB_FILE_SIZE,
+      ARG_BLOB_COMPRESSION_TYPE,
+      ARG_ENABLE_BLOB_GARBAGE_COLLECTION,
+      ARG_BLOB_GARBAGE_COLLECTION_AGE_CUTOFF,
+      ARG_BLOB_GARBAGE_COLLECTION_FORCE_THRESHOLD,
+      ARG_BLOB_COMPACTION_READAHEAD_SIZE,
+      ARG_BLOB_FILE_STARTING_LEVEL,
+      ARG_PREPOPULATE_BLOB_CACHE,
+      ARG_ENABLE_DELTALOG_FILES,
+      ARG_MIN_DELTALOG_SIZE,
+      ARG_DELTALOG_FILE_SIZE,
+      ARG_DELTALOG_COMPRESSION_TYPE,
+      ARG_ENABLE_DELTALOG_GARBAGE_COLLECTION,
+      ARG_DELTALOG_GARBAGE_COLLECTION_AGE_CUTOFF,
+      ARG_DELTALOG_GARBAGE_COLLECTION_FORCE_THRESHOLD,
+      ARG_DELTALOG_COMPACTION_READAHEAD_SIZE,
+      ARG_DELTALOG_FILE_STARTING_LEVEL,
+      ARG_PREPOPULATE_DELTALOG_CACHE,
+      ARG_IGNORE_UNKNOWN_OPTIONS,
+      ARG_CF_NAME};
   ret.insert(ret.end(), options.begin(), options.end());
   return ret;
 }
@@ -854,6 +894,104 @@ void LDBCommand::OverrideBaseCFOptions(ColumnFamilyOptions* cf_opts) {
     }
   }
 
+  cf_opts->enable_deltaLog_files = enable_deltaLog_files_;
+
+  int min_deltaLog_size;
+  if (ParseIntOption(option_map_, ARG_MIN_DELTALOG_SIZE, min_deltaLog_size,
+                     exec_state_)) {
+    if (min_deltaLog_size >= 0) {
+      cf_opts->min_deltaLog_size = min_deltaLog_size;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(ARG_MIN_DELTALOG_SIZE +
+                                                    " must be >= 0.");
+    }
+  }
+
+  int deltaLog_file_size;
+  if (ParseIntOption(option_map_, ARG_DELTALOG_FILE_SIZE, deltaLog_file_size,
+                     exec_state_)) {
+    if (deltaLog_file_size > 0) {
+      cf_opts->deltaLog_file_size = deltaLog_file_size;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(ARG_DELTALOG_FILE_SIZE +
+                                                    " must be > 0.");
+    }
+  }
+
+  cf_opts->enable_deltaLog_garbage_collection =
+      enable_deltaLog_garbage_collection_;
+
+  double deltaLog_garbage_collection_age_cutoff;
+  if (ParseDoubleOption(option_map_, ARG_DELTALOG_GARBAGE_COLLECTION_AGE_CUTOFF,
+                        deltaLog_garbage_collection_age_cutoff, exec_state_)) {
+    if (deltaLog_garbage_collection_age_cutoff >= 0 &&
+        deltaLog_garbage_collection_age_cutoff <= 1) {
+      cf_opts->deltaLog_garbage_collection_age_cutoff =
+          deltaLog_garbage_collection_age_cutoff;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(
+          ARG_DELTALOG_GARBAGE_COLLECTION_AGE_CUTOFF +
+          " must be >= 0 and <= 1.");
+    }
+  }
+
+  double deltaLog_garbage_collection_force_threshold;
+  if (ParseDoubleOption(
+          option_map_, ARG_DELTALOG_GARBAGE_COLLECTION_FORCE_THRESHOLD,
+          deltaLog_garbage_collection_force_threshold, exec_state_)) {
+    if (deltaLog_garbage_collection_force_threshold >= 0 &&
+        deltaLog_garbage_collection_force_threshold <= 1) {
+      cf_opts->deltaLog_garbage_collection_force_threshold =
+          deltaLog_garbage_collection_force_threshold;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(
+          ARG_DELTALOG_GARBAGE_COLLECTION_FORCE_THRESHOLD +
+          " must be >= 0 and <= 1.");
+    }
+  }
+
+  int deltaLog_compaction_readahead_size;
+  if (ParseIntOption(option_map_, ARG_DELTALOG_COMPACTION_READAHEAD_SIZE,
+                     deltaLog_compaction_readahead_size, exec_state_)) {
+    if (deltaLog_compaction_readahead_size > 0) {
+      cf_opts->deltaLog_compaction_readahead_size =
+          deltaLog_compaction_readahead_size;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(
+          ARG_DELTALOG_COMPACTION_READAHEAD_SIZE + " must be > 0.");
+    }
+  }
+
+  int deltaLog_file_starting_level;
+  if (ParseIntOption(option_map_, ARG_DELTALOG_FILE_STARTING_LEVEL,
+                     deltaLog_file_starting_level, exec_state_)) {
+    if (deltaLog_file_starting_level >= 0) {
+      cf_opts->deltaLog_file_starting_level = deltaLog_file_starting_level;
+    } else {
+      exec_state_ = LDBCommandExecuteResult::Failed(
+          ARG_DELTALOG_FILE_STARTING_LEVEL + " must be >= 0.");
+    }
+  }
+
+  int prepopulate_deltaLog_cache;
+  if (ParseIntOption(option_map_, ARG_PREPOPULATE_DELTALOG_CACHE,
+                     prepopulate_deltaLog_cache, exec_state_)) {
+    switch (prepopulate_deltaLog_cache) {
+      case 0:
+        cf_opts->prepopulate_deltaLog_cache =
+            PrepopulateDeltaLogCache::kDisable;
+        break;
+      case 1:
+        cf_opts->prepopulate_deltaLog_cache =
+            PrepopulateDeltaLogCache::kFlushOnly;
+        break;
+      default:
+        exec_state_ = LDBCommandExecuteResult::Failed(
+            ARG_PREPOPULATE_DELTALOG_CACHE +
+            " must be 0 (disable) or 1 (flush only).");
+    }
+  }
+
   auto itr = option_map_.find(ARG_AUTO_COMPACTION);
   if (itr != option_map_.end()) {
     cf_opts->disable_auto_compactions = !StringToBool(itr->second);
@@ -871,6 +1009,12 @@ void LDBCommand::OverrideBaseCFOptions(ColumnFamilyOptions* cf_opts) {
     cf_opts->blob_compression_type = blob_compression_type;
   }
 
+  CompressionType deltaLog_compression_type;
+  if (ParseCompressionTypeOption(option_map_, ARG_DELTALOG_COMPRESSION_TYPE,
+                                 deltaLog_compression_type, exec_state_)) {
+    cf_opts->deltaLog_compression_type = deltaLog_compression_type;
+  }
+
   int compression_max_dict_bytes;
   if (ParseIntOption(option_map_, ARG_COMPRESSION_MAX_DICT_BYTES,
                      compression_max_dict_bytes, exec_state_)) {
@@ -884,7 +1028,7 @@ void LDBCommand::OverrideBaseCFOptions(ColumnFamilyOptions* cf_opts) {
 
   int write_buffer_size;
   if (ParseIntOption(option_map_, ARG_WRITE_BUFFER_SIZE, write_buffer_size,
-        exec_state_)) {
+                     exec_state_)) {
     if (write_buffer_size > 0) {
       cf_opts->write_buffer_size = write_buffer_size;
     } else {
@@ -1284,7 +1428,7 @@ void DBLoaderCommand::DoCommand() {
     } else if (0 == line.find("Created bg thread 0x")) {
       // ignore this line
     } else {
-      bad_lines ++;
+      bad_lines++;
     }
   }
 
@@ -1373,7 +1517,6 @@ ManifestDumpCommand::ManifestDumpCommand(
 }
 
 void ManifestDumpCommand::DoCommand() {
-
   std::string manifestfile;
 
   if (!path_.empty()) {
@@ -1730,7 +1873,7 @@ void IncBucketCounts(std::vector<uint64_t>& bucket_counts, int ttl_start,
   (void)num_buckets;
 #endif
   assert(time_range > 0 && timekv >= ttl_start && bucket_size > 0 &&
-    timekv < (ttl_start + time_range) && num_buckets > 1);
+         timekv < (ttl_start + time_range) && num_buckets > 1);
   int bucket = (timekv - ttl_start) / bucket_size;
   bucket_counts[bucket]++;
 }
@@ -1739,7 +1882,7 @@ void PrintBucketCounts(const std::vector<uint64_t>& bucket_counts,
                        int ttl_start, int ttl_end, int bucket_size,
                        int num_buckets) {
   int time_point = ttl_start;
-  for(int i = 0; i < num_buckets - 1; i++, time_point += bucket_size) {
+  for (int i = 0; i < num_buckets - 1; i++, time_point += bucket_size) {
     fprintf(stdout, "Keys in range %s to %s : %lu\n",
             TimeToHumanString(time_point).c_str(),
             TimeToHumanString(time_point + bucket_size).c_str(),
@@ -1766,7 +1909,8 @@ InternalDumpCommand::InternalDumpCommand(
                  BuildCmdLineOptions(
                      {ARG_HEX, ARG_KEY_HEX, ARG_VALUE_HEX, ARG_FROM, ARG_TO,
                       ARG_MAX_KEYS, ARG_COUNT_ONLY, ARG_COUNT_DELIM, ARG_STATS,
-                      ARG_INPUT_KEY_HEX, ARG_DECODE_BLOB_INDEX})),
+                      ARG_INPUT_KEY_HEX, ARG_DECODE_BLOB_INDEX,
+                      ARG_DECODE_DELTALOG_INDEX})),
       has_from_(false),
       has_to_(false),
       max_keys_(-1),
@@ -1775,7 +1919,8 @@ InternalDumpCommand::InternalDumpCommand(
       count_delim_(false),
       print_stats_(false),
       is_input_key_hex_(false),
-      decode_blob_index_(false) {
+      decode_blob_index_(false),
+      decode_deltaLog_index_(false) {
   has_from_ = ParseStringOption(options, ARG_FROM, &from_);
   has_to_ = ParseStringOption(options, ARG_TO, &to_);
 
@@ -1784,16 +1929,17 @@ InternalDumpCommand::InternalDumpCommand(
   if (itr != options.end()) {
     delim_ = itr->second;
     count_delim_ = true;
-   // fprintf(stdout,"delim = %c\n",delim_[0]);
+    // fprintf(stdout,"delim = %c\n",delim_[0]);
   } else {
     count_delim_ = IsFlagPresent(flags, ARG_COUNT_DELIM);
-    delim_=".";
+    delim_ = ".";
   }
 
   print_stats_ = IsFlagPresent(flags, ARG_STATS);
   count_only_ = IsFlagPresent(flags, ARG_COUNT_ONLY);
   is_input_key_hex_ = IsFlagPresent(flags, ARG_INPUT_KEY_HEX);
   decode_blob_index_ = IsFlagPresent(flags, ARG_DECODE_BLOB_INDEX);
+  decode_deltaLog_index_ = IsFlagPresent(flags, ARG_DECODE_DELTALOG_INDEX);
 
   if (is_input_key_hex_) {
     if (has_from_) {
@@ -1815,6 +1961,7 @@ void InternalDumpCommand::Help(std::string& ret) {
   ret.append(" [--" + ARG_COUNT_DELIM + "=<char>]");
   ret.append(" [--" + ARG_STATS + "]");
   ret.append(" [--" + ARG_DECODE_BLOB_INDEX + "]");
+  ret.append(" [--" + ARG_DECODE_DELTALOG_INDEX + "]");
   ret.append("\n");
 }
 
@@ -1841,8 +1988,8 @@ void InternalDumpCommand::DoCommand() {
   }
   std::string rtype1, rtype2, row, val;
   rtype2 = "";
-  uint64_t c=0;
-  uint64_t s1=0,s2=0;
+  uint64_t c = 0;
+  uint64_t s1 = 0, s2 = 0;
 
   long long count = 0;
   for (auto& key_version : key_versions) {
@@ -1857,35 +2004,42 @@ void InternalDumpCommand::DoCommand() {
     int k;
     if (count_delim_) {
       rtype1 = "";
-      s1=0;
+      s1 = 0;
       row = ikey.Encode().ToString();
       val = key_version.value;
-      for(k=0;row[k]!='\x01' && row[k]!='\0';k++)
-        s1++;
-      for(k=0;val[k]!='\x01' && val[k]!='\0';k++)
-        s1++;
-      for(int j=0;row[j]!=delim_[0] && row[j]!='\0' && row[j]!='\x01';j++)
-        rtype1+=row[j];
-      if(rtype2.compare("") && rtype2.compare(rtype1)!=0) {
+      for (k = 0; row[k] != '\x01' && row[k] != '\0'; k++) s1++;
+      for (k = 0; val[k] != '\x01' && val[k] != '\0'; k++) s1++;
+      for (int j = 0; row[j] != delim_[0] && row[j] != '\0' && row[j] != '\x01';
+           j++)
+        rtype1 += row[j];
+      if (rtype2.compare("") && rtype2.compare(rtype1) != 0) {
         fprintf(stdout, "%s => count:%" PRIu64 "\tsize:%" PRIu64 "\n",
                 rtype2.c_str(), c, s2);
-        c=1;
-        s2=s1;
+        c = 1;
+        s2 = s1;
         rtype2 = rtype1;
       } else {
         c++;
-        s2+=s1;
-        rtype2=rtype1;
+        s2 += s1;
+        rtype2 = rtype1;
       }
     }
 
     if (!count_only_ && !count_delim_) {
       std::string key = ikey.DebugString(is_key_hex_);
       Slice value(key_version.value);
-      if (!decode_blob_index_ || value_type != kTypeBlobIndex) {
-        fprintf(stdout, "%s => %s\n", key.c_str(),
-                value.ToString(is_value_hex_).c_str());
-      } else {
+      if (decode_deltaLog_index_ && value_type == kTypeDeltaLogIndex) {
+        DeltaLogIndex deltaLog_index;
+
+        const Status s = deltaLog_index.DecodeFrom(value);
+        if (!s.ok()) {
+          fprintf(stderr, "%s => error decoding deltaLog index =>\n",
+                  key.c_str());
+        } else {
+          fprintf(stdout, "%s => %s\n", key.c_str(),
+                  deltaLog_index.DebugString(is_value_hex_).c_str());
+        }
+      } else if (decode_blob_index_ && value_type == kTypeBlobIndex) {
         BlobIndex blob_index;
 
         const Status s = blob_index.DecodeFrom(value);
@@ -1895,13 +2049,16 @@ void InternalDumpCommand::DoCommand() {
           fprintf(stdout, "%s => %s\n", key.c_str(),
                   blob_index.DebugString(is_value_hex_).c_str());
         }
+      } else {
+        fprintf(stdout, "%s => %s\n", key.c_str(),
+                value.ToString(is_value_hex_).c_str());
       }
     }
 
     // Terminate if maximum number of keys have been dumped
     if (max_keys_ > 0 && count >= max_keys_) break;
   }
-  if(count_delim_) {
+  if (count_delim_) {
     fprintf(stdout, "%s => count:%" PRIu64 "\tsize:%" PRIu64 "\n",
             rtype2.c_str(), c, s2);
   } else {
@@ -1924,14 +2081,16 @@ DBDumperCommand::DBDumperCommand(
               {ARG_TTL, ARG_HEX, ARG_KEY_HEX, ARG_VALUE_HEX, ARG_FROM, ARG_TO,
                ARG_MAX_KEYS, ARG_COUNT_ONLY, ARG_COUNT_DELIM, ARG_STATS,
                ARG_TTL_START, ARG_TTL_END, ARG_TTL_BUCKET, ARG_TIMESTAMP,
-               ARG_PATH, ARG_DECODE_BLOB_INDEX, ARG_DUMP_UNCOMPRESSED_BLOBS})),
+               ARG_PATH, ARG_DECODE_BLOB_INDEX, ARG_DUMP_UNCOMPRESSED_BLOBS,
+               ARG_DECODE_DELTALOG_INDEX, ARG_DUMP_UNCOMPRESSED_DELTALOGS})),
       null_from_(true),
       null_to_(true),
       max_keys_(-1),
       count_only_(false),
       count_delim_(false),
       print_stats_(false),
-      decode_blob_index_(false) {
+      decode_blob_index_(false),
+      decode_deltaLog_index_(false) {
   auto itr = options.find(ARG_FROM);
   if (itr != options.end()) {
     null_from_ = false;
@@ -1966,13 +2125,16 @@ DBDumperCommand::DBDumperCommand(
     count_delim_ = true;
   } else {
     count_delim_ = IsFlagPresent(flags, ARG_COUNT_DELIM);
-    delim_=".";
+    delim_ = ".";
   }
 
   print_stats_ = IsFlagPresent(flags, ARG_STATS);
   count_only_ = IsFlagPresent(flags, ARG_COUNT_ONLY);
   decode_blob_index_ = IsFlagPresent(flags, ARG_DECODE_BLOB_INDEX);
   dump_uncompressed_blobs_ = IsFlagPresent(flags, ARG_DUMP_UNCOMPRESSED_BLOBS);
+  decode_deltaLog_index_ = IsFlagPresent(flags, ARG_DECODE_DELTALOG_INDEX);
+  dump_uncompressed_deltaLogs_ =
+      IsFlagPresent(flags, ARG_DUMP_UNCOMPRESSED_DELTALOGS);
 
   if (is_key_hex_) {
     if (!null_from_) {
@@ -2008,6 +2170,8 @@ void DBDumperCommand::Help(std::string& ret) {
   ret.append(" [--" + ARG_PATH + "=<path_to_a_file>]");
   ret.append(" [--" + ARG_DECODE_BLOB_INDEX + "]");
   ret.append(" [--" + ARG_DUMP_UNCOMPRESSED_BLOBS + "]");
+  ret.append(" [--" + ARG_DECODE_DELTALOG_INDEX + "]");
+  ret.append(" [--" + ARG_DUMP_UNCOMPRESSED_DELTALOGS + "]");
   ret.append("\n");
 }
 
@@ -2046,7 +2210,7 @@ void DBDumperCommand::DoCommand() {
         break;
       case kTableFile:
         DumpSstFile(options_, path_, is_key_hex_, /* show_properties */ true,
-                    decode_blob_index_, from_, to_);
+                    decode_blob_index_, decode_deltaLog_index_, from_, to_);
         break;
       case kDescriptorFile:
         DumpManifestFile(options_, path_, /* verbose_ */ false, is_key_hex_,
@@ -2055,6 +2219,10 @@ void DBDumperCommand::DoCommand() {
       case kBlobFile:
         DumpBlobFile(path_, is_key_hex_, is_value_hex_,
                      dump_uncompressed_blobs_);
+        break;
+      case kDeltaLogFile:
+        DumpDeltaLogFile(path_, is_key_hex_, is_value_hex_,
+                         dump_uncompressed_deltaLogs_);
         break;
       default:
         exec_state_ = LDBCommandExecuteResult::Failed(
@@ -2114,13 +2282,13 @@ void DBDumperCommand::DoDumpCommand() {
   int bucket_size;
   if (!ParseIntOption(option_map_, ARG_TTL_BUCKET, bucket_size, exec_state_) ||
       bucket_size <= 0) {
-    bucket_size = time_range; // Will have just 1 bucket by default
+    bucket_size = time_range;  // Will have just 1 bucket by default
   }
-  //cretaing variables for row count of each type
+  // cretaing variables for row count of each type
   std::string rtype1, rtype2, row, val;
   rtype2 = "";
-  uint64_t c=0;
-  uint64_t s1=0,s2=0;
+  uint64_t c = 0;
+  uint64_t s1 = 0, s2 = 0;
 
   // At this point, bucket_size=0 => time_range=0
   int num_buckets = (bucket_size >= time_range)
@@ -2138,11 +2306,9 @@ void DBDumperCommand::DoDumpCommand() {
   for (; iter->Valid(); iter->Next()) {
     int rawtime = 0;
     // If end marker was specified, we stop before it
-    if (!null_to_ && (iter->key().ToString() >= to_))
-      break;
+    if (!null_to_ && (iter->key().ToString() >= to_)) break;
     // Terminate if maximum number of keys have been dumped
-    if (max_keys == 0)
-      break;
+    if (max_keys == 0) break;
     if (is_db_ttl_) {
       TtlIterator* it_ttl = static_cast_with_check<TtlIterator>(iter);
       rawtime = it_ttl->ttl_timestamp();
@@ -2162,21 +2328,20 @@ void DBDumperCommand::DoDumpCommand() {
       rtype1 = "";
       row = iter->key().ToString();
       val = iter->value().ToString();
-      s1 = row.size()+val.size();
-      for(int j=0;row[j]!=delim_[0] && row[j]!='\0';j++)
-        rtype1+=row[j];
-      if(rtype2.compare("") && rtype2.compare(rtype1)!=0) {
+      s1 = row.size() + val.size();
+      for (int j = 0; row[j] != delim_[0] && row[j] != '\0'; j++)
+        rtype1 += row[j];
+      if (rtype2.compare("") && rtype2.compare(rtype1) != 0) {
         fprintf(stdout, "%s => count:%" PRIu64 "\tsize:%" PRIu64 "\n",
                 rtype2.c_str(), c, s2);
-        c=1;
-        s2=s1;
+        c = 1;
+        s2 = s1;
         rtype2 = rtype1;
       } else {
-          c++;
-          s2+=s1;
-          rtype2=rtype1;
+        c++;
+        s2 += s1;
+        rtype2 = rtype1;
       }
-
     }
 
     if (count_only_) {
@@ -2197,7 +2362,7 @@ void DBDumperCommand::DoDumpCommand() {
   if (num_buckets > 1 && is_db_ttl_) {
     PrintBucketCounts(bucket_counts, ttl_start, ttl_end, bucket_size,
                       num_buckets);
-  } else if(count_delim_) {
+  } else if (count_delim_) {
     fprintf(stdout, "%s => count:%" PRIu64 "\tsize:%" PRIu64 "\n",
             rtype2.c_str(), c, s2);
   } else {
@@ -2228,7 +2393,7 @@ ReduceDBLevelsCommand::ReduceDBLevelsCommand(
   ParseIntOption(option_map_, ARG_NEW_LEVELS, new_levels_, exec_state_);
   print_old_levels_ = IsFlagPresent(flags, ARG_PRINT_OLD_LEVELS);
 
-  if(new_levels_ <= 0) {
+  if (new_levels_ <= 0) {
     exec_state_ = LDBCommandExecuteResult::Failed(
         " Use --" + ARG_NEW_LEVELS + " to specify a new level number\n");
   }
@@ -2240,7 +2405,7 @@ std::vector<std::string> ReduceDBLevelsCommand::PrepareArgs(
   ret.push_back("reduce_levels");
   ret.push_back("--" + ARG_DB + "=" + db_path);
   ret.push_back("--" + ARG_NEW_LEVELS + "=" + std::to_string(new_levels));
-  if(print_old_level) {
+  if (print_old_level) {
     ret.push_back("--" + ARG_PRINT_OLD_LEVELS);
   }
   return ret;
@@ -2265,8 +2430,7 @@ void ReduceDBLevelsCommand::OverrideBaseCFOptions(
   cf_opts->max_bytes_for_level_multiplier = 1;
 }
 
-Status ReduceDBLevelsCommand::GetOldNumOfLevels(Options& opt,
-    int* levels) {
+Status ReduceDBLevelsCommand::GetOldNumOfLevels(Options& opt, int* levels) {
   ImmutableDBOptions db_options(opt);
   EnvOptions soptions;
   std::shared_ptr<Cache> tc(
@@ -2364,9 +2528,9 @@ ChangeCompactionStyleCommand::ChangeCompactionStyleCommand(
       old_compaction_style_(-1),
       new_compaction_style_(-1) {
   ParseIntOption(option_map_, ARG_OLD_COMPACTION_STYLE, old_compaction_style_,
-    exec_state_);
+                 exec_state_);
   if (old_compaction_style_ != kCompactionStyleLevel &&
-     old_compaction_style_ != kCompactionStyleUniversal) {
+      old_compaction_style_ != kCompactionStyleUniversal) {
     exec_state_ = LDBCommandExecuteResult::Failed(
         "Use --" + ARG_OLD_COMPACTION_STYLE + " to specify old compaction " +
         "style. Check ldb help for proper compaction style value.\n");
@@ -2374,9 +2538,9 @@ ChangeCompactionStyleCommand::ChangeCompactionStyleCommand(
   }
 
   ParseIntOption(option_map_, ARG_NEW_COMPACTION_STYLE, new_compaction_style_,
-    exec_state_);
+                 exec_state_);
   if (new_compaction_style_ != kCompactionStyleLevel &&
-     new_compaction_style_ != kCompactionStyleUniversal) {
+      new_compaction_style_ != kCompactionStyleUniversal) {
     exec_state_ = LDBCommandExecuteResult::Failed(
         "Use --" + ARG_NEW_COMPACTION_STYLE + " to specify new compaction " +
         "style. Check ldb help for proper compaction style value.\n");
@@ -2716,7 +2880,6 @@ WALDumperCommand::WALDumperCommand(
     wal_file_ = itr->second;
   }
 
-
   print_header_ = IsFlagPresent(flags, ARG_PRINT_HEADER);
   print_values_ = IsFlagPresent(flags, ARG_PRINT_VALUE);
   is_write_committed_ = ParseBooleanOption(options, ARG_WRITE_COMMITTED, true);
@@ -2779,7 +2942,7 @@ void GetCommand::DoCommand() {
   Status st = db_->Get(ReadOptions(), GetCfHandle(), key_, &value);
   if (st.ok()) {
     fprintf(stdout, "%s\n",
-              (is_value_hex_ ? StringToHex(value) : value).c_str());
+            (is_value_hex_ ? StringToHex(value) : value).c_str());
   } else {
     std::stringstream oss;
     oss << "Get failed: " << st.ToString();
@@ -3017,9 +3180,9 @@ void ScanCommand::DoCommand() {
             TimeToHumanString(ttl_start).c_str(),
             TimeToHumanString(ttl_end).c_str());
   }
-  for ( ;
-        it->Valid() && (!end_key_specified_ || it->key().ToString() < end_key_);
-        it->Next()) {
+  for (;
+       it->Valid() && (!end_key_specified_ || it->key().ToString() < end_key_);
+       it->Next()) {
     if (is_db_ttl_) {
       TtlIterator* it_ttl = static_cast_with_check<TtlIterator>(it);
       int rawtime = it_ttl->ttl_timestamp();
@@ -3253,8 +3416,9 @@ void DBQuerierCommand::Help(std::string& ret) {
   ret.append(DBQuerierCommand::Name());
   ret.append(" [--" + ARG_TTL + "]");
   ret.append("\n");
-  ret.append("    Starts a REPL shell.  Type help for list of available "
-             "commands.");
+  ret.append(
+      "    Starts a REPL shell.  Type help for list of available "
+      "commands.");
   ret.append("\n");
 }
 
@@ -3281,7 +3445,7 @@ void DBQuerierCommand::DoCommand() {
       if (pos2 == std::string::npos) {
         break;
       }
-      tokens.push_back(line.substr(pos, pos2-pos));
+      tokens.push_back(line.substr(pos, pos2 - pos));
       pos = pos2 + 1;
     }
     tokens.push_back(line.substr(pos));
@@ -3315,8 +3479,8 @@ void DBQuerierCommand::DoCommand() {
       key = (is_key_hex_ ? HexToString(tokens[1]) : tokens[1]);
       s = db_->Get(read_options, GetCfHandle(), Slice(key), &value);
       if (s.ok()) {
-        fprintf(stdout, "%s\n", PrintKeyValue(key, value,
-              is_key_hex_, is_value_hex_).c_str());
+        fprintf(stdout, "%s\n",
+                PrintKeyValue(key, value, is_key_hex_, is_value_hex_).c_str());
       } else {
         if (s.IsNotFound()) {
           fprintf(stdout, "Not found %s\n", tokens[1].c_str());
@@ -3604,7 +3768,8 @@ namespace {
 
 void DumpSstFile(Options options, std::string filename, bool output_hex,
                  bool show_properties, bool decode_blob_index,
-                 std::string from_key, std::string to_key) {
+                 bool decode_deltaLog_index, std::string from_key,
+                 std::string to_key) {
   if (filename.length() <= 4 ||
       filename.rfind(".sst") != filename.length() - 4) {
     std::cout << "Invalid sst file name." << std::endl;
@@ -3614,7 +3779,8 @@ void DumpSstFile(Options options, std::string filename, bool output_hex,
   ROCKSDB_NAMESPACE::SstFileDumper dumper(
       options, filename, Temperature::kUnknown,
       2 * 1024 * 1024 /* readahead_size */,
-      /* verify_checksum */ false, output_hex, decode_blob_index);
+      /* verify_checksum */ false, output_hex, decode_blob_index,
+      decode_deltaLog_index);
   Status st = dumper.ReadSequential(true, std::numeric_limits<uint64_t>::max(),
                                     !from_key.empty(), from_key,
                                     !to_key.empty(), to_key);
@@ -3665,24 +3831,57 @@ void DumpBlobFile(const std::string& filename, bool is_key_hex,
     fprintf(stderr, "Failed: %s\n", s.ToString().c_str());
   }
 }
+
+void DumpDeltaLogFile(const std::string& filename, bool is_key_hex,
+                      bool is_value_hex, bool dump_uncompressed_deltaLogs) {
+  using ROCKSDB_NAMESPACE::deltaLog_db::DeltaLogDumpTool;
+  DeltaLogDumpTool tool;
+  DeltaLogDumpTool::DisplayType deltaLog_type =
+      is_value_hex ? DeltaLogDumpTool::DisplayType::kHex
+                   : DeltaLogDumpTool::DisplayType::kRaw;
+  DeltaLogDumpTool::DisplayType show_uncompressed_deltaLog =
+      dump_uncompressed_deltaLogs ? deltaLog_type
+                                  : DeltaLogDumpTool::DisplayType::kNone;
+  DeltaLogDumpTool::DisplayType show_deltaLog =
+      dump_uncompressed_deltaLogs ? DeltaLogDumpTool::DisplayType::kNone
+                                  : deltaLog_type;
+
+  DeltaLogDumpTool::DisplayType show_key =
+      is_key_hex ? DeltaLogDumpTool::DisplayType::kHex
+                 : DeltaLogDumpTool::DisplayType::kRaw;
+  Status s =
+      tool.Run(filename, show_key, show_deltaLog, show_uncompressed_deltaLog,
+               /* show_summary */ true);
+  if (!s.ok()) {
+    fprintf(stderr, "Failed: %s\n", s.ToString().c_str());
+  }
+}
 }  // namespace
 
 DBFileDumperCommand::DBFileDumperCommand(
     const std::vector<std::string>& /*params*/,
     const std::map<std::string, std::string>& options,
     const std::vector<std::string>& flags)
-    : LDBCommand(options, flags, true,
-                 BuildCmdLineOptions(
-                     {ARG_DECODE_BLOB_INDEX, ARG_DUMP_UNCOMPRESSED_BLOBS})),
+    : LDBCommand(
+          options, flags, true,
+          BuildCmdLineOptions(
+              {ARG_DECODE_BLOB_INDEX, ARG_DUMP_UNCOMPRESSED_BLOBS,
+               ARG_DECODE_DELTALOG_INDEX, ARG_DUMP_UNCOMPRESSED_DELTALOGS})),
       decode_blob_index_(IsFlagPresent(flags, ARG_DECODE_BLOB_INDEX)),
+
       dump_uncompressed_blobs_(
-          IsFlagPresent(flags, ARG_DUMP_UNCOMPRESSED_BLOBS)) {}
+          IsFlagPresent(flags, ARG_DUMP_UNCOMPRESSED_BLOBS)),
+      decode_deltaLog_index_(IsFlagPresent(flags, ARG_DECODE_DELTALOG_INDEX)),
+      dump_uncompressed_deltaLogs_(
+          IsFlagPresent(flags, ARG_DUMP_UNCOMPRESSED_DELTALOGS)) {}
 
 void DBFileDumperCommand::Help(std::string& ret) {
   ret.append("  ");
   ret.append(DBFileDumperCommand::Name());
   ret.append(" [--" + ARG_DECODE_BLOB_INDEX + "] ");
   ret.append(" [--" + ARG_DUMP_UNCOMPRESSED_BLOBS + "] ");
+  ret.append(" [--" + ARG_DECODE_DELTALOG_INDEX + "] ");
+  ret.append(" [--" + ARG_DUMP_UNCOMPRESSED_DELTALOGS + "] ");
   ret.append("\n");
 }
 
@@ -3694,7 +3893,7 @@ void DBFileDumperCommand::DoCommand() {
   Status s;
 
   // TODO: Use --hex, --key_hex, --value_hex flags consistently for
-  // dumping manifest file, sst files and blob files.
+  // dumping manifest file, sst files, deltaLog files and blob files.
   std::cout << "Manifest File" << std::endl;
   std::cout << "==============================" << std::endl;
   std::string manifest_filename;
@@ -3734,7 +3933,8 @@ void DBFileDumperCommand::DoCommand() {
         filename = NormalizePath(filename);
         std::cout << filename << " level:" << level.level << std::endl;
         std::cout << "------------------------------" << std::endl;
-        DumpSstFile(options_, filename, false, true, decode_blob_index_);
+        DumpSstFile(options_, filename, false, true, decode_blob_index_,
+                    decode_deltaLog_index_);
         std::cout << std::endl;
       }
     }
@@ -3751,6 +3951,21 @@ void DBFileDumperCommand::DoCommand() {
       std::cout << "------------------------------" << std::endl;
       DumpBlobFile(filename, /* is_key_hex */ false, /* is_value_hex */ false,
                    dump_uncompressed_blobs_);
+      std::cout << std::endl;
+    }
+    std::cout << "DeltaLog Files" << std::endl;
+    std::cout << "==============================" << std::endl;
+    for (const DeltaLogMetaData& deltaLog_file : column_family.deltaLog_files) {
+      std::string filename = deltaLog_file.deltaLog_file_path + "/" +
+                             deltaLog_file.deltaLog_file_name;
+      // Correct concatenation of filepath and filename:
+      // Check that there is no double slashes (or more!) when concatenation
+      // happens.
+      filename = NormalizePath(filename);
+      std::cout << filename << std::endl;
+      std::cout << "------------------------------" << std::endl;
+      DumpDeltaLogFile(filename, /* is_key_hex */ false,
+                       /* is_value_hex */ false, dump_uncompressed_deltaLogs_);
       std::cout << std::endl;
     }
   }
@@ -3809,7 +4024,7 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
   std::vector<ColumnFamilyMetaData> metadata;
   db_->GetAllColumnFamilyMetaData(&metadata);
   if (sort_by_filename_) {
-    std::cout << "Live SST and Blob Files:" << std::endl;
+    std::cout << "Live SST, DeltaLog and Blob Files:" << std::endl;
     // tuple of <file path, level, column family name>
     std::vector<std::tuple<std::string, int, std::string>> all_files;
 
@@ -3845,6 +4060,21 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
         // Level for blob files is encoded as -1
         all_files.emplace_back(filename, -1, cf);
       }  // End of for-loop over blob files
+
+      const auto& deltaLog_files = column_metadata.deltaLog_files;
+      for (const auto& deltaLog_metadata : deltaLog_files) {
+        // The DeltaLogMetaData.deltaLog_file_name always starts with "/",
+        // however DeltaLogMetaData.deltaLog_file_path is the string provided by
+        // the user as an input. Therefore we check if we can
+        // concantenate the two strings directly or if we need to
+        // drop a possible extra "/" at the end of
+        // DeltaLogMetaData.deltaLog_file_path.
+        std::string filename =
+            NormalizePath(deltaLog_metadata.deltaLog_file_path + "/" +
+                          deltaLog_metadata.deltaLog_file_name);
+        // Level for deltaLog files is encoded as -1
+        all_files.emplace_back(filename, -1, cf);
+      }  // End of for-loop over deltaLog files
     }    // End of for-loop over column metadata
 
     // Sort by filename (i.e. first entry in tuple)
@@ -3898,6 +4128,21 @@ void DBLiveFilesMetadataDumperCommand::DoCommand() {
             blob_metadata.blob_file_path + "/" + blob_metadata.blob_file_name);
         std::cout << filename << std::endl;
       }  // End of for-loop over blob files
+
+      std::cout << "Live DeltaLog Files:" << std::endl;
+      const auto& deltaLog_files = column_metadata.deltaLog_files;
+      for (const auto& deltaLog_metadata : deltaLog_files) {
+        // The DeltaLogMetaData.deltaLog_file_name always starts with "/",
+        // however DeltaLogMetaData.deltaLog_file_path is the string provided by
+        // the user as an input. Therefore we check if we can
+        // concantenate the two strings directly or if we need to
+        // drop a possible extra "/" at the end of
+        // DeltaLogMetaData.deltaLog_file_path.
+        std::string filename =
+            NormalizePath(deltaLog_metadata.deltaLog_file_path + "/" +
+                          deltaLog_metadata.deltaLog_file_name);
+        std::cout << filename << std::endl;
+      }  // End of for-loop over deltaLog files
     }    // End of for-loop over column metadata
   }      // End of else ("not sort_by_filename")
   std::cout << "------------------------------" << std::endl;

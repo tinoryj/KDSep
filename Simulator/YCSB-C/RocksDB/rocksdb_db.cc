@@ -54,6 +54,10 @@ class FieldUpdateMergeOperator : public MergeOperator {
         gettimeofday(&timestartFull, NULL);
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
+        if (existing_value == nullptr) {
+            cout << "Merge operation existing value = nullptr" << endl;
+            return false;
+        }
         cout << "Merge operation existing value size = " << existing_value->size() << endl;
         vector<std::string> words = split(existing_value->ToString(), ",");
         // for (long unsigned int i = 0; i < words.size(); i++) {

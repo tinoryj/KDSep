@@ -2425,8 +2425,9 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
   FdWithKeyRange* f = fp.GetNextFile();
 
   while (f != nullptr) {
-    printf("Enter in find file while loop for key = %s\n",
-           user_key.ToString().c_str());
+    printf("Enter in find file while loop for key = %s file id = %d\n",
+           user_key.ToString().c_str(),
+           (int)(f->fd.packed_number_and_path_id % 256));
     if (*max_covering_tombstone_seq > 0) {
       // The remaining files we look at will only contain covered keys, so we
       // stop here.

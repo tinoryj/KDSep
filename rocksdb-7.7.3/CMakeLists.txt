@@ -657,7 +657,20 @@ set(SOURCES
         cache/lru_cache.cc
         cache/sharded_cache.cc
         db/arena_wrapped_db_iter.cc
-        db/blob/blob_contents.cc
+        db/deltaLog/deltaLog_contents.cc
+        db/deltaLog/deltaLog_fetcher.cc
+        db/deltaLog/deltaLog_file_addition.cc
+        db/deltaLog/deltaLog_file_builder.cc
+        db/deltaLog/deltaLog_file_cache.cc
+        db/deltaLog/deltaLog_file_garbage.cc
+        db/deltaLog/deltaLog_file_meta.cc
+        db/deltaLog/deltaLog_file_reader.cc
+        db/deltaLog/deltaLog_garbage_meter.cc
+        db/deltaLog/deltaLog_log_format.cc
+        db/deltaLog/deltaLog_log_sequential_reader.cc
+        db/deltaLog/deltaLog_log_writer.cc
+        db/deltaLog/deltaLog_source.cc
+        db/deltaLog/deltaLog_contents.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
         db/blob/blob_file_builder.cc
@@ -892,6 +905,7 @@ set(SOURCES
         utilities/blob_db/blob_db_impl.cc
         utilities/blob_db/blob_db_impl_filesnapshot.cc
         utilities/blob_db/blob_dump_tool.cc
+        utilities/deltaLog_db/deltaLog_dump_tool.cc
         utilities/blob_db/blob_file.cc
         utilities/cache_dump_load.cc
         utilities/cache_dump_load_impl.cc
@@ -1284,6 +1298,18 @@ if(WITH_TESTS)
         db/blob/db_blob_compaction_test.cc
         db/blob/db_blob_corruption_test.cc
         db/blob/db_blob_index_test.cc
+        db/deltaLog/deltaLog_counting_iterator_test.cc
+        db/deltaLog/deltaLog_file_addition_test.cc
+        db/deltaLog/deltaLog_file_builder_test.cc
+        db/deltaLog/deltaLog_file_cache_test.cc
+        db/deltaLog/deltaLog_file_garbage_test.cc
+        db/deltaLog/deltaLog_file_reader_test.cc
+        db/deltaLog/deltaLog_garbage_meter_test.cc
+        db/deltaLog/deltaLog_source_test.cc
+        db/deltaLog/db_deltaLog_basic_test.cc
+        db/deltaLog/db_deltaLog_compaction_test.cc
+        db/deltaLog/db_deltaLog_corruption_test.cc
+        db/deltaLog/db_deltaLog_index_test.cc
         db/column_family_test.cc
         db/compact_files_test.cc
         db/compaction/clipping_iterator_test.cc

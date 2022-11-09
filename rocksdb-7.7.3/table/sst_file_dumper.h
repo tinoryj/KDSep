@@ -20,7 +20,7 @@ class SstFileDumper {
   explicit SstFileDumper(const Options& options, const std::string& file_name,
                          Temperature file_temp, size_t readahead_size,
                          bool verify_checksum, bool output_hex,
-                         bool decode_blob_index,
+                         bool decode_blob_index, bool decode_deltaLog_index,
                          const EnvOptions& soptions = EnvOptions(),
                          bool silent = false);
 
@@ -77,6 +77,7 @@ class SstFileDumper {
   Temperature file_temp_;
   bool output_hex_;
   bool decode_blob_index_;
+  bool decode_deltaLog_index_;
   EnvOptions soptions_;
   // less verbose in stdout/stderr
   bool silent_;
