@@ -17,7 +17,7 @@
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
 #include "rocksdb/trace_reader_writer.h"
-// #include "utilities/merge_operators.h"
+#include <fstream>
 #include <assert.h>
 
 #include <cstdlib>
@@ -53,6 +53,7 @@ class RocksDB : public DB {
     ~RocksDB();
 
    private:
+    std::ofstream outputStream_;
     rocksdb::DB *db_;
     rocksdb::Options options_;
     rocksdb::Iterator *it{nullptr};

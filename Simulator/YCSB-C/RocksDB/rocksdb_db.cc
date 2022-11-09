@@ -112,6 +112,10 @@ class FieldUpdateMergeOperator : public MergeOperator {
 };
 
 RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
+    outputStream_.open("operations.log", ios::binary | ios::out);
+    if (!outputStream_.is_open()) {
+        cerr << "Load logging files error"<<endl;
+    }
     // get rocksdb config
     ExternDBConfig config = ExternDBConfig(config_file_path);
     int bloomBits = config.getBloomBits();
@@ -210,6 +214,7 @@ int RocksDB::Read(const std::string &table, const std::string &key,
     rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
     // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
     // cerr << "[YCSB] Read op, value = " << value << endl;
+    outputStream_<<"[YCSB] Read op, key = " << key<<", value = " << value << endl;
     return s.ok();
 }
 
@@ -246,6 +251,7 @@ int RocksDB::Insert(const std::string &table, const std::string &key,
              << endl;
         exit(0);
     }
+    outputStream_<<"[YCSB] Insert op, key = " << key <<", value = " << fullValue << endl;
     return DB::kOK;
 }
 
@@ -258,6 +264,7 @@ int RocksDB::Update(const std::string &table, const std::string &key,
             // cout << "Merge value failed: " << s.ToString() << endl;
             exit(-1);
         }
+        outputStream_<<"[YCSB] Update op, key = " << key <<", op value = " << p.second << endl;
     }
     // s = db_->Flush(rocksdb::FlushOptions());
     return s.ok();
@@ -276,6 +283,7 @@ int RocksDB::OverWrite(const std::string &table, const std::string &key,
         cerr << "insert error" << s.ToString() << endl;
         exit(0);
     }
+     outputStream_<<"[YCSB] Overwrite op, key = " << key <<", value = " << fullValue << endl;
     return DB::kOK;
 }
 
