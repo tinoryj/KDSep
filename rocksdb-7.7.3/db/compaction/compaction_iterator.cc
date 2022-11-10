@@ -990,8 +990,8 @@ void CompactionIterator::NextFromInput() {
         ikey_.user_key = current_key_.GetUserKey();
         validity_info_.SetValid(ValidContext::kMerge2);
       } else {
-        // printf("Did merge operation in compaction_iterator.cc:%d\n",
-        // __LINE__); all merge operands were filtered out. reset the user key,
+        printf("Did merge operation in compaction_iterator.cc:%d\n", __LINE__);
+        // all merge operands were filtered out. reset the user key,
         // since the batch consumed by the merge operator should not shadow any
         // keys coming after the merges
         has_current_user_key_ = false;
@@ -1207,7 +1207,8 @@ void CompactionIterator::ExtractLargeDeltaIfNeeded() {
 
 void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
   assert(ikey_.type == kTypeDeltaLogIndex);
-
+  printf("Do GarbageCollectDeltaLogIfNeeded at compaction_iterator.cc:%d\n",
+         __LINE__);
   if (!compaction_) {
     return;
   }

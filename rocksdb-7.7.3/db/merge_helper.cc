@@ -194,7 +194,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     // At this point we are guaranteed that we need to process this key.
 
     assert(IsValueType(ikey.type));
-    if (ikey.type != kTypeMerge || ikey.type != kTypeDeltaLogIndex) {
+    printf("merge_helper.cc:%d, type = %d\n", __LINE__, ikey.type);
+    if (ikey.type != kTypeMerge && ikey.type != kTypeDeltaLogIndex) {
       // hit a put/delete/single delete
       //   => merge the put value or a nullptr with operands_
       //   => store result in operands_.back() (and update keys_.back())
@@ -282,18 +283,19 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       iter->Next();
       return s;
     } else {
+      printf("Find deltaLogIndex/merge in merge_helper.cc:%d\n", __LINE__);
       Slice value_slice;
       if (ikey.type == kTypeDeltaLogIndex) {
         printf("Find deltaLogIndex in merge_helper.cc:%d\n", __LINE__);
         const Slice val = iter->value();
         PinnableSlice deltaLog_value;
         DeltaLogIndex deltaLog_index;
-
+        printf("deltaLog_index val = %s\n", val.ToString().c_str());
         s = deltaLog_index.DecodeFrom(val);
         if (!s.ok()) {
           return s;
         }
-
+        printf("deltaLog_index = %s\n", deltaLog_index.ToString().c_str());
         FilePrefetchBuffer* prefetch_buffer =
             prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
                                    deltaLog_index.file_number())
@@ -319,6 +321,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       } else {
         value_slice = iter->value();
       }
+      printf("value_slice = %s\n", value_slice.ToString().c_str());
       // hit a merge
       //   => if there is a compaction filter, apply it.
       //   => check for range tombstones covering the operand
