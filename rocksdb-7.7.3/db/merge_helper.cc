@@ -157,7 +157,12 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
   if (!s.ok()) return s;
 
   bool hit_the_next_user_key = false;
+
+  int index = 0;
+
   for (; iter->Valid(); iter->Next(), original_key_is_iter = false) {
+    index++;
+    printf("MergeUntil index = %d\n", index);
     if (IsShuttingDown()) {
       s = Status::ShutdownInProgress();
       return s;
@@ -283,19 +288,23 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       iter->Next();
       return s;
     } else {
-      printf("Find deltaLogIndex/merge in merge_helper.cc:%d\n", __LINE__);
-      Slice value_slice;
+      printf(
+          "Find deltaLogIndex/merge in merge_helper.cc:%d, current value = "
+          "%s\n",
+          __LINE__, iter->value().ToString().c_str());
+      const Slice* value_slice;
+      PinnableSlice deltaLog_value;
       if (ikey.type == kTypeDeltaLogIndex) {
         printf("Find deltaLogIndex in merge_helper.cc:%d\n", __LINE__);
         const Slice val = iter->value();
-        PinnableSlice deltaLog_value;
         DeltaLogIndex deltaLog_index;
         printf("deltaLog_index val = %s\n", val.ToString().c_str());
         s = deltaLog_index.DecodeFrom(val);
         if (!s.ok()) {
           return s;
         }
-        printf("deltaLog_index = %s\n", deltaLog_index.ToString().c_str());
+        printf("deltaLog_index = %s\n",
+               deltaLog_index.value().ToString().c_str());
         FilePrefetchBuffer* prefetch_buffer =
             prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
                                    deltaLog_index.file_number())
@@ -311,17 +320,20 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         if (!s.ok()) {
           return s;
         }
-
-        value_slice = deltaLog_value;
+        printf("deltaLog_value size = %lu, data = %s\n", bytes_read,
+               deltaLog_value.ToString().c_str());
+        value_slice = &deltaLog_value;
 
         if (c_iter_stats) {
           ++c_iter_stats->num_deltaLogs_read;
           c_iter_stats->total_deltaLog_bytes_read += bytes_read;
         }
       } else {
-        value_slice = iter->value();
+        const Slice val = iter->value();
+        value_slice = &val;
       }
-      printf("value_slice = %s\n", value_slice.ToString().c_str());
+      printf("value_slice = %s\n", value_slice->ToString().c_str());
+      printf("Flag!\n");
       // hit a merge
       //   => if there is a compaction filter, apply it.
       //   => check for range tombstones covering the operand
@@ -339,7 +351,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       CompactionFilter::Decision filter =
           ikey.sequence <= latest_snapshot_
               ? CompactionFilter::Decision::kKeep
-              : FilterMerge(orig_ikey.user_key, value_slice);
+              : FilterMerge(orig_ikey.user_key, *value_slice);
       if (filter != CompactionFilter::Decision::kRemoveAndSkipUntil &&
           range_del_agg != nullptr &&
           range_del_agg->ShouldDelete(
@@ -364,7 +376,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         }
         if (filter == CompactionFilter::Decision::kKeep) {
           merge_context_.PushOperand(
-              value_slice, iter->IsValuePinned() /* operand_pinned */);
+              *value_slice, iter->IsValuePinned() /* operand_pinned */);
         } else {  // kChangeValue
           // Compaction filter asked us to change the operand from value_slice
           // to compaction_filter_value_.
@@ -385,7 +397,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     // we filtered out all the merge operands
     return s;
   }
-
+  printf("merge_context_.GetNumOperands() = %ld\n",
+         merge_context_.GetNumOperands());
   // We are sure we have seen this key's entire history if:
   // at_bottom == true (this does not necessarily mean it is the bottommost
   // layer, but rather that we are confident the key does not appear on any of
@@ -407,7 +420,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
   if (surely_seen_the_beginning) {
     // do a final merge with nullptr as the existing value and say
     // bye to the merge type (it's now converted to a Put)
-    assert(kTypeMerge == orig_ikey.type);
+    assert((kTypeMerge == orig_ikey.type) ||
+           (kTypeDeltaLogIndex == orig_ikey.type));
     assert(merge_context_.GetNumOperands() >= 1);
     assert(merge_context_.GetNumOperands() == keys_.size());
     std::string merge_result;
@@ -452,6 +466,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         merge_context_.Clear();
         merge_context_.PushOperand(merge_result);
         keys_.erase(keys_.begin(), keys_.end() - 1);
+        orig_ikey.type = kTypeMerge;
+        UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
       }
     }
   }
