@@ -112,10 +112,10 @@ class FieldUpdateMergeOperator : public MergeOperator {
 };
 
 RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
-    outputStream_.open("operations.log", ios::binary | ios::out);
-    if (!outputStream_.is_open()) {
-        cerr << "Load logging files error"<<endl;
-    }
+    // outputStream_.open("operations.log", ios::binary | ios::out);
+    // if (!outputStream_.is_open()) {
+    //     cerr << "Load logging files error" << endl;
+    // }
     // get rocksdb config
     ExternDBConfig config = ExternDBConfig(config_file_path);
     int bloomBits = config.getBloomBits();
@@ -125,7 +125,7 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
     bool directIO = config.getDirectIO();
     bool keyValueSeparation = config.getKeyValueSeparation();
     bool keyDeltaSeparation = config.getKeyDeltaSeparation();
-    size_t memtable = config.getMemtable();
+    size_t memtableSize = config.getMemtable();
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
     if (directIO == true) {
@@ -138,33 +138,33 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
     if (keyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
         options_.enable_blob_files = true;
-        options_.min_blob_size = 0;                                        // Default 0
-        options_.blob_file_size = config.getBlobFileSize() * 1024 * 1024;  // Default 256*1024*1024
-        options_.blob_compression_type = kNoCompression;                   // Default kNoCompression
-        options_.enable_blob_garbage_collection = false;                   // Default false
-        options_.blob_garbage_collection_age_cutoff = 0.25;                // Default 0.25
-        options_.blob_garbage_collection_force_threshold = 1.0;            // Default 1.0
-        options_.blob_compaction_readahead_size = 0;                       // Default 0
-        options_.blob_file_starting_level = 0;                             // Default 0
-        options_.blob_cache = nullptr;                                     // Default nullptr
-        // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
+        options_.min_blob_size = 0;                                                 // Default 0
+        options_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
+        options_.blob_compression_type = kNoCompression;                            // Default kNoCompression
+        options_.enable_blob_garbage_collection = false;                            // Default false
+        options_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
+        options_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
+        options_.blob_compaction_readahead_size = 0;                                // Default 0
+        options_.blob_file_starting_level = 0;                                      // Default 0
+        options_.blob_cache = nullptr;                                              // Default nullptr
+        options_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
     }
     if (keyDeltaSeparation == true) {
         cerr << "Enabled DeltaLog based KD separation" << endl;
         options_.enable_deltaLog_files = true;
-        options_.min_deltaLog_size = 0;                                            // Default 0
-        options_.deltaLog_file_size = config.getDeltaLogFileSize() * 1024 * 1024;  // Default 256*1024*1024
-        options_.deltaLog_compression_type = kNoCompression;                       // Default kNoCompression
-        options_.enable_deltaLog_garbage_collection = false;                       // Default false
-        options_.deltaLog_garbage_collection_age_cutoff = 0.25;                    // Default 0.25
-        options_.deltaLog_garbage_collection_force_threshold = 1.0;                // Default 1.0
-        options_.deltaLog_compaction_readahead_size = 0;                           // Default 0
-        options_.deltaLog_file_starting_level = 0;                                 // Default 0
-        options_.deltaLog_cache = nullptr;                                         // Default nullptr
-        // options_.prepopulate_blob_cache = kDisable;                        // Default kDisable
+        options_.min_deltaLog_size = 0;                                                     // Default 0
+        options_.deltaLog_file_size = config.getDeltaLogFileSize() * 1024;                  // Default 256*1024*1024
+        options_.deltaLog_compression_type = kNoCompression;                                // Default kNoCompression
+        options_.enable_deltaLog_garbage_collection = false;                                // Default false
+        options_.deltaLog_garbage_collection_age_cutoff = 0.25;                             // Default 0.25
+        options_.deltaLog_garbage_collection_force_threshold = 1.0;                         // Default 1.0
+        options_.deltaLog_compaction_readahead_size = 0;                                    // Default 0
+        options_.deltaLog_file_starting_level = 0;                                          // Default 0
+        options_.deltaLog_cache = nullptr;                                                  // Default nullptr
+        options_.prepopulate_deltaLog_cache = rocksdb::PrepopulateDeltaLogCache::kDisable;  // Default kDisable
     }
     options_.create_if_missing = true;
-    options_.write_buffer_size = memtable;
+    options_.write_buffer_size = memtableSize;
     // options_.compaction_pri = rocksdb::kMinOverlappingRatio;
     if (config.getTiered()) {
         options_.compaction_style = rocksdb::kCompactionStyleUniversal;
@@ -172,7 +172,7 @@ RocksDB::RocksDB(const char *dbfilename, const std::string &config_file_path) {
     options_.max_background_jobs = config.getNumThreads();
     options_.disable_auto_compactions = config.getNoCompaction();
     options_.level_compaction_dynamic_level_bytes = true;
-    options_.target_file_size_base = config.getTargetFileSizeBase() * 1024 * 1024;
+    options_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
     cerr << "write buffer size " << options_.write_buffer_size << endl;
     cerr << "write buffer number " << options_.max_write_buffer_number << endl;
     cerr << "num compaction trigger "
@@ -214,7 +214,7 @@ int RocksDB::Read(const std::string &table, const std::string &key,
     rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
     // s = db_->Put(rocksdb::WriteOptions(), key, value); // write back
     // cerr << "[YCSB] Read op, value = " << value << endl;
-    outputStream_<<"[YCSB] Read op, key = " << key<<", value = " << value << endl;
+    // outputStream_ << "[YCSB] Read op, key = " << key << ", value = " << value << endl;
     return s.ok();
 }
 
@@ -251,7 +251,7 @@ int RocksDB::Insert(const std::string &table, const std::string &key,
              << endl;
         exit(0);
     }
-    outputStream_<<"[YCSB] Insert op, key = " << key <<", value = " << fullValue << endl;
+    // outputStream_ << "[YCSB] Insert op, key = " << key << ", value = " << fullValue << endl;
     return DB::kOK;
 }
 
@@ -261,10 +261,10 @@ int RocksDB::Update(const std::string &table, const std::string &key,
     for (KVPair &p : values) {
         s = db_->Merge(rocksdb::WriteOptions(), key, p.second);
         if (!s.ok()) {
-            // cout << "Merge value failed: " << s.ToString() << endl;
+            cout << "Merge value failed: " << s.ToString() << endl;
             exit(-1);
         }
-        outputStream_<<"[YCSB] Update op, key = " << key <<", op value = " << p.second << endl;
+        // outputStream_ << "[YCSB] Update op, key = " << key << ", op value = " << p.second << endl;
     }
     // s = db_->Flush(rocksdb::FlushOptions());
     return s.ok();
@@ -280,10 +280,10 @@ int RocksDB::OverWrite(const std::string &table, const std::string &key,
     fullValue += values[values.size() - 1].second;
     s = db_->Put(rocksdb::WriteOptions(), key, fullValue);
     if (!s.ok()) {
-        cerr << "insert error" << s.ToString() << endl;
+        cerr << "OverWrite error" << s.ToString() << endl;
         exit(0);
     }
-     outputStream_<<"[YCSB] Overwrite op, key = " << key <<", value = " << fullValue << endl;
+    // outputStream_ << "[YCSB] Overwrite op, key = " << key << ", value = " << fullValue << endl;
     return DB::kOK;
 }
 
@@ -313,5 +313,8 @@ void RocksDB::printStats() {
     cout << rocksdb::get_iostats_context()->ToString() << endl;
 }
 
-RocksDB::~RocksDB() { delete db_; }
+RocksDB::~RocksDB() {
+    delete db_;
+    outputStream_.close();
+}
 }  // namespace ycsbc

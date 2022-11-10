@@ -1,6 +1,13 @@
 #ifndef YCSB_C_ROCKSDB_DB_H
 #define YCSB_C_ROCKSDB_DB_H
 
+#include <assert.h>
+
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <string>
+
 #include "core/db.h"
 #include "core/properties.h"
 #include "rocksdb/cache.h"
@@ -17,12 +24,6 @@
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
 #include "rocksdb/trace_reader_writer.h"
-#include <fstream>
-#include <assert.h>
-
-#include <cstdlib>
-#include <iostream>
-#include <string>
 
 namespace ycsbc {
 class RocksDB : public DB {
@@ -56,7 +57,7 @@ class RocksDB : public DB {
     std::ofstream outputStream_;
     rocksdb::DB *db_;
     rocksdb::Options options_;
-    rocksdb::Iterator *it{nullptr};
+    // rocksdb::Iterator *it{nullptr};
 };
 }  // namespace ycsbc
 #endif  // YCSB_C_ROCKSDB_DB_H

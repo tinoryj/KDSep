@@ -11,8 +11,7 @@ namespace utils {
 const uint64_t kFNVOffsetBasis64 = 0xCBF29CE484222325;
 const uint64_t kFNVPrime64 = 1099511628211;
 
-inline uint64_t FNVHash64(uint64_t val)
-{
+inline uint64_t FNVHash64(uint64_t val) {
     uint64_t hash = kFNVOffsetBasis64;
 
     for (int i = 0; i < 8; i++) {
@@ -27,8 +26,7 @@ inline uint64_t FNVHash64(uint64_t val)
 
 inline uint64_t Hash(uint64_t val) { return FNVHash64(val); }
 
-inline double RandomDouble(double min = 0.0, double max = 1.0)
-{
+inline double RandomDouble(double min = 0.0, double max = 1.0) {
     static std::default_random_engine generator;
     static std::uniform_real_distribution<double> uniform(min, max);
     return uniform(generator);
@@ -37,29 +35,25 @@ inline double RandomDouble(double min = 0.0, double max = 1.0)
 ///
 /// Returns an ASCII code that can be printed to desplay
 ///
-inline char RandomPrintChar()
-{
+inline char RandomPrintChar() {
     // No last ascii
     return rand() % 26 + 65;
 }
 
 class Exception : public std::exception {
-public:
+   public:
     Exception(const std::string& message)
-        : message_(message)
-    {
+        : message_(message) {
     }
-    const char* what() const noexcept
-    {
+    const char* what() const noexcept {
         return message_.c_str();
     }
 
-private:
+   private:
     std::string message_;
 };
 
-inline bool StrToBool(std::string str)
-{
+inline bool StrToBool(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
     if (str == "true" || str == "1") {
         return true;
@@ -70,12 +64,11 @@ inline bool StrToBool(std::string str)
     }
 }
 
-inline std::string Trim(const std::string& str)
-{
+inline std::string Trim(const std::string& str) {
     auto front = std::find_if_not(str.begin(), str.end(), [](int c) { return std::isspace(c); });
     return std::string(front, std::find_if_not(str.rbegin(), std::string::const_reverse_iterator(front), [](int c) { return std::isspace(c); }).base());
 }
 
-} // utils
+}  // namespace utils
 
-#endif // YCSB_C_UTILS_H_
+#endif  // YCSB_C_UTILS_H_

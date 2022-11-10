@@ -96,13 +96,14 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
             ;
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
-        if (i % processLabel_base == 0) {
-            std::cerr << "\r";
-            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%";
-        }
+        // if (i % processLabel_base == 0) {
+        std::cerr << "\r";
+        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops;
+        // }
     }
     std::cerr << "\r";
-    std::cerr << "[Running Status] Operation process: 100%" << std::endl;
+    std::cerr << "[Running Status] Operation process: 100%, " << num_ops << "/" << num_ops;
+    std::cerr << std::endl;
     db->Close();
     return oks;
 }

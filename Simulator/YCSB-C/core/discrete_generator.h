@@ -1,34 +1,32 @@
 #ifndef YCSB_C_DISCRETE_GENERATOR_H_
 #define YCSB_C_DISCRETE_GENERATOR_H_
 
-#include "generator.h"
-
-#include "utils.h"
 #include <cassert>
 #include <vector>
+
+#include "generator.h"
+#include "utils.h"
 
 namespace ycsbc {
 
 template <typename Value>
 class DiscreteGenerator : public Generator<Value> {
-public:
+   public:
     DiscreteGenerator()
-        : sum_(0)
-    {
+        : sum_(0) {
     }
     void AddValue(Value value, double weight);
     Value Next();
     Value Last() { return last_; }
 
-private:
+   private:
     std::vector<std::pair<Value, double>> values_;
     double sum_;
     Value last_;
 };
 
 template <typename Value>
-inline void DiscreteGenerator<Value>::AddValue(Value value, double weight)
-{
+inline void DiscreteGenerator<Value>::AddValue(Value value, double weight) {
     if (values_.empty()) {
         last_ = value;
     }
@@ -37,8 +35,7 @@ inline void DiscreteGenerator<Value>::AddValue(Value value, double weight)
 }
 
 template <typename Value>
-inline Value DiscreteGenerator<Value>::Next()
-{
+inline Value DiscreteGenerator<Value>::Next() {
     double chooser = utils::RandomDouble();
 
     for (auto p : values_) {
@@ -52,6 +49,6 @@ inline Value DiscreteGenerator<Value>::Next()
     return last_;
 }
 
-} // ycsbc
+}  // namespace ycsbc
 
-#endif // YCSB_C_DISCRETE_GENERATOR_H_
+#endif  // YCSB_C_DISCRETE_GENERATOR_H_
