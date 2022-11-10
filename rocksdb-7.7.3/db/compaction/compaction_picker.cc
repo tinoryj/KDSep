@@ -678,7 +678,9 @@ Compaction* CompactionPicker::CompactRange(
         /* deletion_compaction */ false, /* l0_files_might_overlap */ true,
         CompactionReason::kUnknown,
         compact_range_options.blob_garbage_collection_policy,
-        compact_range_options.blob_garbage_collection_age_cutoff);
+        compact_range_options.blob_garbage_collection_age_cutoff,
+        compact_range_options.deltaLog_garbage_collection_policy,
+        compact_range_options.deltaLog_garbage_collection_age_cutoff);
 
     RegisterCompaction(c);
     vstorage->ComputeCompactionScore(ioptions_, mutable_cf_options);
@@ -861,7 +863,9 @@ Compaction* CompactionPicker::CompactRange(
       /* deletion_compaction */ false, /* l0_files_might_overlap */ true,
       CompactionReason::kUnknown,
       compact_range_options.blob_garbage_collection_policy,
-      compact_range_options.blob_garbage_collection_age_cutoff);
+      compact_range_options.blob_garbage_collection_age_cutoff,
+      compact_range_options.deltaLog_garbage_collection_policy,
+      compact_range_options.deltaLog_garbage_collection_age_cutoff);
 
   TEST_SYNC_POINT_CALLBACK("CompactionPicker::CompactRange:Return", compaction);
   RegisterCompaction(compaction);

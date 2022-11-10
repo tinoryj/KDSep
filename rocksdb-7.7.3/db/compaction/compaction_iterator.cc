@@ -148,11 +148,20 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
+  // printf("Call seek to first (start) in compaction_iterator.cc:%d\n",
+  // __LINE__);
   NextFromInput();
+  // printf("Call seek to first (processed next) in
+  // compaction_iterator.cc:%d\n",
+  //        __LINE__);
   PrepareOutput();
+  // printf("Call seek to first (processed output) in
+  // compaction_iterator.cc:%d\n",
+  //        __LINE__);
 }
 
 void CompactionIterator::Next() {
+  // printf("Call Next (start) in compaction_iterator.cc:%d\n", __LINE__);
   // If there is a merge output, return it before continuing to process the
   // input.
   if (merge_out_iter_.Valid()) {
@@ -185,6 +194,8 @@ void CompactionIterator::Next() {
       // records, so even though we reached the end of the merge output, we do
       // not want to advance the iterator.
       NextFromInput();
+      // printf("Call Next (process input) in compaction_iterator.cc:%d\n",
+      //        __LINE__);
     }
   } else {
     // Only advance the input iterator if there is no merge output and the
@@ -193,6 +204,8 @@ void CompactionIterator::Next() {
       AdvanceInputIter();
     }
     NextFromInput();
+    // printf("Call Next (process input) in compaction_iterator.cc:%d\n",
+    //        __LINE__);
   }
 
   if (Valid()) {
@@ -201,14 +214,15 @@ void CompactionIterator::Next() {
   }
 
   PrepareOutput();
+  // printf("Call Next (process output) in compaction_iterator.cc:%d\n",
+  // __LINE__);
 }
 
 bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
                                               Slice* skip_until) {
   // TODO: support compaction filter for wide-column entities
   if (!compaction_filter_ ||
-      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex &&
-       ikey_.type != kTypeDeltaLogIndex)) {
+      (ikey_.type != kTypeValue && ikey_.type != kTypeBlobIndex)) {
     return true;
   }
   bool error = false;
@@ -378,6 +392,7 @@ void CompactionIterator::NextFromInput() {
     key_ = input_.key();
     value_ = input_.value();
     blob_value_.Reset();
+    deltaLog_value_.Reset();
     iter_stats_.num_input_records++;
 
     Status pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
@@ -895,7 +910,8 @@ void CompactionIterator::NextFromInput() {
         status_ = s;
         return;
       } else if (merge_out_iter_.Valid()) {
-        // NOTE: key, value, and ikey_ refer to old entries.
+        // printf("Did merge operation in compaction_iterator.cc:%d\n",
+        // __LINE__); NOTE: key, value, and ikey_ refer to old entries.
         //       These will be correctly set below.
         key_ = merge_out_iter_.key();
         value_ = merge_out_iter_.value();
@@ -915,9 +931,10 @@ void CompactionIterator::NextFromInput() {
         ikey_.user_key = current_key_.GetUserKey();
         validity_info_.SetValid(ValidContext::kMerge2);
       } else {
-        // all merge operands were filtered out. reset the user key, since the
-        // batch consumed by the merge operator should not shadow any keys
-        // coming after the merges
+        // printf("Did merge operation in compaction_iterator.cc:%d\n",
+        // __LINE__); all merge operands were filtered out. reset the user key,
+        // since the batch consumed by the merge operator should not shadow any
+        // keys coming after the merges
         has_current_user_key_ = false;
         pinned_iters_mgr_.ReleasePinnedData();
 
@@ -952,7 +969,8 @@ void CompactionIterator::NextFromInput() {
         status_ = s;
         return;
       } else if (merge_out_iter_.Valid()) {
-        // NOTE: key, value, and ikey_ refer to old entries.
+        // printf("Did merge operation in compaction_iterator.cc:%d\n",
+        // __LINE__); NOTE: key, value, and ikey_ refer to old entries.
         //       These will be correctly set below.
         key_ = merge_out_iter_.key();
         value_ = merge_out_iter_.value();
@@ -972,15 +990,17 @@ void CompactionIterator::NextFromInput() {
         ikey_.user_key = current_key_.GetUserKey();
         validity_info_.SetValid(ValidContext::kMerge2);
       } else {
-        // all merge operands were filtered out. reset the user key, since the
-        // batch consumed by the merge operator should not shadow any keys
-        // coming after the merges
+        // printf("Did merge operation in compaction_iterator.cc:%d\n",
+        // __LINE__); all merge operands were filtered out. reset the user key,
+        // since the batch consumed by the merge operator should not shadow any
+        // keys coming after the merges
         has_current_user_key_ = false;
         pinned_iters_mgr_.ReleasePinnedData();
 
         if (merge_helper_->FilteredUntil(&skip_until)) {
           need_skip = true;
         }
+        // printf("Did FilteredUntil in compaction_iterator.cc:%d\n", __LINE__);
       }
     } else {
       // 1. new user key -OR-
@@ -1004,15 +1024,17 @@ void CompactionIterator::NextFromInput() {
   if (!Valid() && IsShuttingDown()) {
     status_ = Status::ShutdownInProgress();
   }
-
+  // printf("Did IsShuttingDown in compaction_iterator.cc:%d\n", __LINE__);
   if (IsPausingManualCompaction()) {
     status_ = Status::Incomplete(Status::SubCode::kManualCompactionPaused);
   }
-
+  // printf("Did IsPausingManualCompaction in compaction_iterator.cc:%d\n",
+  //        __LINE__);
   // Propagate corruption status from memtable itereator
   if (!input_.Valid() && input_.status().IsCorruption()) {
     status_ = input_.status();
   }
+  // printf("Did IsCorruption in compaction_iterator.cc:%d\n", __LINE__);
 }
 
 bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
@@ -1173,7 +1195,7 @@ void CompactionIterator::GarbageCollectBlobIfNeeded() {
 }
 
 void CompactionIterator::ExtractLargeDeltaIfNeeded() {
-  assert(ikey_.type == kTypeValue);
+  assert(ikey_.type == kTypeMerge);
 
   if (!ExtractLargeDeltaIfNeededImpl()) {
     return;
@@ -1249,7 +1271,7 @@ void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
       return;
     }
 
-    ikey_.type = kTypeValue;
+    ikey_.type = kTypeMerge;
     current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
 
     return;
@@ -1545,7 +1567,8 @@ CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
   }
 
   const uint64_t readahead_size =
-      compaction->deltaLog_compaction_readahead_size();
+      compaction->deltaLog_compaction_readahead_size() +
+      compaction->blob_compaction_readahead_size();
   if (!readahead_size) {
     return nullptr;
   }

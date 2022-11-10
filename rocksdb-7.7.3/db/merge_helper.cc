@@ -194,15 +194,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     // At this point we are guaranteed that we need to process this key.
 
     assert(IsValueType(ikey.type));
-    if (ikey.type != kTypeMerge) {
-#ifndef NDEBUG
-      if (ikey.type != kTypeDeltaLogIndex) {
-        printf(
-            "Find not processed kTypeDeltaLogIndex in merge_helper.cc line = "
-            "%d\n",
-            __LINE__);
-      }
-#endif
+    if (ikey.type != kTypeMerge || ikey.type != kTypeDeltaLogIndex) {
       // hit a put/delete/single delete
       //   => merge the put value or a nullptr with operands_
       //   => store result in operands_.back() (and update keys_.back())
@@ -222,7 +214,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // run compaction filter on it.
       const Slice val = iter->value();
       PinnableSlice blob_value;
-      PinnableSlice deltaLog_value;
       const Slice* val_ptr;
       if ((kTypeValue == ikey.type || kTypeBlobIndex == ikey.type ||
            kTypeWideColumnEntity == ikey.type) &&
@@ -263,36 +254,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
             ++c_iter_stats->num_blobs_read;
             c_iter_stats->total_blob_bytes_read += bytes_read;
           }
-        } else if (ikey.type == kTypeDeltaLogIndex) {
-          DeltaLogIndex deltaLog_index;
-
-          s = deltaLog_index.DecodeFrom(val);
-          if (!s.ok()) {
-            return s;
-          }
-
-          FilePrefetchBuffer* prefetch_buffer =
-              prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
-                                     deltaLog_index.file_number())
-                               : nullptr;
-
-          uint64_t bytes_read = 0;
-
-          assert(deltaLog_fetcher);
-
-          s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, deltaLog_index,
-                                              prefetch_buffer, &deltaLog_value,
-                                              &bytes_read);
-          if (!s.ok()) {
-            return s;
-          }
-
-          val_ptr = &deltaLog_value;
-
-          if (c_iter_stats) {
-            ++c_iter_stats->num_deltaLogs_read;
-            c_iter_stats->total_deltaLog_bytes_read += bytes_read;
-          }
         } else {
           val_ptr = &val;
         }
@@ -321,6 +282,43 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       iter->Next();
       return s;
     } else {
+      Slice value_slice;
+      if (ikey.type == kTypeDeltaLogIndex) {
+        printf("Find deltaLogIndex in merge_helper.cc:%d\n", __LINE__);
+        const Slice val = iter->value();
+        PinnableSlice deltaLog_value;
+        DeltaLogIndex deltaLog_index;
+
+        s = deltaLog_index.DecodeFrom(val);
+        if (!s.ok()) {
+          return s;
+        }
+
+        FilePrefetchBuffer* prefetch_buffer =
+            prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
+                                   deltaLog_index.file_number())
+                             : nullptr;
+
+        uint64_t bytes_read = 0;
+
+        assert(deltaLog_fetcher);
+
+        s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, deltaLog_index,
+                                            prefetch_buffer, &deltaLog_value,
+                                            &bytes_read);
+        if (!s.ok()) {
+          return s;
+        }
+
+        value_slice = deltaLog_value;
+
+        if (c_iter_stats) {
+          ++c_iter_stats->num_deltaLogs_read;
+          c_iter_stats->total_deltaLog_bytes_read += bytes_read;
+        }
+      } else {
+        value_slice = iter->value();
+      }
       // hit a merge
       //   => if there is a compaction filter, apply it.
       //   => check for range tombstones covering the operand
@@ -331,7 +329,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       // Keep queuing keys and operands until we either meet a put / delete
       // request or later did a partial merge.
 
-      Slice value_slice = iter->value();
       // add an operand to the list if:
       // 1) it's included in one of the snapshots. in that case we *must* write
       // it out, no matter what compaction filter says
