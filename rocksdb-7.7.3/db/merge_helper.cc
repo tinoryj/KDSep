@@ -162,7 +162,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
 
   for (; iter->Valid(); iter->Next(), original_key_is_iter = false) {
     index++;
-    printf("MergeUntil index = %d\n", index);
     if (IsShuttingDown()) {
       s = Status::ShutdownInProgress();
       return s;
@@ -199,7 +198,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     // At this point we are guaranteed that we need to process this key.
 
     assert(IsValueType(ikey.type));
-    printf("merge_helper.cc:%d, type = %d\n", __LINE__, ikey.type);
     if (ikey.type != kTypeMerge && ikey.type != kTypeDeltaLogIndex) {
       // hit a put/delete/single delete
       //   => merge the put value or a nullptr with operands_
@@ -288,23 +286,15 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       iter->Next();
       return s;
     } else {
-      printf(
-          "Find deltaLogIndex/merge in merge_helper.cc:%d, current value = "
-          "%s\n",
-          __LINE__, iter->value().ToString().c_str());
       const Slice* value_slice;
       PinnableSlice deltaLog_value;
       if (ikey.type == kTypeDeltaLogIndex) {
-        printf("Find deltaLogIndex in merge_helper.cc:%d\n", __LINE__);
         const Slice val = iter->value();
         DeltaLogIndex deltaLog_index;
-        printf("deltaLog_index val = %s\n", val.ToString().c_str());
         s = deltaLog_index.DecodeFrom(val);
         if (!s.ok()) {
           return s;
         }
-        printf("deltaLog_index = %s\n",
-               deltaLog_index.value().ToString().c_str());
         FilePrefetchBuffer* prefetch_buffer =
             prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
                                    deltaLog_index.file_number())
@@ -320,8 +310,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         if (!s.ok()) {
           return s;
         }
-        printf("deltaLog_value size = %lu, data = %s\n", bytes_read,
-               deltaLog_value.ToString().c_str());
         value_slice = &deltaLog_value;
 
         if (c_iter_stats) {
@@ -332,8 +320,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         const Slice val = iter->value();
         value_slice = &val;
       }
-      printf("value_slice = %s\n", value_slice->ToString().c_str());
-      printf("Flag!\n");
       // hit a merge
       //   => if there is a compaction filter, apply it.
       //   => check for range tombstones covering the operand
@@ -366,6 +352,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         } else {
           keys_.push_front(iter->key().ToString());
         }
+
         if (keys_.size() == 1) {
           // we need to re-anchor the orig_ikey because it was anchored by
           // original_key before
@@ -397,8 +384,6 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
     // we filtered out all the merge operands
     return s;
   }
-  printf("merge_context_.GetNumOperands() = %ld\n",
-         merge_context_.GetNumOperands());
   // We are sure we have seen this key's entire history if:
   // at_bottom == true (this does not necessarily mean it is the bottommost
   // layer, but rather that we are confident the key does not appear on any of
@@ -463,11 +448,25 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       if (merge_success) {
         // Merging of operands (associative merge) was successful.
         // Replace operands with the merge result
-        merge_context_.Clear();
-        merge_context_.PushOperand(merge_result);
-        keys_.erase(keys_.begin(), keys_.end() - 1);
+        original_key = std::move(keys_.back());
         orig_ikey.type = kTypeMerge;
         UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
+        keys_.clear();
+        merge_context_.Clear();
+        keys_.emplace_front(std::move(original_key));
+        merge_context_.PushOperand(merge_result);
+      }
+    } else if (merge_context_.GetNumOperands() == 1) {
+      ParsedInternalKey tikey;
+      if (keys_.size() == 1) {
+        ParseInternalKey(keys_.back(), &tikey, allow_single_operand_);
+        if (tikey.type == kTypeDeltaLogIndex) {
+          original_key = std::move(keys_.back());
+          orig_ikey.type = kTypeMerge;
+          UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
+          keys_.clear();
+          keys_.emplace_front(std::move(original_key));
+        }
       }
     }
   }
