@@ -37,7 +37,6 @@ bool LevelCompactionPicker::NeedsCompaction(
     return true;
   }
   if (!vstorage->FilesMarkedForForcedDeltaLogGC().empty()) {
-    printf("FilesMarkedForForcedDeltaLogGC\n");
     return true;
   }
   for (int i = 0; i <= vstorage->MaxInputLevel(); i++) {

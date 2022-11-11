@@ -194,7 +194,6 @@ class BlobDB : public StackableDB {
   virtual Status Merge(const WriteOptions& /*options*/,
                        ColumnFamilyHandle* /*column_family*/,
                        const Slice& /*key*/, const Slice& /*value*/) override {
-    printf("Not support Merge opertaion in Blob DB\n");
     return Status::NotSupported("Not supported operation in blob db.");
   }
 

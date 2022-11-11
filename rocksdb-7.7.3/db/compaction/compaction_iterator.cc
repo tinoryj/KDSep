@@ -1207,8 +1207,6 @@ void CompactionIterator::ExtractLargeDeltaIfNeeded() {
 
 void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
   assert(ikey_.type == kTypeDeltaLogIndex);
-  printf("Do GarbageCollectDeltaLogIfNeeded at compaction_iterator.cc:%d\n",
-         __LINE__);
   if (!compaction_) {
     return;
   }
@@ -1336,10 +1334,6 @@ void CompactionIterator::PrepareOutput() {
     if (ikey_.type == kTypeMerge) {
       ExtractLargeDeltaIfNeeded();
     } else if (ikey_.type == kTypeDeltaLogIndex) {
-#ifndef NDEBUG
-      printf("Call deltaLog GC at compaction_iterator.cc line = %d\n",
-             __LINE__);
-#endif
       GarbageCollectDeltaLogIfNeeded();
     }
 

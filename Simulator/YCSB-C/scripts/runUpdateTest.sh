@@ -1,11 +1,12 @@
 #!/bin/bash
 pwd
-ReadRatioSet=(0.2 0.3 0.4 0.5 0.6 0.7)
+ulimit -n 63356
+ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
 OverWriteRatio=0.1
 ResultLogFolder="ResultLogs"
 DB_Name="loadedDB"
 DB_Loaded_Path="/mnt/sn640"
-KVPairsNumber=300000000    #"300000000"
+KVPairsNumber=100000000    #"300000000"
 OperationsNumber=100000000 #"300000000"
 MAXRunTimes=1
 Thread_number=1
@@ -119,5 +120,4 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         #     echo "Deleted old workload spec"
         # fi
     done
-
 done

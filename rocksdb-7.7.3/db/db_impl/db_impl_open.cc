@@ -2031,7 +2031,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         if (!name.empty() && name[0] == '/') {
           name = name.substr(1);
         }
-        printf("Generate new deltaLog file name = %s\n", name.c_str());
         known_file_sizes[name] = dmd.deltaLog_file_size;
       }
     }

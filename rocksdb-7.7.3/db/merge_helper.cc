@@ -456,21 +456,18 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
         keys_.emplace_front(std::move(original_key));
         merge_context_.PushOperand(merge_result);
       }
-    } else if (merge_context_.GetNumOperands() == 1) {
+    } else {
       ParsedInternalKey tikey;
-      if (keys_.size() == 1) {
-        ParseInternalKey(keys_.back(), &tikey, allow_single_operand_);
-        if (tikey.type == kTypeDeltaLogIndex) {
-          original_key = std::move(keys_.back());
-          orig_ikey.type = kTypeMerge;
-          UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
-          keys_.clear();
-          keys_.emplace_front(std::move(original_key));
-        }
+      ParseInternalKey(keys_.back(), &tikey, allow_single_operand_);
+      if (tikey.type == kTypeDeltaLogIndex) {
+        original_key = std::move(keys_.back());
+        orig_ikey.type = kTypeMerge;
+        UpdateInternalKey(&original_key, orig_ikey.sequence, orig_ikey.type);
+        keys_.clear();
+        keys_.emplace_front(std::move(original_key));
       }
     }
   }
-
   return s;
 }
 

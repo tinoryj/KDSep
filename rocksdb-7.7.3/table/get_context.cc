@@ -349,9 +349,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
           if (type == kTypeBlobIndex) {
-#ifndef NDEBUG
-            printf("Get value from blob files, start merge\n");
-#endif
             PinnableSlice pin_val;
             if (GetBlobValue(value, &pin_val) == false) {
               return false;
@@ -372,7 +369,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             return false;
           } else {
             assert(type == kTypeValue);
-            printf("Get value from memtables, start merge\n");
             state_ = kFound;
             if (do_merge_) {
               Merge(&value);
@@ -386,10 +382,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         }
         return false;
       case kTypeDeltaLogIndex:
-#ifndef NDEBUG
-        printf("Find kTypeDeltaLogIndex in get_context.cc line = %d\n",
-               __LINE__);
-#endif
         assert(state_ == kNotFound || state_ == kMerge);
         state_ = kMerge;
 
@@ -437,9 +429,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         return false;
 
       case kTypeMerge:
-#ifndef NDEBUG
-        printf("Find kTypeMerge in get_context:508\n");
-#endif
         assert(state_ == kNotFound || state_ == kMerge);
         state_ = kMerge;
         // value_pinner is not set from plain_table_reader.cc for example.
@@ -475,11 +464,6 @@ void GetContext::Merge(const Slice* value) {
       }
     }
   }
-#ifndef NDEBUG
-  else {
-    printf("Find nullptr value in GetContext Merge operation\n");
-  }
-#endif
 }
 
 bool GetContext::GetBlobValue(const Slice& blob_index,

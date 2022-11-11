@@ -290,10 +290,6 @@ Status BlobFileReader::GetBlob(
     FilePrefetchBuffer* prefetch_buffer, MemoryAllocator* allocator,
     std::unique_ptr<BlobContents>* result, uint64_t* bytes_read) const {
   assert(result);
-#ifndef NDEBUG
-  printf("Call get blob function (blob_file_reader) for key = %s\n",
-         user_key.ToString().c_str());
-#endif
   const uint64_t key_size = user_key.size();
 
   if (!IsValidBlobOffset(offset, key_size, value_size, file_size_)) {

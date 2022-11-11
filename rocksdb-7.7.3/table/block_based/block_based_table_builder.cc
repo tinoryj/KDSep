@@ -913,7 +913,6 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
   assert(rep_->state != Rep::State::kClosed);
   if (!ok()) return;
   ValueType value_type = ExtractValueType(key);
-  // printf("Builder add new kv pair type = %d\n", value_type);
   if (IsValueType(value_type)) {
 #ifndef NDEBUG
     if (r->props.num_entries > r->props.num_range_deletions) {
