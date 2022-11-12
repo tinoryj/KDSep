@@ -3,10 +3,11 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include "db/deltaLog/deltaLog_file_garbage.h"
+
 #include <ostream>
 #include <sstream>
 
-#include "db/deltaLog/deltaLog_file_garbage.h"
 #include "logging/event_logger.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"

@@ -291,13 +291,14 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       if (ikey.type == kTypeDeltaLogIndex) {
         const Slice val = iter->value();
         DeltaLogIndex deltaLog_index;
-        s = deltaLog_index.DecodeFrom(val);
+
+        s = deltaLog_index.GenerateFullFileHashFromKey(ikey.user_key);
         if (!s.ok()) {
           return s;
         }
         FilePrefetchBuffer* prefetch_buffer =
             prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
-                                   deltaLog_index.file_number())
+                                   deltaLog_index.getFileID())
                              : nullptr;
 
         uint64_t bytes_read = 0;

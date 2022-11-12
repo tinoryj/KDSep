@@ -3,8 +3,9 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-#include "db/dbformat.h"
 #include "db/deltaLog/deltaLog_garbage_meter.h"
+
+#include "db/dbformat.h"
 #include "db/deltaLog/deltaLog_index.h"
 #include "db/deltaLog/deltaLog_log_format.h"
 
@@ -81,20 +82,14 @@ Status DeltaLogGarbageMeter::Parse(const Slice& key, const Slice& value,
   DeltaLogIndex deltaLog_index;
 
   {
-    const Status s = deltaLog_index.DecodeFrom(value);
+    const Status s = deltaLog_index.GenerateFullFileHashFromKey(key);
     if (!s.ok()) {
       return s;
     }
   }
 
-  if (deltaLog_index.IsInlined() || deltaLog_index.HasTTL()) {
-    return Status::Corruption("Unexpected TTL/inlined deltaLog index");
-  }
-
-  *deltaLog_file_number = deltaLog_index.file_number();
-  *bytes = deltaLog_index.size() +
-           DeltaLogLogRecord::CalculateAdjustmentForRecordHeader(
-               ikey.user_key.size());
+  *deltaLog_file_number = deltaLog_index.getFileID();
+  *bytes = deltaLog_index.getFileSize() + ikey.user_key.size();
 
   return Status::OK();
 }

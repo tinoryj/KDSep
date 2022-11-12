@@ -2253,7 +2253,7 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
   DeltaLogIndex deltaLog_index;
 
   {
-    Status s = deltaLog_index.DecodeFrom(deltaLog_index_slice);
+    Status s = deltaLog_index.GenerateFullFileHashFromKey(user_key);
     if (!s.ok()) {
       return s;
     }
@@ -2269,14 +2269,11 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
                             FilePrefetchBuffer* prefetch_buffer,
                             PinnableSlice* value, uint64_t* bytes_read) const {
   assert(value);
-  if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
-    return Status::Corruption("Unexpected TTL/inlined deltaLog index");
-  }
 
-  const uint64_t deltaLog_file_number = deltaLog_index.file_number();
+  const uint64_t deltaLog_file_full_hash = deltaLog_index.getFilePrefixHash();
 
   auto deltaLog_file_meta =
-      storage_info_.GetDeltaLogFileMetaData(deltaLog_file_number);
+      storage_info_.GetDeltaLogFileMetaData(deltaLog_file_full_hash);
   if (!deltaLog_file_meta) {
     return Status::Corruption("Invalid deltaLog file number");
   }
@@ -2284,9 +2281,9 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
   assert(deltaLog_source_);
   value->Reset();
   const Status s = deltaLog_source_->GetDeltaLog(
-      read_options, user_key, deltaLog_file_number, deltaLog_index.offset(),
-      deltaLog_file_meta->GetDeltaLogFileSize(), deltaLog_index.size(),
-      deltaLog_index.compression(), prefetch_buffer, value, bytes_read);
+      read_options, user_key, deltaLog_file_full_hash,
+      deltaLog_file_meta->GetDeltaLogFileSize(), prefetch_buffer, value,
+      bytes_read);
 
   return s;
 }
@@ -2314,17 +2311,9 @@ void Version::MultiGetDeltaLog(
         continue;
       }
 
-      if (deltaLog_index.HasTTL() || deltaLog_index.IsInlined()) {
-        *key_context.s =
-            Status::Corruption("Unexpected TTL/inlined deltaLog index");
-        continue;
-      }
-
       key_context.value->Reset();
-      deltaLog_reqs_in_file.emplace_back(
-          key_context.ukey_with_ts, deltaLog_index.offset(),
-          deltaLog_index.size(), deltaLog_index.compression(),
-          key_context.value, key_context.s);
+      deltaLog_reqs_in_file.emplace_back(key_context.ukey_with_ts,
+                                         key_context.value);
     }
     if (deltaLog_reqs_in_file.size() > 0) {
       const auto file_size = deltaLog_file_meta->GetDeltaLogFileSize();

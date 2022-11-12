@@ -565,9 +565,9 @@ ifeq ($(PLATFORM), OS_OPENBSD)
 	WARNING_FLAGS += -Wno-unused-lambda-capture
 endif
 
-ifndef DISABLE_WARNING_AS_ERROR
-	WARNING_FLAGS += -Werror
-endif
+# ifndef DISABLE_WARNING_AS_ERROR
+# 	WARNING_FLAGS += -Werror
+# endif
 
 
 ifdef LUA_PATH
@@ -709,7 +709,6 @@ PARALLEL_TEST = $(filter-out $(NON_PARALLEL_TEST), $(TESTS))
 TESTS_PLATFORM_DEPENDENT := \
 	db_basic_test \
 	db_blob_basic_test \
-	db_deltaLog_basic_test \
 	db_encryption_test \
 	external_sst_file_basic_test \
 	auto_roll_logger_test \
@@ -1449,12 +1448,6 @@ db_blob_basic_test: $(OBJ_DIR)/db/blob/db_blob_basic_test.o $(TEST_LIBRARY) $(LI
 db_blob_compaction_test: $(OBJ_DIR)/db/blob/db_blob_compaction_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-db_deltaLog_basic_test: $(OBJ_DIR)/db/deltaLog/db_deltaLog_basic_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-db_deltaLog_compaction_test: $(OBJ_DIR)/db/deltaLog/db_deltaLog_compaction_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
 db_readonly_with_timestamp_test: $(OBJ_DIR)/db/db_readonly_with_timestamp_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -1480,9 +1473,6 @@ db_logical_block_size_cache_test: $(OBJ_DIR)/db/db_logical_block_size_cache_test
 	$(AM_LINK)
 
 db_blob_index_test: $(OBJ_DIR)/db/blob/db_blob_index_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-db_deltaLog_index_test: $(OBJ_DIR)/db/deltaLog/db_deltaLog_index_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 db_block_cache_test: $(OBJ_DIR)/db/db_block_cache_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -1872,9 +1862,6 @@ sst_dump: $(OBJ_DIR)/tools/sst_dump.o $(TOOLS_LIBRARY) $(LIBRARY)
 blob_dump: $(OBJ_DIR)/tools/blob_dump.o $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-deltaLog_dump: $(OBJ_DIR)/tools/deltaLog_dump.o $(TOOLS_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
 repair_test: $(OBJ_DIR)/db/repair_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -1909,9 +1896,6 @@ range_del_aggregator_bench: $(OBJ_DIR)/db/range_del_aggregator_bench.o $(LIBRARY
 	$(AM_LINK)
 
 blob_db_test: $(OBJ_DIR)/utilities/blob_db/blob_db_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_db_test: $(OBJ_DIR)/utilities/deltaLog_db/deltaLog_db_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 repeatable_thread_test: $(OBJ_DIR)/util/repeatable_thread_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -1962,30 +1946,6 @@ blob_source_test: $(OBJ_DIR)/db/blob/blob_source_test.o $(TEST_LIBRARY) $(LIBRAR
 blob_garbage_meter_test: $(OBJ_DIR)/db/blob/blob_garbage_meter_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
-deltaLog_counting_iterator_test: $(OBJ_DIR)/db/deltaLog/deltaLog_counting_iterator_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_file_addition_test: $(OBJ_DIR)/db/deltaLog/deltaLog_file_addition_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_file_builder_test: $(OBJ_DIR)/db/deltaLog/deltaLog_file_builder_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_file_cache_test: $(OBJ_DIR)/db/deltaLog/deltaLog_file_cache_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_file_garbage_test: $(OBJ_DIR)/db/deltaLog/deltaLog_file_garbage_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_file_reader_test: $(OBJ_DIR)/db/deltaLog/deltaLog_file_reader_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_source_test: $(OBJ_DIR)/db/deltaLog/deltaLog_source_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-deltaLog_garbage_meter_test: $(OBJ_DIR)/db/deltaLog/deltaLog_garbage_meter_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
 timer_test: $(OBJ_DIR)/util/timer_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -2008,9 +1968,6 @@ io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY
 	$(AM_LINK)
 
 db_blob_corruption_test: $(OBJ_DIR)/db/blob/db_blob_corruption_test.o $(TEST_LIBRARY) $(LIBRARY)
-	$(AM_LINK)
-
-db_deltaLog_corruption_test: $(OBJ_DIR)/db/deltaLog/db_deltaLog_corruption_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 db_write_buffer_manager_test: $(OBJ_DIR)/db/db_write_buffer_manager_test.o $(TEST_LIBRARY) $(LIBRARY)

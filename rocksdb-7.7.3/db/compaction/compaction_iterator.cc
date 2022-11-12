@@ -1221,24 +1221,18 @@ void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
     DeltaLogIndex deltaLog_index;
 
     {
-      const Status s = deltaLog_index.DecodeFrom(value_);
-
+      const Status s =
+          deltaLog_index.GenerateFullFileHashFromKey(ikey_.user_key);
       if (!s.ok()) {
         status_ = s;
         validity_info_.Invalidate();
-
         return;
       }
     }
 
-    if (deltaLog_index.file_number() >=
-        deltaLog_garbage_collection_cutoff_file_number_) {
-      return;
-    }
-
     FilePrefetchBuffer* prefetch_buffer =
         prefetch_buffers_ ? prefetch_buffers_->GetOrCreatePrefetchBuffer(
-                                deltaLog_index.file_number())
+                                deltaLog_index.getFilePrefixHash())
                           : nullptr;
 
     uint64_t bytes_read = 0;
@@ -1262,7 +1256,7 @@ void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
     iter_stats_.total_deltaLog_bytes_read += bytes_read;
 
     ++iter_stats_.num_deltaLogs_relocated;
-    iter_stats_.total_deltaLog_bytes_relocated += deltaLog_index.size();
+    iter_stats_.total_deltaLog_bytes_relocated += deltaLog_index.getFileSize();
 
     value_ = deltaLog_value_;
 

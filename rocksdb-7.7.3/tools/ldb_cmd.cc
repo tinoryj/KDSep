@@ -2029,16 +2029,7 @@ void InternalDumpCommand::DoCommand() {
       std::string key = ikey.DebugString(is_key_hex_);
       Slice value(key_version.value);
       if (decode_deltaLog_index_ && value_type == kTypeDeltaLogIndex) {
-        DeltaLogIndex deltaLog_index;
-
-        const Status s = deltaLog_index.DecodeFrom(value);
-        if (!s.ok()) {
-          fprintf(stderr, "%s => error decoding deltaLog index =>\n",
-                  key.c_str());
-        } else {
-          fprintf(stdout, "%s => %s\n", key.c_str(),
-                  deltaLog_index.DebugString(is_value_hex_).c_str());
-        }
+        { fprintf(stdout, "%s\n", key.c_str()); }
       } else if (decode_blob_index_ && value_type == kTypeBlobIndex) {
         BlobIndex blob_index;
 
