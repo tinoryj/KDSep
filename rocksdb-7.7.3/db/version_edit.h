@@ -209,7 +209,7 @@ struct FileMetaData {
   // Used only in DeltaLogDB. The file number of the oldest deltaLog file this
   // SST file refers to. 0 is an invalid value; DeltaLogDB numbers the files
   // starting from 1.
-  uint64_t oldest_deltaLog_file_number = kInvalidDeltaLogFileNumber;
+  uint64_t oldest_deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
 
   // The file could be the compaction output from other SST files, which could
   // in turn be outputs for compact older SST files. We track the memtable
@@ -713,7 +713,7 @@ class VersionEdit {
 
   DeltaLogFileAdditions deltaLog_file_additions_;
   DeltaLogFileGarbages deltaLog_file_garbages_;
-  
+
   WalAdditions wal_additions_;
   WalDeletion wal_deletion_;
 

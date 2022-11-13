@@ -1006,7 +1006,7 @@ class VersionBuilder::Rep {
     const uint64_t deltaLog_file_number =
         GetOldestDeltaLogFileNumberForTableFile(level, file_number);
 
-    if (deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+    if (deltaLog_file_number != kGCSelectedDeltaLogFileNumber) {
       MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
           GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_number);
       if (mutable_meta_deltaLog) {
@@ -1102,7 +1102,7 @@ class VersionBuilder::Rep {
 
     const uint64_t deltaLog_file_number = f->oldest_deltaLog_file_number;
 
-    if (deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+    if (deltaLog_file_number != kGCSelectedDeltaLogFileNumber) {
       MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
           GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_number);
       if (mutable_meta_deltaLog) {
@@ -1512,7 +1512,7 @@ class VersionBuilder::Rep {
 
   // Find the oldest deltaLog file that has linked SSTs.
   uint64_t GetMinOldestDeltaLogFileNumber() const {
-    uint64_t min_oldest_deltaLog_file_num = kInvalidDeltaLogFileNumber;
+    uint64_t min_oldest_deltaLog_file_num = kGCSelectedDeltaLogFileNumber;
 
     // auto process_base =
     //     [&min_oldest_deltaLog_file_num](
@@ -1546,7 +1546,7 @@ class VersionBuilder::Rep {
     //                                  &min_oldest_deltaLog_file_num);
     //         };
 
-    //     MergeDeltaLogFileMetas(kInvalidDeltaLogFileNumber, process_base,
+    //     MergeDeltaLogFileMetas(kGCSelectedDeltaLogFileNumber, process_base,
     //                            process_mutable, process_both);
 
     return min_oldest_deltaLog_file_num;

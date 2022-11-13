@@ -163,7 +163,7 @@ Status BuildTable(
         EventHelpers::LogAndNotifyTableFileCreationFinished(
             event_logger, ioptions.listeners, dbname,
             tboptions.column_family_name, fname, job_id, meta->fd,
-            kInvalidBlobFileNumber, kInvalidDeltaLogFileNumber, tp,
+            kInvalidBlobFileNumber, kGCSelectedDeltaLogFileNumber, tp,
             tboptions.reason, s, file_checksum, file_checksum_func_name);
         return s;
       }

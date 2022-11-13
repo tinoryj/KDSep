@@ -58,11 +58,11 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
     }
 
     if (!deltaLog_index.IsInlined() && !deltaLog_index.HasTTL()) {
-      if (deltaLog_index.file_number() == kInvalidDeltaLogFileNumber) {
+      if (deltaLog_index.file_number() == kGCSelectedDeltaLogFileNumber) {
         return Status::Corruption("Invalid deltaLog file number");
       }
 
-      if (oldest_deltaLog_file_number == kInvalidDeltaLogFileNumber ||
+      if (oldest_deltaLog_file_number == kGCSelectedDeltaLogFileNumber ||
           oldest_deltaLog_file_number > deltaLog_index.file_number()) {
         oldest_deltaLog_file_number = deltaLog_index.file_number();
       }

@@ -972,13 +972,6 @@ class Version {
                      FilePrefetchBuffer* prefetch_buffer, PinnableSlice* value,
                      uint64_t* bytes_read) const;
 
-  using DeltaLogReadContext =
-      std::pair<DeltaLogIndex, std::reference_wrapper<const KeyContext>>;
-  using DeltaLogReadContexts = std::vector<DeltaLogReadContext>;
-  void MultiGetDeltaLog(
-      const ReadOptions& read_options, MultiGetRange& range,
-      std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs);
-
   // Loads some stats information from files (if update_stats is set) and
   // populates derived data structures. Call without mutex held. It needs to be
   // called before appending the version to the version set.

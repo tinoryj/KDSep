@@ -1665,7 +1665,7 @@ Status CompactionJob::FinishCompactionOutputFile(
   std::string fname;
   FileDescriptor output_fd;
   uint64_t oldest_blob_file_number = kInvalidBlobFileNumber;
-  uint64_t oldest_deltaLog_file_number = kInvalidDeltaLogFileNumber;
+  uint64_t oldest_deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
   Status status_for_listener = s;
   if (meta != nullptr) {
     fname = GetTableFileName(meta->fd.GetNumber());
@@ -1903,7 +1903,7 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
     EventHelpers::LogAndNotifyTableFileCreationFinished(
         event_logger_, cfd->ioptions()->listeners, dbname_, cfd->GetName(),
         fname, job_id_, FileDescriptor(), kInvalidBlobFileNumber,
-        kInvalidDeltaLogFileNumber, TableProperties(),
+        kGCSelectedDeltaLogFileNumber, TableProperties(),
         TableFileCreationReason::kCompaction, s, kUnknownFileChecksum,
         kUnknownFileChecksumFuncName);
     return s;

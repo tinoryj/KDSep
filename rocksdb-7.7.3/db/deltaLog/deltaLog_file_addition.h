@@ -50,7 +50,7 @@ class DeltaLogFileAddition {
  private:
   enum CustomFieldTags : uint32_t;
 
-  uint64_t deltaLog_file_number_ = kInvalidDeltaLogFileNumber;
+  uint64_t deltaLog_file_number_ = kGCSelectedDeltaLogFileNumber;
   uint64_t total_deltaLog_count_ = 0;
   uint64_t total_deltaLog_bytes_ = 0;
   std::string checksum_method_;

@@ -11,6 +11,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-constexpr uint64_t kInvalidDeltaLogFileNumber = 0;
+constexpr uint64_t kGCSelectedDeltaLogFileNumber = 0;
 
 }  // namespace ROCKSDB_NAMESPACE

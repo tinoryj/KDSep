@@ -13,7 +13,7 @@ namespace ROCKSDB_NAMESPACE {
 
 Status DeltaLogGarbageMeter::ProcessInFlow(const Slice& key,
                                            const Slice& value) {
-  uint64_t deltaLog_file_number = kInvalidDeltaLogFileNumber;
+  uint64_t deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
   uint64_t bytes = 0;
 
   const Status s = Parse(key, value, &deltaLog_file_number, &bytes);
@@ -21,7 +21,7 @@ Status DeltaLogGarbageMeter::ProcessInFlow(const Slice& key,
     return s;
   }
 
-  if (deltaLog_file_number == kInvalidDeltaLogFileNumber) {
+  if (deltaLog_file_number == kGCSelectedDeltaLogFileNumber) {
     return Status::OK();
   }
 
@@ -32,7 +32,7 @@ Status DeltaLogGarbageMeter::ProcessInFlow(const Slice& key,
 
 Status DeltaLogGarbageMeter::ProcessOutFlow(const Slice& key,
                                             const Slice& value) {
-  uint64_t deltaLog_file_number = kInvalidDeltaLogFileNumber;
+  uint64_t deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
   uint64_t bytes = 0;
 
   const Status s = Parse(key, value, &deltaLog_file_number, &bytes);
@@ -40,7 +40,7 @@ Status DeltaLogGarbageMeter::ProcessOutFlow(const Slice& key,
     return s;
   }
 
-  if (deltaLog_file_number == kInvalidDeltaLogFileNumber) {
+  if (deltaLog_file_number == kGCSelectedDeltaLogFileNumber) {
     return Status::OK();
   }
 
@@ -61,7 +61,7 @@ Status DeltaLogGarbageMeter::Parse(const Slice& key, const Slice& value,
                                    uint64_t* deltaLog_file_number,
                                    uint64_t* bytes) {
   assert(deltaLog_file_number);
-  assert(*deltaLog_file_number == kInvalidDeltaLogFileNumber);
+  assert(*deltaLog_file_number == kGCSelectedDeltaLogFileNumber);
   assert(bytes);
   assert(*bytes == 0);
 

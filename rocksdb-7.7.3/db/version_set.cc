@@ -2288,64 +2288,6 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
   return s;
 }
 
-void Version::MultiGetDeltaLog(
-    const ReadOptions& read_options, MultiGetRange& range,
-    std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs) {
-  assert(!deltaLog_ctxs.empty());
-
-  autovector<DeltaLogFileReadRequests> deltaLog_reqs;
-
-  for (auto& ctx : deltaLog_ctxs) {
-    const auto file_number = ctx.first;
-    const auto deltaLog_file_meta =
-        storage_info_.GetDeltaLogFileMetaData(file_number);
-
-    autovector<DeltaLogReadRequest> deltaLog_reqs_in_file;
-    DeltaLogReadContexts& deltaLogs_in_file = ctx.second;
-    for (const auto& deltaLog : deltaLogs_in_file) {
-      const DeltaLogIndex& deltaLog_index = deltaLog.first;
-      const KeyContext& key_context = deltaLog.second;
-
-      if (!deltaLog_file_meta) {
-        *key_context.s = Status::Corruption("Invalid deltaLog file number");
-        continue;
-      }
-
-      key_context.value->Reset();
-      deltaLog_reqs_in_file.emplace_back(key_context.ukey_with_ts,
-                                         key_context.value);
-    }
-    if (deltaLog_reqs_in_file.size() > 0) {
-      const auto file_size = deltaLog_file_meta->GetDeltaLogFileSize();
-      deltaLog_reqs.emplace_back(file_number, file_size, deltaLog_reqs_in_file);
-    }
-  }
-
-  if (deltaLog_reqs.size() > 0) {
-    deltaLog_source_->MultiGetDeltaLog(read_options, deltaLog_reqs,
-                                       /*bytes_read=*/nullptr);
-  }
-
-  for (auto& ctx : deltaLog_ctxs) {
-    DeltaLogReadContexts& deltaLogs_in_file = ctx.second;
-    for (const auto& deltaLog : deltaLogs_in_file) {
-      const KeyContext& key_context = deltaLog.second;
-      if (key_context.s->ok()) {
-        range.AddValueSize(key_context.value->size());
-        if (range.GetValueSize() > read_options.value_size_soft_limit) {
-          *key_context.s = Status::Aborted();
-        }
-      } else if (key_context.s->IsIncomplete()) {
-        // read_options.read_tier == kBlockCacheTier
-        // Cannot read deltaLog(s): no disk I/O allowed
-        assert(key_context.get_context);
-        auto& get_context = *(key_context.get_context);
-        get_context.MarkKeyMayExist();
-      }
-    }
-  }
-}
-
 void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
@@ -2765,10 +2707,6 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
 
   if (s.ok() && !blob_ctxs.empty()) {
     MultiGetBlob(read_options, keys_with_blobs_range, blob_ctxs);
-  }
-
-  if (s.ok() && !deltaLog_ctxs.empty()) {
-    MultiGetDeltaLog(read_options, keys_with_deltaLogs_range, deltaLog_ctxs);
   }
 
   // Process any left over keys
@@ -4896,7 +4834,8 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
         r.append(" blob_file:");
         AppendNumberTo(&r, files[i]->oldest_blob_file_number);
       }
-      if (files[i]->oldest_deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+      if (files[i]->oldest_deltaLog_file_number !=
+          kGCSelectedDeltaLogFileNumber) {
         r.append(" deltaLog_file:");
         AppendNumberTo(&r, files[i]->oldest_deltaLog_file_number);
       }

@@ -350,7 +350,7 @@ bool VersionEditHandler::HasMissingFiles() const {
       }
     }
     for (const auto& elem : cf_to_missing_deltaLog_files_high_) {
-      if (elem.second != kInvalidDeltaLogFileNumber) {
+      if (elem.second != kGCSelectedDeltaLogFileNumber) {
         ret = true;
         break;
       }
@@ -512,7 +512,7 @@ ColumnFamilyData* VersionEditHandler::CreateCfAndInit(
     cf_to_missing_blob_files_high_.emplace(edit.column_family_,
                                            kInvalidBlobFileNumber);
     cf_to_missing_deltaLog_files_high_.emplace(edit.column_family_,
-                                               kInvalidDeltaLogFileNumber);
+                                               kGCSelectedDeltaLogFileNumber);
   }
   return cfd;
 }
@@ -754,7 +754,7 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
   const uint64_t prev_missing_deltaLog_file_high =
       missing_deltaLog_files_high_iter->second;
 
-  if (prev_missing_deltaLog_file_high != kInvalidDeltaLogFileNumber) {
+  if (prev_missing_deltaLog_file_high != kGCSelectedDeltaLogFileNumber) {
     auto builder_iter = builders_.find(cfd->GetID());
     assert(builder_iter != builders_.end());
     builder = builder_iter->second->version_builder();
@@ -766,7 +766,7 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
       !missing_files.empty() ||
       (prev_missing_blob_file_high != kInvalidBlobFileNumber &&
        prev_missing_blob_file_high >= builder->GetMinOldestBlobFileNumber()) ||
-      (prev_missing_deltaLog_file_high != kInvalidDeltaLogFileNumber &&
+      (prev_missing_deltaLog_file_high != kGCSelectedDeltaLogFileNumber &&
        prev_missing_deltaLog_file_high >=
            builder->GetMinOldestDeltaLogFileNumber());
 
@@ -829,7 +829,7 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
   }
 
   bool has_missing_deltaLog_files = false;
-  if (missing_deltaLog_file_num != kInvalidDeltaLogFileNumber &&
+  if (missing_deltaLog_file_num != kGCSelectedDeltaLogFileNumber &&
       missing_deltaLog_file_num >= prev_missing_deltaLog_file_high) {
     missing_deltaLog_files_high_iter->second = missing_deltaLog_file_num;
     has_missing_deltaLog_files = true;

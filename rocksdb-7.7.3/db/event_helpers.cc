@@ -174,7 +174,7 @@ void EventHelpers::LogAndNotifyTableFileCreationFinished(
       jwriter << "oldest_blob_file_number" << oldest_blob_file_number;
     }
 
-    if (oldest_deltaLog_file_number != kInvalidDeltaLogFileNumber) {
+    if (oldest_deltaLog_file_number != kGCSelectedDeltaLogFileNumber) {
       jwriter << "oldest_deltaLog_file_number" << oldest_deltaLog_file_number;
     }
 

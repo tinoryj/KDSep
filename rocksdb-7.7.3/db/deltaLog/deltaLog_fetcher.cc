@@ -4,30 +4,26 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #include "db/deltaLog/deltaLog_fetcher.h"
+
 #include "db/version_set.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 Status DeltaLogFetcher::FetchDeltaLog(const Slice& user_key,
-                                      const Slice& deltaLog_index_slice,
-                                      FilePrefetchBuffer* prefetch_buffer,
-                                      PinnableSlice* deltaLog_value,
-                                      uint64_t* bytes_read) const {
-  assert(version_);
-
-  return version_->GetDeltaLog(read_options_, user_key, deltaLog_index_slice,
-                               prefetch_buffer, deltaLog_value, bytes_read);
-}
-
-Status DeltaLogFetcher::FetchDeltaLog(const Slice& user_key,
                                       const DeltaLogIndex& deltaLog_index,
                                       FilePrefetchBuffer* prefetch_buffer,
-                                      PinnableSlice* deltaLog_value,
+                                      vector<PinnableSlice*> deltaLog_value_vec,
                                       uint64_t* bytes_read) const {
-  assert(version_);
+  const uint64_t deltaLog_file_full_hash = deltaLog_index.getFilePrefixHash();
 
-  return version_->GetDeltaLog(read_options_, user_key, deltaLog_index,
-                               prefetch_buffer, deltaLog_value, bytes_read);
+  assert(deltaLog_source_);
+  deltaLog_value_vec.clear();
+  const Status s = deltaLog_source_->GetDeltaLog(
+      read_options, user_key, deltaLog_file_full_hash,
+      deltaLog_file_meta->GetDeltaLogFileSize(), prefetch_buffer, value,
+      bytes_read);
+
+  return s;
 }
 
 }  // namespace ROCKSDB_NAMESPACE

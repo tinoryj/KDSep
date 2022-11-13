@@ -8,7 +8,6 @@
 #include <cinttypes>
 #include <memory>
 
-#include "db/deltaLog/deltaLog_read_request.h"
 #include "file/random_access_file_reader.h"
 #include "rocksdb/compression_type.h"
 #include "rocksdb/rocksdb_namespace.h"
@@ -32,7 +31,7 @@ class DeltaLogFileReader {
                        const FileOptions& file_options,
                        uint32_t column_family_id,
                        HistogramImpl* deltaLog_file_read_hist,
-                       uint64_t deltaLog_file_number,
+                       uint64_t deltaLog_file_id,
                        const std::shared_ptr<IOTracer>& io_tracer,
                        std::unique_ptr<DeltaLogFileReader>* reader);
 
@@ -42,19 +41,12 @@ class DeltaLogFileReader {
   ~DeltaLogFileReader();
 
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     uint64_t offset, uint64_t value_size,
+                     uint64_t deltaLog_file_id,
                      CompressionType compression_type,
                      FilePrefetchBuffer* prefetch_buffer,
                      MemoryAllocator* allocator,
                      std::unique_ptr<DeltaLogContents>* result,
                      uint64_t* bytes_read) const;
-
-  // offsets must be sorted in ascending order by caller.
-  void MultiGetDeltaLog(
-      const ReadOptions& read_options, MemoryAllocator* allocator,
-      autovector<std::pair<DeltaLogReadRequest*,
-                           std::unique_ptr<DeltaLogContents>>>& deltaLog_reqs,
-      uint64_t* bytes_read) const;
 
   CompressionType GetCompressionType() const { return compression_type_; }
 
@@ -68,7 +60,7 @@ class DeltaLogFileReader {
   static Status OpenFile(const ImmutableOptions& immutable_options,
                          const FileOptions& file_opts,
                          HistogramImpl* deltaLog_file_read_hist,
-                         uint64_t deltaLog_file_number,
+                         uint64_t deltaLog_file_id,
                          const std::shared_ptr<IOTracer>& io_tracer,
                          uint64_t* file_size,
                          std::unique_ptr<RandomAccessFileReader>* file_reader);
