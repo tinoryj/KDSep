@@ -26,23 +26,23 @@ namespace ROCKSDB_NAMESPACE {
 class SharedDeltaLogFileMetaData {
  public:
   static std::shared_ptr<SharedDeltaLogFileMetaData> Create(
-      uint64_t deltaLog_file_number, uint64_t total_deltaLog_count,
+      uint64_t deltaLog_file_id, uint64_t total_deltaLog_count,
       uint64_t total_deltaLog_bytes, std::string checksum_method,
       std::string checksum_value) {
     return std::shared_ptr<SharedDeltaLogFileMetaData>(
         new SharedDeltaLogFileMetaData(
-            deltaLog_file_number, total_deltaLog_count, total_deltaLog_bytes,
+            deltaLog_file_id, total_deltaLog_count, total_deltaLog_bytes,
             std::move(checksum_method), std::move(checksum_value)));
   }
 
   template <typename Deleter>
   static std::shared_ptr<SharedDeltaLogFileMetaData> Create(
-      uint64_t deltaLog_file_number, uint64_t total_deltaLog_count,
+      uint64_t deltaLog_file_id, uint64_t total_deltaLog_count,
       uint64_t total_deltaLog_bytes, std::string checksum_method,
       std::string checksum_value, Deleter deleter) {
     return std::shared_ptr<SharedDeltaLogFileMetaData>(
         new SharedDeltaLogFileMetaData(
-            deltaLog_file_number, total_deltaLog_count, total_deltaLog_bytes,
+            deltaLog_file_id, total_deltaLog_count, total_deltaLog_bytes,
             std::move(checksum_method), std::move(checksum_value)),
         deleter);
   }
@@ -55,7 +55,7 @@ class SharedDeltaLogFileMetaData {
   SharedDeltaLogFileMetaData& operator=(SharedDeltaLogFileMetaData&&) = delete;
 
   uint64_t GetDeltaLogFileSize() const;
-  uint64_t GetDeltaLogFileNumber() const { return deltaLog_file_number_; }
+  uint64_t GetDeltaLogFileID() const { return deltaLog_file_id_; }
   uint64_t GetTotalDeltaLogCount() const { return total_deltaLog_count_; }
   uint64_t GetTotalDeltaLogBytes() const { return total_deltaLog_bytes_; }
   const std::string& GetChecksumMethod() const { return checksum_method_; }
@@ -64,12 +64,12 @@ class SharedDeltaLogFileMetaData {
   std::string DebugString() const;
 
  private:
-  SharedDeltaLogFileMetaData(uint64_t deltaLog_file_number,
+  SharedDeltaLogFileMetaData(uint64_t deltaLog_file_id,
                              uint64_t total_deltaLog_count,
                              uint64_t total_deltaLog_bytes,
                              std::string checksum_method,
                              std::string checksum_value)
-      : deltaLog_file_number_(deltaLog_file_number),
+      : deltaLog_file_id_(deltaLog_file_id),
         total_deltaLog_count_(total_deltaLog_count),
         total_deltaLog_bytes_(total_deltaLog_bytes),
         checksum_method_(std::move(checksum_method)),
@@ -77,7 +77,7 @@ class SharedDeltaLogFileMetaData {
     assert(checksum_method_.empty() == checksum_value_.empty());
   }
 
-  uint64_t deltaLog_file_number_;
+  uint64_t deltaLog_file_id_;
   uint64_t total_deltaLog_count_;
   uint64_t total_deltaLog_bytes_;
   std::string checksum_method_;
@@ -98,15 +98,12 @@ std::ostream& operator<<(std::ostream& os,
 
 class DeltaLogFileMetaData {
  public:
-  using LinkedSsts = std::unordered_set<uint64_t>;
-
   static std::shared_ptr<DeltaLogFileMetaData> Create(
       std::shared_ptr<SharedDeltaLogFileMetaData> shared_meta,
-      LinkedSsts linked_ssts, uint64_t garbage_deltaLog_count,
-      uint64_t garbage_deltaLog_bytes) {
-    return std::shared_ptr<DeltaLogFileMetaData>(new DeltaLogFileMetaData(
-        std::move(shared_meta), std::move(linked_ssts), garbage_deltaLog_count,
-        garbage_deltaLog_bytes));
+      uint64_t garbage_deltaLog_count, uint64_t garbage_deltaLog_bytes) {
+    return std::shared_ptr<DeltaLogFileMetaData>(
+        new DeltaLogFileMetaData(std::move(shared_meta), garbage_deltaLog_count,
+                                 garbage_deltaLog_bytes));
   }
 
   DeltaLogFileMetaData(const DeltaLogFileMetaData&) = delete;
@@ -116,36 +113,34 @@ class DeltaLogFileMetaData {
   DeltaLogFileMetaData& operator=(DeltaLogFileMetaData&&) = delete;
 
   const std::shared_ptr<SharedDeltaLogFileMetaData>& GetSharedMeta() const {
-    return shared_meta_;
+    return shared_deltaLog_meta_;
   }
 
   uint64_t GetDeltaLogFileSize() const {
-    assert(shared_meta_);
-    return shared_meta_->GetDeltaLogFileSize();
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetDeltaLogFileSize();
   }
 
-  uint64_t GetDeltaLogFileNumber() const {
-    assert(shared_meta_);
-    return shared_meta_->GetDeltaLogFileNumber();
+  uint64_t GetDeltaLogFileID() const {
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetDeltaLogFileID();
   }
   uint64_t GetTotalDeltaLogCount() const {
-    assert(shared_meta_);
-    return shared_meta_->GetTotalDeltaLogCount();
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetTotalDeltaLogCount();
   }
   uint64_t GetTotalDeltaLogBytes() const {
-    assert(shared_meta_);
-    return shared_meta_->GetTotalDeltaLogBytes();
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetTotalDeltaLogBytes();
   }
   const std::string& GetChecksumMethod() const {
-    assert(shared_meta_);
-    return shared_meta_->GetChecksumMethod();
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetChecksumMethod();
   }
   const std::string& GetChecksumValue() const {
-    assert(shared_meta_);
-    return shared_meta_->GetChecksumValue();
+    assert(shared_deltaLog_meta_);
+    return shared_deltaLog_meta_->GetChecksumValue();
   }
-
-  const LinkedSsts& GetLinkedSsts() const { return linked_ssts_; }
 
   uint64_t GetGarbageDeltaLogCount() const { return garbage_deltaLog_count_; }
   uint64_t GetGarbageDeltaLogBytes() const { return garbage_deltaLog_bytes_; }
@@ -154,19 +149,19 @@ class DeltaLogFileMetaData {
 
  private:
   DeltaLogFileMetaData(std::shared_ptr<SharedDeltaLogFileMetaData> shared_meta,
-                       LinkedSsts linked_ssts, uint64_t garbage_deltaLog_count,
+                       uint64_t garbage_deltaLog_count,
                        uint64_t garbage_deltaLog_bytes)
-      : shared_meta_(std::move(shared_meta)),
-        linked_ssts_(std::move(linked_ssts)),
+      : shared_deltaLog_meta_(std::move(shared_meta)),
         garbage_deltaLog_count_(garbage_deltaLog_count),
         garbage_deltaLog_bytes_(garbage_deltaLog_bytes) {
-    assert(shared_meta_);
-    assert(garbage_deltaLog_count_ <= shared_meta_->GetTotalDeltaLogCount());
-    assert(garbage_deltaLog_bytes_ <= shared_meta_->GetTotalDeltaLogBytes());
+    assert(shared_deltaLog_meta_);
+    assert(garbage_deltaLog_count_ <=
+           shared_deltaLog_meta_->GetTotalDeltaLogCount());
+    assert(garbage_deltaLog_bytes_ <=
+           shared_deltaLog_meta_->GetTotalDeltaLogBytes());
   }
 
-  std::shared_ptr<SharedDeltaLogFileMetaData> shared_meta_;
-  LinkedSsts linked_ssts_;
+  std::shared_ptr<SharedDeltaLogFileMetaData> shared_deltaLog_meta_;
   uint64_t garbage_deltaLog_count_;
   uint64_t garbage_deltaLog_bytes_;
 };

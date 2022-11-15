@@ -209,7 +209,7 @@ struct FileMetaData {
   // Used only in DeltaLogDB. The file number of the oldest deltaLog file this
   // SST file refers to. 0 is an invalid value; DeltaLogDB numbers the files
   // starting from 1.
-  uint64_t oldest_deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
+  uint64_t oldest_deltaLog_file_id = kGCSelectedDeltaLogFileNumber;
 
   // The file could be the compaction output from other SST files, which could
   // in turn be outputs for compact older SST files. We track the memtable
@@ -246,7 +246,7 @@ struct FileMetaData {
         marked_for_compaction(marked_for_compact),
         temperature(_temperature),
         oldest_blob_file_number(oldest_blob_file),
-        oldest_deltaLog_file_number(oldest_deltaLog_file),
+        oldest_deltaLog_file_id(oldest_deltaLog_file),
         oldest_ancester_time(_oldest_ancester_time),
         file_creation_time(_file_creation_time),
         file_checksum(_file_checksum),
@@ -430,20 +430,18 @@ class VersionEdit {
                const InternalKey& largest, const SequenceNumber& smallest_seqno,
                const SequenceNumber& largest_seqno, bool marked_for_compaction,
                Temperature temperature, uint64_t oldest_blob_file_number,
-               uint64_t oldest_deltaLog_file_number,
-               uint64_t oldest_ancester_time, uint64_t file_creation_time,
-               const std::string& file_checksum,
+               uint64_t oldest_deltaLog_file_id, uint64_t oldest_ancester_time,
+               uint64_t file_creation_time, const std::string& file_checksum,
                const std::string& file_checksum_func_name,
                const UniqueId64x2& unique_id) {
     assert(smallest_seqno <= largest_seqno);
     new_files_.emplace_back(
-        level,
-        FileMetaData(file, file_path_id, file_size, smallest, largest,
-                     smallest_seqno, largest_seqno, marked_for_compaction,
-                     temperature, oldest_blob_file_number,
-                     oldest_deltaLog_file_number, oldest_ancester_time,
-                     file_creation_time, file_checksum, file_checksum_func_name,
-                     unique_id));
+        level, FileMetaData(file, file_path_id, file_size, smallest, largest,
+                            smallest_seqno, largest_seqno,
+                            marked_for_compaction, temperature,
+                            oldest_blob_file_number, oldest_deltaLog_file_id,
+                            oldest_ancester_time, file_creation_time,
+                            file_checksum, file_checksum_func_name, unique_id));
     if (!HasLastSequence() || largest_seqno > GetLastSequence()) {
       SetLastSequence(largest_seqno);
     }
@@ -528,13 +526,12 @@ class VersionEdit {
   }
 
   // Add a new deltaLog file.
-  void AddDeltaLogFile(uint64_t deltaLog_file_number,
-                       uint64_t total_deltaLog_count,
+  void AddDeltaLogFile(uint64_t deltaLog_file_id, uint64_t total_deltaLog_count,
                        uint64_t total_deltaLog_bytes,
                        std::string checksum_method,
                        std::string checksum_value) {
     deltaLog_file_additions_.emplace_back(
-        deltaLog_file_number, total_deltaLog_count, total_deltaLog_bytes,
+        deltaLog_file_id, total_deltaLog_count, total_deltaLog_bytes,
         std::move(checksum_method), std::move(checksum_value));
   }
 
@@ -555,11 +552,11 @@ class VersionEdit {
 
   // Add garbage for an existing deltaLog file.  Note: intentionally broken
   // English follows.
-  void AddDeltaLogFileGarbage(uint64_t deltaLog_file_number,
+  void AddDeltaLogFileGarbage(uint64_t deltaLog_file_id,
                               uint64_t garbage_deltaLog_count,
                               uint64_t garbage_deltaLog_bytes) {
     deltaLog_file_garbages_.emplace_back(
-        deltaLog_file_number, garbage_deltaLog_count, garbage_deltaLog_bytes);
+        deltaLog_file_id, garbage_deltaLog_count, garbage_deltaLog_bytes);
   }
 
   void AddDeltaLogFileGarbage(DeltaLogFileGarbage deltaLog_file_garbage) {

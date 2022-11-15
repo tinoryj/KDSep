@@ -411,17 +411,17 @@ class VersionStorageInfo {
 
   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
   DeltaLogFiles::const_iterator GetDeltaLogFileMetaDataLB(
-      uint64_t deltaLog_file_number) const;
+      uint64_t deltaLog_file_id) const;
 
   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
   std::shared_ptr<DeltaLogFileMetaData> GetDeltaLogFileMetaData(
-      uint64_t deltaLog_file_number) const {
-    const auto it = GetDeltaLogFileMetaDataLB(deltaLog_file_number);
+      uint64_t deltaLog_file_id) const {
+    const auto it = GetDeltaLogFileMetaDataLB(deltaLog_file_id);
 
     assert(it == deltaLog_files_.end() || *it);
 
     if (it != deltaLog_files_.end() &&
-        (*it)->GetDeltaLogFileNumber() == deltaLog_file_number) {
+        (*it)->GetDeltaLogFileID() == deltaLog_file_id) {
       return *it;
     }
 
@@ -862,14 +862,14 @@ class ObsoleteBlobFileInfo {
 
 class ObsoleteDeltaLogFileInfo {
  public:
-  ObsoleteDeltaLogFileInfo(uint64_t deltaLog_file_number, std::string path)
-      : deltaLog_file_number_(deltaLog_file_number), path_(std::move(path)) {}
+  ObsoleteDeltaLogFileInfo(uint64_t deltaLog_file_id, std::string path)
+      : deltaLog_file_id_(deltaLog_file_id), path_(std::move(path)) {}
 
-  uint64_t GetDeltaLogFileNumber() const { return deltaLog_file_number_; }
+  uint64_t GetDeltaLogFileID() const { return deltaLog_file_id_; }
   const std::string& GetPath() const { return path_; }
 
  private:
-  uint64_t deltaLog_file_number_;
+  uint64_t deltaLog_file_id_;
   std::string path_;
 };
 
@@ -956,21 +956,12 @@ class Version {
   void MultiGetBlob(const ReadOptions& read_options, MultiGetRange& range,
                     std::unordered_map<uint64_t, BlobReadContexts>& blob_ctxs);
 
-  // Interprets deltaLog_index_slice as a deltaLog reference, and (assuming the
-  // corresponding deltaLog file is part of this Version) retrieves the deltaLog
-  // and saves it in *value. REQUIRES: deltaLog_index_slice stores an encoded
-  // deltaLog reference
-  Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     const Slice& deltaLog_index_slice,
-                     FilePrefetchBuffer* prefetch_buffer, PinnableSlice* value,
-                     uint64_t* bytes_read) const;
-
   // Retrieves a deltaLog using a deltaLog reference and saves it in *value,
   // assuming the corresponding deltaLog file is part of this Version.
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
                      const DeltaLogIndex& deltaLog_index,
-                     FilePrefetchBuffer* prefetch_buffer, PinnableSlice* value,
-                     uint64_t* bytes_read) const;
+                     FilePrefetchBuffer* prefetch_buffer,
+                     autovector<Slice>& value_vec, uint64_t* bytes_read) const;
 
   // Loads some stats information from files (if update_stats is set) and
   // populates derived data structures. Call without mutex held. It needs to be
@@ -1101,7 +1092,6 @@ class Version {
       int hit_file_level, bool skip_filters, bool skip_range_deletions,
       FdWithKeyRange* f,
       std::unordered_map<uint64_t, BlobReadContexts>& blob_ctxs,
-      std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs,
       Cache::Handle* table_handle, uint64_t& num_filter_read,
       uint64_t& num_index_read, uint64_t& num_sst_read);
 
@@ -1110,8 +1100,7 @@ class Version {
   // within and across levels
   Status MultiGetAsync(
       const ReadOptions& options, MultiGetRange* range,
-      std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs,
-      std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs);
+      std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs);
 
   // A helper function to lookup a batch of keys in a single level. It will
   // queue coroutine tasks to mget_tasks. It may also split the input batch
@@ -1121,7 +1110,6 @@ class Version {
       const ReadOptions& read_options, FilePickerMultiGet* batch,
       std::vector<folly::coro::Task<Status>>& mget_tasks,
       std::unordered_map<uint64_t, BlobReadContexts>* blob_ctxs,
-      std::unordered_map<uint64_t, DeltaLogReadContexts>& deltaLog_ctxs,
       autovector<FilePickerMultiGet, 4>& batches, std::deque<size_t>& waiting,
       std::deque<size_t>& to_process, unsigned int& num_tasks_queued,
       std::unordered_map<int, std::tuple<uint64_t, uint64_t, uint64_t>>&
@@ -1514,14 +1502,12 @@ class VersionSet {
     obsolete_blob_files_.emplace_back(blob_file_number, std::move(path));
   }
 
-  void AddObsoleteDeltaLogFile(uint64_t deltaLog_file_number,
-                               std::string path) {
+  void AddObsoleteDeltaLogFile(uint64_t deltaLog_file_id, std::string path) {
     assert(table_cache_);
 
-    table_cache_->Erase(GetSlice(&deltaLog_file_number));
+    table_cache_->Erase(GetSlice(&deltaLog_file_id));
 
-    obsolete_deltaLog_files_.emplace_back(deltaLog_file_number,
-                                          std::move(path));
+    obsolete_deltaLog_files_.emplace_back(deltaLog_file_id, std::move(path));
   }
 
   void GetObsoleteFiles(std::vector<ObsoleteFileInfo>* files,

@@ -370,20 +370,20 @@ struct BlobFileGarbageInfo : public BlobFileInfo {
 
 struct DeltaLogFileInfo {
   DeltaLogFileInfo(const std::string& _deltaLog_file_path,
-                   const uint64_t _deltaLog_file_number)
+                   const uint64_t _deltaLog_file_id)
       : deltaLog_file_path(_deltaLog_file_path),
-        deltaLog_file_number(_deltaLog_file_number) {}
+        deltaLog_file_id(_deltaLog_file_id) {}
 
   std::string deltaLog_file_path;
-  uint64_t deltaLog_file_number;
+  uint64_t deltaLog_file_id;
 };
 
 struct DeltaLogFileAdditionInfo : public DeltaLogFileInfo {
   DeltaLogFileAdditionInfo(const std::string& _deltaLog_file_path,
-                           const uint64_t _deltaLog_file_number,
+                           const uint64_t _deltaLog_file_id,
                            const uint64_t _total_deltaLog_count,
                            const uint64_t _total_deltaLog_bytes)
-      : DeltaLogFileInfo(_deltaLog_file_path, _deltaLog_file_number),
+      : DeltaLogFileInfo(_deltaLog_file_path, _deltaLog_file_id),
         total_deltaLog_count(_total_deltaLog_count),
         total_deltaLog_bytes(_total_deltaLog_bytes) {}
   uint64_t total_deltaLog_count;
@@ -392,10 +392,10 @@ struct DeltaLogFileAdditionInfo : public DeltaLogFileInfo {
 
 struct DeltaLogFileGarbageInfo : public DeltaLogFileInfo {
   DeltaLogFileGarbageInfo(const std::string& _deltaLog_file_path,
-                          const uint64_t _deltaLog_file_number,
+                          const uint64_t _deltaLog_file_id,
                           const uint64_t _garbage_deltaLog_count,
                           const uint64_t _garbage_deltaLog_bytes)
-      : DeltaLogFileInfo(_deltaLog_file_path, _deltaLog_file_number),
+      : DeltaLogFileInfo(_deltaLog_file_path, _deltaLog_file_id),
         garbage_deltaLog_count(_garbage_deltaLog_count),
         garbage_deltaLog_bytes(_garbage_deltaLog_bytes) {}
   uint64_t garbage_deltaLog_count;
@@ -414,7 +414,7 @@ struct FlushJobInfo {
   // the oldest blob file referenced by the newly created file
   uint64_t oldest_blob_file_number;
   // the oldest deltaLog file referenced by the newly created file
-  uint64_t oldest_deltaLog_file_number;
+  uint64_t oldest_deltaLog_file_id;
   // the id of the thread that completed this flush job.
   uint64_t thread_id;
   // the job id, which is unique in the same thread.
@@ -463,7 +463,7 @@ struct CompactionFileInfo {
   uint64_t oldest_blob_file_number;
 
   // The file number of the oldest deltaLog file this SST file references.
-  uint64_t oldest_deltaLog_file_number;
+  uint64_t oldest_deltaLog_file_id;
 };
 
 struct SubcompactionJobInfo {

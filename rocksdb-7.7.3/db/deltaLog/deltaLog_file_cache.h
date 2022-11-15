@@ -33,7 +33,7 @@ class DeltaLogFileCache {
   DeltaLogFileCache& operator=(const DeltaLogFileCache&) = delete;
 
   Status GetDeltaLogFileReader(
-      uint64_t deltaLog_file_number,
+      uint64_t deltaLog_file_id,
       CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader);
 
  private:

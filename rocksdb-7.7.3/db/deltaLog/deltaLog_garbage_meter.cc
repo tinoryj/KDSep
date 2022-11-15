@@ -13,41 +13,41 @@ namespace ROCKSDB_NAMESPACE {
 
 Status DeltaLogGarbageMeter::ProcessInFlow(const Slice& key,
                                            const Slice& value) {
-  uint64_t deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
+  uint64_t deltaLog_file_id = kGCSelectedDeltaLogFileNumber;
   uint64_t bytes = 0;
 
-  const Status s = Parse(key, value, &deltaLog_file_number, &bytes);
+  const Status s = Parse(key, value, &deltaLog_file_id, &bytes);
   if (!s.ok()) {
     return s;
   }
 
-  if (deltaLog_file_number == kGCSelectedDeltaLogFileNumber) {
+  if (deltaLog_file_id == kGCSelectedDeltaLogFileNumber) {
     return Status::OK();
   }
 
-  flows_[deltaLog_file_number].AddInFlow(bytes);
+  flows_[deltaLog_file_id].AddInFlow(bytes);
 
   return Status::OK();
 }
 
 Status DeltaLogGarbageMeter::ProcessOutFlow(const Slice& key,
                                             const Slice& value) {
-  uint64_t deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
+  uint64_t deltaLog_file_id = kGCSelectedDeltaLogFileNumber;
   uint64_t bytes = 0;
 
-  const Status s = Parse(key, value, &deltaLog_file_number, &bytes);
+  const Status s = Parse(key, value, &deltaLog_file_id, &bytes);
   if (!s.ok()) {
     return s;
   }
 
-  if (deltaLog_file_number == kGCSelectedDeltaLogFileNumber) {
+  if (deltaLog_file_id == kGCSelectedDeltaLogFileNumber) {
     return Status::OK();
   }
 
   // Note: in order to measure the amount of additional garbage, we only need to
   // track the outflow for preexisting files, i.e. those that also had inflow.
   // (Newly written files would only have outflow.)
-  auto it = flows_.find(deltaLog_file_number);
+  auto it = flows_.find(deltaLog_file_id);
   if (it == flows_.end()) {
     return Status::OK();
   }
@@ -58,10 +58,10 @@ Status DeltaLogGarbageMeter::ProcessOutFlow(const Slice& key,
 }
 
 Status DeltaLogGarbageMeter::Parse(const Slice& key, const Slice& value,
-                                   uint64_t* deltaLog_file_number,
+                                   uint64_t* deltaLog_file_id,
                                    uint64_t* bytes) {
-  assert(deltaLog_file_number);
-  assert(*deltaLog_file_number == kGCSelectedDeltaLogFileNumber);
+  assert(deltaLog_file_id);
+  assert(*deltaLog_file_id == kGCSelectedDeltaLogFileNumber);
   assert(bytes);
   assert(*bytes == 0);
 
@@ -88,7 +88,7 @@ Status DeltaLogGarbageMeter::Parse(const Slice& key, const Slice& value,
     }
   }
 
-  *deltaLog_file_number = deltaLog_index.getFileID();
+  *deltaLog_file_id = deltaLog_index.getFileID();
   *bytes = deltaLog_index.getFileSize() + ikey.user_key.size();
 
   return Status::OK();

@@ -19,7 +19,6 @@
 #include "rocksdb/status.h"
 #include "table/multiget_context.h"
 #include "test_util/sync_point.h"
-#include "util/compression.h"
 #include "util/crc32c.h"
 #include "util/stop_watch.h"
 
@@ -28,7 +27,7 @@ namespace ROCKSDB_NAMESPACE {
 Status DeltaLogFileReader::Create(
     const ImmutableOptions& immutable_options, const FileOptions& file_options,
     uint32_t column_family_id, HistogramImpl* deltaLog_file_read_hist,
-    uint64_t deltaLog_file_number, const std::shared_ptr<IOTracer>& io_tracer,
+    uint64_t deltaLog_file_id, const std::shared_ptr<IOTracer>& io_tracer,
     std::unique_ptr<DeltaLogFileReader>* deltaLog_file_reader) {
   assert(deltaLog_file_reader);
   assert(!*deltaLog_file_reader);
@@ -39,7 +38,7 @@ Status DeltaLogFileReader::Create(
   {
     const Status s =
         OpenFile(immutable_options, file_options, deltaLog_file_read_hist,
-                 deltaLog_file_number, io_tracer, &file_size, &file_reader);
+                 deltaLog_file_id, io_tracer, &file_size, &file_reader);
     if (!s.ok()) {
       return s;
     }
@@ -49,11 +48,9 @@ Status DeltaLogFileReader::Create(
 
   Statistics* const statistics = immutable_options.stats;
 
-  CompressionType compression_type = kNoCompression;
-
   {
-    const Status s = ReadHeader(file_reader.get(), column_family_id, statistics,
-                                &compression_type);
+    const Status s =
+        ReadHeader(file_reader.get(), column_family_id, statistics);
     if (!s.ok()) {
       return s;
     }
@@ -67,15 +64,14 @@ Status DeltaLogFileReader::Create(
   }
 
   deltaLog_file_reader->reset(new DeltaLogFileReader(
-      std::move(file_reader), file_size, compression_type,
-      immutable_options.clock, statistics));
+      std::move(file_reader), file_size, immutable_options.clock, statistics));
 
   return Status::OK();
 }
 
 Status DeltaLogFileReader::OpenFile(
     const ImmutableOptions& immutable_options, const FileOptions& file_opts,
-    HistogramImpl* deltaLog_file_read_hist, uint64_t deltaLog_file_number,
+    HistogramImpl* deltaLog_file_read_hist, uint64_t deltaLog_file_id,
     const std::shared_ptr<IOTracer>& io_tracer, uint64_t* file_size,
     std::unique_ptr<RandomAccessFileReader>* file_reader) {
   assert(file_size);
@@ -85,7 +81,7 @@ Status DeltaLogFileReader::OpenFile(
   assert(!cf_paths.empty());
 
   const std::string deltaLog_file_path =
-      DeltaLogFileName(cf_paths.front().path, deltaLog_file_number);
+      DeltaLogFileName(cf_paths.front().path, deltaLog_file_id);
 
   FileSystem* const fs = immutable_options.fs.get();
   assert(fs);
@@ -135,10 +131,8 @@ Status DeltaLogFileReader::OpenFile(
 
 Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
                                       uint32_t column_family_id,
-                                      Statistics* statistics,
-                                      CompressionType* compression_type) {
+                                      Statistics* statistics) {
   assert(file_reader);
-  assert(compression_type);
 
   Slice header_slice;
   Buffer buf;
@@ -180,8 +174,6 @@ Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
   if (header.column_family_id != column_family_id) {
     return Status::Corruption("Column family ID mismatch");
   }
-
-  *compression_type = header.compression;
 
   return Status::OK();
 }
@@ -272,11 +264,9 @@ Status DeltaLogFileReader::ReadFromFile(
 
 DeltaLogFileReader::DeltaLogFileReader(
     std::unique_ptr<RandomAccessFileReader>&& file_reader, uint64_t file_size,
-    CompressionType compression_type, SystemClock* clock,
-    Statistics* statistics)
+    SystemClock* clock, Statistics* statistics)
     : file_reader_(std::move(file_reader)),
       file_size_(file_size),
-      compression_type_(compression_type),
       clock_(clock),
       statistics_(statistics) {
   assert(file_reader_);
@@ -285,34 +275,15 @@ DeltaLogFileReader::DeltaLogFileReader(
 DeltaLogFileReader::~DeltaLogFileReader() = default;
 
 Status DeltaLogFileReader::GetDeltaLog(
-    const ReadOptions& read_options, const Slice& user_key, uint64_t offset,
-    uint64_t value_size, CompressionType compression_type,
-    FilePrefetchBuffer* prefetch_buffer, MemoryAllocator* allocator,
-    std::unique_ptr<DeltaLogContents>* result, uint64_t* bytes_read) const {
+    const ReadOptions& read_options, const Slice& user_key,
+    uint64_t deltaLog_file_id, FilePrefetchBuffer* prefetch_buffer,
+    MemoryAllocator* allocator, std::unique_ptr<DeltaLogContents>* result,
+    uint64_t* bytes_read) const {
   assert(result);
   const uint64_t key_size = user_key.size();
 
-  if (!IsValidDeltaLogOffset(offset, key_size, value_size, file_size_)) {
-    return Status::Corruption("Invalid deltaLog offset");
-  }
-
-  if (compression_type != compression_type_) {
-    return Status::Corruption(
-        "Compression type mismatch when reading deltaLog");
-  }
-
-  // Note: if verify_checksum is set, we read the entire deltaLog record to be
-  // able to perform the verification; otherwise, we just read the deltaLog
-  // itself. Since the offset in DeltaLogIndex actually points to the deltaLog
-  // value, we need to make an adjustment in the former case.
-  const uint64_t adjustment =
-      read_options.verify_checksums
-          ? DeltaLogLogRecord::CalculateAdjustmentForRecordHeader(key_size)
-          : 0;
-  assert(offset >= adjustment);
-
-  const uint64_t record_offset = offset - adjustment;
-  const uint64_t record_size = value_size + adjustment;
+  const uint64_t record_offset = offset;
+  const uint64_t record_size = value_size;
 
   Slice record_slice;
   Buffer buf;
@@ -357,15 +328,12 @@ Status DeltaLogFileReader::GetDeltaLog(
     }
   }
 
-  const Slice value_slice(record_slice.data() + adjustment, value_size);
+  const Slice value_slice(record_slice.data(), value_size);
 
-  {
-    const Status s = UncompressDeltaLogIfNeeded(
-        value_slice, compression_type, allocator, clock_, statistics_, result);
-    if (!s.ok()) {
-      return s;
-    }
-  }
+  CacheAllocationPtr allocation = AllocateBlock(value_slice.size(), allocator);
+  memcpy(allocation.get(), value_slice.data(), value_slice.size());
+
+  *result = DeltaLogContents::Create(std::move(allocation), value_slice.size());
 
   if (bytes_read) {
     *bytes_read = record_size;
@@ -415,53 +383,6 @@ Status DeltaLogFileReader::VerifyDeltaLog(const Slice& record_slice,
       return s;
     }
   }
-
-  return Status::OK();
-}
-
-Status DeltaLogFileReader::UncompressDeltaLogIfNeeded(
-    const Slice& value_slice, CompressionType compression_type,
-    MemoryAllocator* allocator, SystemClock* clock, Statistics* statistics,
-    std::unique_ptr<DeltaLogContents>* result) {
-  assert(result);
-
-  if (compression_type == kNoCompression) {
-    CacheAllocationPtr allocation =
-        AllocateBlock(value_slice.size(), allocator);
-    memcpy(allocation.get(), value_slice.data(), value_slice.size());
-
-    *result =
-        DeltaLogContents::Create(std::move(allocation), value_slice.size());
-
-    return Status::OK();
-  }
-
-  UncompressionContext context(compression_type);
-  UncompressionInfo info(context, UncompressionDict::GetEmptyDict(),
-                         compression_type);
-
-  size_t uncompressed_size = 0;
-  constexpr uint32_t compression_format_version = 2;
-
-  CacheAllocationPtr output;
-
-  {
-    PERF_TIMER_GUARD(deltaLog_decompress_time);
-    StopWatch stop_watch(clock, statistics, DELTALOG_DB_DECOMPRESSION_MICROS);
-    output = UncompressData(info, value_slice.data(), value_slice.size(),
-                            &uncompressed_size, compression_format_version,
-                            allocator);
-  }
-
-  TEST_SYNC_POINT_CALLBACK(
-      "DeltaLogFileReader::UncompressDeltaLogIfNeeded:TamperWithResult",
-      &output);
-
-  if (!output) {
-    return Status::Corruption("Unable to uncompress deltaLog");
-  }
-
-  *result = DeltaLogContents::Create(std::move(output), uncompressed_size);
 
   return Status::OK();
 }

@@ -5630,10 +5630,10 @@ Status DBImpl::VerifyChecksumInternal(const ReadOptions& read_options,
       for (const auto& meta : deltaLog_files) {
         assert(meta);
 
-        const uint64_t deltaLog_file_number = meta->GetDeltaLogFileNumber();
+        const uint64_t deltaLog_file_id = meta->GetDeltaLogFileID();
 
         const std::string deltaLog_file_name = DeltaLogFileName(
-            cfd->ioptions()->cf_paths.front().path, deltaLog_file_number);
+            cfd->ioptions()->cf_paths.front().path, deltaLog_file_id);
         s = VerifyFullFileChecksum(meta->GetChecksumValue(),
                                    meta->GetChecksumMethod(),
                                    deltaLog_file_name, read_options);

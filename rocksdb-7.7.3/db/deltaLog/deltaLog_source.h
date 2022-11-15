@@ -50,8 +50,7 @@ class DeltaLogSource {
   // disk, sets "*bytes_read" to the size of on-disk (possibly compressed)
   // deltaLog record.
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     uint64_t file_id, CompressionType compression_type,
-                     FilePrefetchBuffer* prefetch_buffer,
+                     uint64_t file_id, FilePrefetchBuffer* prefetch_buffer,
                      autovector<Slice>& value_vec, uint64_t* bytes_read);
 
   inline Status GetDeltaLogFileReader(

@@ -162,7 +162,7 @@ void DBImpl::FindObsoleteFiles(JobContext* job_context, bool force,
   }
 
   for (const auto& deltaLog_file : job_context->deltaLog_delete_files) {
-    MarkAsGrabbedForPurge(deltaLog_file.GetDeltaLogFileNumber());
+    MarkAsGrabbedForPurge(deltaLog_file.GetDeltaLogFileID());
   }
 
   // store the current filenum, lognum, etc
@@ -443,7 +443,7 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
 
   for (const auto& deltaLog_file : state.deltaLog_delete_files) {
     candidate_files.emplace_back(
-        DeltaLogFileName(deltaLog_file.GetDeltaLogFileNumber()),
+        DeltaLogFileName(deltaLog_file.GetDeltaLogFileID()),
         deltaLog_file.GetPath());
   }
 

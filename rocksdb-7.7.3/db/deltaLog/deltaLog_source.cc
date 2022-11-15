@@ -153,7 +153,6 @@ Status DeltaLogSource::InsertEntryIntoCache(const Slice& key,
 
 Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
                                    const Slice& user_key, uint64_t file_id,
-                                   CompressionType compression_type,
                                    FilePrefetchBuffer* prefetch_buffer,
                                    autovector<Slice>& value_vec,
                                    uint64_t* bytes_read) {
@@ -201,12 +200,6 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
 
     assert(deltaLog_file_reader.GetValue());
 
-    if (compression_type !=
-        deltaLog_file_reader.GetValue()->GetCompressionType()) {
-      return Status::Corruption(
-          "Compression type mismatch when reading deltaLog");
-    }
-
     MemoryAllocator* const allocator =
         (deltaLog_cache_ && read_options.fill_cache)
             ? deltaLog_cache_->memory_allocator()
@@ -214,8 +207,8 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
 
     uint64_t read_size = 0;
     s = deltaLog_file_reader.GetValue()->GetDeltaLog(
-        read_options, user_key, file_id, compression_type, prefetch_buffer,
-        allocator, &deltaLog_contents, &read_size);
+        read_options, user_key, file_id, prefetch_buffer, allocator,
+        &deltaLog_contents, &read_size);
     if (!s.ok()) {
       return s;
     }

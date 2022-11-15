@@ -888,12 +888,11 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
     assert(deltaLog_files.front());
     assert(deltaLog_files.back());
 
-    ROCKS_LOG_BUFFER(log_buffer_,
-                     "[%s] DeltaLog file summary: head=%" PRIu64
-                     ", tail=%" PRIu64 "\n",
-                     column_family_name.c_str(),
-                     deltaLog_files.front()->GetDeltaLogFileNumber(),
-                     deltaLog_files.back()->GetDeltaLogFileNumber());
+    ROCKS_LOG_BUFFER(
+        log_buffer_,
+        "[%s] DeltaLog file summary: head=%" PRIu64 ", tail=%" PRIu64 "\n",
+        column_family_name.c_str(), deltaLog_files.front()->GetDeltaLogFileID(),
+        deltaLog_files.back()->GetDeltaLogFileID());
   }
 
   if (compaction_stats_.has_penultimate_level_output) {
@@ -967,11 +966,11 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   if (!deltaLog_files.empty()) {
     assert(deltaLog_files.front());
     stream << "deltaLog_file_head"
-           << deltaLog_files.front()->GetDeltaLogFileNumber();
+           << deltaLog_files.front()->GetDeltaLogFileID();
 
     assert(deltaLog_files.back());
     stream << "deltaLog_file_tail"
-           << deltaLog_files.back()->GetDeltaLogFileNumber();
+           << deltaLog_files.back()->GetDeltaLogFileID();
   }
 
   if (compaction_stats_.has_penultimate_level_output) {
@@ -1665,13 +1664,13 @@ Status CompactionJob::FinishCompactionOutputFile(
   std::string fname;
   FileDescriptor output_fd;
   uint64_t oldest_blob_file_number = kInvalidBlobFileNumber;
-  uint64_t oldest_deltaLog_file_number = kGCSelectedDeltaLogFileNumber;
+  uint64_t oldest_deltaLog_file_id = kGCSelectedDeltaLogFileNumber;
   Status status_for_listener = s;
   if (meta != nullptr) {
     fname = GetTableFileName(meta->fd.GetNumber());
     output_fd = meta->fd;
     oldest_blob_file_number = meta->oldest_blob_file_number;
-    oldest_deltaLog_file_number = meta->oldest_deltaLog_file_number;
+    oldest_deltaLog_file_id = meta->oldest_deltaLog_file_id;
   } else {
     fname = "(nil)";
     if (s.ok()) {
@@ -1680,9 +1679,9 @@ Status CompactionJob::FinishCompactionOutputFile(
   }
   EventHelpers::LogAndNotifyTableFileCreationFinished(
       event_logger_, cfd->ioptions()->listeners, dbname_, cfd->GetName(), fname,
-      job_id_, output_fd, oldest_blob_file_number, oldest_deltaLog_file_number,
-      tp, TableFileCreationReason::kCompaction, status_for_listener,
-      file_checksum, file_checksum_func_name);
+      job_id_, output_fd, oldest_blob_file_number, oldest_deltaLog_file_id, tp,
+      TableFileCreationReason::kCompaction, status_for_listener, file_checksum,
+      file_checksum_func_name);
 
 #ifndef ROCKSDB_LITE
   // Report new file to SstFileManagerImpl
@@ -1781,13 +1780,13 @@ Status CompactionJob::InstallCompactionResults(
           sub_compact.Current().GetDeltaLogGarbageMeter()->flows();
 
       for (const auto& pair : flows) {
-        const uint64_t deltaLog_file_number = pair.first;
+        const uint64_t deltaLog_file_id = pair.first;
         const DeltaLogGarbageMeter::DeltaLogInOutFlow& flow = pair.second;
 
         assert(flow.IsValid());
         if (flow.HasGarbage()) {
-          deltaLog_total_garbage[deltaLog_file_number].Add(
-              flow.GetGarbageCount(), flow.GetGarbageBytes());
+          deltaLog_total_garbage[deltaLog_file_id].Add(flow.GetGarbageCount(),
+                                                       flow.GetGarbageBytes());
         }
       }
     }
@@ -1802,10 +1801,10 @@ Status CompactionJob::InstallCompactionResults(
   }
 
   for (const auto& pair : deltaLog_total_garbage) {
-    const uint64_t deltaLog_file_number = pair.first;
+    const uint64_t deltaLog_file_id = pair.first;
     const DeltaLogGarbageMeter::DeltaLogStats& stats = pair.second;
 
-    edit->AddDeltaLogFileGarbage(deltaLog_file_number, stats.GetCount(),
+    edit->AddDeltaLogFileGarbage(deltaLog_file_id, stats.GetCount(),
                                  stats.GetBytes());
   }
 

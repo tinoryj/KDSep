@@ -95,7 +95,7 @@ class DeltaLogGarbageMeter {
 
  private:
   static Status Parse(const Slice& key, const Slice& value,
-                      uint64_t* deltaLog_file_number, uint64_t* bytes);
+                      uint64_t* deltaLog_file_id, uint64_t* bytes);
 
   std::unordered_map<uint64_t, DeltaLogInOutFlow> flows_;
 };

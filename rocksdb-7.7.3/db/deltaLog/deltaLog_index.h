@@ -22,7 +22,7 @@ class DeltaLogIndex {
   DeltaLogIndex(const DeltaLogIndex&) = default;
   DeltaLogIndex& operator=(const DeltaLogIndex&) = default;
 
-  uint64_t getFilePrefixHash() const { return filePrefixHash_; }
+  uint64_t getDeltaLogFilePrefixHashFull() const { return filePrefixHashFull_; }
 
   uint64_t getFileID() const { return final_file_id_; }
 
@@ -32,32 +32,23 @@ class DeltaLogIndex {
     u_char murmurHashResultBuffer[16];
     MurmurHash3_x64_128((void*)slice.data(), slice.size(), 0,
                         murmurHashResultBuffer);
-    memcpy(&filePrefixHash_, murmurHashResultBuffer, sizeof(uint64_t));
-    if (filePrefixHash_ == 0) {
+    memcpy(&filePrefixHashFull_, murmurHashResultBuffer, sizeof(uint64_t));
+    if (filePrefixHashFull_ == 0) {
       return Status::OK();
     } else {
       return Status::Aborted();
     }
   }
 
-  std::string DebugString(bool output_hex) const {
+  std::string DebugString() const {
     std::ostringstream oss;
 
-    oss << "[deltaLog ref] target file hash (full):" << filePrefixHash_;
+    oss << "[deltaLog ref] target file hash (full):" << filePrefixHashFull_;
     return oss.str();
   }
 
-  Status GenerateDeltaLogIndex(int currentPrefixTreeBitNumber) {
-    std::bitset<currentPrefixTreeBitNumber> final_file_id_bitset;
-    for (int i = 0; i < currentPrefixTreeBitNumber; i++) {
-      final_file_id_bitset[i] = ((filePrefixHash_ & (1 << i)) >> i);
-    }
-    final_file_id_ = final_file_id_bitset.to_ullong();
-    return Status::OK();
-  }
-
  private:
-  uint64_t filePrefixHash_ = 0;
+  uint64_t filePrefixHashFull_ = 0;
   uint64_t final_file_id_ = 0;
   uint64_t final_file_size_ = 0;
 };

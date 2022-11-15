@@ -26,7 +26,7 @@ std::string SharedDeltaLogFileMetaData::DebugString() const {
 
 std::ostream& operator<<(std::ostream& os,
                          const SharedDeltaLogFileMetaData& shared_meta) {
-  os << "deltaLog_file_number: " << shared_meta.GetDeltaLogFileNumber()
+  os << "deltaLog_file_id: " << shared_meta.GetDeltaLogFileID()
      << " total_deltaLog_count: " << shared_meta.GetTotalDeltaLogCount()
      << " total_deltaLog_bytes: " << shared_meta.GetTotalDeltaLogBytes()
      << " checksum_method: " << shared_meta.GetChecksumMethod()
@@ -47,12 +47,6 @@ std::ostream& operator<<(std::ostream& os, const DeltaLogFileMetaData& meta) {
   const auto& shared_meta = meta.GetSharedMeta();
   assert(shared_meta);
   os << (*shared_meta);
-
-  os << " linked_ssts: {";
-  for (uint64_t file_number : meta.GetLinkedSsts()) {
-    os << ' ' << file_number;
-  }
-  os << " }";
 
   os << " garbage_deltaLog_count: " << meta.GetGarbageDeltaLogCount()
      << " garbage_deltaLog_bytes: " << meta.GetGarbageDeltaLogBytes();

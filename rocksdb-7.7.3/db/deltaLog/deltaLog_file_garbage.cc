@@ -31,7 +31,7 @@ enum DeltaLogFileGarbage::CustomFieldTags : uint32_t {
 };
 
 void DeltaLogFileGarbage::EncodeTo(std::string* output) const {
-  PutVarint64(output, deltaLog_file_number_);
+  PutVarint64(output, deltaLog_file_id_);
   PutVarint64(output, garbage_deltaLog_count_);
   PutVarint64(output, garbage_deltaLog_bytes_);
 
@@ -49,7 +49,7 @@ void DeltaLogFileGarbage::EncodeTo(std::string* output) const {
 Status DeltaLogFileGarbage::DecodeFrom(Slice* input) {
   constexpr char class_name[] = "DeltaLogFileGarbage";
 
-  if (!GetVarint64(input, &deltaLog_file_number_)) {
+  if (!GetVarint64(input, &deltaLog_file_id_)) {
     return Status::Corruption(class_name,
                               "Error decoding deltaLog file number");
   }
@@ -109,7 +109,7 @@ std::string DeltaLogFileGarbage::DebugJSON() const {
 
 bool operator==(const DeltaLogFileGarbage& lhs,
                 const DeltaLogFileGarbage& rhs) {
-  return lhs.GetDeltaLogFileNumber() == rhs.GetDeltaLogFileNumber() &&
+  return lhs.GetDeltaLogFileID() == rhs.GetDeltaLogFileID() &&
          lhs.GetGarbageDeltaLogCount() == rhs.GetGarbageDeltaLogCount() &&
          lhs.GetGarbageDeltaLogBytes() == rhs.GetGarbageDeltaLogBytes();
 }
@@ -121,8 +121,7 @@ bool operator!=(const DeltaLogFileGarbage& lhs,
 
 std::ostream& operator<<(std::ostream& os,
                          const DeltaLogFileGarbage& deltaLog_file_garbage) {
-  os << "deltaLog_file_number: "
-     << deltaLog_file_garbage.GetDeltaLogFileNumber()
+  os << "deltaLog_file_id: " << deltaLog_file_garbage.GetDeltaLogFileID()
      << " garbage_deltaLog_count: "
      << deltaLog_file_garbage.GetGarbageDeltaLogCount()
      << " garbage_deltaLog_bytes: "
@@ -133,7 +132,7 @@ std::ostream& operator<<(std::ostream& os,
 
 JSONWriter& operator<<(JSONWriter& jw,
                        const DeltaLogFileGarbage& deltaLog_file_garbage) {
-  jw << "DeltaLogFileNumber" << deltaLog_file_garbage.GetDeltaLogFileNumber()
+  jw << "DeltaLogFileNumber" << deltaLog_file_garbage.GetDeltaLogFileID()
      << "GarbageDeltaLogCount"
      << deltaLog_file_garbage.GetGarbageDeltaLogCount()
      << "GarbageDeltaLogBytes"

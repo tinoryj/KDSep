@@ -62,9 +62,9 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
         return Status::Corruption("Invalid deltaLog file number");
       }
 
-      if (oldest_deltaLog_file_number == kGCSelectedDeltaLogFileNumber ||
-          oldest_deltaLog_file_number > deltaLog_index.file_number()) {
-        oldest_deltaLog_file_number = deltaLog_index.file_number();
+      if (oldest_deltaLog_file_id == kGCSelectedDeltaLogFileNumber ||
+          oldest_deltaLog_file_id > deltaLog_index.file_number()) {
+        oldest_deltaLog_file_id = deltaLog_index.file_number();
       }
     }
   }

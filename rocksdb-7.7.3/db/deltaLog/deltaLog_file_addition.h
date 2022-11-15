@@ -23,23 +23,15 @@ class DeltaLogFileAddition {
  public:
   DeltaLogFileAddition() = default;
 
-  DeltaLogFileAddition(uint64_t deltaLog_file_number,
-                       uint64_t total_deltaLog_count,
-                       uint64_t total_deltaLog_bytes,
-                       std::string checksum_method, std::string checksum_value)
-      : deltaLog_file_number_(deltaLog_file_number),
+  DeltaLogFileAddition(uint64_t deltaLog_file_id, uint64_t total_deltaLog_count,
+                       uint64_t total_deltaLog_bytes)
+      : deltaLog_file_id_(deltaLog_file_id),
         total_deltaLog_count_(total_deltaLog_count),
-        total_deltaLog_bytes_(total_deltaLog_bytes),
-        checksum_method_(std::move(checksum_method)),
-        checksum_value_(std::move(checksum_value)) {
-    assert(checksum_method_.empty() == checksum_value_.empty());
-  }
+        total_deltaLog_bytes_(total_deltaLog_bytes) {}
 
-  uint64_t GetDeltaLogFileNumber() const { return deltaLog_file_number_; }
+  uint64_t GetDeltaLogFileID() const { return deltaLog_file_id_; }
   uint64_t GetTotalDeltaLogCount() const { return total_deltaLog_count_; }
   uint64_t GetTotalDeltaLogBytes() const { return total_deltaLog_bytes_; }
-  const std::string& GetChecksumMethod() const { return checksum_method_; }
-  const std::string& GetChecksumValue() const { return checksum_value_; }
 
   void EncodeTo(std::string* output) const;
   Status DecodeFrom(Slice* input);
@@ -50,11 +42,9 @@ class DeltaLogFileAddition {
  private:
   enum CustomFieldTags : uint32_t;
 
-  uint64_t deltaLog_file_number_ = kGCSelectedDeltaLogFileNumber;
+  uint64_t deltaLog_file_id_ = kGCSelectedDeltaLogFileNumber;
   uint64_t total_deltaLog_count_ = 0;
   uint64_t total_deltaLog_bytes_ = 0;
-  std::string checksum_method_;
-  std::string checksum_value_;
 };
 
 bool operator==(const DeltaLogFileAddition& lhs,

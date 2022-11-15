@@ -34,7 +34,7 @@ class EventHelpers {
       const std::vector<std::shared_ptr<EventListener>>& listeners,
       const std::string& db_name, const std::string& cf_name,
       const std::string& file_path, int job_id, const FileDescriptor& fd,
-      uint64_t oldest_blob_file_number, uint64_t oldest_deltaLog_file_number,
+      uint64_t oldest_blob_file_number, uint64_t oldest_deltaLog_file_id,
       const TableProperties& table_properties, TableFileCreationReason reason,
       const Status& s, const std::string& file_checksum,
       const std::string& file_checksum_func_name);

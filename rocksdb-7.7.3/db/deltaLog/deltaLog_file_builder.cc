@@ -25,7 +25,6 @@
 #include "rocksdb/status.h"
 #include "test_util/sync_point.h"
 #include "trace_replay/io_tracer.h"
-#include "util/compression.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -65,7 +64,6 @@ DeltaLogFileBuilder::DeltaLogFileBuilder(
       immutable_options_(immutable_options),
       min_deltaLog_size_(mutable_cf_options->min_deltaLog_size),
       deltaLog_file_size_(mutable_cf_options->deltaLog_file_size),
-      deltaLog_compression_type_(mutable_cf_options->deltaLog_compression_type),
       prepopulate_deltaLog_cache_(
           mutable_cf_options->prepopulate_deltaLog_cache),
       file_options_(file_options),
@@ -96,10 +94,7 @@ DeltaLogFileBuilder::DeltaLogFileBuilder(
 DeltaLogFileBuilder::~DeltaLogFileBuilder() = default;
 
 Status DeltaLogFileBuilder::Add(const Slice& key, const Slice& value,
-                                std::string* deltaLog_index) {
-  assert(deltaLog_index);
-  assert(deltaLog_index->empty());
-
+                                bool is_anchor) {
   if (value.size() < min_deltaLog_size_) {
     return Status::OK();
   }
@@ -112,21 +107,8 @@ Status DeltaLogFileBuilder::Add(const Slice& key, const Slice& value,
   }
 
   Slice deltaLog = value;
-  std::string compressed_deltaLog;
-
   {
-    const Status s = CompressDeltaLogIfNeeded(&deltaLog, &compressed_deltaLog);
-    if (!s.ok()) {
-      return s;
-    }
-  }
-
-  uint64_t deltaLog_file_number = 0;
-  uint64_t deltaLog_offset = 0;
-
-  {
-    const Status s = WriteDeltaLogToFile(key, deltaLog, &deltaLog_file_number,
-                                         &deltaLog_offset);
+    const Status s = WriteDeltaLogToFile(key, deltaLog, is_anchor);
     if (!s.ok()) {
       return s;
     }
@@ -140,8 +122,7 @@ Status DeltaLogFileBuilder::Add(const Slice& key, const Slice& value,
   }
 
   {
-    const Status s = PutDeltaLogIntoCacheIfNeeded(value, deltaLog_file_number,
-                                                  deltaLog_offset);
+    const Status s = PutDeltaLogIntoCacheIfNeeded(key, value);
     if (!s.ok()) {
       ROCKS_LOG_WARN(
           immutable_options_->info_log,
@@ -149,11 +130,6 @@ Status DeltaLogFileBuilder::Add(const Slice& key, const Slice& value,
           s.ToString().c_str());
     }
   }
-
-  DeltaLogIndex::EncodeDeltaLog(deltaLog_index, deltaLog_file_number,
-                                deltaLog_offset, deltaLog.size(),
-                                deltaLog_compression_type_);
-
   return Status::OK();
 }
 
@@ -176,12 +152,12 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
   assert(!deltaLog_bytes_);
 
   assert(file_number_generator_);
-  const uint64_t deltaLog_file_number = file_number_generator_();
+  const uint64_t deltaLog_file_id = file_number_generator_();
 
   assert(immutable_options_);
   assert(!immutable_options_->cf_paths.empty());
   std::string deltaLog_file_path = DeltaLogFileName(
-      immutable_options_->cf_paths.front().path, deltaLog_file_number);
+      immutable_options_->cf_paths.front().path, deltaLog_file_id);
 
   if (deltaLog_callback_) {
     deltaLog_callback_->OnDeltaLogFileCreationStarted(
@@ -224,13 +200,9 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
 
   std::unique_ptr<DeltaLogLogWriter> deltaLog_log_writer(new DeltaLogLogWriter(
       std::move(file_writer), immutable_options_->clock, statistics,
-      deltaLog_file_number, immutable_options_->use_fsync, do_flush));
+      deltaLog_file_id, immutable_options_->use_fsync, do_flush));
 
-  constexpr bool has_ttl = false;
-  constexpr ExpirationRange expiration_range;
-
-  DeltaLogLogHeader header(column_family_id_, deltaLog_compression_type_,
-                           has_ttl, expiration_range);
+  DeltaLogLogHeader header(column_family_id_);
 
   {
     Status s = deltaLog_log_writer->WriteHeader(header);
@@ -250,55 +222,12 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
   return Status::OK();
 }
 
-Status DeltaLogFileBuilder::CompressDeltaLogIfNeeded(
-    Slice* deltaLog, std::string* compressed_deltaLog) const {
-  assert(deltaLog);
-  assert(compressed_deltaLog);
-  assert(compressed_deltaLog->empty());
-  assert(immutable_options_);
-
-  if (deltaLog_compression_type_ == kNoCompression) {
-    return Status::OK();
-  }
-
-  CompressionOptions opts;
-  CompressionContext context(deltaLog_compression_type_);
-  constexpr uint64_t sample_for_compression = 0;
-
-  CompressionInfo info(opts, context, CompressionDict::GetEmptyDict(),
-                       deltaLog_compression_type_, sample_for_compression);
-
-  constexpr uint32_t compression_format_version = 2;
-
-  bool success = false;
-
-  {
-    StopWatch stop_watch(immutable_options_->clock, immutable_options_->stats,
-                         DELTALOG_DB_COMPRESSION_MICROS);
-    success = CompressData(*deltaLog, info, compression_format_version,
-                           compressed_deltaLog);
-  }
-
-  if (!success) {
-    return Status::Corruption("Error compressing deltaLog");
-  }
-
-  *deltaLog = Slice(*compressed_deltaLog);
-
-  return Status::OK();
-}
-
 Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
                                                 const Slice& deltaLog,
-                                                uint64_t* deltaLog_file_number,
-                                                uint64_t* deltaLog_offset) {
+                                                bool is_anchor) {
   assert(IsDeltaLogFileOpen());
-  assert(deltaLog_file_number);
-  assert(deltaLog_offset);
 
-  uint64_t key_offset = 0;
-
-  Status s = writer_->AddRecord(key, deltaLog, &key_offset, deltaLog_offset);
+  Status s = writer_->AddRecord(key, deltaLog, is_anchor);
 
   TEST_SYNC_POINT_CALLBACK("DeltaLogFileBuilder::WriteDeltaLogToFile:AddRecord",
                            &s);
@@ -306,8 +235,6 @@ Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
   if (!s.ok()) {
     return s;
   }
-
-  *deltaLog_file_number = writer_->get_log_number();
 
   ++deltaLog_count_;
   deltaLog_bytes_ +=
@@ -319,40 +246,22 @@ Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
 Status DeltaLogFileBuilder::CloseDeltaLogFile() {
   assert(IsDeltaLogFileOpen());
 
-  DeltaLogLogFooter footer;
-  footer.deltaLog_count = deltaLog_count_;
-
-  std::string checksum_method;
-  std::string checksum_value;
-
-  Status s = writer_->AppendFooter(footer, &checksum_method, &checksum_value);
-
-  TEST_SYNC_POINT_CALLBACK(
-      "DeltaLogFileBuilder::WriteDeltaLogToFile:AppendFooter", &s);
-
-  if (!s.ok()) {
-    return s;
-  }
-
-  const uint64_t deltaLog_file_number = writer_->get_log_number();
-
+  Status s;
   if (deltaLog_callback_) {
     s = deltaLog_callback_->OnDeltaLogFileCompleted(
         deltaLog_file_paths_->back(), column_family_name_, job_id_,
-        deltaLog_file_number, creation_reason_, s, checksum_value,
-        checksum_method, deltaLog_count_, deltaLog_bytes_);
+        deltaLog_file_id, creation_reason_, deltaLog_count_, deltaLog_bytes_);
   }
 
   assert(deltaLog_file_additions_);
-  deltaLog_file_additions_->emplace_back(
-      deltaLog_file_number, deltaLog_count_, deltaLog_bytes_,
-      std::move(checksum_method), std::move(checksum_value));
+  deltaLog_file_additions_->emplace_back(deltaLog_file_id, deltaLog_count_,
+                                         deltaLog_bytes_);
 
   assert(immutable_options_);
   ROCKS_LOG_INFO(immutable_options_->logger,
                  "[%s] [JOB %d] Generated deltaLog file #%" PRIu64 ": %" PRIu64
                  " total deltaLogs, %" PRIu64 " total bytes",
-                 column_family_name_.c_str(), job_id_, deltaLog_file_number,
+                 column_family_name_.c_str(), job_id_, deltaLog_file_id,
                  deltaLog_count_, deltaLog_bytes_);
 
   writer_.reset();
@@ -396,8 +305,7 @@ void DeltaLogFileBuilder::Abandon(const Status& s) {
 }
 
 Status DeltaLogFileBuilder::PutDeltaLogIntoCacheIfNeeded(
-    const Slice& deltaLog, uint64_t deltaLog_file_number,
-    uint64_t deltaLog_offset) const {
+    const Slice& key, const Slice& deltaLog) const {
   Status s = Status::OK();
 
   auto deltaLog_cache = immutable_options_->deltaLog_cache;
@@ -407,9 +315,8 @@ Status DeltaLogFileBuilder::PutDeltaLogIntoCacheIfNeeded(
       creation_reason_ == DeltaLogFileCreationReason::kFlush;
 
   if (deltaLog_cache && warm_cache) {
-    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_,
-                                            deltaLog_file_number);
-    const CacheKey cache_key = base_cache_key.WithOffset(deltaLog_offset);
+    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_);
+    const CacheKey cache_key = base_cache_key.WithOffset(0);
     const Slice key = cache_key.AsSlice();
 
     const Cache::Priority priority = Cache::Priority::BOTTOM;

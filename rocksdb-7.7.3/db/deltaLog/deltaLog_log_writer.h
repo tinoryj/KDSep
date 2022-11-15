@@ -42,20 +42,14 @@ class DeltaLogLogWriter {
   ~DeltaLogLogWriter();
 
   static void ConstructDeltaLogHeader(std::string* buf, const Slice& key,
-                                      const Slice& val, uint64_t expiration);
+                                      const Slice& val, bool is_anchor);
 
-  Status AddRecord(const Slice& key, const Slice& val, uint64_t* key_offset,
-                   uint64_t* deltaLog_offset);
-
-  Status AddRecord(const Slice& key, const Slice& val, uint64_t expiration,
-                   uint64_t* key_offset, uint64_t* deltaLog_offset);
+  Status AddRecord(const Slice& key, const Slice& val, bool is_anchor);
 
   Status EmitPhysicalRecord(const std::string& headerbuf, const Slice& key,
-                            const Slice& val, uint64_t* key_offset,
-                            uint64_t* deltaLog_offset);
+                            const Slice& val);
 
-  Status AppendFooter(DeltaLogLogFooter& footer, std::string* checksum_method,
-                      std::string* checksum_value);
+  Status AppendFooter(DeltaLogLogFooter& footer);
 
   Status WriteHeader(DeltaLogLogHeader& header);
 

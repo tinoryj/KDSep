@@ -10,7 +10,6 @@
 
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
-#include "file/sst_file_manager_impl.h"
 #include "rocksdb/status.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -18,17 +17,15 @@ namespace ROCKSDB_NAMESPACE {
 class DeltaLogFileCompletionCallback {
  public:
   DeltaLogFileCompletionCallback(
-      SstFileManager* sst_file_manager, InstrumentedMutex* mutex,
-      ErrorHandler* error_handler, EventLogger* event_logger,
+      InstrumentedMutex* mutex, ErrorHandler* error_handler,
+      EventLogger* event_logger,
       const std::vector<std::shared_ptr<EventListener>>& listeners,
       const std::string& dbname)
       : event_logger_(event_logger), listeners_(listeners), dbname_(dbname) {
 #ifndef ROCKSDB_LITE
-    sst_file_manager_ = sst_file_manager;
     mutex_ = mutex;
     error_handler_ = error_handler;
 #else
-    (void)sst_file_manager;
     (void)mutex;
     (void)error_handler;
 #endif  // ROCKSDB_LITE
@@ -58,21 +55,6 @@ class DeltaLogFileCompletionCallback {
       uint64_t deltaLog_count, uint64_t deltaLog_bytes) {
     Status s;
 
-#ifndef ROCKSDB_LITE
-    auto sfm = static_cast<SstFileManagerImpl*>(sst_file_manager_);
-    if (sfm) {
-      // Report new deltaLog files to SstFileManagerImpl
-      s = sfm->OnAddFile(file_name);
-      if (sfm->IsMaxAllowedSpaceReached()) {
-        s = Status::SpaceLimit("Max allowed space was reached");
-        TEST_SYNC_POINT(
-            "DeltaLogFileCompletionCallback::CallBack::MaxAllowedSpaceReached");
-        InstrumentedMutexLock l(mutex_);
-        error_handler_->SetBGError(s, BackgroundErrorReason::kFlush);
-      }
-    }
-#endif  // !ROCKSDB_LITE
-
     // Notify the listeners.
     EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
         event_logger_, listeners_, dbname_, column_family_name, file_name,
@@ -87,7 +69,6 @@ class DeltaLogFileCompletionCallback {
 
  private:
 #ifndef ROCKSDB_LITE
-  SstFileManager* sst_file_manager_;
   InstrumentedMutex* mutex_;
   ErrorHandler* error_handler_;
 #endif  // ROCKSDB_LITE

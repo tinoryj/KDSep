@@ -320,8 +320,8 @@ Status DBImpl::FlushMemTableToOutputFile(
                        "[%s] DeltaLog file summary: head=%" PRIu64
                        ", tail=%" PRIu64 "\n",
                        column_family_name.c_str(),
-                       deltaLog_files.front()->GetDeltaLogFileNumber(),
-                       deltaLog_files.back()->GetDeltaLogFileNumber());
+                       deltaLog_files.front()->GetDeltaLogFileID(),
+                       deltaLog_files.back()->GetDeltaLogFileID());
     }
   }
 
@@ -765,8 +765,8 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
                          "[%s] DeltaLog file summary: head=%" PRIu64
                          ", tail=%" PRIu64 "\n",
                          column_family_name.c_str(),
-                         deltaLog_files.front()->GetDeltaLogFileNumber(),
-                         deltaLog_files.back()->GetDeltaLogFileNumber());
+                         deltaLog_files.front()->GetDeltaLogFileID(),
+                         deltaLog_files.back()->GetDeltaLogFileID());
       }
     }
     if (made_progress) {
@@ -1528,7 +1528,7 @@ Status DBImpl::CompactFilesImpl(
     for (const auto& deltaLog_file : c->edit()->GetDeltaLogFileAdditions()) {
       output_file_names->push_back(
           DeltaLogFileName(c->immutable_options()->cf_paths.front().path,
-                           deltaLog_file.GetDeltaLogFileNumber()));
+                           deltaLog_file.GetDeltaLogFileID()));
     }
   }
 
@@ -1723,7 +1723,7 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
                    f->fd.GetFileSize(), f->smallest, f->largest,
                    f->fd.smallest_seqno, f->fd.largest_seqno,
                    f->marked_for_compaction, f->temperature,
-                   f->oldest_blob_file_number, f->oldest_deltaLog_file_number,
+                   f->oldest_blob_file_number, f->oldest_deltaLog_file_id,
                    f->oldest_ancester_time, f->file_creation_time,
                    f->file_checksum, f->file_checksum_func_name, f->unique_id);
     }
@@ -3349,7 +3349,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
             c->output_level(), f->fd.GetNumber(), f->fd.GetPathId(),
             f->fd.GetFileSize(), f->smallest, f->largest, f->fd.smallest_seqno,
             f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
-            f->oldest_blob_file_number, f->oldest_deltaLog_file_number,
+            f->oldest_blob_file_number, f->oldest_deltaLog_file_id,
             f->oldest_ancester_time, f->file_creation_time, f->file_checksum,
             f->file_checksum_func_name, f->unique_id);
 
@@ -3753,8 +3753,8 @@ void DBImpl::BuildCompactionJobInfo(
     DeltaLogFileAdditionInfo deltaLog_file_addition_info(
         DeltaLogFileName(
             c->immutable_options()->cf_paths.front().path,
-            deltaLog_file.GetDeltaLogFileNumber()) /*deltaLog_file_path*/,
-        deltaLog_file.GetDeltaLogFileNumber(),
+            deltaLog_file.GetDeltaLogFileID()) /*deltaLog_file_path*/,
+        deltaLog_file.GetDeltaLogFileID(),
         deltaLog_file.GetTotalDeltaLogCount(),
         deltaLog_file.GetTotalDeltaLogBytes());
     compaction_job_info->deltaLog_file_addition_infos.emplace_back(
@@ -3766,8 +3766,8 @@ void DBImpl::BuildCompactionJobInfo(
     DeltaLogFileGarbageInfo deltaLog_file_garbage_info(
         DeltaLogFileName(
             c->immutable_options()->cf_paths.front().path,
-            deltaLog_file.GetDeltaLogFileNumber()) /*deltaLog_file_path*/,
-        deltaLog_file.GetDeltaLogFileNumber(),
+            deltaLog_file.GetDeltaLogFileID()) /*deltaLog_file_path*/,
+        deltaLog_file.GetDeltaLogFileID(),
         deltaLog_file.GetGarbageDeltaLogCount(),
         deltaLog_file.GetGarbageDeltaLogBytes());
     compaction_job_info->deltaLog_file_garbage_infos.emplace_back(

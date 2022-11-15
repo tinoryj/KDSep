@@ -31,12 +31,9 @@ enum DeltaLogFileAddition::CustomFieldTags : uint32_t {
 };
 
 void DeltaLogFileAddition::EncodeTo(std::string* output) const {
-  PutVarint64(output, deltaLog_file_number_);
+  PutVarint64(output, deltaLog_file_id_);
   PutVarint64(output, total_deltaLog_count_);
   PutVarint64(output, total_deltaLog_bytes_);
-  PutLengthPrefixedSlice(output, checksum_method_);
-  PutLengthPrefixedSlice(output, checksum_value_);
-
   // Encode any custom fields here. The format to use is a Varint32 tag (see
   // CustomFieldTags above) followed by a length prefixed slice. Unknown custom
   // fields will be ignored during decoding unless they're in the forward
@@ -51,7 +48,7 @@ void DeltaLogFileAddition::EncodeTo(std::string* output) const {
 Status DeltaLogFileAddition::DecodeFrom(Slice* input) {
   constexpr char class_name[] = "DeltaLogFileAddition";
 
-  if (!GetVarint64(input, &deltaLog_file_number_)) {
+  if (!GetVarint64(input, &deltaLog_file_id_)) {
     return Status::Corruption(class_name,
                               "Error decoding deltaLog file number");
   }
@@ -65,18 +62,6 @@ Status DeltaLogFileAddition::DecodeFrom(Slice* input) {
     return Status::Corruption(class_name,
                               "Error decoding total deltaLog bytes");
   }
-
-  Slice checksum_method;
-  if (!GetLengthPrefixedSlice(input, &checksum_method)) {
-    return Status::Corruption(class_name, "Error decoding checksum method");
-  }
-  checksum_method_ = checksum_method.ToString();
-
-  Slice checksum_value;
-  if (!GetLengthPrefixedSlice(input, &checksum_value)) {
-    return Status::Corruption(class_name, "Error decoding checksum value");
-  }
-  checksum_value_ = checksum_value.ToString();
 
   while (true) {
     uint32_t custom_field_tag = 0;
@@ -123,11 +108,9 @@ std::string DeltaLogFileAddition::DebugJSON() const {
 
 bool operator==(const DeltaLogFileAddition& lhs,
                 const DeltaLogFileAddition& rhs) {
-  return lhs.GetDeltaLogFileNumber() == rhs.GetDeltaLogFileNumber() &&
+  return lhs.GetDeltaLogFileID() == rhs.GetDeltaLogFileID() &&
          lhs.GetTotalDeltaLogCount() == rhs.GetTotalDeltaLogCount() &&
-         lhs.GetTotalDeltaLogBytes() == rhs.GetTotalDeltaLogBytes() &&
-         lhs.GetChecksumMethod() == rhs.GetChecksumMethod() &&
-         lhs.GetChecksumValue() == rhs.GetChecksumValue();
+         lhs.GetTotalDeltaLogBytes() == rhs.GetTotalDeltaLogBytes();
 }
 
 bool operator!=(const DeltaLogFileAddition& lhs,
@@ -137,29 +120,20 @@ bool operator!=(const DeltaLogFileAddition& lhs,
 
 std::ostream& operator<<(std::ostream& os,
                          const DeltaLogFileAddition& deltaLog_file_addition) {
-  os << "deltaLog_file_number: "
-     << deltaLog_file_addition.GetDeltaLogFileNumber()
+  os << "deltaLog_file_id: " << deltaLog_file_addition.GetDeltaLogFileID()
      << " total_deltaLog_count: "
      << deltaLog_file_addition.GetTotalDeltaLogCount()
      << " total_deltaLog_bytes: "
-     << deltaLog_file_addition.GetTotalDeltaLogBytes()
-     << " checksum_method: " << deltaLog_file_addition.GetChecksumMethod()
-     << " checksum_value: "
-     << Slice(deltaLog_file_addition.GetChecksumValue())
-            .ToString(/* hex */ true);
+     << deltaLog_file_addition.GetTotalDeltaLogBytes();
 
   return os;
 }
 
 JSONWriter& operator<<(JSONWriter& jw,
                        const DeltaLogFileAddition& deltaLog_file_addition) {
-  jw << "DeltaLogFileNumber" << deltaLog_file_addition.GetDeltaLogFileNumber()
+  jw << "DeltaLogFileNumber" << deltaLog_file_addition.GetDeltaLogFileID()
      << "TotalDeltaLogCount" << deltaLog_file_addition.GetTotalDeltaLogCount()
-     << "TotalDeltaLogBytes" << deltaLog_file_addition.GetTotalDeltaLogBytes()
-     << "ChecksumMethod" << deltaLog_file_addition.GetChecksumMethod()
-     << "ChecksumValue"
-     << Slice(deltaLog_file_addition.GetChecksumValue())
-            .ToString(/* hex */ true);
+     << "TotalDeltaLogBytes" << deltaLog_file_addition.GetTotalDeltaLogBytes();
 
   return jw;
 }

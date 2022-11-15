@@ -337,11 +337,11 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   if (!deltaLog_files.empty()) {
     assert(deltaLog_files.front());
     stream << "deltaLog_file_head"
-           << deltaLog_files.front()->GetDeltaLogFileNumber();
+           << deltaLog_files.front()->GetDeltaLogFileID();
 
     assert(deltaLog_files.back());
     stream << "deltaLog_file_tail"
-           << deltaLog_files.back()->GetDeltaLogFileNumber();
+           << deltaLog_files.back()->GetDeltaLogFileID();
   }
 
   stream << "immutable_memtables" << cfd_->imm()->NumNotFlushed();
@@ -1008,14 +1008,14 @@ Status FlushJob::WriteLevel0Table() {
     // threads could be concurrently producing compacted files for
     // that key range.
     // Add file to L0
-    edit_->AddFile(
-        0 /* level */, meta_.fd.GetNumber(), meta_.fd.GetPathId(),
-        meta_.fd.GetFileSize(), meta_.smallest, meta_.largest,
-        meta_.fd.smallest_seqno, meta_.fd.largest_seqno,
-        meta_.marked_for_compaction, meta_.temperature,
-        meta_.oldest_blob_file_number, meta_.oldest_deltaLog_file_number,
-        meta_.oldest_ancester_time, meta_.file_creation_time,
-        meta_.file_checksum, meta_.file_checksum_func_name, meta_.unique_id);
+    edit_->AddFile(0 /* level */, meta_.fd.GetNumber(), meta_.fd.GetPathId(),
+                   meta_.fd.GetFileSize(), meta_.smallest, meta_.largest,
+                   meta_.fd.smallest_seqno, meta_.fd.largest_seqno,
+                   meta_.marked_for_compaction, meta_.temperature,
+                   meta_.oldest_blob_file_number, meta_.oldest_deltaLog_file_id,
+                   meta_.oldest_ancester_time, meta_.file_creation_time,
+                   meta_.file_checksum, meta_.file_checksum_func_name,
+                   meta_.unique_id);
 
     edit_->SetBlobFileAdditions(std::move(blob_file_additions));
     edit_->SetDeltaLogFileAdditions(std::move(deltaLog_file_additions));
@@ -1093,7 +1093,7 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
       MakeTableFileName(cfd_->ioptions()->cf_paths[0].path, file_number);
   info->file_number = file_number;
   info->oldest_blob_file_number = meta_.oldest_blob_file_number;
-  info->oldest_deltaLog_file_number = meta_.oldest_deltaLog_file_number;
+  info->oldest_deltaLog_file_id = meta_.oldest_deltaLog_file_id;
   info->thread_id = db_options_.env->GetThreadID();
   info->job_id = job_context_->job_id;
   info->smallest_seqno = meta_.fd.smallest_seqno;
@@ -1120,8 +1120,8 @@ std::unique_ptr<FlushJobInfo> FlushJob::GetFlushJobInfo() const {
     DeltaLogFileAdditionInfo deltaLog_file_addition_info(
         DeltaLogFileName(
             cfd_->ioptions()->cf_paths.front().path,
-            deltaLog_file.GetDeltaLogFileNumber()) /*deltaLog_file_path*/,
-        deltaLog_file.GetDeltaLogFileNumber(),
+            deltaLog_file.GetDeltaLogFileID()) /*deltaLog_file_path*/,
+        deltaLog_file.GetDeltaLogFileID(),
         deltaLog_file.GetTotalDeltaLogCount(),
         deltaLog_file.GetTotalDeltaLogBytes());
     info->deltaLog_file_addition_infos.emplace_back(

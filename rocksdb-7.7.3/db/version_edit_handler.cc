@@ -158,8 +158,7 @@ Status FileChecksumRetriever::ApplyVersionEdit(VersionEdit& edit,
       checksum_method = kUnknownFileChecksumFuncName;
     }
     Status s = file_checksum_list_.InsertOneFileChecksum(
-        new_deltaLog_file.GetDeltaLogFileNumber(), checksum_value,
-        checksum_method);
+        new_deltaLog_file.GetDeltaLogFileID(), checksum_value, checksum_method);
     if (!s.ok()) {
       return s;
     }
@@ -818,7 +817,7 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
 
   uint64_t missing_deltaLog_file_num = prev_missing_deltaLog_file_high;
   for (const auto& elem : edit.GetDeltaLogFileAdditions()) {
-    uint64_t file_num = elem.GetDeltaLogFileNumber();
+    uint64_t file_num = elem.GetDeltaLogFileID();
     s = VerifyDeltaLogFile(cfd, file_num, elem);
     if (s.IsPathNotFound() || s.IsNotFound() || s.IsCorruption()) {
       missing_deltaLog_file_num = std::max(missing_deltaLog_file_num, file_num);

@@ -3,11 +3,12 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
+#include "db/deltaLog/deltaLog_log_writer.h"
+
 #include <cstdint>
 #include <string>
 
 #include "db/deltaLog/deltaLog_log_format.h"
-#include "db/deltaLog/deltaLog_log_writer.h"
 #include "file/writable_file_writer.h"
 #include "monitoring/statistics.h"
 #include "rocksdb/system_clock.h"
@@ -60,9 +61,7 @@ Status DeltaLogLogWriter::WriteHeader(DeltaLogLogHeader& header) {
   return s;
 }
 
-Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer,
-                                       std::string* checksum_method,
-                                       std::string* checksum_value) {
+Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer) {
   assert(block_offset_ != 0);
   assert(last_elem_type_ == kEtFileHdr || last_elem_type_ == kEtRecord);
 
@@ -82,27 +81,6 @@ Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer,
 
       if (s.ok()) {
         s = dest_->Close();
-
-        if (s.ok()) {
-          assert(!!checksum_method == !!checksum_value);
-
-          if (checksum_method) {
-            assert(checksum_method->empty());
-
-            std::string method = dest_->GetFileChecksumFuncName();
-            if (method != kUnknownFileChecksumFuncName) {
-              *checksum_method = std::move(method);
-            }
-          }
-          if (checksum_value) {
-            assert(checksum_value->empty());
-
-            std::string value = dest_->GetFileChecksum();
-            if (value != kUnknownFileChecksum) {
-              *checksum_value = std::move(value);
-            }
-          }
-        }
       }
     }
 
@@ -116,46 +94,30 @@ Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer,
 }
 
 Status DeltaLogLogWriter::AddRecord(const Slice& key, const Slice& val,
-                                    uint64_t expiration, uint64_t* key_offset,
-                                    uint64_t* deltaLog_offset) {
+                                    bool is_anchor) {
   assert(block_offset_ != 0);
   assert(last_elem_type_ == kEtFileHdr || last_elem_type_ == kEtRecord);
 
   std::string buf;
-  ConstructDeltaLogHeader(&buf, key, val, expiration);
+  ConstructDeltaLogHeader(&buf, key, val, is_anchor);
 
-  Status s = EmitPhysicalRecord(buf, key, val, key_offset, deltaLog_offset);
-  return s;
-}
-
-Status DeltaLogLogWriter::AddRecord(const Slice& key, const Slice& val,
-                                    uint64_t* key_offset,
-                                    uint64_t* deltaLog_offset) {
-  assert(block_offset_ != 0);
-  assert(last_elem_type_ == kEtFileHdr || last_elem_type_ == kEtRecord);
-
-  std::string buf;
-  ConstructDeltaLogHeader(&buf, key, val, 0);
-
-  Status s = EmitPhysicalRecord(buf, key, val, key_offset, deltaLog_offset);
+  Status s = EmitPhysicalRecord(buf, key, val);
   return s;
 }
 
 void DeltaLogLogWriter::ConstructDeltaLogHeader(std::string* buf,
                                                 const Slice& key,
                                                 const Slice& val,
-                                                uint64_t expiration) {
+                                                bool is_anchor) {
   DeltaLogLogRecord record;
   record.key = key;
   record.value = val;
-  record.expiration = expiration;
-  record.EncodeHeaderTo(buf);
+  record.EncodeHeaderTo(buf, is_anchor);
 }
 
 Status DeltaLogLogWriter::EmitPhysicalRecord(const std::string& headerbuf,
-                                             const Slice& key, const Slice& val,
-                                             uint64_t* key_offset,
-                                             uint64_t* deltaLog_offset) {
+                                             const Slice& key,
+                                             const Slice& val) {
   StopWatch write_sw(clock_, statistics_,
                      DELTALOG_DB_DELTALOG_FILE_WRITE_MICROS);
   Status s = dest_->Append(Slice(headerbuf));
@@ -169,9 +131,7 @@ Status DeltaLogLogWriter::EmitPhysicalRecord(const std::string& headerbuf,
     s = dest_->Flush();
   }
 
-  *key_offset = block_offset_ + DeltaLogLogRecord::kHeaderSize;
-  *deltaLog_offset = *key_offset + key.size();
-  block_offset_ = *deltaLog_offset + val.size();
+  block_offset_ += DeltaLogLogRecord::kHeaderSize + key.size() + val.size();
   last_elem_type_ = kEtRecord;
   RecordTick(statistics_, DELTALOG_DB_DELTALOG_FILE_BYTES_WRITTEN,
              DeltaLogLogRecord::kHeaderSize + key.size() + val.size());

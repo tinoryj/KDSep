@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "rocksdb/advanced_options.h"
-#include "rocksdb/compression_type.h"
 #include "rocksdb/env.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "rocksdb/types.h"
@@ -66,31 +65,26 @@ class DeltaLogFileBuilder {
 
   ~DeltaLogFileBuilder();
 
-  Status Add(const Slice& key, const Slice& value, std::string* deltaLog_index);
+  Status Add(const Slice& key, const Slice& value, bool is_anchor);
   Status Finish();
   void Abandon(const Status& s);
 
  private:
   bool IsDeltaLogFileOpen() const;
   Status OpenDeltaLogFileIfNeeded();
-  Status CompressDeltaLogIfNeeded(Slice* deltaLog,
-                                  std::string* compressed_deltaLog) const;
   Status WriteDeltaLogToFile(const Slice& key, const Slice& deltaLog,
-                             uint64_t* deltaLog_file_number,
-                             uint64_t* deltaLog_offset);
+                             bool is_anchor);
   Status CloseDeltaLogFile();
   Status CloseDeltaLogFileIfNeeded();
 
-  Status PutDeltaLogIntoCacheIfNeeded(const Slice& deltaLog,
-                                      uint64_t deltaLog_file_number,
-                                      uint64_t deltaLog_offset) const;
+  Status PutDeltaLogIntoCacheIfNeeded(const Slice& key,
+                                      const Slice& deltaLog) const;
 
   std::function<uint64_t()> file_number_generator_;
   FileSystem* fs_;
   const ImmutableOptions* immutable_options_;
   uint64_t min_deltaLog_size_;
   uint64_t deltaLog_file_size_;
-  CompressionType deltaLog_compression_type_;
   PrepopulateDeltaLogCache prepopulate_deltaLog_cache_;
   const FileOptions* file_options_;
   const std::string db_id_;

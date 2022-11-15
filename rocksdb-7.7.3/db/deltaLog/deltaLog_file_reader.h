@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "file/random_access_file_reader.h"
-#include "rocksdb/compression_type.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "util/autovector.h"
 
@@ -42,20 +41,17 @@ class DeltaLogFileReader {
 
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
                      uint64_t deltaLog_file_id,
-                     CompressionType compression_type,
                      FilePrefetchBuffer* prefetch_buffer,
                      MemoryAllocator* allocator,
                      std::unique_ptr<DeltaLogContents>* result,
                      uint64_t* bytes_read) const;
 
-  CompressionType GetCompressionType() const { return compression_type_; }
-
   uint64_t GetFileSize() const { return file_size_; }
 
  private:
   DeltaLogFileReader(std::unique_ptr<RandomAccessFileReader>&& file_reader,
-                     uint64_t file_size, CompressionType compression_type,
-                     SystemClock* clock, Statistics* statistics);
+                     uint64_t file_size, SystemClock* clock,
+                     Statistics* statistics);
 
   static Status OpenFile(const ImmutableOptions& immutable_options,
                          const FileOptions& file_opts,
@@ -66,8 +62,7 @@ class DeltaLogFileReader {
                          std::unique_ptr<RandomAccessFileReader>* file_reader);
 
   static Status ReadHeader(const RandomAccessFileReader* file_reader,
-                           uint32_t column_family_id, Statistics* statistics,
-                           CompressionType* compression_type);
+                           uint32_t column_family_id, Statistics* statistics);
 
   static Status ReadFooter(const RandomAccessFileReader* file_reader,
                            uint64_t file_size, Statistics* statistics);
@@ -84,13 +79,11 @@ class DeltaLogFileReader {
                                uint64_t value_size);
 
   static Status UncompressDeltaLogIfNeeded(
-      const Slice& value_slice, CompressionType compression_type,
-      MemoryAllocator* allocator, SystemClock* clock, Statistics* statistics,
-      std::unique_ptr<DeltaLogContents>* result);
+      const Slice& value_slice, MemoryAllocator* allocator, SystemClock* clock,
+      Statistics* statistics, std::unique_ptr<DeltaLogContents>* result);
 
   std::unique_ptr<RandomAccessFileReader> file_reader_;
   uint64_t file_size_;
-  CompressionType compression_type_;
   SystemClock* clock_;
   Statistics* statistics_;
 };

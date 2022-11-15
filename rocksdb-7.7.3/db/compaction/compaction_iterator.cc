@@ -1232,7 +1232,7 @@ void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
 
     FilePrefetchBuffer* prefetch_buffer =
         prefetch_buffers_ ? prefetch_buffers_->GetOrCreatePrefetchBuffer(
-                                deltaLog_index.getFilePrefixHash())
+                                deltaLog_index.getDeltaLogFilePrefixHashFull())
                           : nullptr;
 
     uint64_t bytes_read = 0;
@@ -1518,7 +1518,7 @@ uint64_t CompactionIterator::ComputeDeltaLogGarbageCollectionCutoffFileNumber(
   const auto& meta = deltaLog_files[cutoff_index];
   assert(meta);
 
-  return meta->GetDeltaLogFileNumber();
+  return meta->GetDeltaLogFileID();
 }
 
 std::unique_ptr<DeltaLogFetcher>

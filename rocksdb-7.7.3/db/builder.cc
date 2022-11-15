@@ -465,8 +465,8 @@ Status BuildTable(
   EventHelpers::LogAndNotifyTableFileCreationFinished(
       event_logger, ioptions.listeners, dbname, tboptions.column_family_name,
       fname, job_id, meta->fd, meta->oldest_blob_file_number,
-      meta->oldest_deltaLog_file_number, tp, tboptions.reason,
-      status_for_listener, file_checksum, file_checksum_func_name);
+      meta->oldest_deltaLog_file_id, tp, tboptions.reason, status_for_listener,
+      file_checksum, file_checksum_func_name);
 
   return s;
 }

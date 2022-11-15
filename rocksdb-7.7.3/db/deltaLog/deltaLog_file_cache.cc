@@ -37,12 +37,12 @@ DeltaLogFileCache::DeltaLogFileCache(Cache* cache,
 }
 
 Status DeltaLogFileCache::GetDeltaLogFileReader(
-    uint64_t deltaLog_file_number,
+    uint64_t deltaLog_file_id,
     CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader) {
   assert(deltaLog_file_reader);
   assert(deltaLog_file_reader->IsEmpty());
 
-  const Slice key = GetSlice(&deltaLog_file_number);
+  const Slice key = GetSlice(&deltaLog_file_id);
 
   assert(cache_);
 
@@ -76,7 +76,7 @@ Status DeltaLogFileCache::GetDeltaLogFileReader(
     assert(file_options_);
     const Status s = DeltaLogFileReader::Create(
         *immutable_options_, *file_options_, column_family_id_,
-        deltaLog_file_read_hist_, deltaLog_file_number, io_tracer_, &reader);
+        deltaLog_file_read_hist_, deltaLog_file_id, io_tracer_, &reader);
     if (!s.ok()) {
       RecordTick(statistics, NO_FILE_ERRORS);
       return s;

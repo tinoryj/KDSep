@@ -12,18 +12,12 @@ namespace ROCKSDB_NAMESPACE {
 Status DeltaLogFetcher::FetchDeltaLog(const Slice& user_key,
                                       const DeltaLogIndex& deltaLog_index,
                                       FilePrefetchBuffer* prefetch_buffer,
-                                      vector<PinnableSlice*> deltaLog_value_vec,
+                                      autovector<Slice>& deltaLog_value_vec,
                                       uint64_t* bytes_read) const {
-  const uint64_t deltaLog_file_full_hash = deltaLog_index.getFilePrefixHash();
+  assert(version_);
 
-  assert(deltaLog_source_);
-  deltaLog_value_vec.clear();
-  const Status s = deltaLog_source_->GetDeltaLog(
-      read_options, user_key, deltaLog_file_full_hash,
-      deltaLog_file_meta->GetDeltaLogFileSize(), prefetch_buffer, value,
-      bytes_read);
-
-  return s;
+  return version_->GetDeltaLog(read_options_, user_key, deltaLog_index,
+                               prefetch_buffer, deltaLog_value_vec, bytes_read);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

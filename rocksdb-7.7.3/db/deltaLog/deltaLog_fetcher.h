@@ -7,6 +7,7 @@
 
 #include "rocksdb/options.h"
 #include "rocksdb/status.h"
+#include "util/autovector.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -22,15 +23,10 @@ class DeltaLogFetcher {
   DeltaLogFetcher(const Version* version, const ReadOptions& read_options)
       : version_(version), read_options_(read_options) {}
 
-  Status FetchDeltaLog(const Slice& user_key, const Slice& deltaLog_index_slice,
-                       FilePrefetchBuffer* prefetch_buffer,
-                       PinnableSlice* deltaLog_value,
-                       uint64_t* bytes_read) const;
-
   Status FetchDeltaLog(const Slice& user_key,
                        const DeltaLogIndex& deltaLog_index,
                        FilePrefetchBuffer* prefetch_buffer,
-                       PinnableSlice* deltaLog_value,
+                       autovector<Slice>& deltaLog_value_vec,
                        uint64_t* bytes_read) const;
 
  private:

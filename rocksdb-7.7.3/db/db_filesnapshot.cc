@@ -107,8 +107,8 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
     ret.emplace_back(BlobFileName("", blob_file_number));
   }
 
-  for (const auto& deltaLog_file_number : live_deltaLog_files) {
-    ret.emplace_back(DeltaLogFileName("", deltaLog_file_number));
+  for (const auto& deltaLog_file_id : live_deltaLog_files) {
+    ret.emplace_back(DeltaLogFileName("", deltaLog_file_id));
   }
 
   ret.emplace_back(CurrentFileName(""));
@@ -324,9 +324,9 @@ Status DBImpl::GetLiveFilesStorageInfo(
       results.emplace_back();
       LiveFileStorageInfo& info = results.back();
 
-      info.relative_filename = DeltaLogFileName(meta->GetDeltaLogFileNumber());
+      info.relative_filename = DeltaLogFileName(meta->GetDeltaLogFileID());
       info.directory = GetDir(/* path_id */ 0);
-      info.file_number = meta->GetDeltaLogFileNumber();
+      info.file_number = meta->GetDeltaLogFileID();
       info.file_type = kDeltaLogFile;
       info.size = meta->GetDeltaLogFileSize();
       if (opts.include_checksum_info) {
