@@ -13,8 +13,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 uint64_t SharedDeltaLogFileMetaData::GetDeltaLogFileSize() const {
-  return DeltaLogLogHeader::kSize + total_deltaLog_bytes_ +
-         DeltaLogLogFooter::kSize;
+  return DeltaLogHeader::kSize_ + total_deltaLog_bytes_ +
+         DeltaLogFooter::kSize_;
 }
 
 std::string SharedDeltaLogFileMetaData::DebugString() const {

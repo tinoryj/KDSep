@@ -5,6 +5,7 @@
 //
 
 #include "db/deltaLog/deltaLog_log_sequential_reader.h"
+
 #include "file/random_access_file_reader.h"
 #include "monitoring/statistics.h"
 #include "util/stop_watch.h"
@@ -42,37 +43,37 @@ Status DeltaLogLogSequentialReader::ReadSlice(uint64_t size, Slice* slice,
   return s;
 }
 
-Status DeltaLogLogSequentialReader::ReadHeader(DeltaLogLogHeader* header) {
+Status DeltaLogLogSequentialReader::ReadHeader(DeltaLogHeader* header) {
   assert(header);
   assert(next_byte_ == 0);
 
-  static_assert(DeltaLogLogHeader::kSize <= sizeof(header_buf_),
-                "Buffer is smaller than DeltaLogLogHeader::kSize");
+  static_assert(DeltaLogHeader::kSize_ <= sizeof(header_buf_),
+                "Buffer is smaller than DeltaLogHeader::kSize_");
 
-  Status s = ReadSlice(DeltaLogLogHeader::kSize, &buffer_, header_buf_);
+  Status s = ReadSlice(DeltaLogHeader::kSize_, &buffer_, header_buf_);
   if (!s.ok()) {
     return s;
   }
 
-  if (buffer_.size() != DeltaLogLogHeader::kSize) {
+  if (buffer_.size() != DeltaLogHeader::kSize_) {
     return Status::Corruption("EOF reached before file header");
   }
 
   return header->DecodeFrom(buffer_);
 }
 
-Status DeltaLogLogSequentialReader::ReadRecord(DeltaLogLogRecord* record,
+Status DeltaLogLogSequentialReader::ReadRecord(DeltaLogRecord* record,
                                                ReadLevel level,
                                                uint64_t* deltaLog_offset) {
   assert(record);
-  static_assert(DeltaLogLogRecord::kHeaderSize <= sizeof(header_buf_),
-                "Buffer is smaller than DeltaLogLogRecord::kHeaderSize");
+  static_assert(DeltaLogRecord::kHeaderSize_ <= sizeof(header_buf_),
+                "Buffer is smaller than DeltaLogRecord::kHeaderSize_");
 
-  Status s = ReadSlice(DeltaLogLogRecord::kHeaderSize, &buffer_, header_buf_);
+  Status s = ReadSlice(DeltaLogRecord::kHeaderSize_, &buffer_, header_buf_);
   if (!s.ok()) {
     return s;
   }
-  if (buffer_.size() != DeltaLogLogRecord::kHeaderSize) {
+  if (buffer_.size() != DeltaLogRecord::kHeaderSize_) {
     return Status::Corruption("EOF reached before record header");
   }
 
@@ -81,9 +82,9 @@ Status DeltaLogLogSequentialReader::ReadRecord(DeltaLogLogRecord* record,
     return s;
   }
 
-  uint64_t kb_size = record->key_size + record->value_size;
+  uint64_t kb_size = record->key_size_ + record->value_size_;
   if (deltaLog_offset != nullptr) {
-    *deltaLog_offset = next_byte_ + record->key_size;
+    *deltaLog_offset = next_byte_ + record->key_size_;
   }
 
   switch (level) {
@@ -92,38 +93,35 @@ Status DeltaLogLogSequentialReader::ReadRecord(DeltaLogLogRecord* record,
       break;
 
     case kReadHeaderKey:
-      record->key_buf.reset(new char[record->key_size]);
-      s = ReadSlice(record->key_size, &record->key, record->key_buf.get());
-      next_byte_ += record->value_size;
+      record->key_buf_.reset(new char[record->key_size_]);
+      s = ReadSlice(record->key_size_, &record->key_, record->key_buf_.get());
+      next_byte_ += record->value_size_;
       break;
 
     case kReadHeaderKeyDeltaLog:
-      record->key_buf.reset(new char[record->key_size]);
-      s = ReadSlice(record->key_size, &record->key, record->key_buf.get());
+      record->key_buf_.reset(new char[record->key_size_]);
+      s = ReadSlice(record->key_size_, &record->key_, record->key_buf_.get());
       if (s.ok()) {
-        record->value_buf.reset(new char[record->value_size]);
-        s = ReadSlice(record->value_size, &record->value,
-                      record->value_buf.get());
-      }
-      if (s.ok()) {
-        s = record->CheckDeltaLogCRC();
+        record->value_buf_.reset(new char[record->value_size_]);
+        s = ReadSlice(record->value_size_, &record->value_,
+                      record->value_buf_.get());
       }
       break;
   }
   return s;
 }
 
-Status DeltaLogLogSequentialReader::ReadFooter(DeltaLogLogFooter* footer) {
+Status DeltaLogLogSequentialReader::ReadFooter(DeltaLogFooter* footer) {
   assert(footer);
-  static_assert(DeltaLogLogFooter::kSize <= sizeof(header_buf_),
-                "Buffer is smaller than DeltaLogLogFooter::kSize");
+  static_assert(DeltaLogFooter::kSize_ <= sizeof(header_buf_),
+                "Buffer is smaller than DeltaLogFooter::kSize_");
 
-  Status s = ReadSlice(DeltaLogLogFooter::kSize, &buffer_, header_buf_);
+  Status s = ReadSlice(DeltaLogFooter::kSize_, &buffer_, header_buf_);
   if (!s.ok()) {
     return s;
   }
 
-  if (buffer_.size() != DeltaLogLogFooter::kSize) {
+  if (buffer_.size() != DeltaLogFooter::kSize_) {
     return Status::Corruption("EOF reached before file footer");
   }
 

@@ -202,7 +202,7 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
       std::move(file_writer), immutable_options_->clock, statistics,
       deltaLog_file_id, immutable_options_->use_fsync, do_flush));
 
-  DeltaLogLogHeader header(column_family_id_);
+  DeltaLogHeader header(column_family_id_);
 
   {
     Status s = deltaLog_log_writer->WriteHeader(header);
@@ -238,7 +238,7 @@ Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
 
   ++deltaLog_count_;
   deltaLog_bytes_ +=
-      DeltaLogLogRecord::kHeaderSize + key.size() + deltaLog.size();
+      DeltaLogRecord::kHeaderSize_ + key.size() + deltaLog.size();
 
   return Status::OK();
 }
@@ -246,15 +246,25 @@ Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
 Status DeltaLogFileBuilder::CloseDeltaLogFile() {
   assert(IsDeltaLogFileOpen());
 
-  Status s;
+  DeltaLogFooter footer;
+  footer.deltaLog_count = deltaLog_count_;
+
+  Status s = writer_->AppendFooter(footer);
+
+  TEST_SYNC_POINT_CALLBACK("BlobFileBuilder::WriteBlobToFile:AppendFooter", &s);
+
+  if (!s.ok()) {
+    return s;
+  }
+
   if (deltaLog_callback_) {
     s = deltaLog_callback_->OnDeltaLogFileCompleted(
         deltaLog_file_paths_->back(), column_family_name_, job_id_,
-        deltaLog_file_id, creation_reason_, deltaLog_count_, deltaLog_bytes_);
+        deltaLog_file_id_, creation_reason_, deltaLog_count_, deltaLog_bytes_);
   }
 
   assert(deltaLog_file_additions_);
-  deltaLog_file_additions_->emplace_back(deltaLog_file_id, deltaLog_count_,
+  deltaLog_file_additions_->emplace_back(deltaLog_file_id_, deltaLog_count_,
                                          deltaLog_bytes_);
 
   assert(immutable_options_);

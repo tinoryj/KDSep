@@ -48,17 +48,17 @@ class DeltaLogLogSequentialReader {
 
   ~DeltaLogLogSequentialReader();
 
-  Status ReadHeader(DeltaLogLogHeader* header);
+  Status ReadHeader(DeltaLogHeader* header);
 
   // Read the next record into *record.  Returns true if read
   // successfully, false if we hit end of the input. The contents filled in
   // *record will only be valid until the next mutating operation on this
   // reader.
   // If deltaLog_offset is non-null, return offset of the deltaLog through it.
-  Status ReadRecord(DeltaLogLogRecord* record, ReadLevel level = kReadHeader,
+  Status ReadRecord(DeltaLogRecord* record, ReadLevel level = kReadHeader,
                     uint64_t* deltaLog_offset = nullptr);
 
-  Status ReadFooter(DeltaLogLogFooter* footer);
+  Status ReadFooter(DeltaLogFooter* footer);
 
   void ResetNextByte() { next_byte_ = 0; }
 
@@ -73,9 +73,9 @@ class DeltaLogLogSequentialReader {
   Statistics* statistics_;
 
   Slice buffer_;
-  char header_buf_[MAX_HEADER_SIZE(DeltaLogLogHeader::kSize,
-                                   DeltaLogLogFooter::kSize,
-                                   DeltaLogLogRecord::kHeaderSize)];
+  char header_buf_[MAX_HEADER_SIZE(DeltaLogHeader::kSize_,
+                                   DeltaLogFooter::kSize_,
+                                   DeltaLogRecord::kHeaderSize_)];
 
   // which byte to read next
   uint64_t next_byte_;

@@ -98,7 +98,7 @@ Status DeltaLogFileReader::OpenFile(
     }
   }
 
-  if (*file_size < DeltaLogLogHeader::kSize + DeltaLogLogFooter::kSize) {
+  if (*file_size < DeltaLogHeader::kSize_ + DeltaLogFooter::kSize_) {
     return Status::Corruption("Malformed deltaLog file");
   }
 
@@ -142,7 +142,7 @@ Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
     TEST_SYNC_POINT("DeltaLogFileReader::ReadHeader:ReadFromFile");
 
     constexpr uint64_t read_offset = 0;
-    constexpr size_t read_size = DeltaLogLogHeader::kSize;
+    constexpr size_t read_size = DeltaLogHeader::kSize_;
 
     // TODO: rate limit reading headers from deltaLog files.
     const Status s = ReadFromFile(file_reader, read_offset, read_size,
@@ -156,7 +156,7 @@ Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
                              &header_slice);
   }
 
-  DeltaLogLogHeader header;
+  DeltaLogHeader header;
 
   {
     const Status s = header.DecodeFrom(header_slice);
@@ -165,13 +165,7 @@ Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
     }
   }
 
-  constexpr ExpirationRange no_expiration_range;
-
-  if (header.has_ttl || header.expiration_range != no_expiration_range) {
-    return Status::Corruption("Unexpected TTL deltaLog file");
-  }
-
-  if (header.column_family_id != column_family_id) {
+  if (header.column_family_id_ != column_family_id) {
     return Status::Corruption("Column family ID mismatch");
   }
 
@@ -181,7 +175,7 @@ Status DeltaLogFileReader::ReadHeader(const RandomAccessFileReader* file_reader,
 Status DeltaLogFileReader::ReadFooter(const RandomAccessFileReader* file_reader,
                                       uint64_t file_size,
                                       Statistics* statistics) {
-  assert(file_size >= DeltaLogLogHeader::kSize + DeltaLogLogFooter::kSize);
+  assert(file_size >= DeltaLogHeader::kSize_ + DeltaLogFooter::kSize_);
   assert(file_reader);
 
   Slice footer_slice;
@@ -191,8 +185,8 @@ Status DeltaLogFileReader::ReadFooter(const RandomAccessFileReader* file_reader,
   {
     TEST_SYNC_POINT("DeltaLogFileReader::ReadFooter:ReadFromFile");
 
-    const uint64_t read_offset = file_size - DeltaLogLogFooter::kSize;
-    constexpr size_t read_size = DeltaLogLogFooter::kSize;
+    const uint64_t read_offset = file_size - DeltaLogFooter::kSize_;
+    constexpr size_t read_size = DeltaLogFooter::kSize_;
 
     // TODO: rate limit reading footers from deltaLog files.
     const Status s = ReadFromFile(file_reader, read_offset, read_size,
@@ -206,19 +200,13 @@ Status DeltaLogFileReader::ReadFooter(const RandomAccessFileReader* file_reader,
                              &footer_slice);
   }
 
-  DeltaLogLogFooter footer;
+  DeltaLogFooter footer;
 
   {
     const Status s = footer.DecodeFrom(footer_slice);
     if (!s.ok()) {
       return s;
     }
-  }
-
-  constexpr ExpirationRange no_expiration_range;
-
-  if (footer.expiration_range != no_expiration_range) {
-    return Status::Corruption("Unexpected TTL deltaLog file");
   }
 
   return Status::OK();
@@ -282,7 +270,7 @@ Status DeltaLogFileReader::GetDeltaLog(
   assert(result);
   const uint64_t key_size = user_key.size();
 
-  const uint64_t record_offset = offset;
+  const uint64_t record_offset = 0;
   const uint64_t record_size = value_size;
 
   Slice record_slice;
@@ -347,9 +335,9 @@ Status DeltaLogFileReader::VerifyDeltaLog(const Slice& record_slice,
                                           uint64_t value_size) {
   PERF_TIMER_GUARD(deltaLog_checksum_time);
 
-  DeltaLogLogRecord record;
+  DeltaLogRecord record;
 
-  const Slice header_slice(record_slice.data(), DeltaLogLogRecord::kHeaderSize);
+  const Slice header_slice(record_slice.data(), DeltaLogRecord::kHeaderSize_);
 
   {
     const Status s = record.DecodeHeaderFrom(header_slice);
@@ -358,31 +346,21 @@ Status DeltaLogFileReader::VerifyDeltaLog(const Slice& record_slice,
     }
   }
 
-  if (record.key_size != user_key.size()) {
+  if (record.key_size_ != user_key.size()) {
     return Status::Corruption("Key size mismatch when reading deltaLog");
   }
 
-  if (record.value_size != value_size) {
+  if (record.value_size_ != value_size) {
     return Status::Corruption("Value size mismatch when reading deltaLog");
   }
 
-  record.key = Slice(record_slice.data() + DeltaLogLogRecord::kHeaderSize,
-                     record.key_size);
-  if (record.key != user_key) {
+  record.key_ = Slice(record_slice.data() + DeltaLogRecord::kHeaderSize_,
+                      record.key_size_);
+  if (record.key_ != user_key) {
     return Status::Corruption("Key mismatch when reading deltaLog");
   }
 
-  record.value = Slice(record.key.data() + record.key_size, value_size);
-
-  {
-    TEST_SYNC_POINT_CALLBACK(
-        "DeltaLogFileReader::VerifyDeltaLog:CheckDeltaLogCRC", &record);
-
-    const Status s = record.CheckDeltaLogCRC();
-    if (!s.ok()) {
-      return s;
-    }
-  }
+  record.value_ = Slice(record.key_.data() + record.key_size_, value_size);
 
   return Status::OK();
 }

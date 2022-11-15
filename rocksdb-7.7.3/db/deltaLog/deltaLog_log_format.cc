@@ -11,49 +11,49 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-void DeltaLogLogHeader::EncodeTo(std::string* dst) {
+void DeltaLogHeader::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
-  dst->reserve(DeltaLogLogHeader::kSize);
-  PutFixed32(dst, kMagicNumberDeltaLog);
-  PutFixed32(dst, version);
-  PutFixed32(dst, column_family_id);
+  dst->reserve(DeltaLogHeader::kSize_);
+  PutFixed32(dst, kMagicNumberDeltaLog_);
+  PutFixed32(dst, version_);
+  PutFixed32(dst, column_family_id_);
 }
 
-Status DeltaLogLogHeader::DecodeFrom(Slice src) {
+Status DeltaLogHeader::DecodeFrom(Slice src) {
   const char* kErrorMessage = "Error while decoding deltaLog log header";
-  if (src.size() != DeltaLogLogHeader::kSize) {
+  if (src.size() != DeltaLogHeader::kSize_) {
     return Status::Corruption(kErrorMessage,
                               "Unexpected deltaLog file header size");
   }
   uint32_t magic_number;
   unsigned char flags;
-  if (!GetFixed32(&src, &magic_number) || !GetFixed32(&src, &version) ||
-      !GetFixed32(&src, &column_family_id)) {
+  if (!GetFixed32(&src, &magic_number) || !GetFixed32(&src, &version_) ||
+      !GetFixed32(&src, &column_family_id_)) {
     return Status::Corruption(
         kErrorMessage,
-        "Error decoding magic number, version and column family id");
+        "Error decoding magic number, version_ and column family id");
   }
-  if (magic_number != kMagicNumberDeltaLog) {
+  if (magic_number != kMagicNumberDeltaLog_) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
-  if (version != kVersion1DeltaLog) {
-    return Status::Corruption(kErrorMessage, "Unknown header version");
+  if (version_ != kVersion1DeltaLog_) {
+    return Status::Corruption(kErrorMessage, "Unknown header version_");
   }
   return Status::OK();
 }
 
-void DeltaLogLogFooter::EncodeTo(std::string* dst) {
+void DeltaLogFooter::EncodeTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
-  dst->reserve(DeltaLogLogFooter::kSize);
-  PutFixed32(dst, kMagicNumberDeltaLog);
+  dst->reserve(DeltaLogFooter::kSize_);
+  PutFixed32(dst, kMagicNumberDeltaLog_);
   PutFixed64(dst, deltaLog_count);
 }
 
-Status DeltaLogLogFooter::DecodeFrom(Slice src) {
+Status DeltaLogFooter::DecodeFrom(Slice src) {
   const char* kErrorMessage = "Error while decoding deltaLog log footer";
-  if (src.size() != DeltaLogLogFooter::kSize) {
+  if (src.size() != DeltaLogFooter::kSize_) {
     return Status::Corruption(kErrorMessage,
                               "Unexpected deltaLog file footer size");
   }
@@ -61,33 +61,35 @@ Status DeltaLogLogFooter::DecodeFrom(Slice src) {
   if (!GetFixed32(&src, &magic_number) || !GetFixed64(&src, &deltaLog_count)) {
     return Status::Corruption(kErrorMessage, "Error decoding content");
   }
-  if (magic_number != kMagicNumberDeltaLog) {
+  if (magic_number != kMagicNumberDeltaLog_) {
     return Status::Corruption(kErrorMessage, "Magic number mismatch");
   }
   return Status::OK();
 }
 
-void DeltaLogLogRecord::EncodeHeaderTo(std::string* dst, bool is_anchor) {
+void DeltaLogRecord::EncodeHeaderTo(std::string* dst) {
   assert(dst != nullptr);
   dst->clear();
-  dst->reserve(DeltaLogLogRecord::kHeaderSize + key.size() + value.size());
-  PutFixed64(dst, key.size());
-  PutFixed64(dst, value.size());
-  unsigned char is_anchor_flag = (is_anchor ? 1 : 0);
+  dst->reserve(DeltaLogRecord::kHeaderSize_ + key_.size() + value_.size());
+  PutFixed64(dst, key_.size());
+  PutFixed64(dst, value_.size());
+  PutFixed64(dst, sequence_number_);
+  unsigned char is_anchor_flag = (is_anchor_ ? 1 : 0);
   dst->push_back(is_anchor_flag);
 }
 
-Status DeltaLogLogRecord::DecodeHeaderFrom(Slice src, bool& is_anchor) {
+Status DeltaLogRecord::DecodeHeaderFrom(Slice src) {
   const char* kErrorMessage = "Error while decoding deltaLog record";
-  if (src.size() != DeltaLogLogRecord::kHeaderSize) {
+  if (src.size() != DeltaLogRecord::kHeaderSize_) {
     return Status::Corruption(kErrorMessage,
                               "Unexpected deltaLog record header size");
   }
-  if (!GetFixed64(&src, &key_size) || !GetFixed64(&src, &value_size)) {
+  if (!GetFixed64(&src, &key_size_) || !GetFixed64(&src, &value_size_) ||
+      !GetFixed64(&src, &sequence_number_)) {
     return Status::Corruption(kErrorMessage, "Error decoding content");
   }
   unsigned char is_anchor_flag = src.data()[0];
-  is_anchor = (is_anchor_flag & 1) == 1;
+  is_anchor_ = (is_anchor_flag & 1) == 1;
   return Status::OK();
 }
 

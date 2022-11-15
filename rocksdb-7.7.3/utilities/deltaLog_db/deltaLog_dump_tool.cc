@@ -119,11 +119,11 @@ Status DeltaLogDumpTool::Read(uint64_t offset, size_t size, Slice* result) {
 Status DeltaLogDumpTool::DumpDeltaLogLogHeader(uint64_t* offset,
                                                CompressionType* compression) {
   Slice slice;
-  Status s = Read(0, DeltaLogLogHeader::kSize, &slice);
+  Status s = Read(0, DeltaLogHeader::kSize_, &slice);
   if (!s.ok()) {
     return s;
   }
-  DeltaLogLogHeader header;
+  DeltaLogHeader header;
   s = header.DecodeFrom(slice);
   if (!s.ok()) {
     return s;
@@ -141,7 +141,7 @@ Status DeltaLogDumpTool::DumpDeltaLogLogHeader(uint64_t* offset,
   fprintf(stdout, "  Compression      : %s\n", compression_str.c_str());
   fprintf(stdout, "  Expiration range : %s\n",
           GetString(header.expiration_range).c_str());
-  *offset = DeltaLogLogHeader::kSize;
+  *offset = DeltaLogHeader::kSize_;
   *compression = header.compression;
   return s;
 }
@@ -153,16 +153,16 @@ Status DeltaLogDumpTool::DumpDeltaLogLogFooter(uint64_t file_size,
     fprintf(stdout, "No deltaLog log footer.\n");
     return Status::OK();
   };
-  if (file_size < DeltaLogLogHeader::kSize + DeltaLogLogFooter::kSize) {
+  if (file_size < DeltaLogHeader::kSize_ + DeltaLogFooter::kSize_) {
     return no_footer();
   }
   Slice slice;
-  *footer_offset = file_size - DeltaLogLogFooter::kSize;
-  Status s = Read(*footer_offset, DeltaLogLogFooter::kSize, &slice);
+  *footer_offset = file_size - DeltaLogFooter::kSize_;
+  Status s = Read(*footer_offset, DeltaLogFooter::kSize_, &slice);
   if (!s.ok()) {
     return s;
   }
-  DeltaLogLogFooter footer;
+  DeltaLogFooter footer;
   s = footer.DecodeFrom(slice);
   if (!s.ok()) {
     return no_footer();
@@ -186,11 +186,11 @@ Status DeltaLogDumpTool::DumpRecord(
             *offset, *offset);
   }
   Slice slice;
-  Status s = Read(*offset, DeltaLogLogRecord::kHeaderSize, &slice);
+  Status s = Read(*offset, DeltaLogRecord::kHeaderSize_, &slice);
   if (!s.ok()) {
     return s;
   }
-  DeltaLogLogRecord record;
+  DeltaLogRecord record;
   s = record.DecodeHeaderFrom(slice);
   if (!s.ok()) {
     return s;
@@ -202,7 +202,7 @@ Status DeltaLogDumpTool::DumpRecord(
     fprintf(stdout, "  value size : %" PRIu64 "\n", value_size);
     fprintf(stdout, "  expiration : %" PRIu64 "\n", record.expiration);
   }
-  *offset += DeltaLogLogRecord::kHeaderSize;
+  *offset += DeltaLogRecord::kHeaderSize_;
   s = Read(*offset, static_cast<size_t>(key_size + value_size), &slice);
   if (!s.ok()) {
     return s;

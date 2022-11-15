@@ -42,7 +42,7 @@ Status DeltaLogLogWriter::Sync() {
   return s;
 }
 
-Status DeltaLogLogWriter::WriteHeader(DeltaLogLogHeader& header) {
+Status DeltaLogLogWriter::WriteHeader(DeltaLogHeader& header) {
   assert(block_offset_ == 0);
   assert(last_elem_type_ == kEtNone);
   std::string str;
@@ -57,11 +57,11 @@ Status DeltaLogLogWriter::WriteHeader(DeltaLogLogHeader& header) {
   }
   last_elem_type_ = kEtFileHdr;
   RecordTick(statistics_, DELTALOG_DB_DELTALOG_FILE_BYTES_WRITTEN,
-             DeltaLogLogHeader::kSize);
+             DeltaLogHeader::kSize_);
   return s;
 }
 
-Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer) {
+Status DeltaLogLogWriter::AppendFooter(DeltaLogFooter& footer) {
   assert(block_offset_ != 0);
   assert(last_elem_type_ == kEtFileHdr || last_elem_type_ == kEtRecord);
 
@@ -89,7 +89,7 @@ Status DeltaLogLogWriter::AppendFooter(DeltaLogLogFooter& footer) {
 
   last_elem_type_ = kEtFileFooter;
   RecordTick(statistics_, DELTALOG_DB_DELTALOG_FILE_BYTES_WRITTEN,
-             DeltaLogLogFooter::kSize);
+             DeltaLogFooter::kSize_);
   return s;
 }
 
@@ -109,10 +109,11 @@ void DeltaLogLogWriter::ConstructDeltaLogHeader(std::string* buf,
                                                 const Slice& key,
                                                 const Slice& val,
                                                 bool is_anchor) {
-  DeltaLogLogRecord record;
-  record.key = key;
-  record.value = val;
-  record.EncodeHeaderTo(buf, is_anchor);
+  DeltaLogRecord record;
+  record.key_ = key;
+  record.value_ = val;
+  record.is_anchor_ = is_anchor;
+  record.EncodeHeaderTo(buf);
 }
 
 Status DeltaLogLogWriter::EmitPhysicalRecord(const std::string& headerbuf,
@@ -131,10 +132,10 @@ Status DeltaLogLogWriter::EmitPhysicalRecord(const std::string& headerbuf,
     s = dest_->Flush();
   }
 
-  block_offset_ += DeltaLogLogRecord::kHeaderSize + key.size() + val.size();
+  block_offset_ += DeltaLogRecord::kHeaderSize_ + key.size() + val.size();
   last_elem_type_ = kEtRecord;
   RecordTick(statistics_, DELTALOG_DB_DELTALOG_FILE_BYTES_WRITTEN,
-             DeltaLogLogRecord::kHeaderSize + key.size() + val.size());
+             DeltaLogRecord::kHeaderSize_ + key.size() + val.size());
   return s;
 }
 
