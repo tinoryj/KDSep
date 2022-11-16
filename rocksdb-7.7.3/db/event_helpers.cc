@@ -174,7 +174,7 @@ void EventHelpers::LogAndNotifyTableFileCreationFinished(
       jwriter << "oldest_blob_file_number" << oldest_blob_file_number;
     }
 
-    if (oldest_deltaLog_file_id != kGCSelectedDeltaLogFileNumber) {
+    if (oldest_deltaLog_file_id != kGCSelectedDeltaLogFileID) {
       jwriter << "oldest_deltaLog_file_id" << oldest_deltaLog_file_id;
     }
 
@@ -358,9 +358,7 @@ void EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
     const std::string& db_name, const std::string& cf_name,
     const std::string& file_path, int job_id, uint64_t file_number,
     DeltaLogFileCreationReason creation_reason, const Status& s,
-    const std::string& file_checksum,
-    const std::string& file_checksum_func_name, uint64_t total_deltaLog_count,
-    uint64_t total_deltaLog_bytes) {
+    uint64_t total_deltaLog_count, uint64_t total_deltaLog_bytes) {
   if (s.ok() && event_logger) {
     JSONWriter jwriter;
     AppendCurrentTime(&jwriter);
@@ -368,9 +366,7 @@ void EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
             << "deltaLog_file_creation"
             << "file_number" << file_number << "total_deltaLog_count"
             << total_deltaLog_count << "total_deltaLog_bytes"
-            << total_deltaLog_bytes << "file_checksum" << file_checksum
-            << "file_checksum_func_name" << file_checksum_func_name << "status"
-            << s.ToString();
+            << total_deltaLog_bytes << "status" << s.ToString();
 
     jwriter.EndObject();
     event_logger->Log(jwriter);
@@ -381,8 +377,7 @@ void EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
   }
   DeltaLogFileCreationInfo info(db_name, cf_name, file_path, job_id,
                                 creation_reason, total_deltaLog_count,
-                                total_deltaLog_bytes, s, file_checksum,
-                                file_checksum_func_name);
+                                total_deltaLog_bytes, s);
   for (const auto& listener : listeners) {
     listener->OnDeltaLogFileCreated(info);
   }

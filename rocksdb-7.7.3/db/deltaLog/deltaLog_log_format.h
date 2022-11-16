@@ -84,9 +84,6 @@ struct DeltaLogFooter {
 // Also note that if compression is used, value is compressed value and value
 // length is compressed value length.
 //
-// Header CRC is the checksum of (key_len + val_len + expiration), while
-// deltaLog CRC is the checksum of (key + value).
-//
 // We could use variable length encoding (Varint64) to save more space, but it
 // make reader more complicated.
 struct DeltaLogRecord {

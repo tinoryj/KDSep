@@ -23,13 +23,15 @@ namespace ROCKSDB_NAMESPACE {
 DeltaLogSource::DeltaLogSource(const ImmutableOptions* immutable_options,
                                const std::string& db_id,
                                const std::string& db_session_id,
-                               DeltaLogFileCache* deltaLog_file_cache)
+                               DeltaLogFileCache* deltaLog_file_cache,
+                               DeltaLogFileMetaData* deltaLogFileMetaData)
     : db_id_(db_id),
       db_session_id_(db_session_id),
       statistics_(immutable_options->statistics.get()),
       deltaLog_file_cache_(deltaLog_file_cache),
       deltaLog_cache_(immutable_options->deltaLog_cache),
-      lowest_used_cache_tier_(immutable_options->lowest_used_cache_tier) {
+      lowest_used_cache_tier_(immutable_options->lowest_used_cache_tier),
+      deltaLogFileMetaData_(deltaLogFileMetaData) {
 #ifndef ROCKSDB_LITE
   auto bbto =
       immutable_options->table_factory->GetOptions<BlockBasedTableOptions>();
@@ -192,8 +194,8 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
 
   {
     CacheHandleGuard<DeltaLogFileReader> deltaLog_file_reader;
-    s = deltaLog_file_cache_->GetDeltaLogFileReader(file_id,
-                                                    &deltaLog_file_reader);
+    s = deltaLog_file_cache_->GetDeltaLogFileReader(
+        file_id, &deltaLog_file_reader, deltaLogFileMetaData_);
     if (!s.ok()) {
       return s;
     }
@@ -237,7 +239,7 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
     }
   } else {
     DeltaLogContents* const deltaLogReadedContents =
-        deltaLog_contents->release();
+        deltaLog_contents.release();
     Slice rawValue = deltaLogReadedContents->data();
     uint64_t record_size = rawValue.size();
     if (bytes_read) {

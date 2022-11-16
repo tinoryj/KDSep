@@ -210,24 +210,20 @@ struct DeltaLogMetaData {
         garbage_deltaLog_count(0),
         garbage_deltaLog_bytes(0) {}
 
-  DeltaLogMetaData(uint64_t _file_number, const std::string& _file_name,
+  DeltaLogMetaData(uint64_t _file_id, const std::string& _file_name,
                    const std::string& _file_path, uint64_t _file_size,
                    uint64_t _total_deltaLog_count,
                    uint64_t _total_deltaLog_bytes,
                    uint64_t _garbage_deltaLog_count,
-                   uint64_t _garbage_deltaLog_bytes,
-                   const std::string& _file_checksum,
-                   const std::string& _file_checksum_func_name)
-      : deltaLog_file_id(_file_number),
+                   uint64_t _garbage_deltaLog_bytes)
+      : deltaLog_file_id(_file_id),
         deltaLog_file_name(_file_name),
         deltaLog_file_path(_file_path),
         deltaLog_file_size(_file_size),
         total_deltaLog_count(_total_deltaLog_count),
         total_deltaLog_bytes(_total_deltaLog_bytes),
         garbage_deltaLog_count(_garbage_deltaLog_count),
-        garbage_deltaLog_bytes(_garbage_deltaLog_bytes),
-        checksum_method(_file_checksum),
-        checksum_value(_file_checksum_func_name) {}
+        garbage_deltaLog_bytes(_garbage_deltaLog_bytes) {}
   uint64_t deltaLog_file_id;
   std::string deltaLog_file_name;
   std::string deltaLog_file_path;
@@ -236,8 +232,6 @@ struct DeltaLogMetaData {
   uint64_t total_deltaLog_bytes;
   uint64_t garbage_deltaLog_count;
   uint64_t garbage_deltaLog_bytes;
-  std::string checksum_method;
-  std::string checksum_value;
 };
 
 // The metadata that describes a level.

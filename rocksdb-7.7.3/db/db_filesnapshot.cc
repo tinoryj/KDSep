@@ -329,14 +329,6 @@ Status DBImpl::GetLiveFilesStorageInfo(
       info.file_number = meta->GetDeltaLogFileID();
       info.file_type = kDeltaLogFile;
       info.size = meta->GetDeltaLogFileSize();
-      if (opts.include_checksum_info) {
-        info.file_checksum_func_name = meta->GetChecksumMethod();
-        info.file_checksum = meta->GetChecksumValue();
-        if (info.file_checksum_func_name.empty()) {
-          info.file_checksum_func_name = kUnknownFileChecksumFuncName;
-          info.file_checksum = kUnknownFileChecksum;
-        }
-      }
       // TODO?: info.temperature
     }
   }

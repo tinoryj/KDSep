@@ -47,23 +47,21 @@ class DeltaLogFileCompletionCallback {
 #endif
   }
 
-  Status OnDeltaLogFileCompleted(
-      const std::string& file_name, const std::string& column_family_name,
-      int job_id, uint64_t file_number,
-      DeltaLogFileCreationReason creation_reason, const Status& report_status,
-      const std::string& checksum_value, const std::string& checksum_method,
-      uint64_t deltaLog_count, uint64_t deltaLog_bytes) {
+  Status OnDeltaLogFileCompleted(const std::string& file_name,
+                                 const std::string& column_family_name,
+                                 int job_id, uint64_t file_id,
+                                 DeltaLogFileCreationReason creation_reason,
+                                 const Status& report_status,
+                                 uint64_t deltaLog_count,
+                                 uint64_t deltaLog_bytes) {
     Status s;
 
     // Notify the listeners.
     EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
         event_logger_, listeners_, dbname_, column_family_name, file_name,
-        job_id, file_number, creation_reason,
-        (!report_status.ok() ? report_status : s),
-        (checksum_value.empty() ? kUnknownFileChecksum : checksum_value),
-        (checksum_method.empty() ? kUnknownFileChecksumFuncName
-                                 : checksum_method),
-        deltaLog_count, deltaLog_bytes);
+        job_id, file_id, creation_reason,
+        (!report_status.ok() ? report_status : s), deltaLog_count,
+        deltaLog_bytes);
     return s;
   }
 

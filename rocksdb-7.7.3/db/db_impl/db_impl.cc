@@ -5626,24 +5626,6 @@ Status DBImpl::VerifyChecksumInternal(const ReadOptions& read_options,
           break;
         }
       }
-      const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-      for (const auto& meta : deltaLog_files) {
-        assert(meta);
-
-        const uint64_t deltaLog_file_id = meta->GetDeltaLogFileID();
-
-        const std::string deltaLog_file_name = DeltaLogFileName(
-            cfd->ioptions()->cf_paths.front().path, deltaLog_file_id);
-        s = VerifyFullFileChecksum(meta->GetChecksumValue(),
-                                   meta->GetChecksumMethod(),
-                                   deltaLog_file_name, read_options);
-        RecordTick(stats_, VERIFY_CHECKSUM_READ_BYTES,
-                   IOSTATS(bytes_read) - prev_bytes_read);
-        prev_bytes_read = IOSTATS(bytes_read);
-        if (!s.ok()) {
-          break;
-        }
-      }
     }
     if (!s.ok()) {
       break;

@@ -48,7 +48,7 @@ DeltaLogFileBuilder::DeltaLogFileBuilder(
           creation_reason, deltaLog_file_paths, deltaLog_file_additions) {}
 
 DeltaLogFileBuilder::DeltaLogFileBuilder(
-    std::function<uint64_t()> file_number_generator, FileSystem* fs,
+    std::function<uint64_t()> file_id_generator, FileSystem* fs,
     const ImmutableOptions* immutable_options,
     const MutableCFOptions* mutable_cf_options, const FileOptions* file_options,
     std::string db_id, std::string db_session_id, int job_id,
@@ -59,7 +59,7 @@ DeltaLogFileBuilder::DeltaLogFileBuilder(
     DeltaLogFileCreationReason creation_reason,
     std::vector<std::string>* deltaLog_file_paths,
     std::vector<DeltaLogFileAddition>* deltaLog_file_additions)
-    : file_number_generator_(std::move(file_number_generator)),
+    : file_id_generator_(std::move(file_id_generator)),
       fs_(fs),
       immutable_options_(immutable_options),
       min_deltaLog_size_(mutable_cf_options->min_deltaLog_size),
@@ -81,7 +81,7 @@ DeltaLogFileBuilder::DeltaLogFileBuilder(
       deltaLog_file_additions_(deltaLog_file_additions),
       deltaLog_count_(0),
       deltaLog_bytes_(0) {
-  assert(file_number_generator_);
+  assert(file_id_generator_);
   assert(fs_);
   assert(immutable_options_);
   assert(file_options_);
@@ -150,14 +150,14 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
 
   assert(!deltaLog_count_);
   assert(!deltaLog_bytes_);
+  assert(file_id_generator_);
 
-  assert(file_number_generator_);
-  const uint64_t deltaLog_file_id = file_number_generator_();
+  deltaLog_file_id_ = file_id_generator_();
 
   assert(immutable_options_);
   assert(!immutable_options_->cf_paths.empty());
   std::string deltaLog_file_path = DeltaLogFileName(
-      immutable_options_->cf_paths.front().path, deltaLog_file_id);
+      immutable_options_->cf_paths.front().path, deltaLog_file_id_);
 
   if (deltaLog_callback_) {
     deltaLog_callback_->OnDeltaLogFileCreationStarted(
@@ -200,7 +200,7 @@ Status DeltaLogFileBuilder::OpenDeltaLogFileIfNeeded() {
 
   std::unique_ptr<DeltaLogLogWriter> deltaLog_log_writer(new DeltaLogLogWriter(
       std::move(file_writer), immutable_options_->clock, statistics,
-      deltaLog_file_id, immutable_options_->use_fsync, do_flush));
+      deltaLog_file_id_, immutable_options_->use_fsync, do_flush));
 
   DeltaLogHeader header(column_family_id_);
 
@@ -257,10 +257,12 @@ Status DeltaLogFileBuilder::CloseDeltaLogFile() {
     return s;
   }
 
+  Status OnDeltaLogFileCompletedStatus;
   if (deltaLog_callback_) {
     s = deltaLog_callback_->OnDeltaLogFileCompleted(
         deltaLog_file_paths_->back(), column_family_name_, job_id_,
-        deltaLog_file_id_, creation_reason_, deltaLog_count_, deltaLog_bytes_);
+        deltaLog_file_id_, creation_reason_, OnDeltaLogFileCompletedStatus,
+        deltaLog_count_, deltaLog_bytes_);
   }
 
   assert(deltaLog_file_additions_);
@@ -271,7 +273,7 @@ Status DeltaLogFileBuilder::CloseDeltaLogFile() {
   ROCKS_LOG_INFO(immutable_options_->logger,
                  "[%s] [JOB %d] Generated deltaLog file #%" PRIu64 ": %" PRIu64
                  " total deltaLogs, %" PRIu64 " total bytes",
-                 column_family_name_.c_str(), job_id_, deltaLog_file_id,
+                 column_family_name_.c_str(), job_id_, deltaLog_file_id_,
                  deltaLog_count_, deltaLog_bytes_);
 
   writer_.reset();
@@ -305,7 +307,7 @@ void DeltaLogFileBuilder::Abandon(const Status& s) {
         ->OnDeltaLogFileCompleted(deltaLog_file_paths_->back(),
                                   column_family_name_, job_id_,
                                   writer_->get_log_number(), creation_reason_,
-                                  s, "", "", deltaLog_count_, deltaLog_bytes_)
+                                  s, deltaLog_count_, deltaLog_bytes_)
         .PermitUncheckedError();
   }
 
@@ -325,7 +327,7 @@ Status DeltaLogFileBuilder::PutDeltaLogIntoCacheIfNeeded(
       creation_reason_ == DeltaLogFileCreationReason::kFlush;
 
   if (deltaLog_cache && warm_cache) {
-    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_);
+    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_,deltaLog_file_id_);
     const CacheKey cache_key = base_cache_key.WithOffset(0);
     const Slice key = cache_key.AsSlice();
 

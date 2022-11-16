@@ -83,9 +83,7 @@ class EventHelpers {
       const std::string& db_name, const std::string& cf_name,
       const std::string& file_path, int job_id, uint64_t file_number,
       DeltaLogFileCreationReason creation_reason, const Status& s,
-      const std::string& file_checksum,
-      const std::string& file_checksum_func_name, uint64_t total_deltaLog_count,
-      uint64_t total_deltaLog_bytes);
+      uint64_t total_deltaLog_count, uint64_t total_deltaLog_bytes);
 
   static void LogAndNotifyDeltaLogFileDeletion(
       EventLogger* event_logger,

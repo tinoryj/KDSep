@@ -1809,8 +1809,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
         DeltaLogFileName("", meta->GetDeltaLogFileID()),
         ioptions->cf_paths.front().path, meta->GetDeltaLogFileSize(),
         meta->GetTotalDeltaLogCount(), meta->GetTotalDeltaLogBytes(),
-        meta->GetGarbageDeltaLogCount(), meta->GetGarbageDeltaLogBytes(),
-        meta->GetChecksumMethod(), meta->GetChecksumValue());
+        meta->GetGarbageDeltaLogCount(), meta->GetGarbageDeltaLogBytes());
     ++cf_meta->deltaLog_file_count;
     cf_meta->deltaLog_file_size += meta->GetDeltaLogFileSize();
   }
@@ -2247,12 +2246,9 @@ void Version::MultiGetBlob(
 
 Status Version::GetDeltaLog(const ReadOptions& read_options,
                             const Slice& user_key,
-                            const DeltaLogIndex& deltaLog_index,
                             FilePrefetchBuffer* prefetch_buffer,
-                            autovector<Slice>& value_vec,
+                            vector<Slice>& value_vec,
                             uint64_t* bytes_read) const {
-  assert(value_vec);
-
   const uint64_t deltaLog_file_full_hash =
       deltaLog_index.getDeltaLogFilePrefixHashFull();
 
@@ -4780,7 +4776,7 @@ std::string Version::DebugString(bool hex, bool print_stats) const {
         r.append(" blob_file:");
         AppendNumberTo(&r, files[i]->oldest_blob_file_number);
       }
-      if (files[i]->oldest_deltaLog_file_id != kGCSelectedDeltaLogFileNumber) {
+      if (files[i]->oldest_deltaLog_file_id != kGCSelectedDeltaLogFileID) {
         r.append(" deltaLog_file:");
         AppendNumberTo(&r, files[i]->oldest_deltaLog_file_id);
       }

@@ -17,30 +17,13 @@ uint64_t SharedDeltaLogFileMetaData::GetDeltaLogFileSize() const {
          DeltaLogFooter::kSize_;
 }
 
-std::string SharedDeltaLogFileMetaData::DebugString() const {
-  std::ostringstream oss;
-  oss << (*this);
-
-  return oss.str();
-}
-
 std::ostream& operator<<(std::ostream& os,
                          const SharedDeltaLogFileMetaData& shared_meta) {
   os << "deltaLog_file_id: " << shared_meta.GetDeltaLogFileID()
      << " total_deltaLog_count: " << shared_meta.GetTotalDeltaLogCount()
-     << " total_deltaLog_bytes: " << shared_meta.GetTotalDeltaLogBytes()
-     << " checksum_method: " << shared_meta.GetChecksumMethod()
-     << " checksum_value: "
-     << Slice(shared_meta.GetChecksumValue()).ToString(/* hex */ true);
+     << " total_deltaLog_bytes: " << shared_meta.GetTotalDeltaLogBytes();
 
   return os;
-}
-
-std::string DeltaLogFileMetaData::DebugString() const {
-  std::ostringstream oss;
-  oss << (*this);
-
-  return oss.str();
 }
 
 std::ostream& operator<<(std::ostream& os, const DeltaLogFileMetaData& meta) {

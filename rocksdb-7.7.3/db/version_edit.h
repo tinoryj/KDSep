@@ -209,7 +209,7 @@ struct FileMetaData {
   // Used only in DeltaLogDB. The file number of the oldest deltaLog file this
   // SST file refers to. 0 is an invalid value; DeltaLogDB numbers the files
   // starting from 1.
-  uint64_t oldest_deltaLog_file_id = kGCSelectedDeltaLogFileNumber;
+  uint64_t oldest_deltaLog_file_id = kGCSelectedDeltaLogFileID;
 
   // The file could be the compaction output from other SST files, which could
   // in turn be outputs for compact older SST files. We track the memtable
@@ -527,12 +527,9 @@ class VersionEdit {
 
   // Add a new deltaLog file.
   void AddDeltaLogFile(uint64_t deltaLog_file_id, uint64_t total_deltaLog_count,
-                       uint64_t total_deltaLog_bytes,
-                       std::string checksum_method,
-                       std::string checksum_value) {
+                       uint64_t total_deltaLog_bytes) {
     deltaLog_file_additions_.emplace_back(
-        deltaLog_file_id, total_deltaLog_count, total_deltaLog_bytes,
-        std::move(checksum_method), std::move(checksum_value));
+        deltaLog_file_id, total_deltaLog_count, total_deltaLog_bytes);
   }
 
   void AddDeltaLogFile(DeltaLogFileAddition deltaLog_file_addition) {

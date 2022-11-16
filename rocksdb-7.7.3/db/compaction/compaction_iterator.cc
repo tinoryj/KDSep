@@ -1213,60 +1213,8 @@ void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
 
   // GC for integrated DeltaLogDB
   if (compaction_->enable_deltaLog_garbage_collection()) {
-    TEST_SYNC_POINT_CALLBACK(
-        "CompactionIterator::GarbageCollectDeltaLogIfNeeded::"
-        "TamperWithDeltaLogIndex",
-        &value_);
-
-    DeltaLogIndex deltaLog_index;
-
-    {
-      const Status s =
-          deltaLog_index.GenerateFullFileHashFromKey(ikey_.user_key);
-      if (!s.ok()) {
-        status_ = s;
-        validity_info_.Invalidate();
-        return;
-      }
-    }
-
-    FilePrefetchBuffer* prefetch_buffer =
-        prefetch_buffers_ ? prefetch_buffers_->GetOrCreatePrefetchBuffer(
-                                deltaLog_index.getDeltaLogFilePrefixHashFull())
-                          : nullptr;
-
-    uint64_t bytes_read = 0;
-
-    {
-      assert(deltaLog_fetcher_);
-
-      const Status s = deltaLog_fetcher_->FetchDeltaLog(
-          user_key(), deltaLog_index, prefetch_buffer, &deltaLog_value_,
-          &bytes_read);
-
-      if (!s.ok()) {
-        status_ = s;
-        validity_info_.Invalidate();
-
-        return;
-      }
-    }
-
-    ++iter_stats_.num_deltaLogs_read;
-    iter_stats_.total_deltaLog_bytes_read += bytes_read;
-
-    ++iter_stats_.num_deltaLogs_relocated;
-    iter_stats_.total_deltaLog_bytes_relocated += deltaLog_index.getFileSize();
-
-    value_ = deltaLog_value_;
-
-    if (ExtractLargeDeltaIfNeededImpl()) {
-      return;
-    }
-
-    ikey_.type = kTypeMerge;
+    ikey_.type = kTypeDeltaLogIndex;
     current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
-
     return;
   }
 }

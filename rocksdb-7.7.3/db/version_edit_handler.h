@@ -218,9 +218,6 @@ class VersionEditHandlerPointInTime : public VersionEditHandler {
                             const FileMetaData& fmeta);
   virtual Status VerifyBlobFile(ColumnFamilyData* cfd, uint64_t blob_file_num,
                                 const BlobFileAddition& blob_addition);
-  virtual Status VerifyDeltaLogFile(
-      ColumnFamilyData* cfd, uint64_t deltaLog_file_num,
-      const DeltaLogFileAddition& deltaLog_addition);
 
   std::unordered_map<uint32_t, Version*> versions_;
 };

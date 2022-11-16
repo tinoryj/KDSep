@@ -396,7 +396,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         assert(merge_operator_ != nullptr);
         {
           PinnableSlice pin_val;
-          if (GetDeltaLogValue(value, &pin_val) == false) {
+          if (GetDeltaLogValue(&pin_val) == false) {
             return false;
           }
           Slice deltaLog_value(pin_val);
@@ -486,13 +486,12 @@ bool GetContext::GetBlobValue(const Slice& blob_index,
   return true;
 }
 
-bool GetContext::GetDeltaLogValue(const Slice& deltaLog_index,
-                                  PinnableSlice* deltaLog_value) {
+bool GetContext::GetDeltaLogValue(PinnableSlice* deltaLog_value) {
   constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
   constexpr uint64_t* bytes_read = nullptr;
 
-  Status status = deltaLog_fetcher_->FetchDeltaLog(
-      user_key_, deltaLog_index, prefetch_buffer, deltaLog_value, bytes_read);
+  Status status = deltaLog_fetcher_->FetchDeltaLog(user_key_, prefetch_buffer,
+                                                   deltaLog_value, bytes_read);
   if (!status.ok()) {
     if (status.IsIncomplete()) {
       // FIXME: this code is not covered by unit tests

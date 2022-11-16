@@ -47,7 +47,7 @@ class DeltaLogFileBuilder {
       std::vector<DeltaLogFileAddition>* deltaLog_file_additions);
 
   DeltaLogFileBuilder(
-      std::function<uint64_t()> file_number_generator, FileSystem* fs,
+      std::function<uint64_t()> file_id_generator, FileSystem* fs,
       const ImmutableOptions* immutable_options,
       const MutableCFOptions* mutable_cf_options,
       const FileOptions* file_options, std::string db_id,
@@ -80,7 +80,7 @@ class DeltaLogFileBuilder {
   Status PutDeltaLogIntoCacheIfNeeded(const Slice& key,
                                       const Slice& deltaLog) const;
 
-  std::function<uint64_t()> file_number_generator_;
+  std::function<uint64_t()> file_id_generator_;
   FileSystem* fs_;
   const ImmutableOptions* immutable_options_;
   uint64_t min_deltaLog_size_;
@@ -100,6 +100,7 @@ class DeltaLogFileBuilder {
   std::vector<std::string>* deltaLog_file_paths_;
   std::vector<DeltaLogFileAddition>* deltaLog_file_additions_;
   std::unique_ptr<DeltaLogLogWriter> writer_;
+  uint64_t deltaLog_file_id_;
   uint64_t deltaLog_count_;
   uint64_t deltaLog_bytes_;
 };

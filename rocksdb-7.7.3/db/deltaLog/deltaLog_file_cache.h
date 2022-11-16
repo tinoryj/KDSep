@@ -8,6 +8,7 @@
 #include <cinttypes>
 
 #include "cache/cache_helpers.h"
+#include "db/deltaLog/deltaLog_file_meta.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "util/mutexlock.h"
 
@@ -34,7 +35,8 @@ class DeltaLogFileCache {
 
   Status GetDeltaLogFileReader(
       uint64_t deltaLog_file_id,
-      CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader);
+      CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader,
+      DeltaLogFileMetaData* fileMetaData);
 
  private:
   Cache* cache_;

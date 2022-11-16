@@ -184,7 +184,7 @@ class GetContext {
  private:
   void Merge(const Slice* value);
   bool GetBlobValue(const Slice& blob_index, PinnableSlice* blob_value);
-  bool GetDeltaLogValue(const Slice& deltaLog_index,
+  bool GetDeltaLogValue(
                         PinnableSlice* deltaLog_value);
 
   const Comparator* ucmp_;

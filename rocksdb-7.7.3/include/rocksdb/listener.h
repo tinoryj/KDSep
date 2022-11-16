@@ -127,16 +127,12 @@ struct DeltaLogFileCreationInfo : public DeltaLogFileCreationBriefInfo {
                            const std::string& _file_path, int _job_id,
                            DeltaLogFileCreationReason _reason,
                            uint64_t _total_deltaLog_count,
-                           uint64_t _total_deltaLog_bytes, Status _status,
-                           const std::string& _file_checksum,
-                           const std::string& _file_checksum_func_name)
+                           uint64_t _total_deltaLog_bytes, Status _status)
       : DeltaLogFileCreationBriefInfo(_db_name, _cf_name, _file_path, _job_id,
                                       _reason),
         total_deltaLog_count(_total_deltaLog_count),
         total_deltaLog_bytes(_total_deltaLog_bytes),
-        status(_status),
-        file_checksum(_file_checksum),
-        file_checksum_func_name(_file_checksum_func_name) {}
+        status(_status) {}
 
   // the number of deltaLog in a file.
   uint64_t total_deltaLog_count;
@@ -144,11 +140,6 @@ struct DeltaLogFileCreationInfo : public DeltaLogFileCreationBriefInfo {
   uint64_t total_deltaLog_bytes;
   // The status indicating whether the creation was successful or not.
   Status status;
-  // The checksum of the deltaLog file being created.
-  std::string file_checksum;
-  // The checksum function name of checksum generator used for this deltaLog
-  // file.
-  std::string file_checksum_func_name;
 };
 
 enum class CompactionReason : int {

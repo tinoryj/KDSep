@@ -737,7 +737,7 @@ bool Compaction::DoesInputReferenceDeltaLogFiles() const {
     for (const FileMetaData* meta : inputs_[i].files) {
       assert(meta);
 
-      if (meta->oldest_deltaLog_file_id != kGCSelectedDeltaLogFileNumber) {
+      if (meta->oldest_deltaLog_file_id != kGCSelectedDeltaLogFileID) {
         return true;
       }
     }

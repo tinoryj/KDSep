@@ -218,7 +218,7 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
 bool DBIter::SetDeltaLogValueIfNeeded(const Slice& user_key,
                                       const Slice& deltaLog_index) {
   assert(!is_deltaLog_);
-  assert(deltaLog_value_.empty());
+  assert(deltaLog_value_vec_.empty());
 
   if (expose_deltaLog_index_) {  // Stacked DeltaLogDB implementation
     is_deltaLog_ = true;
@@ -241,9 +241,8 @@ bool DBIter::SetDeltaLogValueIfNeeded(const Slice& user_key,
   constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
   constexpr uint64_t* bytes_read = nullptr;
 
-  const Status s =
-      version_->GetDeltaLog(read_options, user_key, deltaLog_index,
-                            prefetch_buffer, &deltaLog_value_, bytes_read);
+  const Status s = version_->GetDeltaLog(
+      read_options, user_key, prefetch_buffer, deltaLog_value_vec_, bytes_read);
 
   if (!s.ok()) {
     status_ = s;

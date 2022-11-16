@@ -1002,7 +1002,7 @@ class VersionBuilder::Rep {
     const uint64_t deltaLog_file_id =
         GetOldestDeltaLogFileNumberForTableFile(level, file_number);
 
-    if (deltaLog_file_id != kGCSelectedDeltaLogFileNumber) {
+    if (deltaLog_file_id != kGCSelectedDeltaLogFileID) {
       MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
           GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_id);
       if (mutable_meta_deltaLog) {
@@ -1098,7 +1098,7 @@ class VersionBuilder::Rep {
 
     const uint64_t deltaLog_file_id = f->oldest_deltaLog_file_id;
 
-    if (deltaLog_file_id != kGCSelectedDeltaLogFileNumber) {
+    if (deltaLog_file_id != kGCSelectedDeltaLogFileID) {
       MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
           GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_id);
       if (mutable_meta_deltaLog) {
@@ -1505,132 +1505,6 @@ class VersionBuilder::Rep {
                        process_mutable, process_both);
   }
 
-  // Find the oldest deltaLog file that has linked SSTs.
-  uint64_t GetMinOldestDeltaLogFileNumber() const {
-    uint64_t min_oldest_deltaLog_file_num = kGCSelectedDeltaLogFileNumber;
-
-    // auto process_base =
-    //     [&min_oldest_deltaLog_file_num](
-    //         const std::shared_ptr<DeltaLogFileMetaData>& base_meta) {
-    //       assert(base_meta);
-
-    //       return CheckLinkedSsts(*base_meta, &min_oldest_deltaLog_file_num);
-    //     };
-
-    // auto process_mutable =
-    //     [&min_oldest_deltaLog_file_num](
-    //         const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
-    //       return CheckLinkedSsts(mutable_meta_deltaLog,
-    //                              &min_oldest_deltaLog_file_num);
-    //     };
-
-    //     auto process_both =
-    //         [&min_oldest_deltaLog_file_num](
-    //             const std::shared_ptr<DeltaLogFileMetaData>& base_meta,
-    //             const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
-    // #ifndef NDEBUG
-    //           assert(base_meta);
-    //           assert(base_meta->GetSharedMeta() ==
-    //                  mutable_meta_deltaLog.GetSharedMeta());
-    // #else
-    //           (void)base_meta;
-    // #endif
-
-    //           // Look at mutable_meta_deltaLog since it supersedes *base_meta
-    //           return CheckLinkedSsts(mutable_meta_deltaLog,
-    //                                  &min_oldest_deltaLog_file_num);
-    //         };
-
-    //     MergeDeltaLogFileMetas(kGCSelectedDeltaLogFileNumber, process_base,
-    //                            process_mutable, process_both);
-
-    return min_oldest_deltaLog_file_num;
-  }
-
-  static std::shared_ptr<DeltaLogFileMetaData> CreateDeltaLogFileMetaData(
-      const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
-    return DeltaLogFileMetaData::Create(
-        mutable_meta_deltaLog.GetSharedMeta(),
-        mutable_meta_deltaLog.GetLinkedSsts(),
-        mutable_meta_deltaLog.GetGarbageDeltaLogCount(),
-        mutable_meta_deltaLog.GetGarbageDeltaLogBytes());
-  }
-
-  // Add the deltaLog file specified by meta to *vstorage if it is determined to
-  // contain valid data (deltaLogs).
-  template <typename Meta>
-  static void AddDeltaLogFileIfNeeded(VersionStorageInfo* vstorage,
-                                      Meta&& meta) {
-    assert(vstorage);
-    assert(meta);
-
-    if (meta->GetLinkedSsts().empty() &&
-        meta->GetGarbageDeltaLogCount() >= meta->GetTotalDeltaLogCount()) {
-      return;
-    }
-
-    vstorage->AddDeltaLogFile(std::forward<Meta>(meta));
-  }
-
-  // Merge the deltaLog file metadata from the base version with the changes
-  // (edits) applied, and save the result into *vstorage.
-  void SaveDeltaLogFilesTo(VersionStorageInfo* vstorage) const {
-    assert(vstorage);
-
-    assert(base_vstorage_);
-    vstorage->ReserveDeltaLog(base_vstorage_->GetDeltaLogFiles().size() +
-                              mutable_deltaLog_file_metas_.size());
-
-    const uint64_t oldest_deltaLog_file_with_linked_ssts =
-        GetMinOldestDeltaLogFileNumber();
-
-    auto process_base =
-        [vstorage](const std::shared_ptr<DeltaLogFileMetaData>& base_meta) {
-          assert(base_meta);
-
-          AddDeltaLogFileIfNeeded(vstorage, base_meta);
-
-          return true;
-        };
-
-    auto process_mutable =
-        [vstorage](const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
-          AddDeltaLogFileIfNeeded(
-              vstorage, CreateDeltaLogFileMetaData(mutable_meta_deltaLog));
-
-          return true;
-        };
-
-    auto process_both =
-        [vstorage](const std::shared_ptr<DeltaLogFileMetaData>& base_meta,
-                   const MutableDeltaLogFileMetaData& mutable_meta_deltaLog) {
-          assert(base_meta);
-          assert(base_meta->GetSharedMeta() ==
-                 mutable_meta_deltaLog.GetSharedMeta());
-
-          if (!mutable_meta_deltaLog.HasDelta()) {
-            assert(base_meta->GetGarbageDeltaLogCount() ==
-                   mutable_meta_deltaLog.GetGarbageDeltaLogCount());
-            assert(base_meta->GetGarbageDeltaLogBytes() ==
-                   mutable_meta_deltaLog.GetGarbageDeltaLogBytes());
-            assert(base_meta->GetLinkedSsts() ==
-                   mutable_meta_deltaLog.GetLinkedSsts());
-
-            AddDeltaLogFileIfNeeded(vstorage, base_meta);
-
-            return true;
-          }
-
-          AddDeltaLogFileIfNeeded(
-              vstorage, CreateDeltaLogFileMetaData(mutable_meta_deltaLog));
-
-          return true;
-        };
-
-    MergeDeltaLogFileMetas(oldest_deltaLog_file_with_linked_ssts, process_base,
-                           process_mutable, process_both);
-  }
-
   void MaybeAddFile(VersionStorageInfo* vstorage, int level,
                     FileMetaData* f) const {
     const uint64_t file_number = f->fd.GetNumber();
@@ -1728,8 +1602,6 @@ class VersionBuilder::Rep {
     SaveSSTFilesTo(vstorage);
 
     SaveBlobFilesTo(vstorage);
-
-    SaveDeltaLogFilesTo(vstorage);
 
     SaveCompactCursorsTo(vstorage);
 
@@ -1875,10 +1747,6 @@ Status VersionBuilder::LoadTableHandlers(
 
 uint64_t VersionBuilder::GetMinOldestBlobFileNumber() const {
   return rep_->GetMinOldestBlobFileNumber();
-}
-
-uint64_t VersionBuilder::GetMinOldestDeltaLogFileNumber() const {
-  return rep_->GetMinOldestDeltaLogFileNumber();
 }
 
 BaseReferencedVersionBuilder::BaseReferencedVersionBuilder(

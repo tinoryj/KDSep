@@ -290,12 +290,7 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       PinnableSlice deltaLog_value;
       if (ikey.type == kTypeDeltaLogIndex) {
         const Slice val = iter->value();
-        DeltaLogIndex deltaLog_index;
 
-        s = deltaLog_index.GenerateFullFileHashFromKey(ikey.user_key);
-        if (!s.ok()) {
-          return s;
-        }
         FilePrefetchBuffer* prefetch_buffer =
             prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
                                    deltaLog_index.getFileID())
@@ -305,9 +300,8 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
 
         assert(deltaLog_fetcher);
 
-        s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, deltaLog_index,
-                                            prefetch_buffer, &deltaLog_value,
-                                            &bytes_read);
+        s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, prefetch_buffer,
+                                            &deltaLog_value, &bytes_read);
         if (!s.ok()) {
           return s;
         }

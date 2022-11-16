@@ -8,6 +8,7 @@
 #include <cinttypes>
 #include <memory>
 
+#include "deltaLog_file_meta.h"
 #include "file/random_access_file_reader.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "util/autovector.h"
@@ -32,7 +33,8 @@ class DeltaLogFileReader {
                        HistogramImpl* deltaLog_file_read_hist,
                        uint64_t deltaLog_file_id,
                        const std::shared_ptr<IOTracer>& io_tracer,
-                       std::unique_ptr<DeltaLogFileReader>* reader);
+                       std::unique_ptr<DeltaLogFileReader>* reader,
+                       DeltaLogFileMetaData* fileMetaData);
 
   DeltaLogFileReader(const DeltaLogFileReader&) = delete;
   DeltaLogFileReader& operator=(const DeltaLogFileReader&) = delete;
@@ -51,7 +53,8 @@ class DeltaLogFileReader {
  private:
   DeltaLogFileReader(std::unique_ptr<RandomAccessFileReader>&& file_reader,
                      uint64_t file_size, SystemClock* clock,
-                     Statistics* statistics);
+                     Statistics* statistics,
+                     DeltaLogFileMetaData* fileMetaData);
 
   static Status OpenFile(const ImmutableOptions& immutable_options,
                          const FileOptions& file_opts,
@@ -75,9 +78,6 @@ class DeltaLogFileReader {
                              AlignedBuf* aligned_buf,
                              Env::IOPriority rate_limiter_priority);
 
-  static Status VerifyDeltaLog(const Slice& record_slice, const Slice& user_key,
-                               uint64_t value_size);
-
   static Status UncompressDeltaLogIfNeeded(
       const Slice& value_slice, MemoryAllocator* allocator, SystemClock* clock,
       Statistics* statistics, std::unique_ptr<DeltaLogContents>* result);
@@ -86,6 +86,7 @@ class DeltaLogFileReader {
   uint64_t file_size_;
   SystemClock* clock_;
   Statistics* statistics_;
+  DeltaLogFileMetaData* fileMetaData_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

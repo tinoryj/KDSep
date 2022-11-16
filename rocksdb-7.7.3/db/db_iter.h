@@ -309,7 +309,7 @@ class DBIter final : public Iterator {
 
   void ResetDeltaLogValue() {
     is_deltaLog_ = false;
-    deltaLog_value_.Reset();
+    deltaLog_value_vec_.clear();
   }
 
   void SetValueAndColumnsFromPlain(const Slice& slice) {
@@ -351,7 +351,7 @@ class DBIter final : public Iterator {
   Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
-  PinnableSlice deltaLog_value_;
+  autovector<Slice> deltaLog_value_vec_;
   // Value of the default column
   Slice value_;
   // All columns (i.e. name-value pairs)

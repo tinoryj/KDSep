@@ -50,25 +50,6 @@ Status FileMetaData::UpdateBoundaries(const Slice& key, const Slice& value,
     }
   }
 
-  if (value_type == kTypeDeltaLogIndex) {
-    DeltaLogIndex deltaLog_index;
-    const Status s = deltaLog_index.DecodeFrom(value);
-    if (!s.ok()) {
-      return s;
-    }
-
-    if (!deltaLog_index.IsInlined() && !deltaLog_index.HasTTL()) {
-      if (deltaLog_index.file_number() == kGCSelectedDeltaLogFileNumber) {
-        return Status::Corruption("Invalid deltaLog file number");
-      }
-
-      if (oldest_deltaLog_file_id == kGCSelectedDeltaLogFileNumber ||
-          oldest_deltaLog_file_id > deltaLog_index.file_number()) {
-        oldest_deltaLog_file_id = deltaLog_index.file_number();
-      }
-    }
-  }
-
   if (smallest.size() == 0) {
     smallest.DecodeFrom(key);
   }

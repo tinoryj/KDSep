@@ -11,6 +11,7 @@
 #include "cache/cache_helpers.h"
 #include "cache/cache_key.h"
 #include "db/deltaLog/deltaLog_file_cache.h"
+#include "db/deltaLog/deltaLog_file_meta.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "table/block_based/cachable_entry.h"
@@ -32,7 +33,8 @@ class DeltaLogSource {
  public:
   DeltaLogSource(const ImmutableOptions* immutable_options,
                  const std::string& db_id, const std::string& db_session_id,
-                 DeltaLogFileCache* deltaLog_file_cache);
+                 DeltaLogFileCache* deltaLog_file_cache,
+                 DeltaLogFileMetaData* deltaLogFileMetaData);
 
   DeltaLogSource(const DeltaLogSource&) = delete;
   DeltaLogSource& operator=(const DeltaLogSource&) = delete;
@@ -56,8 +58,8 @@ class DeltaLogSource {
   inline Status GetDeltaLogFileReader(
       uint64_t deltaLog_file_id,
       CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader) {
-    return deltaLog_file_cache_->GetDeltaLogFileReader(deltaLog_file_id,
-                                                       deltaLog_file_reader);
+    return deltaLog_file_cache_->GetDeltaLogFileReader(
+        deltaLog_file_id, deltaLog_file_reader, deltaLogFileMetaData_);
   }
 
   inline Cache* GetDeltaLogCache() const { return deltaLog_cache_.get(); }
@@ -96,6 +98,7 @@ class DeltaLogSource {
   // isn't strictly speaking a non-volatile tier since the compressed cache in
   // this tier is in volatile memory).
   const CacheTier lowest_used_cache_tier_;
+  DeltaLogFileMetaData* deltaLogFileMetaData_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

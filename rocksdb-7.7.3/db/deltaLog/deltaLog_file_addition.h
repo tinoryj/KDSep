@@ -42,7 +42,7 @@ class DeltaLogFileAddition {
  private:
   enum CustomFieldTags : uint32_t;
 
-  uint64_t deltaLog_file_id_ = kGCSelectedDeltaLogFileNumber;
+  uint64_t deltaLog_file_id_ = kGCSelectedDeltaLogFileID;
   uint64_t total_deltaLog_count_ = 0;
   uint64_t total_deltaLog_bytes_ = 0;
 };

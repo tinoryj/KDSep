@@ -174,8 +174,6 @@ class VersionStorageInfo {
 
   void AddBlobFile(std::shared_ptr<BlobFileMetaData> blob_file_meta);
 
-  void ReserveDeltaLog(size_t size) { deltaLog_files_.reserve(size); }
-
   void AddDeltaLogFile(
       std::shared_ptr<DeltaLogFileMetaData> deltaLog_file_meta);
 
@@ -959,7 +957,6 @@ class Version {
   // Retrieves a deltaLog using a deltaLog reference and saves it in *value,
   // assuming the corresponding deltaLog file is part of this Version.
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     const DeltaLogIndex& deltaLog_index,
                      FilePrefetchBuffer* prefetch_buffer,
                      autovector<Slice>& value_vec, uint64_t* bytes_read) const;
 

@@ -28,7 +28,8 @@ Status DeltaLogFileReader::Create(
     const ImmutableOptions& immutable_options, const FileOptions& file_options,
     uint32_t column_family_id, HistogramImpl* deltaLog_file_read_hist,
     uint64_t deltaLog_file_id, const std::shared_ptr<IOTracer>& io_tracer,
-    std::unique_ptr<DeltaLogFileReader>* deltaLog_file_reader) {
+    std::unique_ptr<DeltaLogFileReader>* deltaLog_file_reader,
+    DeltaLogFileMetaData* fileMetaData) {
   assert(deltaLog_file_reader);
   assert(!*deltaLog_file_reader);
 
@@ -64,7 +65,8 @@ Status DeltaLogFileReader::Create(
   }
 
   deltaLog_file_reader->reset(new DeltaLogFileReader(
-      std::move(file_reader), file_size, immutable_options.clock, statistics));
+      std::move(file_reader), file_size, immutable_options.clock, statistics,
+      fileMetaData));
 
   return Status::OK();
 }
@@ -252,11 +254,13 @@ Status DeltaLogFileReader::ReadFromFile(
 
 DeltaLogFileReader::DeltaLogFileReader(
     std::unique_ptr<RandomAccessFileReader>&& file_reader, uint64_t file_size,
-    SystemClock* clock, Statistics* statistics)
+    SystemClock* clock, Statistics* statistics,
+    DeltaLogFileMetaData* fileMetaData)
     : file_reader_(std::move(file_reader)),
       file_size_(file_size),
       clock_(clock),
-      statistics_(statistics) {
+      statistics_(statistics),
+      fileMetaData_(fileMetaData) {
   assert(file_reader_);
 }
 
@@ -271,7 +275,7 @@ Status DeltaLogFileReader::GetDeltaLog(
   const uint64_t key_size = user_key.size();
 
   const uint64_t record_offset = 0;
-  const uint64_t record_size = value_size;
+  const uint64_t record_size = fileMetaData_->GetDeltaLogFileSize();
 
   Slice record_slice;
   Buffer buf;
@@ -309,14 +313,8 @@ Status DeltaLogFileReader::GetDeltaLog(
   TEST_SYNC_POINT_CALLBACK("DeltaLogFileReader::GetDeltaLog:TamperWithResult",
                            &record_slice);
 
-  if (read_options.verify_checksums) {
-    const Status s = VerifyDeltaLog(record_slice, user_key, value_size);
-    if (!s.ok()) {
-      return s;
-    }
-  }
-
-  const Slice value_slice(record_slice.data(), value_size);
+  const Slice value_slice(record_slice.data(),
+                          fileMetaData_->GetDeltaLogFileSize());
 
   CacheAllocationPtr allocation = AllocateBlock(value_slice.size(), allocator);
   memcpy(allocation.get(), value_slice.data(), value_slice.size());
@@ -326,41 +324,6 @@ Status DeltaLogFileReader::GetDeltaLog(
   if (bytes_read) {
     *bytes_read = record_size;
   }
-
-  return Status::OK();
-}
-
-Status DeltaLogFileReader::VerifyDeltaLog(const Slice& record_slice,
-                                          const Slice& user_key,
-                                          uint64_t value_size) {
-  PERF_TIMER_GUARD(deltaLog_checksum_time);
-
-  DeltaLogRecord record;
-
-  const Slice header_slice(record_slice.data(), DeltaLogRecord::kHeaderSize_);
-
-  {
-    const Status s = record.DecodeHeaderFrom(header_slice);
-    if (!s.ok()) {
-      return s;
-    }
-  }
-
-  if (record.key_size_ != user_key.size()) {
-    return Status::Corruption("Key size mismatch when reading deltaLog");
-  }
-
-  if (record.value_size_ != value_size) {
-    return Status::Corruption("Value size mismatch when reading deltaLog");
-  }
-
-  record.key_ = Slice(record_slice.data() + DeltaLogRecord::kHeaderSize_,
-                      record.key_size_);
-  if (record.key_ != user_key) {
-    return Status::Corruption("Key mismatch when reading deltaLog");
-  }
-
-  record.value_ = Slice(record.key_.data() + record.key_size_, value_size);
 
   return Status::OK();
 }
