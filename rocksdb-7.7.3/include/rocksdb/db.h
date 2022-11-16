@@ -1137,10 +1137,6 @@ class DB {
     //      files in the current version.
     static const std::string kLiveDeltaLogFileSize;
 
-    // "rocksdb.live-deltaLog-file-garbage-size" - returns the total amount of
-    // garbage in the deltaLog files in the current version.
-    static const std::string kLiveDeltaLogFileGarbageSize;
-
     //  "rocksdb.deltaLog-cache-capacity" - returns deltaLog cache capacity.
     static const std::string kDeltaLogCacheCapacity;
 

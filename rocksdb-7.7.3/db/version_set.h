@@ -467,7 +467,6 @@ class VersionStorageInfo {
       assert(meta);
 
       total_file_size += meta->GetDeltaLogFileSize();
-      total_garbage_size += meta->GetGarbageDeltaLogBytes();
     }
 
     double space_amp = 0.0;
@@ -957,7 +956,6 @@ class Version {
   // Retrieves a deltaLog using a deltaLog reference and saves it in *value,
   // assuming the corresponding deltaLog file is part of this Version.
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     FilePrefetchBuffer* prefetch_buffer,
                      autovector<Slice>& value_vec, uint64_t* bytes_read) const;
 
   // Loads some stats information from files (if update_stats is set) and

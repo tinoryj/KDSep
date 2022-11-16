@@ -862,8 +862,6 @@ class InternalStats {
                                    Version* version);
   bool HandleLiveDeltaLogFileSize(uint64_t* value, DBImpl* db,
                                   Version* version);
-  bool HandleLiveDeltaLogFileGarbageSize(uint64_t* value, DBImpl* db,
-                                         Version* version);
   bool HandleDeltaLogCacheCapacity(uint64_t* value, DBImpl* db,
                                    Version* version);
   bool HandleDeltaLogCacheUsage(uint64_t* value, DBImpl* db, Version* version);

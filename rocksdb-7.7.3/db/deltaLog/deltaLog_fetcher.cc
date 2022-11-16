@@ -10,13 +10,12 @@
 namespace ROCKSDB_NAMESPACE {
 
 Status DeltaLogFetcher::FetchDeltaLog(const Slice& user_key,
-                                      FilePrefetchBuffer* prefetch_buffer,
                                       autovector<Slice>& deltaLog_value_vec,
                                       uint64_t* bytes_read) const {
   assert(version_);
 
-  return version_->GetDeltaLog(read_options_, user_key, prefetch_buffer,
-                               deltaLog_value_vec, bytes_read);
+  return version_->GetDeltaLog(read_options_, user_key, deltaLog_value_vec,
+                               bytes_read);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

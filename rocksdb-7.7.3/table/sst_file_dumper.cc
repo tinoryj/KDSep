@@ -494,16 +494,8 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
       } else if (decode_deltaLog_index_ && ikey.type == kTypeDeltaLogIndex) {
         DeltaLogIndex deltaLog_index;
 
-        const Status s = deltaLog_index.DecodeFrom(value);
-        if (!s.ok()) {
-          fprintf(stderr, "%s => error decoding deltaLog index\n",
-                  ikey.DebugString(true, output_hex_).c_str());
-          continue;
-        }
-
         fprintf(stdout, "%s => %s\n",
-                ikey.DebugString(true, output_hex_).c_str(),
-                deltaLog_index.DebugString(output_hex_).c_str());
+                ikey.DebugString(true, output_hex_).c_str();
       } else {
         fprintf(stdout, "%s => %s\n",
                 ikey.DebugString(true, output_hex_).c_str(),

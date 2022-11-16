@@ -3760,19 +3760,6 @@ void DBImpl::BuildCompactionJobInfo(
     compaction_job_info->deltaLog_file_addition_infos.emplace_back(
         std::move(deltaLog_file_addition_info));
   }
-
-  // Update DeltaLogFilesGarbageInfo.
-  for (const auto& deltaLog_file : c->edit()->GetDeltaLogFileGarbages()) {
-    DeltaLogFileGarbageInfo deltaLog_file_garbage_info(
-        DeltaLogFileName(
-            c->immutable_options()->cf_paths.front().path,
-            deltaLog_file.GetDeltaLogFileID()) /*deltaLog_file_path*/,
-        deltaLog_file.GetDeltaLogFileID(),
-        deltaLog_file.GetGarbageDeltaLogCount(),
-        deltaLog_file.GetGarbageDeltaLogBytes());
-    compaction_job_info->deltaLog_file_garbage_infos.emplace_back(
-        std::move(deltaLog_file_garbage_info));
-  }
 }
 #endif
 

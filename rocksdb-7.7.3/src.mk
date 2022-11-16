@@ -16,7 +16,6 @@ LIB_SOURCES =                                                   \
   db/deltaLog/deltaLog_file_addition.cc                         \
   db/deltaLog/deltaLog_file_builder.cc                          \
   db/deltaLog/deltaLog_file_cache.cc                            \
-  db/deltaLog/deltaLog_file_garbage.cc                          \
   db/deltaLog/deltaLog_file_meta.cc                             \
   db/deltaLog/deltaLog_file_reader.cc                           \
   db/deltaLog/deltaLog_garbage_meter.cc                         \

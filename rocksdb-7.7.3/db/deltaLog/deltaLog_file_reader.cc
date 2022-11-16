@@ -268,9 +268,8 @@ DeltaLogFileReader::~DeltaLogFileReader() = default;
 
 Status DeltaLogFileReader::GetDeltaLog(
     const ReadOptions& read_options, const Slice& user_key,
-    uint64_t deltaLog_file_id, FilePrefetchBuffer* prefetch_buffer,
-    MemoryAllocator* allocator, std::unique_ptr<DeltaLogContents>* result,
-    uint64_t* bytes_read) const {
+    uint64_t deltaLog_file_id, MemoryAllocator* allocator,
+    std::unique_ptr<DeltaLogContents>* result, uint64_t* bytes_read) const {
   assert(result);
   const uint64_t key_size = user_key.size();
 
@@ -281,33 +280,16 @@ Status DeltaLogFileReader::GetDeltaLog(
   Buffer buf;
   AlignedBuf aligned_buf;
 
-  bool prefetched = false;
-
-  if (prefetch_buffer) {
-    Status s;
-    constexpr bool for_compaction = true;
-
-    prefetched = prefetch_buffer->TryReadFromCache(
-        IOOptions(), file_reader_.get(), record_offset,
-        static_cast<size_t>(record_size), &record_slice, &s,
-        read_options.rate_limiter_priority, for_compaction);
-    if (!s.ok()) {
-      return s;
-    }
-  }
-
-  if (!prefetched) {
-    TEST_SYNC_POINT("DeltaLogFileReader::GetDeltaLog:ReadFromFile");
-    PERF_COUNTER_ADD(deltaLog_read_count, 1);
-    PERF_COUNTER_ADD(deltaLog_read_byte, record_size);
-    PERF_TIMER_GUARD(deltaLog_read_time);
-    const Status s = ReadFromFile(file_reader_.get(), record_offset,
-                                  static_cast<size_t>(record_size), statistics_,
-                                  &record_slice, &buf, &aligned_buf,
-                                  read_options.rate_limiter_priority);
-    if (!s.ok()) {
-      return s;
-    }
+  TEST_SYNC_POINT("DeltaLogFileReader::GetDeltaLog:ReadFromFile");
+  PERF_COUNTER_ADD(deltaLog_read_count, 1);
+  PERF_COUNTER_ADD(deltaLog_read_byte, record_size);
+  PERF_TIMER_GUARD(deltaLog_read_time);
+  const Status s =
+      ReadFromFile(file_reader_.get(), record_offset,
+                   static_cast<size_t>(record_size), statistics_, &record_slice,
+                   &buf, &aligned_buf, read_options.rate_limiter_priority);
+  if (!s.ok()) {
+    return s;
   }
 
   TEST_SYNC_POINT_CALLBACK("DeltaLogFileReader::GetDeltaLog:TamperWithResult",

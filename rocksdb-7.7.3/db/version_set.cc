@@ -1808,8 +1808,7 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
         meta->GetDeltaLogFileID(),
         DeltaLogFileName("", meta->GetDeltaLogFileID()),
         ioptions->cf_paths.front().path, meta->GetDeltaLogFileSize(),
-        meta->GetTotalDeltaLogCount(), meta->GetTotalDeltaLogBytes(),
-        meta->GetGarbageDeltaLogCount(), meta->GetGarbageDeltaLogBytes());
+        meta->GetTotalDeltaLogCount(), meta->GetTotalDeltaLogBytes());
     ++cf_meta->deltaLog_file_count;
     cf_meta->deltaLog_file_size += meta->GetDeltaLogFileSize();
   }
@@ -2245,24 +2244,21 @@ void Version::MultiGetBlob(
 }
 
 Status Version::GetDeltaLog(const ReadOptions& read_options,
-                            const Slice& user_key,
-                            FilePrefetchBuffer* prefetch_buffer,
-                            vector<Slice>& value_vec,
+                            const Slice& user_key, autovector<Slice>& value_vec,
                             uint64_t* bytes_read) const {
-  const uint64_t deltaLog_file_full_hash =
-      deltaLog_index.getDeltaLogFilePrefixHashFull();
+  // const uint64_t deltaLog_file_full_hash =
+  //     deltaLog_index.getDeltaLogFilePrefixHashFull();
 
-  auto deltaLog_file_meta =
-      storage_info_.GetDeltaLogFileMetaData(deltaLog_file_full_hash);
-  if (!deltaLog_file_meta) {
-    return Status::Corruption("Invalid deltaLog file number");
-  }
+  // auto deltaLog_file_meta =
+  //     storage_info_.GetDeltaLogFileMetaData(deltaLog_file_full_hash);
+  // if (!deltaLog_file_meta) {
+  //   return Status::Corruption("Invalid deltaLog file number");
+  // }
 
   assert(deltaLog_source_);
-  value_vec->Reset();
-  const Status s = deltaLog_source_->GetDeltaLog(
-      read_options, user_key, deltaLog_file_full_hash, prefetch_buffer,
-      value_vec, bytes_read);
+  value_vec.clear();
+  const Status s = deltaLog_source_->GetDeltaLog(read_options, user_key,
+                                                 value_vec, bytes_read);
 
   return s;
 }
@@ -2376,11 +2372,10 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
             TEST_SYNC_POINT_CALLBACK("Version::Get::TamperWithDeltaLogIndex",
                                      value);
 
-            constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
             constexpr uint64_t* bytes_read = nullptr;
-
-            *status = GetDeltaLog(read_options, user_key, *value,
-                                  prefetch_buffer, value, bytes_read);
+            autovecrtor<Slice> deltaLog_value_vec;
+            *status = GetDeltaLog(read_options, user_key, deltaLog_value_vec,
+                                  bytes_read);
             if (!status->ok()) {
               if (status->IsIncomplete()) {
                 get_context.MarkKeyMayExist();
@@ -3716,7 +3711,6 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedDeltaLogGC(
 
   size_t count = 1;
   uint64_t sum_total_deltaLog_bytes = oldest_meta->GetTotalDeltaLogBytes();
-  uint64_t sum_garbage_deltaLog_bytes = oldest_meta->GetGarbageDeltaLogBytes();
 
   assert(cutoff_count <= deltaLog_files_.size());
 
@@ -3724,7 +3718,6 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedDeltaLogGC(
     const auto& meta = deltaLog_files_[count];
     assert(meta);
     sum_total_deltaLog_bytes += meta->GetTotalDeltaLogBytes();
-    sum_garbage_deltaLog_bytes += meta->GetGarbageDeltaLogBytes();
   }
 
   if (count < deltaLog_files_.size()) {
@@ -4646,7 +4639,6 @@ uint64_t VersionStorageInfo::EstimateLiveDataSize() const {
     assert(meta);
 
     size += meta->GetTotalDeltaLogBytes();
-    size -= meta->GetGarbageDeltaLogBytes();
   }
   return size;
 }
@@ -6335,23 +6327,6 @@ Status VersionSet::WriteCurrentStateToManifest(
         if (meta->GetGarbageBlobCount() > 0) {
           edit.AddBlobFileGarbage(blob_file_number, meta->GetGarbageBlobCount(),
                                   meta->GetGarbageBlobBytes());
-        }
-      }
-
-      const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-      for (const auto& meta : deltaLog_files) {
-        assert(meta);
-
-        const uint64_t deltaLog_file_id = meta->GetDeltaLogFileID();
-
-        edit.AddDeltaLogFile(deltaLog_file_id, meta->GetTotalDeltaLogCount(),
-                             meta->GetTotalDeltaLogBytes(),
-                             meta->GetChecksumMethod(),
-                             meta->GetChecksumValue());
-        if (meta->GetGarbageDeltaLogCount() > 0) {
-          edit.AddDeltaLogFileGarbage(deltaLog_file_id,
-                                      meta->GetGarbageDeltaLogCount(),
-                                      meta->GetGarbageDeltaLogBytes());
         }
       }
 

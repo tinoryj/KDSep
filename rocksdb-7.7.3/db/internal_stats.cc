@@ -451,8 +451,6 @@ const std::string DB::Properties::kTotalDeltaLogFileSize =
     rocksdb_prefix + total_deltaLog_file_size;
 const std::string DB::Properties::kLiveDeltaLogFileSize =
     rocksdb_prefix + live_deltaLog_file_size;
-const std::string DB::Properties::kLiveDeltaLogFileGarbageSize =
-    rocksdb_prefix + live_deltaLog_file_garbage_size;
 const std::string DB::Properties::kDeltaLogCacheCapacity =
     rocksdb_prefix + deltaLog_cache_capacity;
 const std::string DB::Properties::kDeltaLogCacheUsage =
@@ -641,9 +639,6 @@ const UnorderedMap<std::string, DBPropertyInfo>
         {DB::Properties::kLiveDeltaLogFileSize,
          {false, nullptr, &InternalStats::HandleLiveDeltaLogFileSize, nullptr,
           nullptr}},
-        {DB::Properties::kLiveDeltaLogFileGarbageSize,
-         {false, nullptr, &InternalStats::HandleLiveDeltaLogFileGarbageSize,
-          nullptr, nullptr}},
         {DB::Properties::kDeltaLogCacheCapacity,
          {false, nullptr, &InternalStats::HandleDeltaLogCacheCapacity, nullptr,
           nullptr}},
@@ -1035,23 +1030,6 @@ bool InternalStats::HandleLiveDeltaLogFileSize(uint64_t* value, DBImpl* /*db*/,
   assert(vstorage);
 
   *value = vstorage->GetDeltaLogStats().total_file_size;
-
-  return true;
-}
-
-bool InternalStats::HandleLiveDeltaLogFileGarbageSize(uint64_t* value,
-                                                      DBImpl* /*db*/,
-                                                      Version* /*version*/) {
-  assert(value);
-  assert(cfd_);
-
-  const auto* current = cfd_->current();
-  assert(current);
-
-  const auto* vstorage = current->storage_info();
-  assert(vstorage);
-
-  *value = vstorage->GetDeltaLogStats().total_garbage_size;
 
   return true;
 }

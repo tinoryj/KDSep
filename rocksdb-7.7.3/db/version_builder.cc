@@ -233,157 +233,6 @@ class VersionBuilder::Rep {
     uint64_t garbage_blob_bytes_ = 0;
   };
 
-  // A class that represents the accumulated changes (like additional garbage or
-  // newly linked/unlinked SST files) for a given deltaLog file after applying a
-  // series of VersionEdits.
-  class DeltaLogFileMetaDataDelta {
-   public:
-    bool IsEmpty() const {
-      return !additional_garbage_count_ && !additional_garbage_bytes_ &&
-             newly_linked_ssts_.empty() && newly_unlinked_ssts_.empty();
-    }
-
-    uint64_t GetAdditionalGarbageCount() const {
-      return additional_garbage_count_;
-    }
-
-    uint64_t GetAdditionalGarbageBytes() const {
-      return additional_garbage_bytes_;
-    }
-
-    const std::unordered_set<uint64_t>& GetNewlyLinkedSsts() const {
-      return newly_linked_ssts_;
-    }
-
-    const std::unordered_set<uint64_t>& GetNewlyUnlinkedSsts() const {
-      return newly_unlinked_ssts_;
-    }
-
-    void AddGarbage(uint64_t count, uint64_t bytes) {
-      additional_garbage_count_ += count;
-      additional_garbage_bytes_ += bytes;
-    }
-
-    void LinkSst(uint64_t sst_file_number) {
-      assert(newly_linked_ssts_.find(sst_file_number) ==
-             newly_linked_ssts_.end());
-
-      // Reconcile with newly unlinked SSTs on the fly. (Note: an SST can be
-      // linked to and unlinked from the same deltaLog file in the case of a
-      // trivial move.)
-      auto it = newly_unlinked_ssts_.find(sst_file_number);
-
-      if (it != newly_unlinked_ssts_.end()) {
-        newly_unlinked_ssts_.erase(it);
-      } else {
-        newly_linked_ssts_.emplace(sst_file_number);
-      }
-    }
-
-    void UnlinkSst(uint64_t sst_file_number) {
-      assert(newly_unlinked_ssts_.find(sst_file_number) ==
-             newly_unlinked_ssts_.end());
-
-      // Reconcile with newly linked SSTs on the fly. (Note: an SST can be
-      // linked to and unlinked from the same deltaLog file in the case of a
-      // trivial move.)
-      auto it = newly_linked_ssts_.find(sst_file_number);
-
-      if (it != newly_linked_ssts_.end()) {
-        newly_linked_ssts_.erase(it);
-      } else {
-        newly_unlinked_ssts_.emplace(sst_file_number);
-      }
-    }
-
-   private:
-    uint64_t additional_garbage_count_ = 0;
-    uint64_t additional_garbage_bytes_ = 0;
-    std::unordered_set<uint64_t> newly_linked_ssts_;
-    std::unordered_set<uint64_t> newly_unlinked_ssts_;
-  };
-
-  // A class that represents the state of a deltaLog file after applying a
-  // series of VersionEdits. In addition to the resulting state, it also
-  // contains the delta (see DeltaLogFileMetaDataDelta above). The resulting
-  // state can be used to identify obsolete deltaLog files, while the delta
-  // makes it possible to efficiently detect trivial moves.
-  class MutableDeltaLogFileMetaData {
-   public:
-    // To be used for brand new deltaLog files
-    explicit MutableDeltaLogFileMetaData(
-        std::shared_ptr<SharedDeltaLogFileMetaData>&& shared_meta)
-        : shared_meta_(std::move(shared_meta)) {}
-
-    // To be used for pre-existing deltaLog files
-    explicit MutableDeltaLogFileMetaData(
-        const std::shared_ptr<DeltaLogFileMetaData>& meta)
-        : shared_meta_(meta->GetSharedMeta()),
-          linked_ssts_(meta->GetLinkedSsts()),
-          garbage_deltaLog_count_(meta->GetGarbageDeltaLogCount()),
-          garbage_deltaLog_bytes_(meta->GetGarbageDeltaLogBytes()) {}
-
-    const std::shared_ptr<SharedDeltaLogFileMetaData>& GetSharedMeta() const {
-      return shared_meta_;
-    }
-
-    uint64_t GetDeltaLogFileID() const {
-      assert(shared_meta_);
-      return shared_meta_->GetDeltaLogFileID();
-    }
-
-    bool HasDelta() const { return !delta_.IsEmpty(); }
-
-    const std::unordered_set<uint64_t>& GetLinkedSsts() const {
-      return linked_ssts_;
-    }
-
-    uint64_t GetGarbageDeltaLogCount() const { return garbage_deltaLog_count_; }
-
-    uint64_t GetGarbageDeltaLogBytes() const { return garbage_deltaLog_bytes_; }
-
-    bool AddGarbage(uint64_t count, uint64_t bytes) {
-      assert(shared_meta_);
-
-      if (garbage_deltaLog_count_ + count >
-              shared_meta_->GetTotalDeltaLogCount() ||
-          garbage_deltaLog_bytes_ + bytes >
-              shared_meta_->GetTotalDeltaLogBytes()) {
-        return false;
-      }
-
-      delta_.AddGarbage(count, bytes);
-
-      garbage_deltaLog_count_ += count;
-      garbage_deltaLog_bytes_ += bytes;
-
-      return true;
-    }
-
-    void LinkSst(uint64_t sst_file_number) {
-      delta_.LinkSst(sst_file_number);
-
-      assert(linked_ssts_.find(sst_file_number) == linked_ssts_.end());
-      linked_ssts_.emplace(sst_file_number);
-    }
-
-    void UnlinkSst(uint64_t sst_file_number) {
-      delta_.UnlinkSst(sst_file_number);
-
-      assert(linked_ssts_.find(sst_file_number) != linked_ssts_.end());
-      linked_ssts_.erase(sst_file_number);
-    }
-
-   private:
-    std::shared_ptr<SharedDeltaLogFileMetaData> shared_meta_;
-    // Accumulated changes
-    DeltaLogFileMetaDataDelta delta_;
-    // Resulting state after applying the changes
-    DeltaLogFileMetaData::LinkedSsts linked_ssts_;
-    uint64_t garbage_deltaLog_count_ = 0;
-    uint64_t garbage_deltaLog_bytes_ = 0;
-  };
-
   const FileOptions& file_options_;
   const ImmutableCFOptions* const ioptions_;
   TableCache* table_cache_;
@@ -409,10 +258,6 @@ class VersionBuilder::Rep {
   // Mutable metadata objects for all blob files affected by the series of
   // version edits.
   std::map<uint64_t, MutableBlobFileMetaData> mutable_blob_file_metas_;
-
-  // Mutable metadata objects for all deltaLog files affected by the series of
-  // version edits.
-  std::map<uint64_t, MutableDeltaLogFileMetaData> mutable_deltaLog_file_metas_;
 
   std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr_;
 
@@ -845,116 +690,6 @@ class VersionBuilder::Rep {
     return !!meta;
   }
 
-  MutableDeltaLogFileMetaData* GetOrCreateMutableDeltaLogFileMetaData(
-      uint64_t deltaLog_file_id) {
-    auto mutable_it = mutable_deltaLog_file_metas_.find(deltaLog_file_id);
-    if (mutable_it != mutable_deltaLog_file_metas_.end()) {
-      return &mutable_it->second;
-    }
-
-    assert(base_vstorage_);
-    const auto meta = base_vstorage_->GetDeltaLogFileMetaData(deltaLog_file_id);
-
-    if (meta) {
-      mutable_it =
-          mutable_deltaLog_file_metas_
-              .emplace(deltaLog_file_id, MutableDeltaLogFileMetaData(meta))
-              .first;
-      return &mutable_it->second;
-    }
-
-    return nullptr;
-  }
-
-  Status ApplyDeltaLogFileAddition(
-      const DeltaLogFileAddition& deltaLog_file_addition) {
-    const uint64_t deltaLog_file_id =
-        deltaLog_file_addition.GetDeltaLogFileID();
-
-    if (IsDeltaLogFileInVersion(deltaLog_file_id)) {
-      std::ostringstream oss;
-      oss << "DeltaLog file #" << deltaLog_file_id << " already added";
-
-      return Status::Corruption("VersionBuilder", oss.str());
-    }
-
-    // Note: we use C++11 for now but in C++14, this could be done in a more
-    // elegant way using generalized lambda capture.
-    VersionSet* const vs = version_set_;
-    const ImmutableCFOptions* const ioptions = ioptions_;
-
-    auto deleter = [vs, ioptions](SharedDeltaLogFileMetaData* shared_meta) {
-      if (vs) {
-        assert(ioptions);
-        assert(!ioptions->cf_paths.empty());
-        assert(shared_meta);
-
-        vs->AddObsoleteDeltaLogFile(shared_meta->GetDeltaLogFileID(),
-                                    ioptions->cf_paths.front().path);
-      }
-
-      delete shared_meta;
-    };
-
-    auto shared_meta = SharedDeltaLogFileMetaData::Create(
-        deltaLog_file_id, deltaLog_file_addition.GetTotalDeltaLogCount(),
-        deltaLog_file_addition.GetTotalDeltaLogBytes(),
-        deltaLog_file_addition.GetChecksumMethod(),
-        deltaLog_file_addition.GetChecksumValue(), deleter);
-
-    mutable_deltaLog_file_metas_.emplace(
-        deltaLog_file_id, MutableDeltaLogFileMetaData(std::move(shared_meta)));
-
-    return Status::OK();
-  }
-
-  Status ApplyDeltaLogFileGarbage(
-      const DeltaLogFileGarbage& deltaLog_file_garbage) {
-    const uint64_t deltaLog_file_id = deltaLog_file_garbage.GetDeltaLogFileID();
-
-    MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
-        GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_id);
-
-    if (!mutable_meta_deltaLog) {
-      std::ostringstream oss;
-      oss << "DeltaLog file #" << deltaLog_file_id << " not found";
-
-      return Status::Corruption("VersionBuilder", oss.str());
-    }
-
-    if (!mutable_meta_deltaLog->AddGarbage(
-            deltaLog_file_garbage.GetGarbageDeltaLogCount(),
-            deltaLog_file_garbage.GetGarbageDeltaLogBytes())) {
-      std::ostringstream oss;
-      oss << "Garbage overflow for deltaLog file #" << deltaLog_file_id;
-      return Status::Corruption("VersionBuilder", oss.str());
-    }
-
-    return Status::OK();
-  }
-
-  uint64_t GetOldestDeltaLogFileNumberForTableFile(int level,
-                                                   uint64_t file_number) const {
-    assert(level < num_levels_);
-
-    const auto& added_files = levels_[level].added_files;
-
-    auto it = added_files.find(file_number);
-    if (it != added_files.end()) {
-      const FileMetaData* const meta = it->second;
-      assert(meta);
-
-      return meta->oldest_deltaLog_file_id;
-    }
-
-    assert(base_vstorage_);
-    const FileMetaData* const meta =
-        base_vstorage_->GetFileMetaDataByNumber(file_number);
-    assert(meta);
-
-    return meta->oldest_deltaLog_file_id;
-  }
-
   Status ApplyFileDeletion(int level, uint64_t file_number) {
     assert(level != VersionStorageInfo::FileLocation::Invalid().GetLevel());
 
@@ -996,17 +731,6 @@ class VersionBuilder::Rep {
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
       if (mutable_meta_blob) {
         mutable_meta_blob->UnlinkSst(file_number);
-      }
-    }
-
-    const uint64_t deltaLog_file_id =
-        GetOldestDeltaLogFileNumberForTableFile(level, file_number);
-
-    if (deltaLog_file_id != kGCSelectedDeltaLogFileID) {
-      MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
-          GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_id);
-      if (mutable_meta_deltaLog) {
-        mutable_meta_deltaLog->UnlinkSst(file_number);
       }
     }
 
@@ -1155,28 +879,7 @@ class VersionBuilder::Rep {
         return s;
       }
     }
-
-    // Note: we process the deltaLog file related changes first because the
-    // table file addition/deletion logic depends on the deltaLog files
-    // already being there.
-
-    // Add new deltaLog files
-    for (const auto& deltaLog_file_addition :
-         edit->GetDeltaLogFileAdditions()) {
-      const Status s = ApplyDeltaLogFileAddition(deltaLog_file_addition);
-      if (!s.ok()) {
-        return s;
-      }
-    }
-
-    // Increase the amount of garbage for deltaLog files affected by GC
-    for (const auto& deltaLog_file_garbage : edit->GetDeltaLogFileGarbages()) {
-      const Status s = ApplyDeltaLogFileGarbage(deltaLog_file_garbage);
-      if (!s.ok()) {
-        return s;
-      }
-    }
-
+    
     // Delete table files
     for (const auto& deleted_file : edit->GetDeletedFiles()) {
       const int level = deleted_file.first;

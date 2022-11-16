@@ -18,7 +18,6 @@
 #include "db/blob/blob_file_garbage.h"
 #include "db/dbformat.h"
 #include "db/deltaLog/deltaLog_file_addition.h"
-#include "db/deltaLog/deltaLog_file_garbage.h"
 #include "db/wal_edit.h"
 #include "memory/arena.h"
 #include "port/malloc.h"
@@ -60,7 +59,6 @@ enum Tag : uint32_t {
   kBlobFileAddition = 400,
   kBlobFileGarbage,
   kDeltaLogFileAddition = 400,
-  kDeltaLogFileGarbage,
 
   // Mask for an unidentified tag from the future which can be safely ignored.
   kTagSafeIgnoreMask = 1 << 13,
@@ -547,30 +545,6 @@ class VersionEdit {
     deltaLog_file_additions_ = std::move(deltaLog_file_additions);
   }
 
-  // Add garbage for an existing deltaLog file.  Note: intentionally broken
-  // English follows.
-  void AddDeltaLogFileGarbage(uint64_t deltaLog_file_id,
-                              uint64_t garbage_deltaLog_count,
-                              uint64_t garbage_deltaLog_bytes) {
-    deltaLog_file_garbages_.emplace_back(
-        deltaLog_file_id, garbage_deltaLog_count, garbage_deltaLog_bytes);
-  }
-
-  void AddDeltaLogFileGarbage(DeltaLogFileGarbage deltaLog_file_garbage) {
-    deltaLog_file_garbages_.emplace_back(std::move(deltaLog_file_garbage));
-  }
-
-  // Retrieve all the deltaLog file garbage added.
-  using DeltaLogFileGarbages = std::vector<DeltaLogFileGarbage>;
-  const DeltaLogFileGarbages& GetDeltaLogFileGarbages() const {
-    return deltaLog_file_garbages_;
-  }
-
-  void SetDeltaLogFileGarbages(DeltaLogFileGarbages deltaLog_file_garbages) {
-    assert(deltaLog_file_garbages_.empty());
-    deltaLog_file_garbages_ = std::move(deltaLog_file_garbages);
-  }
-
   // Add a WAL (either just created or closed).
   // AddWal and DeleteWalsBefore cannot be called on the same VersionEdit.
   void AddWal(WalNumber number, WalMetadata metadata = WalMetadata()) {
@@ -604,8 +578,8 @@ class VersionEdit {
   size_t NumEntries() const {
     return new_files_.size() + deleted_files_.size() +
            blob_file_additions_.size() + blob_file_garbages_.size() +
-           deltaLog_file_additions_.size() + deltaLog_file_garbages_.size() +
-           wal_additions_.size() + !wal_deletion_.IsEmpty();
+           deltaLog_file_additions_.size() + wal_additions_.size() +
+           !wal_deletion_.IsEmpty();
   }
 
   void SetColumnFamily(uint32_t column_family_id) {
@@ -706,7 +680,6 @@ class VersionEdit {
   BlobFileGarbages blob_file_garbages_;
 
   DeltaLogFileAdditions deltaLog_file_additions_;
-  DeltaLogFileGarbages deltaLog_file_garbages_;
 
   WalAdditions wal_additions_;
   WalDeletion wal_deletion_;

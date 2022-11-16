@@ -42,9 +42,7 @@ class DeltaLogFileReader {
   ~DeltaLogFileReader();
 
   Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     uint64_t deltaLog_file_id,
-                     FilePrefetchBuffer* prefetch_buffer,
-                     MemoryAllocator* allocator,
+                     uint64_t deltaLog_file_id, MemoryAllocator* allocator,
                      std::unique_ptr<DeltaLogContents>* result,
                      uint64_t* bytes_read) const;
 

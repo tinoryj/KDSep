@@ -1745,8 +1745,6 @@ Status CompactionJob::InstallCompactionResults(
   compaction->AddInputDeletions(edit);
 
   std::unordered_map<uint64_t, BlobGarbageMeter::BlobStats> blob_total_garbage;
-  std::unordered_map<uint64_t, DeltaLogGarbageMeter::DeltaLogStats>
-      deltaLog_total_garbage;
 
   for (const auto& sub_compact : compact_->sub_compact_states) {
     sub_compact.AddOutputsEdit(edit);
@@ -1774,22 +1772,6 @@ Status CompactionJob::InstallCompactionResults(
          sub_compact.Current().GetDeltaLogFileAdditions()) {
       edit->AddDeltaLogFile(deltaLog);
     }
-
-    if (sub_compact.Current().GetDeltaLogGarbageMeter()) {
-      const auto& flows =
-          sub_compact.Current().GetDeltaLogGarbageMeter()->flows();
-
-      for (const auto& pair : flows) {
-        const uint64_t deltaLog_file_id = pair.first;
-        const DeltaLogGarbageMeter::DeltaLogInOutFlow& flow = pair.second;
-
-        assert(flow.IsValid());
-        if (flow.HasGarbage()) {
-          deltaLog_total_garbage[deltaLog_file_id].Add(flow.GetGarbageCount(),
-                                                       flow.GetGarbageBytes());
-        }
-      }
-    }
   }
 
   for (const auto& pair : blob_total_garbage) {
@@ -1798,14 +1780,6 @@ Status CompactionJob::InstallCompactionResults(
 
     edit->AddBlobFileGarbage(blob_file_number, stats.GetCount(),
                              stats.GetBytes());
-  }
-
-  for (const auto& pair : deltaLog_total_garbage) {
-    const uint64_t deltaLog_file_id = pair.first;
-    const DeltaLogGarbageMeter::DeltaLogStats& stats = pair.second;
-
-    edit->AddDeltaLogFileGarbage(deltaLog_file_id, stats.GetCount(),
-                                 stats.GetBytes());
   }
 
   if (compaction->compaction_reason() == CompactionReason::kLevelMaxLevelSize &&

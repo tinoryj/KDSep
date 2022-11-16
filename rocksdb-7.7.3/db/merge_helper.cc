@@ -287,30 +287,9 @@ Status MergeHelper::MergeUntil(InternalIterator* iter,
       return s;
     } else {
       const Slice* value_slice;
-      PinnableSlice deltaLog_value;
       if (ikey.type == kTypeDeltaLogIndex) {
-        const Slice val = iter->value();
-
-        FilePrefetchBuffer* prefetch_buffer =
-            prefetch_buffers ? prefetch_buffers->GetOrCreatePrefetchBuffer(
-                                   deltaLog_index.getFileID())
-                             : nullptr;
-
-        uint64_t bytes_read = 0;
-
-        assert(deltaLog_fetcher);
-
-        s = deltaLog_fetcher->FetchDeltaLog(ikey.user_key, prefetch_buffer,
-                                            &deltaLog_value, &bytes_read);
-        if (!s.ok()) {
-          return s;
-        }
-        value_slice = &deltaLog_value;
-
-        if (c_iter_stats) {
-          ++c_iter_stats->num_deltaLogs_read;
-          c_iter_stats->total_deltaLog_bytes_read += bytes_read;
-        }
+        // TODO: ignore kTypeDeltaLogIndex in MergeUntil
+        continue;
       } else {
         const Slice val = iter->value();
         value_slice = &val;

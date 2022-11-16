@@ -381,18 +381,6 @@ struct DeltaLogFileAdditionInfo : public DeltaLogFileInfo {
   uint64_t total_deltaLog_bytes;
 };
 
-struct DeltaLogFileGarbageInfo : public DeltaLogFileInfo {
-  DeltaLogFileGarbageInfo(const std::string& _deltaLog_file_path,
-                          const uint64_t _deltaLog_file_id,
-                          const uint64_t _garbage_deltaLog_count,
-                          const uint64_t _garbage_deltaLog_bytes)
-      : DeltaLogFileInfo(_deltaLog_file_path, _deltaLog_file_id),
-        garbage_deltaLog_count(_garbage_deltaLog_count),
-        garbage_deltaLog_bytes(_garbage_deltaLog_bytes) {}
-  uint64_t garbage_deltaLog_count;
-  uint64_t garbage_deltaLog_bytes;
-};
-
 struct FlushJobInfo {
   // the id of the column family
   uint32_t cf_id;
@@ -562,10 +550,6 @@ struct CompactionJobInfo {
   // Information about deltaLog files created during compaction in Integrated
   // DeltaLogDB.
   std::vector<DeltaLogFileAdditionInfo> deltaLog_file_addition_infos;
-
-  // Information about deltaLog files deleted during compaction in Integrated
-  // DeltaLogDB.
-  std::vector<DeltaLogFileGarbageInfo> deltaLog_file_garbage_infos;
 };
 
 struct MemTableInfo {

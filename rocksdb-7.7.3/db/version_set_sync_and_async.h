@@ -116,22 +116,6 @@ DEFINE_SYNC_AND_ASYNC(Status, Version::MultiGetFromSST)
               *(iter->s) = tmp_s;
             }
           }
-        } else if (iter->is_deltaLog_index) {
-          if (iter->value) {
-            TEST_SYNC_POINT_CALLBACK(
-                "Version::MultiGet::TamperWithDeltaLogIndex", &(*iter));
-
-            const Slice& deltaLog_index_slice = *(iter->value);
-            DeltaLogIndex deltaLog_index;
-            Status tmp_s = deltaLog_index.DecodeFrom(deltaLog_index_slice);
-            if (tmp_s.ok()) {
-              const uint64_t deltaLog_file_num = deltaLog_index.file_number();
-              deltaLog_ctxs[deltaLog_file_num].emplace_back(
-                  std::make_pair(deltaLog_index, std::cref(*iter)));
-            } else {
-              *(iter->s) = tmp_s;
-            }
-          }
         } else {
           file_range.AddValueSize(iter->value->size());
           if (file_range.GetValueSize() > read_options.value_size_soft_limit) {

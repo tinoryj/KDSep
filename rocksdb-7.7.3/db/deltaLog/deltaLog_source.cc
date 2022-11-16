@@ -155,7 +155,6 @@ Status DeltaLogSource::InsertEntryIntoCache(const Slice& key,
 
 Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
                                    const Slice& user_key, uint64_t file_id,
-                                   FilePrefetchBuffer* prefetch_buffer,
                                    autovector<Slice>& value_vec,
                                    uint64_t* bytes_read) {
   Status s;
@@ -209,8 +208,8 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
 
     uint64_t read_size = 0;
     s = deltaLog_file_reader.GetValue()->GetDeltaLog(
-        read_options, user_key, file_id, prefetch_buffer, allocator,
-        &deltaLog_contents, &read_size);
+        read_options, user_key, file_id, allocator, &deltaLog_contents,
+        &read_size);
     if (!s.ok()) {
       return s;
     }

@@ -238,11 +238,10 @@ bool DBIter::SetDeltaLogValueIfNeeded(const Slice& user_key,
   read_options.fill_cache = fill_cache_;
   read_options.verify_checksums = verify_checksums_;
 
-  constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
   constexpr uint64_t* bytes_read = nullptr;
 
-  const Status s = version_->GetDeltaLog(
-      read_options, user_key, prefetch_buffer, deltaLog_value_vec_, bytes_read);
+  const Status s = version_->GetDeltaLog(read_options, user_key,
+                                         deltaLog_value_vec_, bytes_read);
 
   if (!s.ok()) {
     status_ = s;

@@ -24,7 +24,6 @@ class DeltaLogFetcher {
       : version_(version), read_options_(read_options) {}
 
   Status FetchDeltaLog(const Slice& user_key,
-                       FilePrefetchBuffer* prefetch_buffer,
                        autovector<Slice>& deltaLog_value_vec,
                        uint64_t* bytes_read) const;
 

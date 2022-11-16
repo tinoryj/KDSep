@@ -662,7 +662,6 @@ set(SOURCES
         db/deltaLog/deltaLog_file_addition.cc
         db/deltaLog/deltaLog_file_builder.cc
         db/deltaLog/deltaLog_file_cache.cc
-        db/deltaLog/deltaLog_file_garbage.cc
         db/deltaLog/deltaLog_file_meta.cc
         db/deltaLog/deltaLog_file_reader.cc
         db/deltaLog/deltaLog_garbage_meter.cc
@@ -1297,18 +1296,6 @@ if(WITH_TESTS)
         db/blob/db_blob_compaction_test.cc
         db/blob/db_blob_corruption_test.cc
         db/blob/db_blob_index_test.cc
-        db/deltaLog/deltaLog_counting_iterator_test.cc
-        db/deltaLog/deltaLog_file_addition_test.cc
-        db/deltaLog/deltaLog_file_builder_test.cc
-        db/deltaLog/deltaLog_file_cache_test.cc
-        db/deltaLog/deltaLog_file_garbage_test.cc
-        db/deltaLog/deltaLog_file_reader_test.cc
-        db/deltaLog/deltaLog_garbage_meter_test.cc
-        db/deltaLog/deltaLog_source_test.cc
-        db/deltaLog/db_deltaLog_basic_test.cc
-        db/deltaLog/db_deltaLog_compaction_test.cc
-        db/deltaLog/db_deltaLog_corruption_test.cc
-        db/deltaLog/db_deltaLog_index_test.cc
         db/column_family_test.cc
         db/compact_files_test.cc
         db/compaction/clipping_iterator_test.cc
