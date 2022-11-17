@@ -149,18 +149,6 @@ Status FileChecksumRetriever::ApplyVersionEdit(VersionEdit& edit,
       return s;
     }
   }
-  for (const auto& new_deltaLog_file : edit.GetDeltaLogFileAdditions()) {
-    assert(checksum_value.empty() == checksum_method.empty());
-    if (checksum_method.empty()) {
-      checksum_value = kUnknownFileChecksum;
-      checksum_method = kUnknownFileChecksumFuncName;
-    }
-    Status s = file_checksum_list_.InsertOneFileChecksum(
-        new_deltaLog_file.GetDeltaLogFileID(), checksum_value, checksum_method);
-    if (!s.ok()) {
-      return s;
-    }
-  }
   return Status::OK();
 }
 

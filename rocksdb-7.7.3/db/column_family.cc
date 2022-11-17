@@ -614,9 +614,10 @@ ColumnFamilyData::ColumnFamilyData(
     deltaLog_file_cache_.reset(new DeltaLogFileCache(
         _table_cache, ioptions(), soptions(), id_,
         internal_stats_->GetDeltaLogFileReadHist(), io_tracer));
+    DeltaLogFileManager* deltaLogFileMagemer;
     deltaLog_source_.reset(new DeltaLogSource(ioptions(), db_id, db_session_id,
                                               deltaLog_file_cache_.get(),
-                                              &deltaLogFileMetaData));
+                                              deltaLogFileMagemer));
 
     if (ioptions_.compaction_style == kCompactionStyleLevel) {
       compaction_picker_.reset(

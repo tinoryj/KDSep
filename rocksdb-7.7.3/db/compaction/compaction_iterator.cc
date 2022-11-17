@@ -14,7 +14,6 @@
 #include "db/blob/prefetch_buffer_collection.h"
 #include "db/deltaLog/deltaLog_fetcher.h"
 #include "db/deltaLog/deltaLog_file_builder.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "db/snapshot_checker.h"
 #include "logging/logging.h"
 #include "port/likely.h"
@@ -68,8 +67,7 @@ CompactionIterator::CompactionIterator(
     const std::string* full_history_ts_low,
     const SequenceNumber penultimate_level_cutoff_seqno)
     : input_(input, cmp,
-             !compaction || compaction->DoesInputReferenceBlobFiles() ||
-                 compaction->DoesInputReferenceDeltaLogFiles()),
+             !compaction || compaction->DoesInputReferenceBlobFiles()),
       cmp_(cmp),
       merge_helper_(merge_helper),
       snapshots_(snapshots),

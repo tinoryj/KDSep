@@ -664,7 +664,6 @@ set(SOURCES
         db/deltaLog/deltaLog_file_cache.cc
         db/deltaLog/deltaLog_file_meta.cc
         db/deltaLog/deltaLog_file_reader.cc
-        db/deltaLog/deltaLog_garbage_meter.cc
         db/deltaLog/deltaLog_log_format.cc
         db/deltaLog/deltaLog_log_writer.cc
         db/deltaLog/deltaLog_source.cc

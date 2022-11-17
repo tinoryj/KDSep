@@ -215,10 +215,6 @@ Status CompactionOutputs::AddToOutput(
     s = blob_garbage_meter_->ProcessOutFlow(key, value);
   }
 
-  if (deltaLog_garbage_meter_) {
-    s = deltaLog_garbage_meter_->ProcessOutFlow(key, value);
-  }
-
   if (!s.ok()) {
     return s;
   }

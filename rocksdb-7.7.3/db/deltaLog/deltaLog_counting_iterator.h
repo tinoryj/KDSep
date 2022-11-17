@@ -7,7 +7,6 @@
 
 #include <cassert>
 
-#include "db/deltaLog/deltaLog_garbage_meter.h"
 #include "rocksdb/rocksdb_namespace.h"
 #include "rocksdb/status.h"
 #include "table/internal_iterator.h"
@@ -20,11 +19,8 @@ namespace ROCKSDB_NAMESPACE {
 // of deltaLogs in the compaction input on a per-deltaLog file basis.
 class DeltaLogCountingIterator : public InternalIterator {
  public:
-  DeltaLogCountingIterator(InternalIterator* iter,
-                           DeltaLogGarbageMeter* deltaLog_garbage_meter)
-      : iter_(iter), deltaLog_garbage_meter_(deltaLog_garbage_meter) {
+  DeltaLogCountingIterator(InternalIterator* iter) : iter_(iter) {
     assert(iter_);
-    assert(deltaLog_garbage_meter_);
 
     UpdateAndCountDeltaLogIfNeeded();
   }
@@ -135,12 +131,9 @@ class DeltaLogCountingIterator : public InternalIterator {
     TEST_SYNC_POINT(
         "DeltaLogCountingIterator::UpdateAndCountDeltaLogIfNeeded:"
         "ProcessInFlow");
-
-    status_ = deltaLog_garbage_meter_->ProcessInFlow(key(), value());
   }
 
   InternalIterator* iter_;
-  DeltaLogGarbageMeter* deltaLog_garbage_meter_;
   Status status_;
 };
 

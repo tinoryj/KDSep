@@ -112,8 +112,6 @@ class CompactionIterator {
 
     virtual bool DoesInputReferenceBlobFiles() const = 0;
 
-    virtual bool DoesInputReferenceDeltaLogFiles() const = 0;
-
     virtual const Compaction* real_compaction() const = 0;
 
     virtual bool SupportsPerKeyPlacement() const = 0;
@@ -186,10 +184,6 @@ class CompactionIterator {
 
     bool DoesInputReferenceBlobFiles() const override {
       return compaction_->DoesInputReferenceBlobFiles();
-    }
-
-    bool DoesInputReferenceDeltaLogFiles() const override {
-      return compaction_->DoesInputReferenceDeltaLogFiles();
     }
 
     const Compaction* real_compaction() const override { return compaction_; }

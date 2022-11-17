@@ -723,29 +723,6 @@ bool Compaction::DoesInputReferenceBlobFiles() const {
   return false;
 }
 
-bool Compaction::DoesInputReferenceDeltaLogFiles() const {
-  assert(input_version_);
-
-  const VersionStorageInfo* storage_info = input_version_->storage_info();
-  assert(storage_info);
-
-  if (storage_info->GetDeltaLogFiles().empty()) {
-    return false;
-  }
-
-  for (size_t i = 0; i < inputs_.size(); ++i) {
-    for (const FileMetaData* meta : inputs_[i].files) {
-      assert(meta);
-
-      if (meta->oldest_deltaLog_file_id != kGCSelectedDeltaLogFileID) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 uint64_t Compaction::MinInputFileOldestAncesterTime(
     const InternalKey* start, const InternalKey* end) const {
   uint64_t min_oldest_ancester_time = std::numeric_limits<uint64_t>::max();

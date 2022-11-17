@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "db/blob/blob_index.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "db/memtable.h"
 #include "db/write_batch_internal.h"
 #include "options/cf_options.h"
@@ -492,10 +491,8 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
                 ikey.DebugString(true, output_hex_).c_str(),
                 blob_index.DebugString(output_hex_).c_str());
       } else if (decode_deltaLog_index_ && ikey.type == kTypeDeltaLogIndex) {
-        DeltaLogIndex deltaLog_index;
-
         fprintf(stdout, "%s => %s\n",
-                ikey.DebugString(true, output_hex_).c_str();
+                ikey.DebugString(true, output_hex_).c_str());
       } else {
         fprintf(stdout, "%s => %s\n",
                 ikey.DebugString(true, output_hex_).c_str(),

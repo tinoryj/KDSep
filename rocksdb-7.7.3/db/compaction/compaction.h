@@ -292,11 +292,6 @@ class Compaction {
   // PRE: input version has been set.
   bool DoesInputReferenceBlobFiles() const;
 
-  // Returns true iff at least one input file references a deltaLog file.
-  //
-  // PRE: input version has been set.
-  bool DoesInputReferenceDeltaLogFiles() const;
-
   // test function to validate the functionality of IsBottommostLevel()
   // function -- determines if compaction with inputs and storage is bottommost
   static bool TEST_IsBottommostLevel(

@@ -1192,16 +1192,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     blob_counter = std::make_unique<BlobCountingIterator>(input, meter);
     input = blob_counter.get();
   }
-
-  std::unique_ptr<InternalIterator> deltaLog_counter;
-
-  if (sub_compact->compaction->DoesInputReferenceDeltaLogFiles()) {
-    DeltaLogGarbageMeter* meter =
-        sub_compact->Current().CreateDeltaLogGarbageMeter();
-    deltaLog_counter = std::make_unique<DeltaLogCountingIterator>(input, meter);
-    input = deltaLog_counter.get();
-  }
-
+  
   std::unique_ptr<InternalIterator> trim_history_iter;
   if (ts_sz > 0 && !trim_ts_.empty()) {
     trim_history_iter = std::make_unique<HistoryTrimmingIterator>(
@@ -1484,7 +1475,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
 #endif  // ROCKSDB_ASSERT_STATUS_CHECKED
 
   blob_counter.reset();
-  deltaLog_counter.reset();
   clip.reset();
   raw_input.reset();
   sub_compact->status = status;

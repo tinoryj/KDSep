@@ -13,7 +13,6 @@
 #include "db/compaction/compaction_iteration_stats.h"
 #include "db/dbformat.h"
 #include "db/deltaLog/deltaLog_fetcher.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "port/likely.h"

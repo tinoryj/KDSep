@@ -34,7 +34,7 @@ class DeltaLogSource {
   DeltaLogSource(const ImmutableOptions* immutable_options,
                  const std::string& db_id, const std::string& db_session_id,
                  DeltaLogFileCache* deltaLog_file_cache,
-                 DeltaLogFileMetaData* deltaLogFileMetaData);
+                 DeltaLogFileManager* deltaLogFileMagemer);
 
   DeltaLogSource(const DeltaLogSource&) = delete;
   DeltaLogSource& operator=(const DeltaLogSource&) = delete;
@@ -59,13 +59,17 @@ class DeltaLogSource {
       uint64_t deltaLog_file_id,
       CacheHandleGuard<DeltaLogFileReader>* deltaLog_file_reader) {
     return deltaLog_file_cache_->GetDeltaLogFileReader(
-        deltaLog_file_id, deltaLog_file_reader, deltaLogFileMetaData_);
+        deltaLog_file_id, deltaLog_file_reader,
+        deltaLogFileManager_->GetDeltaLogFileMetaDataByFileID(
+            deltaLog_file_id));
   }
 
   inline Cache* GetDeltaLogCache() const { return deltaLog_cache_.get(); }
 
   bool TEST_DeltaLogInCache(uint64_t file_number, uint64_t file_size,
                             uint64_t offset, size_t* charge = nullptr) const;
+
+  DeltaLogFileManager* deltaLogFileManager_;
 
  private:
   Status GetDeltaLogFromCache(
@@ -98,7 +102,6 @@ class DeltaLogSource {
   // isn't strictly speaking a non-volatile tier since the compressed cache in
   // this tier is in volatile memory).
   const CacheTier lowest_used_cache_tier_;
-  DeltaLogFileMetaData* deltaLogFileMetaData_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

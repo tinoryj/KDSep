@@ -10,7 +10,6 @@
 #include "db/deltaLog/deltaLog_contents.h"
 #include "db/deltaLog/deltaLog_file_addition.h"
 #include "db/deltaLog/deltaLog_file_completion_callback.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "db/deltaLog/deltaLog_log_format.h"
 #include "db/deltaLog/deltaLog_log_writer.h"
 #include "db/event_helpers.h"

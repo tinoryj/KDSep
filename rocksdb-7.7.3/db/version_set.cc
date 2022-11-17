@@ -32,7 +32,6 @@
 #include "db/deltaLog/deltaLog_fetcher.h"
 #include "db/deltaLog/deltaLog_file_cache.h"
 #include "db/deltaLog/deltaLog_file_reader.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "db/deltaLog/deltaLog_log_format.h"
 #include "db/deltaLog/deltaLog_source.h"
 #include "db/internal_stats.h"
@@ -1801,17 +1800,6 @@ void Version::GetColumnFamilyMetaData(ColumnFamilyMetaData* cf_meta) {
     ++cf_meta->blob_file_count;
     cf_meta->blob_file_size += meta->GetBlobFileSize();
   }
-  for (const auto& meta : vstorage->GetDeltaLogFiles()) {
-    assert(meta);
-
-    cf_meta->deltaLog_files.emplace_back(
-        meta->GetDeltaLogFileID(),
-        DeltaLogFileName("", meta->GetDeltaLogFileID()),
-        ioptions->cf_paths.front().path, meta->GetDeltaLogFileSize(),
-        meta->GetTotalDeltaLogCount(), meta->GetTotalDeltaLogBytes());
-    ++cf_meta->deltaLog_file_count;
-    cf_meta->deltaLog_file_size += meta->GetDeltaLogFileSize();
-  }
 }
 
 uint64_t Version::GetSstFilesSize() {
@@ -2257,8 +2245,14 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
 
   assert(deltaLog_source_);
   value_vec.clear();
-  const Status s = deltaLog_source_->GetDeltaLog(read_options, user_key,
-                                                 value_vec, bytes_read);
+  DeltaLogIndex deltaLogIndexTemp;
+  deltaLogIndexTemp.GenerateFullFileHashFromKey(user_key);
+  DeltaLogFileMetaData* deltaLogFileMetaDataTemp =
+      deltaLog_source_->deltaLogFileManager_->GetDeltaLogFileMetaData(
+          deltaLogIndexTemp.getDeltaLogFilePrefixHashFull());
+  const Status s = deltaLog_source_->GetDeltaLog(
+      read_options, user_key, deltaLogFileMetaDataTemp->GetDeltaLogFileID(),
+      value_vec, bytes_read);
 
   return s;
 }
@@ -2373,7 +2367,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                                      value);
 
             constexpr uint64_t* bytes_read = nullptr;
-            autovecrtor<Slice> deltaLog_value_vec;
+            autovector<Slice> deltaLog_value_vec;
             *status = GetDeltaLog(read_options, user_key, deltaLog_value_vec,
                                   bytes_read);
             if (!status->ok()) {
@@ -2561,7 +2555,6 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
           s = MultiGetFromSST(read_options, fp.CurrentFileRange(),
                               fp.GetHitFileLevel(), skip_filters,
                               /*skip_range_deletions=*/false, f, blob_ctxs,
-                              deltaLog_ctxs,
                               /*table_handle=*/nullptr, num_filter_read,
                               num_index_read, num_sst_read);
           if (fp.GetHitFileLevel() == 0) {
@@ -3657,77 +3650,6 @@ void VersionStorageInfo::ComputeFilesMarkedForForcedBlobGC(
     }
 
     files_marked_for_forced_blob_gc_.emplace_back(level, sst_meta);
-  }
-}
-
-void VersionStorageInfo::ComputeFilesMarkedForForcedDeltaLogGC(
-    double deltaLog_garbage_collection_age_cutoff,
-    double deltaLog_garbage_collection_force_threshold) {
-  files_marked_for_forced_deltaLog_gc_.clear();
-
-  if (deltaLog_files_.empty()) {
-    return;
-  }
-
-  // Number of deltaLog files eligible for GC based on age
-  const size_t cutoff_count = static_cast<size_t>(
-      deltaLog_garbage_collection_age_cutoff * deltaLog_files_.size());
-  if (!cutoff_count) {
-    return;
-  }
-
-  // Compute the sum of total and garbage bytes over the oldest batch of
-  // deltaLog files. The oldest batch is defined as the set of deltaLog files
-  // which are kept alive by the same SSTs as the very oldest one. Here is a toy
-  // example. Let's assume we have three SSTs 1, 2, and 3, and four deltaLog
-  // files 10, 11, 12, and 13. Also, let's say SSTs 1 and 2 both rely on
-  // deltaLog file 10 and potentially some higher-numbered ones, while SST 3
-  // relies on deltaLog file 12 and potentially some higher-numbered ones. Then,
-  // the SST to oldest deltaLog file mapping is as follows:
-  //
-  // SST file number               Oldest deltaLog file number
-  // 1                             10
-  // 2                             10
-  // 3                             12
-  //
-  // This is what the same thing looks like from the deltaLog files' POV. (Note
-  // that the linked SSTs simply denote the inverse mapping of the above.)
-  //
-  // DeltaLog file number              Linked SST set
-  // 10                            {1, 2}
-  // 11                            {}
-  // 12                            {3}
-  // 13                            {}
-  //
-  // Then, the oldest batch of deltaLog files consists of deltaLog files 10 and
-  // 11, and we can get rid of them by forcing the compaction of SSTs 1 and 2.
-  //
-  // Note that the overall ratio of garbage computed for the batch has to exceed
-  // deltaLog_garbage_collection_force_threshold and the entire batch has to be
-  // eligible for GC according to deltaLog_garbage_collection_age_cutoff in
-  // order for us to schedule any compactions.
-  const auto& oldest_meta = deltaLog_files_.front();
-  assert(oldest_meta);
-
-  size_t count = 1;
-  uint64_t sum_total_deltaLog_bytes = oldest_meta->GetTotalDeltaLogBytes();
-
-  assert(cutoff_count <= deltaLog_files_.size());
-
-  for (; count < cutoff_count; ++count) {
-    const auto& meta = deltaLog_files_[count];
-    assert(meta);
-    sum_total_deltaLog_bytes += meta->GetTotalDeltaLogBytes();
-  }
-
-  if (count < deltaLog_files_.size()) {
-    const auto& meta = deltaLog_files_[count];
-    assert(meta);
-  }
-
-  if (sum_garbage_deltaLog_bytes <
-      deltaLog_garbage_collection_force_threshold * sum_total_deltaLog_bytes) {
-    return;
   }
 }
 
@@ -6129,25 +6051,6 @@ Status VersionSet::GetLiveFilesChecksumInfo(FileChecksumList* checksum_list) {
       }
 
       s = checksum_list->InsertOneFileChecksum(meta->GetBlobFileNumber(),
-                                               checksum_value, checksum_method);
-      if (!s.ok()) {
-        return s;
-      }
-    }
-    /* DeltaLog files */
-    const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-    for (const auto& meta : deltaLog_files) {
-      assert(meta);
-
-      std::string checksum_value = meta->GetChecksumValue();
-      std::string checksum_method = meta->GetChecksumMethod();
-      assert(checksum_value.empty() == checksum_method.empty());
-      if (meta->GetChecksumMethod().empty()) {
-        checksum_value = kUnknownFileChecksum;
-        checksum_method = kUnknownFileChecksumFuncName;
-      }
-
-      s = checksum_list->InsertOneFileChecksum(meta->GetDeltaLogFileID(),
                                                checksum_value, checksum_method);
       if (!s.ok()) {
         return s;

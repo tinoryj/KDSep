@@ -678,18 +678,6 @@ class VersionBuilder::Rep {
     return meta->oldest_blob_file_number;
   }
 
-  bool IsDeltaLogFileInVersion(uint64_t deltaLog_file_id) const {
-    auto mutable_it = mutable_deltaLog_file_metas_.find(deltaLog_file_id);
-    if (mutable_it != mutable_deltaLog_file_metas_.end()) {
-      return true;
-    }
-
-    assert(base_vstorage_);
-    const auto meta = base_vstorage_->GetDeltaLogFileMetaData(deltaLog_file_id);
-
-    return !!meta;
-  }
-
   Status ApplyFileDeletion(int level, uint64_t file_number) {
     assert(level != VersionStorageInfo::FileLocation::Invalid().GetLevel());
 
@@ -820,16 +808,6 @@ class VersionBuilder::Rep {
       }
     }
 
-    const uint64_t deltaLog_file_id = f->oldest_deltaLog_file_id;
-
-    if (deltaLog_file_id != kGCSelectedDeltaLogFileID) {
-      MutableDeltaLogFileMetaData* const mutable_meta_deltaLog =
-          GetOrCreateMutableDeltaLogFileMetaData(deltaLog_file_id);
-      if (mutable_meta_deltaLog) {
-        mutable_meta_deltaLog->LinkSst(file_number);
-      }
-    }
-
     table_file_levels_[file_number] = level;
 
     return Status::OK();
@@ -879,7 +857,7 @@ class VersionBuilder::Rep {
         return s;
       }
     }
-    
+
     // Delete table files
     for (const auto& deleted_file : edit->GetDeletedFiles()) {
       const int level = deleted_file.first;
@@ -985,87 +963,6 @@ class VersionBuilder::Rep {
       const auto& mutable_meta_blob = mutable_it->second;
 
       if (!process_mutable(mutable_meta_blob)) {
-        return;
-      }
-
-      ++mutable_it;
-    }
-  }
-
-  // Helper function template for merging the deltaLog file metadata from the
-  // base version with the mutable metadata representing the state after
-  // applying the edits. The function objects process_base and process_mutable
-  // are respectively called to handle a base version object when there is no
-  // matching mutable object, and a mutable object when there is no matching
-  // base version object. process_both is called to perform the merge when a
-  // given deltaLog file appears both in the base version and the mutable list.
-  // The helper stops processing objects if a function object returns false.
-  // DeltaLog files with a file number below first_deltaLog_file are not
-  // processed.
-  template <typename ProcessBase, typename ProcessMutable, typename ProcessBoth>
-  void MergeDeltaLogFileMetas(uint64_t first_deltaLog_file,
-                              ProcessBase process_base,
-                              ProcessMutable process_mutable,
-                              ProcessBoth process_both) const {
-    assert(base_vstorage_);
-
-    auto base_it =
-        base_vstorage_->GetDeltaLogFileMetaDataLB(first_deltaLog_file);
-    const auto base_it_end = base_vstorage_->GetDeltaLogFiles().end();
-
-    auto mutable_it =
-        mutable_deltaLog_file_metas_.lower_bound(first_deltaLog_file);
-    const auto mutable_it_end = mutable_deltaLog_file_metas_.end();
-
-    while (base_it != base_it_end && mutable_it != mutable_it_end) {
-      const auto& base_meta = *base_it;
-      assert(base_meta);
-
-      const uint64_t base_deltaLog_file_id = base_meta->GetDeltaLogFileID();
-      const uint64_t mutable_deltaLog_file_id = mutable_it->first;
-
-      if (base_deltaLog_file_id < mutable_deltaLog_file_id) {
-        if (!process_base(base_meta)) {
-          return;
-        }
-
-        ++base_it;
-      } else if (mutable_deltaLog_file_id < base_deltaLog_file_id) {
-        const auto& mutable_meta_deltaLog = mutable_it->second;
-
-        if (!process_mutable(mutable_meta_deltaLog)) {
-          return;
-        }
-
-        ++mutable_it;
-      } else {
-        assert(base_deltaLog_file_id == mutable_deltaLog_file_id);
-
-        const auto& mutable_meta_deltaLog = mutable_it->second;
-
-        if (!process_both(base_meta, mutable_meta_deltaLog)) {
-          return;
-        }
-
-        ++base_it;
-        ++mutable_it;
-      }
-    }
-
-    while (base_it != base_it_end) {
-      const auto& base_meta = *base_it;
-
-      if (!process_base(base_meta)) {
-        return;
-      }
-
-      ++base_it;
-    }
-
-    while (mutable_it != mutable_it_end) {
-      const auto& mutable_meta_deltaLog = mutable_it->second;
-
-      if (!process_mutable(mutable_meta_deltaLog)) {
         return;
       }
 

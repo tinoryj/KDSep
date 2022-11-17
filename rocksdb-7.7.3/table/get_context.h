@@ -8,6 +8,7 @@
 
 #include "db/read_callback.h"
 #include "rocksdb/types.h"
+#include "util/autovector.h"
 
 namespace ROCKSDB_NAMESPACE {
 class BlobFetcher;

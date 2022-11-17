@@ -24,14 +24,14 @@ DeltaLogSource::DeltaLogSource(const ImmutableOptions* immutable_options,
                                const std::string& db_id,
                                const std::string& db_session_id,
                                DeltaLogFileCache* deltaLog_file_cache,
-                               DeltaLogFileMetaData* deltaLogFileMetaData)
+                               DeltaLogFileManager* deltaLogFileManager)
     : db_id_(db_id),
       db_session_id_(db_session_id),
       statistics_(immutable_options->statistics.get()),
       deltaLog_file_cache_(deltaLog_file_cache),
       deltaLog_cache_(immutable_options->deltaLog_cache),
       lowest_used_cache_tier_(immutable_options->lowest_used_cache_tier),
-      deltaLogFileMetaData_(deltaLogFileMetaData) {
+      deltaLogFileManager_(deltaLogFileManager) {
 #ifndef ROCKSDB_LITE
   auto bbto =
       immutable_options->table_factory->GetOptions<BlockBasedTableOptions>();
@@ -194,7 +194,8 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
   {
     CacheHandleGuard<DeltaLogFileReader> deltaLog_file_reader;
     s = deltaLog_file_cache_->GetDeltaLogFileReader(
-        file_id, &deltaLog_file_reader, deltaLogFileMetaData_);
+        file_id, &deltaLog_file_reader,
+        deltaLogFileManager_->GetDeltaLogFileMetaDataByFileID(file_id));
     if (!s.ok()) {
       return s;
     }

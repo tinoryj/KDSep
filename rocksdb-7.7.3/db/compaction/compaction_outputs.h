@@ -13,7 +13,6 @@
 #include "db/blob/blob_garbage_meter.h"
 #include "db/compaction/compaction.h"
 #include "db/compaction/compaction_iterator.h"
-#include "db/deltaLog/deltaLog_garbage_meter.h"
 #include "db/internal_stats.h"
 #include "db/output_validator.h"
 
@@ -121,21 +120,6 @@ class CompactionOutputs {
 
   bool HasDeltaLogFileAdditions() const {
     return !deltaLog_file_additions_.empty();
-  }
-
-  DeltaLogGarbageMeter* CreateDeltaLogGarbageMeter() {
-    assert(!is_penultimate_level_);
-    deltaLog_garbage_meter_ = std::make_unique<DeltaLogGarbageMeter>();
-    return deltaLog_garbage_meter_.get();
-  }
-
-  DeltaLogGarbageMeter* GetDeltaLogGarbageMeter() const {
-    if (is_penultimate_level_) {
-      // deltaLogdb doesn't support per_key_placement yet
-      assert(deltaLog_garbage_meter_ == nullptr);
-      return nullptr;
-    }
-    return deltaLog_garbage_meter_.get();
   }
 
   void UpdateDeltaLogStats() {
@@ -325,7 +309,6 @@ class CompactionOutputs {
 
   // DeltaLogDB info
   std::vector<DeltaLogFileAddition> deltaLog_file_additions_;
-  std::unique_ptr<DeltaLogGarbageMeter> deltaLog_garbage_meter_;
 
   // Basic compaction output stats for this level's outputs
   InternalStats::CompactionOutputsStats stats_;

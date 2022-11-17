@@ -10,7 +10,6 @@
 #include "db/version_edit.h"
 
 #include "db/blob/blob_index.h"
-#include "db/deltaLog/deltaLog_index.h"
 #include "db/version_set.h"
 #include "logging/event_logger.h"
 #include "rocksdb/slice.h"
