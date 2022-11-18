@@ -60,6 +60,7 @@
 #ifndef ROCKSDB_LITE
 #include "rocksdb/utilities/replayer.h"
 #endif  // ROCKSDB_LITE
+#include "db/deltaLog/deltaLog_file_meta.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/merging_iterator.h"
 #include "table/scoped_arena_iterator.h"
@@ -2667,6 +2668,8 @@ class DBImpl : public DB {
 
   BlobFileCompletionCallback blob_callback_;
   DeltaLogFileCompletionCallback deltaLog_callback_;
+
+  DeltaLogFileManager deltaLogFileManager_;
 
   // Pointer to WriteBufferManager stalling interface.
   std::unique_ptr<StallInterface> wbm_stall_;

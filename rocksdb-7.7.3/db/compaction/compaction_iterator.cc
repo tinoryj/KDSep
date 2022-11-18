@@ -1418,6 +1418,11 @@ uint64_t CompactionIterator::ComputeBlobGarbageCollectionCutoffFileNumber(
   return meta->GetBlobFileNumber();
 }
 
+uint64_t CompactionIterator::ComputeDeltaLogGarbageCollectionCutoffFileNumber(
+    const CompactionProxy* compaction) {
+  return 0;
+}
+
 std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
     const CompactionProxy* compaction) {
   if (!compaction) {

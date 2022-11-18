@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <iosfwd>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -55,7 +56,12 @@ class DeltaLogFileManager {
                       uint64_t deltaLogGlobalGCTriggerSize)
       : initialTrieBitNumber_(initialBitNumber),
         deltaLogGCTriggerSize_(deltaLogGCTriggerSize),
-        deltaLogGlobalGCTriggerSize_(deltaLogGlobalGCTriggerSize){};
+        deltaLogGlobalGCTriggerSize_(deltaLogGlobalGCTriggerSize) {
+    std::cerr << "DeltaLog file manager created" << std::endl;
+  };
+  ~DeltaLogFileManager() {
+    std::cerr << "DeltaLog file manager deleted" << std::endl;
+  };
   DeltaLogFileManager& operator=(const DeltaLogFileManager&) = delete;
 
   DeltaLogFileMetaData* GetDeltaLogFileMetaData(uint64_t userKeyFullHash);

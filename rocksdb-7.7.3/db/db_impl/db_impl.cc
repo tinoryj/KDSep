@@ -249,7 +249,8 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                      &error_handler_, &event_logger_,
                      immutable_db_options_.listeners, dbname_),
       deltaLog_callback_(&mutex_, &error_handler_, &event_logger_,
-                         immutable_db_options_.listeners, dbname_) {
+                         immutable_db_options_.listeners, dbname_),
+      deltaLogFileManager_(8, 0, 0) {
   // !batch_per_trx_ implies seq_per_batch_ because it is only unset for
   // WriteUnprepared, which should use seq_per_batch_.
   assert(batch_per_txn_ || seq_per_batch_);
