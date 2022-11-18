@@ -130,6 +130,9 @@ bool DeltaLogFileManager::UpdateDeltaLogFileMetaData(uint64_t deltaLogFileID,
   }
 }
 
+bool DeltaLogFileManager::RetriveDeltaLogFileMetaData() { return true; }
+bool DeltaLogFileManager::PersistDeltaLogFileMetaData() { return true; }
+
 uint64_t DeltaLogFileManager::ProcessDeltaLogGC() {}
 
 }  // namespace ROCKSDB_NAMESPACE

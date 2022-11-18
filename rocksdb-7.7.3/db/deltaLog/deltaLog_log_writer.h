@@ -49,8 +49,6 @@ class DeltaLogLogWriter {
   Status EmitPhysicalRecord(const std::string& headerbuf, const Slice& key,
                             const Slice& val);
 
-  Status AppendFooter(DeltaLogFooter& footer);
-
   Status WriteHeader(DeltaLogHeader& header);
 
   WritableFileWriter* file() { return dest_.get(); }

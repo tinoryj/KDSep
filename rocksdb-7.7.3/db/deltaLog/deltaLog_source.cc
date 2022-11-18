@@ -172,9 +172,28 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
       if (bytes_read) {
         *bytes_read = record_size;
       }
-      char* word = strtok((char*)rawValue.data(), "\n");
-      value_vec.emplace_back(word);
-      while (word = strtok(nullptr, "\n")) value_vec.emplace_back(word);
+      uint64_t readIndex = 0;
+      while (true) {
+        if (readIndex == rawValue.size()) {
+          break;
+        }
+        DeltaLogRecord tempRecord;
+        Slice newHeaderSlice(rawValue.data() + readIndex,
+                             DeltaLogRecord::kHeaderSize_);
+        tempRecord.DecodeHeaderFrom(newHeaderSlice);
+        if (tempRecord.is_anchor_ == true) {
+          value_vec.clear();
+          readIndex += (tempRecord.key_size_ + tempRecord.value_size_ +
+                        DeltaLogRecord::kHeaderSize_);
+          continue;
+        } else {
+          readIndex += (DeltaLogRecord::kHeaderSize_ + tempRecord.key_size_);
+          Slice newValueSlice(rawValue.data() + readIndex,
+                              tempRecord.value_size_);
+          value_vec.emplace_back(newValueSlice);
+          readIndex += tempRecord.value_size_;
+        }
+      }
       return s;
     }
   }
@@ -222,37 +241,127 @@ Status DeltaLogSource::GetDeltaLog(const ReadOptions& read_options,
   if (deltaLog_cache_ && read_options.fill_cache) {
     // If filling cache is allowed and a cache is configured, try to put the
     // deltaLog to the cache.
-    s = PutDeltaLogIntoCache(user_key, &deltaLog_contents,
-                             &deltaLog_cache_handle);
-    if (!s.ok()) {
-      return s;
-    } else {
-      Slice rawValue = deltaLog_cache_handle.GetValue()->data();
-      uint64_t record_size = rawValue.size();
-      if (bytes_read) {
-        *bytes_read = record_size;
-      }
-      char* word = strtok((char*)rawValue.data(), "\n");
-      value_vec.emplace_back(word);
-      while (word = strtok(nullptr, "\n")) value_vec.emplace_back(word);
-      return s;
-    }
-  } else {
-    DeltaLogContents* const deltaLogReadedContents =
-        deltaLog_contents.release();
-    Slice rawValue = deltaLogReadedContents->data();
-    uint64_t record_size = rawValue.size();
-    if (bytes_read) {
-      *bytes_read = record_size;
-    }
-    char* word = strtok((char*)rawValue.data(), "\n");
-    value_vec.emplace_back(word);
-    while (word = strtok(nullptr, "\n")) value_vec.emplace_back(word);
-    return s;
-  }
 
-  assert(s.ok());
-  return s;
+    std::unordered_map<std::string, std::vector<std::string>>
+        fillCacheContentsMap;
+    uint64_t readIndex = 0;
+    while (true) {
+      if (readIndex == deltaLog_contents->size()) {
+        break;
+      }
+      DeltaLogRecord tempRecord;
+      Slice newHeaderSlice(deltaLog_contents->data().data() + readIndex,
+                           DeltaLogRecord::kHeaderSize_);
+      tempRecord.DecodeHeaderFrom(newHeaderSlice);
+      if (tempRecord.is_anchor_ == true) {
+        readIndex += DeltaLogRecord::kHeaderSize_;
+        std::string userKeyStr(deltaLog_contents->data().data() + readIndex,
+                               tempRecord.key_size_);
+        if (fillCacheContentsMap.find(userKeyStr) !=
+            fillCacheContentsMap.end()) {
+          fillCacheContentsMap.at(userKeyStr).clear();
+        }
+        readIndex += (tempRecord.key_size_ + tempRecord.value_size_);
+        continue;
+      } else {
+        std::string userKeyStr(deltaLog_contents->data().data() + readIndex +
+                                   DeltaLogRecord::kHeaderSize_,
+                               tempRecord.key_size_);
+        if (fillCacheContentsMap.find(userKeyStr) !=
+            fillCacheContentsMap.end()) {
+          Slice newValueSlice(deltaLog_contents->data().data() + readIndex,
+                              tempRecord.value_size_);
+          int currentItemSize = DeltaLogRecord::kHeaderSize_ +
+                                tempRecord.key_size_ + tempRecord.value_size_;
+          std::string pushBackValueStr(
+              deltaLog_contents->data().data() + readIndex, currentItemSize);
+          fillCacheContentsMap.at(userKeyStr).push_back(pushBackValueStr);
+          readIndex += currentItemSize;
+        }
+      }
+    }
+    for (auto userKeyIterator : fillCacheContentsMap) {
+      std::string newDeltaLogContentsStr;
+      bool currentKeyFlag = false;
+      if (memcmp(userKeyIterator.first.c_str(), user_key.data(),
+                 user_key.size()) == 0) {
+        for (auto currentKeyDeltaPairIterator : userKeyIterator.second) {
+          newDeltaLogContentsStr.append(currentKeyDeltaPairIterator);
+          // append current userkey
+          DeltaLogRecord tempRecord;
+          Slice tempRecordSlice(currentKeyDeltaPairIterator.c_str(),
+                                DeltaLogRecord::kHeaderSize_);
+          tempRecord.DecodeHeaderFrom(tempRecordSlice);
+          Slice newValueSlice(currentKeyDeltaPairIterator.c_str() +
+                                  DeltaLogRecord::kHeaderSize_ +
+                                  tempRecord.key_size_,
+                              tempRecord.value_size_);
+          value_vec.emplace_back(newValueSlice);
+        }
+      } else {
+        for (auto currentKeyDeltaPairIterator : userKeyIterator.second) {
+          newDeltaLogContentsStr.append(currentKeyDeltaPairIterator);
+        }
+      }
+      CacheAllocationPtr allocation = AllocateBlock(
+          newDeltaLogContentsStr.size(), deltaLog_cache_->memory_allocator());
+      memcpy(allocation.get(), newDeltaLogContentsStr.c_str(),
+             newDeltaLogContentsStr.size());
+      Slice newDeltaLogContentsSlice(newDeltaLogContentsStr.c_str(),
+                                     newDeltaLogContentsStr.size());
+      Slice newDeltaLogKeySlice(userKeyIterator.first.c_str(),
+                                newDeltaLogContentsStr.size());
+      std::unique_ptr<DeltaLogContents> currentKeyRelatedBuf =
+          DeltaLogContents::Create(std::move(allocation),
+                                   newDeltaLogContentsSlice.size());
+      s = PutDeltaLogIntoCache(newDeltaLogKeySlice, &currentKeyRelatedBuf,
+                               &deltaLog_cache_handle);
+      if (!s.ok()) {
+        std::cout << "Error insert new deltaLog contents into cache"
+                  << std::endl;
+        return s;
+      }
+    }
+    return Status::OK();
+  } else {
+    std::vector<std::string> currentUserKeyContentsVec;
+    uint64_t readIndex = 0;
+    while (true) {
+      if (readIndex == deltaLog_contents->size()) {
+        break;
+      }
+      DeltaLogRecord tempRecord;
+      Slice newHeaderSlice(deltaLog_contents->data().data() + readIndex,
+                           DeltaLogRecord::kHeaderSize_);
+      tempRecord.DecodeHeaderFrom(newHeaderSlice);
+      if (tempRecord.is_anchor_ == true) {
+        readIndex += DeltaLogRecord::kHeaderSize_;
+        std::string userKeyStr(deltaLog_contents->data().data() + readIndex,
+                               tempRecord.key_size_);
+        if (memcmp(userKeyStr.c_str(), user_key.data(), user_key.size()) == 0) {
+          value_vec.clear();
+        }
+        readIndex += (tempRecord.key_size_ + tempRecord.value_size_);
+        continue;
+      } else {
+        std::string userKeyStr(deltaLog_contents->data().data() + readIndex,
+                               tempRecord.key_size_);
+        if (memcmp(userKeyStr.c_str(), user_key.data(), user_key.size()) == 0) {
+          readIndex += (DeltaLogRecord::kHeaderSize_ + tempRecord.key_size_);
+          Slice newValueSlice(deltaLog_contents->data().data() + readIndex,
+                              tempRecord.value_size_);
+          value_vec.emplace_back(newValueSlice);
+          readIndex += tempRecord.value_size_;
+        } else {
+          readIndex += (DeltaLogRecord::kHeaderSize_ + tempRecord.key_size_ +
+                        tempRecord.value_size_);
+          continue;
+        }
+      }
+    }
+    return Status::OK();
+  }
+  return Status::OK();
 }
 
 }  // namespace ROCKSDB_NAMESPACE

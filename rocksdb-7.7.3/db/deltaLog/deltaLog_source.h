@@ -7,6 +7,9 @@
 
 #include <cinttypes>
 #include <memory>
+#include <unordered_map>
+#include <vector>
+#include <string>
 
 #include "cache/cache_helpers.h"
 #include "cache/cache_key.h"

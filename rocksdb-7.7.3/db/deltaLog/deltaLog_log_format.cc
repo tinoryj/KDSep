@@ -27,7 +27,6 @@ Status DeltaLogHeader::DecodeFrom(Slice src) {
                               "Unexpected deltaLog file header size");
   }
   uint32_t magic_number;
-  unsigned char flags;
   if (!GetFixed32(&src, &magic_number) || !GetFixed32(&src, &version_) ||
       !GetFixed32(&src, &column_family_id_)) {
     return Status::Corruption(

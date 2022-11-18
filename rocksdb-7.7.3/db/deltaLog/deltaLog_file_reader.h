@@ -76,10 +76,6 @@ class DeltaLogFileReader {
                              AlignedBuf* aligned_buf,
                              Env::IOPriority rate_limiter_priority);
 
-  static Status UncompressDeltaLogIfNeeded(
-      const Slice& value_slice, MemoryAllocator* allocator, SystemClock* clock,
-      Statistics* statistics, std::unique_ptr<DeltaLogContents>* result);
-
   std::unique_ptr<RandomAccessFileReader> file_reader_;
   uint64_t file_size_;
   SystemClock* clock_;

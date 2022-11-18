@@ -61,38 +61,6 @@ Status DeltaLogLogWriter::WriteHeader(DeltaLogHeader& header) {
   return s;
 }
 
-Status DeltaLogLogWriter::AppendFooter(DeltaLogFooter& footer) {
-  assert(block_offset_ != 0);
-  assert(last_elem_type_ == kEtFileHdr || last_elem_type_ == kEtRecord);
-
-  std::string str;
-  footer.EncodeTo(&str);
-
-  Status s;
-  if (dest_->seen_error()) {
-    s.PermitUncheckedError();
-    return Status::IOError("Seen Error. Skip closing.");
-  } else {
-    s = dest_->Append(Slice(str));
-    if (s.ok()) {
-      block_offset_ += str.size();
-
-      s = Sync();
-
-      if (s.ok()) {
-        s = dest_->Close();
-      }
-    }
-
-    dest_.reset();
-  }
-
-  last_elem_type_ = kEtFileFooter;
-  RecordTick(statistics_, DELTALOG_DB_DELTALOG_FILE_BYTES_WRITTEN,
-             DeltaLogFooter::kSize_);
-  return s;
-}
-
 Status DeltaLogLogWriter::AddRecord(const Slice& key, const Slice& val,
                                     bool is_anchor) {
   assert(block_offset_ != 0);

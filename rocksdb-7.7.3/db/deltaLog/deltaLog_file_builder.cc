@@ -245,18 +245,7 @@ Status DeltaLogFileBuilder::WriteDeltaLogToFile(const Slice& key,
 Status DeltaLogFileBuilder::CloseDeltaLogFile() {
   assert(IsDeltaLogFileOpen());
 
-  DeltaLogFooter footer;
-  footer.deltaLog_count = deltaLog_count_;
-
-  Status s = writer_->AppendFooter(footer);
-
-  TEST_SYNC_POINT_CALLBACK("BlobFileBuilder::WriteBlobToFile:AppendFooter", &s);
-
-  if (!s.ok()) {
-    return s;
-  }
-
-  Status OnDeltaLogFileCompletedStatus;
+  Status OnDeltaLogFileCompletedStatus, s;
   if (deltaLog_callback_) {
     s = deltaLog_callback_->OnDeltaLogFileCompleted(
         deltaLog_file_paths_->back(), column_family_name_, job_id_,
@@ -326,7 +315,8 @@ Status DeltaLogFileBuilder::PutDeltaLogIntoCacheIfNeeded(
       creation_reason_ == DeltaLogFileCreationReason::kFlush;
 
   if (deltaLog_cache && warm_cache) {
-    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_,deltaLog_file_id_);
+    const OffsetableCacheKey base_cache_key(db_id_, db_session_id_,
+                                            deltaLog_file_id_);
     const CacheKey cache_key = base_cache_key.WithOffset(0);
     const Slice key = cache_key.AsSlice();
 

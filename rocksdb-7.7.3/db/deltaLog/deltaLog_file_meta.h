@@ -73,6 +73,9 @@ class DeltaLogFileManager {
     return shouldDeltaLogPerformGlobalGC_;
   };  // return processed file number
 
+  bool RetriveDeltaLogFileMetaData();
+  bool PersistDeltaLogFileMetaData();
+
  private:
   bool shouldDeltaLogPerformGlobalGC_ = false;
   uint64_t initialTrieBitNumber_ = 8;

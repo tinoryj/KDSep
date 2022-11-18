@@ -2253,7 +2253,6 @@ Status Version::GetDeltaLog(const ReadOptions& read_options,
   const Status s = deltaLog_source_->GetDeltaLog(
       read_options, user_key, deltaLogFileMetaDataTemp->GetDeltaLogFileID(),
       value_vec, bytes_read);
-
   return s;
 }
 

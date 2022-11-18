@@ -273,7 +273,7 @@ Status DeltaLogFileReader::GetDeltaLog(
   assert(result);
   const uint64_t key_size = user_key.size();
 
-  const uint64_t record_offset = 0;
+  const uint64_t record_offset = DeltaLogHeader::kSize_;
   const uint64_t record_size = fileMetaData_->GetDeltaLogFileSize();
 
   Slice record_slice;
