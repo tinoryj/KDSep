@@ -36,9 +36,6 @@ bool LevelCompactionPicker::NeedsCompaction(
   if (!vstorage->FilesMarkedForForcedBlobGC().empty()) {
     return true;
   }
-  if (!vstorage->FilesMarkedForForcedDeltaLogGC().empty()) {
-    return true;
-  }
   for (int i = 0; i <= vstorage->MaxInputLevel(); i++) {
     if (vstorage->CompactionScore(i) >= 1) {
       return true;
@@ -274,13 +271,6 @@ void LevelCompactionBuilder::SetupInitialFiles() {
   PickFileToCompact(vstorage_->FilesMarkedForForcedBlobGC(), false);
   if (!start_level_inputs_.empty()) {
     compaction_reason_ = CompactionReason::kForcedBlobGC;
-    return;
-  }
-
-  // Forced deltaLog garbage collection
-  PickFileToCompact(vstorage_->FilesMarkedForForcedDeltaLogGC(), false);
-  if (!start_level_inputs_.empty()) {
-    compaction_reason_ = CompactionReason::kForcedDeltaLogGC;
     return;
   }
 }

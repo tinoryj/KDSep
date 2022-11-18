@@ -83,18 +83,15 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
   // Make a set of all of the live table and blob files
   std::vector<uint64_t> live_table_files;
   std::vector<uint64_t> live_blob_files;
-  std::vector<uint64_t> live_deltaLog_files;
   for (auto cfd : *versions_->GetColumnFamilySet()) {
     if (cfd->IsDropped()) {
       continue;
     }
-    cfd->current()->AddLiveFiles(&live_table_files, &live_blob_files,
-                                 &live_deltaLog_files);
+    cfd->current()->AddLiveFiles(&live_table_files, &live_blob_files);
   }
 
   ret.clear();
   ret.reserve(live_table_files.size() + live_blob_files.size() +
-              live_deltaLog_files.size() +
               3);  // for CURRENT + MANIFEST + OPTIONS
 
   // create names of the live files. The names are not absolute
@@ -105,10 +102,6 @@ Status DBImpl::GetLiveFiles(std::vector<std::string>& ret,
 
   for (const auto& blob_file_number : live_blob_files) {
     ret.emplace_back(BlobFileName("", blob_file_number));
-  }
-
-  for (const auto& deltaLog_file_id : live_deltaLog_files) {
-    ret.emplace_back(DeltaLogFileName("", deltaLog_file_id));
   }
 
   ret.emplace_back(CurrentFileName(""));
@@ -315,20 +308,6 @@ Status DBImpl::GetLiveFilesStorageInfo(
           info.file_checksum = kUnknownFileChecksum;
         }
       }
-      // TODO?: info.temperature
-    }
-    const auto& deltaLog_files = vsi.GetDeltaLogFiles();
-    for (const auto& meta : deltaLog_files) {
-      assert(meta);
-
-      results.emplace_back();
-      LiveFileStorageInfo& info = results.back();
-
-      info.relative_filename = DeltaLogFileName(meta->GetDeltaLogFileID());
-      info.directory = GetDir(/* path_id */ 0);
-      info.file_number = meta->GetDeltaLogFileID();
-      info.file_type = kDeltaLogFile;
-      info.size = meta->GetDeltaLogFileSize();
       // TODO?: info.temperature
     }
   }

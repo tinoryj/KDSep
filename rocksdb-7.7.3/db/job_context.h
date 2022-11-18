@@ -108,8 +108,8 @@ struct SuperVersionContext {
 struct JobContext {
   inline bool HaveSomethingToDelete() const {
     return !(full_scan_candidate_files.empty() && sst_delete_files.empty() &&
-             blob_delete_files.empty() && deltaLog_delete_files.empty() &&
-             log_delete_files.empty() && manifest_delete_files.empty());
+             blob_delete_files.empty() && log_delete_files.empty() &&
+             manifest_delete_files.empty());
   }
 
   inline bool HaveSomethingToClean() const {
@@ -163,12 +163,6 @@ struct JobContext {
 
   // the list of blob files that we need to delete
   std::vector<ObsoleteBlobFileInfo> blob_delete_files;
-
-  // the list of all live deltaLog files that cannot be deleted
-  std::vector<uint64_t> deltaLog_live;
-
-  // the list of deltaLog files that we need to delete
-  std::vector<ObsoleteDeltaLogFileInfo> deltaLog_delete_files;
 
   // a list of log files that we need to delete
   std::vector<uint64_t> log_delete_files;

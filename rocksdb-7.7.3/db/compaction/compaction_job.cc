@@ -883,18 +883,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
         blob_files.back()->GetBlobFileNumber());
   }
 
-  const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-  if (!deltaLog_files.empty()) {
-    assert(deltaLog_files.front());
-    assert(deltaLog_files.back());
-
-    ROCKS_LOG_BUFFER(
-        log_buffer_,
-        "[%s] DeltaLog file summary: head=%" PRIu64 ", tail=%" PRIu64 "\n",
-        column_family_name.c_str(), deltaLog_files.front()->GetDeltaLogFileID(),
-        deltaLog_files.back()->GetDeltaLogFileID());
-  }
-
   if (compaction_stats_.has_penultimate_level_output) {
     ROCKS_LOG_BUFFER(
         log_buffer_,
@@ -961,16 +949,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
 
     assert(blob_files.back());
     stream << "blob_file_tail" << blob_files.back()->GetBlobFileNumber();
-  }
-
-  if (!deltaLog_files.empty()) {
-    assert(deltaLog_files.front());
-    stream << "deltaLog_file_head"
-           << deltaLog_files.front()->GetDeltaLogFileID();
-
-    assert(deltaLog_files.back());
-    stream << "deltaLog_file_tail"
-           << deltaLog_files.back()->GetDeltaLogFileID();
   }
 
   if (compaction_stats_.has_penultimate_level_output) {
@@ -1192,7 +1170,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     blob_counter = std::make_unique<BlobCountingIterator>(input, meter);
     input = blob_counter.get();
   }
-  
+
   std::unique_ptr<InternalIterator> trim_history_iter;
   if (ts_sz > 0 && !trim_ts_.empty()) {
     trim_history_iter = std::make_unique<HistoryTrimmingIterator>(

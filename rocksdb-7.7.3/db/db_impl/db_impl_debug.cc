@@ -93,9 +93,6 @@ void DBImpl::TEST_GetFilesMetaData(
   if (blob_metadata) {
     *blob_metadata = vstorage->GetBlobFiles();
   }
-  if (deltaLog_metadata) {
-    *deltaLog_metadata = vstorage->GetDeltaLogFiles();
-  }
 }
 
 uint64_t DBImpl::TEST_Current_Manifest_FileNo() {

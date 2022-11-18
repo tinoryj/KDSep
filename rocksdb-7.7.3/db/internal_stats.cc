@@ -975,10 +975,6 @@ bool InternalStats::HandleNumDeltaLogFiles(uint64_t* value, DBImpl* /*db*/,
   const auto* vstorage = current->storage_info();
   assert(vstorage);
 
-  const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-
-  *value = deltaLog_files.size();
-
   return true;
 }
 
@@ -992,19 +988,6 @@ bool InternalStats::HandleDeltaLogStats(std::string* value, Slice /*suffix*/) {
   const auto* vstorage = current->storage_info();
   assert(vstorage);
 
-  const auto deltaLog_st = vstorage->GetDeltaLogStats();
-
-  std::ostringstream oss;
-
-  oss << "Number of deltaLog files: " << vstorage->GetDeltaLogFiles().size()
-      << "\nTotal size of deltaLog files: " << deltaLog_st.total_file_size
-      << "\nTotal size of garbage in deltaLog files: "
-      << deltaLog_st.total_garbage_size
-      << "\nDeltaLog file space amplification: " << deltaLog_st.space_amp
-      << '\n';
-
-  value->append(oss.str());
-
   return true;
 }
 
@@ -1012,8 +995,6 @@ bool InternalStats::HandleTotalDeltaLogFileSize(uint64_t* value, DBImpl* /*db*/,
                                                 Version* /*version*/) {
   assert(value);
   assert(cfd_);
-
-  *value = cfd_->GetTotalDeltaLogFileSize();
 
   return true;
 }
@@ -1028,8 +1009,6 @@ bool InternalStats::HandleLiveDeltaLogFileSize(uint64_t* value, DBImpl* /*db*/,
 
   const auto* vstorage = current->storage_info();
   assert(vstorage);
-
-  *value = vstorage->GetDeltaLogStats().total_file_size;
 
   return true;
 }
@@ -1928,16 +1907,6 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
            ", total size: %.1f GB, garbage size: %.1f GB, space amp: %.1f\n\n",
            vstorage->GetBlobFiles().size(), blob_st.total_file_size / kGB,
            blob_st.total_garbage_size / kGB, blob_st.space_amp);
-  value->append(buf);
-
-  const auto deltaLog_st = vstorage->GetDeltaLogStats();
-
-  snprintf(buf, sizeof(buf),
-           "\nDeltaLog file count: %" ROCKSDB_PRIszt
-           ", total size: %.1f GB, garbage size: %.1f GB, space amp: %.1f\n\n",
-           vstorage->GetDeltaLogFiles().size(),
-           deltaLog_st.total_file_size / kGB,
-           deltaLog_st.total_garbage_size / kGB, deltaLog_st.space_amp);
   value->append(buf);
 
   uint64_t now_micros = clock_->NowMicros();

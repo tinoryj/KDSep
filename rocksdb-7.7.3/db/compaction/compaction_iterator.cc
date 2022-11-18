@@ -1435,38 +1435,6 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
 }
 
-uint64_t CompactionIterator::ComputeDeltaLogGarbageCollectionCutoffFileNumber(
-    const CompactionProxy* compaction) {
-  if (!compaction) {
-    return 0;
-  }
-
-  if (!compaction->enable_deltaLog_garbage_collection()) {
-    return 0;
-  }
-
-  const Version* const version = compaction->input_version();
-  assert(version);
-
-  const VersionStorageInfo* const storage_info = version->storage_info();
-  assert(storage_info);
-
-  const auto& deltaLog_files = storage_info->GetDeltaLogFiles();
-
-  const size_t cutoff_index =
-      static_cast<size_t>(compaction->deltaLog_garbage_collection_age_cutoff() *
-                          deltaLog_files.size());
-
-  if (cutoff_index >= deltaLog_files.size()) {
-    return std::numeric_limits<uint64_t>::max();
-  }
-
-  const auto& meta = deltaLog_files[cutoff_index];
-  assert(meta);
-
-  return meta->GetDeltaLogFileID();
-}
-
 std::unique_ptr<DeltaLogFetcher>
 CompactionIterator::CreateDeltaLogFetcherIfNeeded(
     const CompactionProxy* compaction) {

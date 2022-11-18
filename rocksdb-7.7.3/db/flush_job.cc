@@ -333,17 +333,6 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
     stream << "blob_file_tail" << blob_files.back()->GetBlobFileNumber();
   }
 
-  const auto& deltaLog_files = vstorage->GetDeltaLogFiles();
-  if (!deltaLog_files.empty()) {
-    assert(deltaLog_files.front());
-    stream << "deltaLog_file_head"
-           << deltaLog_files.front()->GetDeltaLogFileID();
-
-    assert(deltaLog_files.back());
-    stream << "deltaLog_file_tail"
-           << deltaLog_files.back()->GetDeltaLogFileID();
-  }
-
   stream << "immutable_memtables" << cfd_->imm()->NumNotFlushed();
 
   if (measure_io_stats_) {

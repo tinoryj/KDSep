@@ -2025,14 +2025,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         }
         known_file_sizes[name] = bmd.blob_file_size;
       }
-      for (const auto& dmd : md.deltaLog_files) {
-        std::string name = dmd.deltaLog_file_name;
-        // The DeltaLogMetaData.deltaLog_file_name may start with "/".
-        if (!name.empty() && name[0] == '/') {
-          name = name.substr(1);
-        }
-        known_file_sizes[name] = dmd.deltaLog_file_size;
-      }
     }
 
     std::vector<std::string> paths;

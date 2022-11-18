@@ -174,9 +174,6 @@ class VersionStorageInfo {
 
   void AddBlobFile(std::shared_ptr<BlobFileMetaData> blob_file_meta);
 
-  void AddDeltaLogFile(
-      std::shared_ptr<DeltaLogFileMetaData> deltaLog_file_meta);
-
   void PrepareForVersionAppend(const ImmutableOptions& immutable_options,
                                const MutableCFOptions& mutable_cf_options);
 
@@ -234,10 +231,6 @@ class VersionStorageInfo {
   void ComputeFilesMarkedForForcedBlobGC(
       double blob_garbage_collection_age_cutoff,
       double blob_garbage_collection_force_threshold);
-
-  void ComputeFilesMarkedForForcedDeltaLogGC(
-      double deltaLog_garbage_collection_age_cutoff,
-      double deltaLog_garbage_collection_force_threshold);
 
   bool level0_non_overlapping() const { return level0_non_overlapping_; }
 
@@ -404,29 +397,6 @@ class VersionStorageInfo {
   }
 
   // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
-  using DeltaLogFiles = std::vector<std::shared_ptr<DeltaLogFileMetaData>>;
-  const DeltaLogFiles& GetDeltaLogFiles() const { return deltaLog_files_; }
-
-  // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
-  DeltaLogFiles::const_iterator GetDeltaLogFileMetaDataLB(
-      uint64_t deltaLog_file_id) const;
-
-  // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
-  std::shared_ptr<DeltaLogFileMetaData> GetDeltaLogFileMetaData(
-      uint64_t deltaLog_file_id) const {
-    const auto it = GetDeltaLogFileMetaDataLB(deltaLog_file_id);
-
-    assert(it == deltaLog_files_.end() || *it);
-
-    if (it != deltaLog_files_.end() &&
-        (*it)->GetDeltaLogFileID() == deltaLog_file_id) {
-      return *it;
-    }
-
-    return std::shared_ptr<DeltaLogFileMetaData>();
-  }
-
-  // REQUIRES: This version has been saved (see VersionBuilder::SaveTo)
   struct BlobStats {
     uint64_t total_file_size = 0;
     uint64_t total_garbage_size = 0;
@@ -451,31 +421,6 @@ class VersionStorageInfo {
     }
 
     return BlobStats{total_file_size, total_garbage_size, space_amp};
-  }
-
-  struct DeltaLogStats {
-    uint64_t total_file_size = 0;
-    uint64_t total_garbage_size = 0;
-    double space_amp = 0.0;
-  };
-
-  DeltaLogStats GetDeltaLogStats() const {
-    uint64_t total_file_size = 0;
-    uint64_t total_garbage_size = 0;
-
-    for (const auto& meta : deltaLog_files_) {
-      assert(meta);
-
-      total_file_size += meta->GetDeltaLogFileSize();
-    }
-
-    double space_amp = 0.0;
-    if (total_file_size > total_garbage_size) {
-      space_amp = static_cast<double>(total_file_size) /
-                  (total_file_size - total_garbage_size);
-    }
-
-    return DeltaLogStats{total_file_size, total_garbage_size, space_amp};
   }
 
   const ROCKSDB_NAMESPACE::LevelFilesBrief& LevelFilesBrief(int level) const {
@@ -530,12 +475,6 @@ class VersionStorageInfo {
       const {
     assert(finalized_);
     return files_marked_for_forced_blob_gc_;
-  }
-
-  const autovector<std::pair<int, FileMetaData*>>&
-  FilesMarkedForForcedDeltaLogGC() const {
-    assert(finalized_);
-    return files_marked_for_forced_deltaLog_gc_;
   }
 
   int base_level() const { return base_level_; }
@@ -686,9 +625,6 @@ class VersionStorageInfo {
   // Vector of blob files in version sorted by blob file number.
   BlobFiles blob_files_;
 
-  // Vector of deltaLog files in version sorted by deltaLog file number.
-  DeltaLogFiles deltaLog_files_;
-
   // Level that L0 data should be compacted to. All levels < base_level_ should
   // be empty. -1 if it is not level-compaction so it's not applicable.
   int base_level_;
@@ -736,8 +672,6 @@ class VersionStorageInfo {
       bottommost_files_marked_for_compaction_;
 
   autovector<std::pair<int, FileMetaData*>> files_marked_for_forced_blob_gc_;
-  autovector<std::pair<int, FileMetaData*>>
-      files_marked_for_forced_deltaLog_gc_;
 
   // Threshold for needing to mark another bottommost file. Maintain it so we
   // can quickly check when releasing a snapshot whether more bottommost files
@@ -857,19 +791,6 @@ class ObsoleteBlobFileInfo {
   std::string path_;
 };
 
-class ObsoleteDeltaLogFileInfo {
- public:
-  ObsoleteDeltaLogFileInfo(uint64_t deltaLog_file_id, std::string path)
-      : deltaLog_file_id_(deltaLog_file_id), path_(std::move(path)) {}
-
-  uint64_t GetDeltaLogFileID() const { return deltaLog_file_id_; }
-  const std::string& GetPath() const { return path_; }
-
- private:
-  uint64_t deltaLog_file_id_;
-  std::string path_;
-};
-
 using MultiGetRange = MultiGetContext::Range;
 // A column family's version consists of the table and blob files owned by
 // the column family at a certain point in time.
@@ -974,14 +895,12 @@ class Version {
   // Add all files listed in the current version to *live_table_files and
   // *live_blob_files.
   void AddLiveFiles(std::vector<uint64_t>* live_table_files,
-                    std::vector<uint64_t>* live_blob_files,
-                    std::vector<uint64_t>* live_deltaLog_files) const;
+                    std::vector<uint64_t>* live_blob_files) const;
 
   // Remove live files that are in the delete candidate lists.
   void RemoveLiveFiles(
       std::vector<ObsoleteFileInfo>& sst_delete_candidates,
-      std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates,
-      std::vector<ObsoleteDeltaLogFileInfo>& deltaLog_delete_candidates) const;
+      std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const;
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString(bool hex = false, bool print_stats = false) const;
@@ -1463,14 +1382,12 @@ class VersionSet {
   // Add all files listed in any live version to *live_table_files and
   // *live_blob_files. Note that these lists may contain duplicates.
   void AddLiveFiles(std::vector<uint64_t>* live_table_files,
-                    std::vector<uint64_t>* live_blob_files,
-                    std::vector<uint64_t>* live_deltaLog_files) const;
+                    std::vector<uint64_t>* live_blob_files) const;
 
   // Remove live files that are in the delete candidate lists.
   void RemoveLiveFiles(
       std::vector<ObsoleteFileInfo>& sst_delete_candidates,
-      std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates,
-      std::vector<ObsoleteDeltaLogFileInfo>& deltaLog_delete_candidates) const;
+      std::vector<ObsoleteBlobFileInfo>& blob_delete_candidates) const;
 
   // Return the approximate size of data to be scanned for range [start, end)
   // in levels [start_level, end_level). If end_level == -1 it will search
@@ -1497,17 +1414,8 @@ class VersionSet {
     obsolete_blob_files_.emplace_back(blob_file_number, std::move(path));
   }
 
-  void AddObsoleteDeltaLogFile(uint64_t deltaLog_file_id, std::string path) {
-    assert(table_cache_);
-
-    table_cache_->Erase(GetSlice(&deltaLog_file_id));
-
-    obsolete_deltaLog_files_.emplace_back(deltaLog_file_id, std::move(path));
-  }
-
   void GetObsoleteFiles(std::vector<ObsoleteFileInfo>* files,
                         std::vector<ObsoleteBlobFileInfo>* blob_files,
-                        std::vector<ObsoleteDeltaLogFileInfo>* deltaLog_files,
                         std::vector<std::string>* manifest_filenames,
                         uint64_t min_pending_output);
 
@@ -1529,8 +1437,6 @@ class VersionSet {
   static uint64_t GetTotalSstFilesSize(Version* dummy_versions);
 
   static uint64_t GetTotalBlobFileSize(Version* dummy_versions);
-
-  static uint64_t GetTotalDeltaLogFileSize(Version* dummy_versions);
 
   // Get the IO Status returned by written Manifest.
   const IOStatus& io_status() const { return io_status_; }
@@ -1659,7 +1565,6 @@ class VersionSet {
 
   std::vector<ObsoleteFileInfo> obsolete_files_;
   std::vector<ObsoleteBlobFileInfo> obsolete_blob_files_;
-  std::vector<ObsoleteDeltaLogFileInfo> obsolete_deltaLog_files_;
   std::vector<std::string> obsolete_manifests_;
 
   // env options for all reads and writes except compactions

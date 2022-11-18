@@ -1121,10 +1121,6 @@ uint64_t ColumnFamilyData::GetTotalBlobFileSize() const {
   return VersionSet::GetTotalBlobFileSize(dummy_versions_);
 }
 
-uint64_t ColumnFamilyData::GetTotalDeltaLogFileSize() const {
-  return VersionSet::GetTotalDeltaLogFileSize(dummy_versions_);
-}
-
 uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
   return current_->GetSstFilesSize();
 }
