@@ -298,6 +298,11 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
   if (write_buffer_manager_) {
     wbm_stall_.reset(new WBMStallInterface());
   }
+  // create deltaLog file maneger if need
+  // if (immutable_db_options_.enable_deltaLog_files == true) {
+  //   deltaLogFileManager_.UpdateSettingsWithDir(
+  //       8, 0, 0, immutable_db_options_.GetWalDir());
+  // }
 }
 
 Status DBImpl::Resume() {

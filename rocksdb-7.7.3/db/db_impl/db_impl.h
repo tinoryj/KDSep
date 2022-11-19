@@ -186,6 +186,8 @@ class DBImpl : public DB {
 
   virtual ~DBImpl();
 
+  DeltaLogFileManager deltaLogFileManager_;
+
   // ---- Implementations of the DB interface ----
 
   using DB::Resume;
@@ -2668,8 +2670,6 @@ class DBImpl : public DB {
 
   BlobFileCompletionCallback blob_callback_;
   DeltaLogFileCompletionCallback deltaLog_callback_;
-
-  DeltaLogFileManager deltaLogFileManager_;
 
   // Pointer to WriteBufferManager stalling interface.
   std::unique_ptr<StallInterface> wbm_stall_;

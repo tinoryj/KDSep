@@ -52,6 +52,16 @@ Status DeltaLogIndex::GenerateFullFileHashFromKey(Slice slice) {
   }
 }
 
+bool DeltaLogFileManager::UpdateSettingsWithDir(
+    uint64_t initialBitNumber, uint64_t deltaLogGCTriggerSize,
+    uint64_t deltaLogGlobalGCTriggerSize, std::string workingDir) {
+  initialTrieBitNumber_ = initialBitNumber;
+  deltaLogGCTriggerSize_ = deltaLogGCTriggerSize;
+  deltaLogGlobalGCTriggerSize_ = deltaLogGlobalGCTriggerSize;
+  workingDir_ = workingDir;
+  std::cerr << "DeltaLog file manager settings updated" << std::endl;
+};
+
 DeltaLogFileMetaData* DeltaLogFileManager::GetDeltaLogFileMetaData(
     uint64_t userKeyFullHash) {
   std::string ans;
@@ -237,6 +247,132 @@ bool DeltaLogFileManager::CreateDeltaLogFileMetaDataListIfNotExist(
   if (deltaLogFileMetaDataTrie_.size() != 0) {
     std::ofstream deltaLogFileManifestStream;
     deltaLogFileManifestStream.open(workingDir + "deltaLogFileManifest." +
+                                        std::to_string(currentPointerInt),
+                                    std::ios::out);
+    for (Trie<DeltaLogFileMetaData>::iterator it =
+             deltaLogFileMetaDataTrie_.begin();
+         it != deltaLogFileMetaDataTrie_.end(); it++) {
+      deltaLogFileManifestStream
+          << deltaLogIDToPrefixMap_.at(it->GetDeltaLogFileID()) << std::endl;
+      deltaLogFileManifestStream << it->GetDeltaLogFileID() << std::endl;
+      deltaLogFileManifestStream << it->GetTotalDeltaLogCount() << std::endl;
+      deltaLogFileManifestStream << it->GetTotalDeltaLogBytes() << std::endl;
+    }
+    deltaLogFileManifestStream.flush();
+    deltaLogFileManifestStream.close();
+    return true;
+  } else {
+    return true;
+  }
+}
+
+bool DeltaLogFileManager::RetriveDeltaLogFileMetaDataList() {
+  assert(workingDir_);
+  std::ifstream deltaLogFileManifestPointerStream;
+  deltaLogFileManifestPointerStream.open(
+      workingDir_ + "deltaLogFileManifest.pointer", std::ios::in);
+  std::string currentPointerStr;
+  if (deltaLogFileManifestPointerStream.is_open()) {
+    getline(deltaLogFileManifestPointerStream, currentPointerStr);
+    uint64_t currentPointerInt = stoull(currentPointerStr);
+  } else {
+    if (CreateDeltaLogFileMetaDataListIfNotExist()) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+  std::ifstream deltaLogFileManifestStream;
+  deltaLogFileManifestStream.open(
+      workingDir_ + "deltaLogFileManifest." + currentPointerStr, std::ios::in);
+  std::string currentLineStr;
+  if (deltaLogFileManifestStream.is_open()) {
+    while (getline(deltaLogFileManifestStream, currentLineStr)) {
+      std::string prefixHashStr = currentLineStr;
+      getline(deltaLogFileManifestStream, currentLineStr);
+      uint64_t deltaLogFileID = stoull(currentLineStr);
+      getline(deltaLogFileManifestStream, currentLineStr);
+      uint64_t totalDeltaLogCount = stoull(currentLineStr);
+      getline(deltaLogFileManifestStream, currentLineStr);
+      uint64_t totalDeltaLogBytes = stoull(currentLineStr);
+      DeltaLogFileMetaData newDeltaLogFileMetaData(
+          deltaLogFileID, totalDeltaLogCount, totalDeltaLogBytes);
+      deltaLogFileMetaDataTrie_.insert(prefixHashStr, newDeltaLogFileMetaData);
+      deltaLogIDToPrefixMap_.insert(make_pair(deltaLogFileID, prefixHashStr));
+    }
+  } else {
+    std::cerr
+        << "[DeltaLogFileManager]-[Error]: Could not found deltaLog manifest"
+        << std::endl;
+    return false;
+  }
+  return true;
+}
+
+bool DeltaLogFileManager::UpdateDeltaLogFileMetaDataList() {
+  assert(workingDir_);
+  std::ifstream deltaLogFileManifestPointerStream;
+  deltaLogFileManifestPointerStream.open(
+      workingDir_ + "deltaLogFileManifest.pointer", std::ios::in);
+  uint64_t currentPointerInt = 0;
+  if (deltaLogFileManifestPointerStream.is_open()) {
+    deltaLogFileManifestPointerStream >> currentPointerInt;
+    currentPointerInt++;
+  } else {
+    std::cerr << "[DeltaLogFileManager]-[Error]: Could not found deltaLog "
+                 "manifest pointer"
+              << std::endl;
+    return false;
+  }
+  deltaLogFileManifestPointerStream.close();
+  std::ofstream deltaLogFileManifestStream;
+  deltaLogFileManifestStream.open(
+      workingDir_ + "deltaLogFileManifest." + std::to_string(currentPointerInt),
+      std::ios::out);
+  if (deltaLogFileMetaDataTrie_.size() != 0) {
+    for (Trie<DeltaLogFileMetaData>::iterator it =
+             deltaLogFileMetaDataTrie_.begin();
+         it != deltaLogFileMetaDataTrie_.end(); it++) {
+      deltaLogFileManifestStream
+          << deltaLogIDToPrefixMap_.at(it->GetDeltaLogFileID()) << std::endl;
+      deltaLogFileManifestStream << it->GetDeltaLogFileID() << std::endl;
+      deltaLogFileManifestStream << it->GetTotalDeltaLogCount() << std::endl;
+      deltaLogFileManifestStream << it->GetTotalDeltaLogBytes() << std::endl;
+    }
+    deltaLogFileManifestStream.flush();
+    deltaLogFileManifestStream.close();
+    // Update manifest pointer
+    std::ofstream deltaLogFileManifestPointerUpdateStream;
+    deltaLogFileManifestPointerUpdateStream.open(
+        workingDir_ + "deltaLogFileManifest.pointer", std::ios::out);
+    if (deltaLogFileManifestPointerUpdateStream.is_open()) {
+      deltaLogFileManifestPointerUpdateStream << currentPointerInt;
+      deltaLogFileManifestPointerUpdateStream.flush();
+      deltaLogFileManifestPointerUpdateStream.close();
+      return true;
+    } else {
+      std::cerr
+          << "[DeltaLogFileManager]-[Error]: Could not update manifest pointer"
+          << std::endl;
+      return false;
+    }
+  } else {
+    return true;
+  }
+}
+
+bool DeltaLogFileManager::CreateDeltaLogFileMetaDataListIfNotExist() {
+  assert(workingDir_);
+  std::ofstream deltaLogFileManifestPointerStream;
+  deltaLogFileManifestPointerStream.open(
+      workingDir_ + "deltaLogFileManifest.pointer", std::ios::out);
+  uint64_t currentPointerInt = 0;
+  deltaLogFileManifestPointerStream << currentPointerInt << std::endl;
+  deltaLogFileManifestPointerStream.flush();
+  deltaLogFileManifestPointerStream.close();
+  if (deltaLogFileMetaDataTrie_.size() != 0) {
+    std::ofstream deltaLogFileManifestStream;
+    deltaLogFileManifestStream.open(workingDir_ + "deltaLogFileManifest." +
                                         std::to_string(currentPointerInt),
                                     std::ios::out);
     for (Trie<DeltaLogFileMetaData>::iterator it =

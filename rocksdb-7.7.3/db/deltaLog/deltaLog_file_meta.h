@@ -67,6 +67,11 @@ class DeltaLogFileManager {
 
   DeltaLogFileManager& operator=(const DeltaLogFileManager&) = delete;
 
+  bool UpdateSettingsWithDir(uint64_t initialBitNumber,
+                             uint64_t deltaLogGCTriggerSize,
+                             uint64_t deltaLogGlobalGCTriggerSize,
+                             std::string workingDir);
+
   DeltaLogFileMetaData* GetDeltaLogFileMetaData(uint64_t userKeyFullHash);
   DeltaLogFileMetaData* GetDeltaLogFileMetaDataByFileID(
       uint64_t deltaLogFileID);
@@ -86,11 +91,16 @@ class DeltaLogFileManager {
   bool UpdateDeltaLogFileMetaDataList(std::string workingDir);
   bool CreateDeltaLogFileMetaDataListIfNotExist(std::string workingDir);
 
+  bool RetriveDeltaLogFileMetaDataList();
+  bool UpdateDeltaLogFileMetaDataList();
+  bool CreateDeltaLogFileMetaDataListIfNotExist();
+
  private:
   bool shouldDeltaLogPerformGlobalGC_ = false;
   uint64_t initialTrieBitNumber_ = 8;
   uint64_t deltaLogGCTriggerSize_ = 1 * 1024 * 1024;
   uint64_t deltaLogGlobalGCTriggerSize_ = 1 * 1024 * 1024;
+  std::string workingDir_;
   Trie<DeltaLogFileMetaData>
       deltaLogFileMetaDataTrie_;  // prefix-hash to deltaLog file metadata.
   uint64_t totalDeltaLogFileSize_ = 0;
