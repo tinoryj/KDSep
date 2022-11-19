@@ -1,13 +1,13 @@
 #include <string>
 
-#include "_trie_util.h"
 #include "_trie_iterator.h"
+#include "_trie_util.h"
 
 template <typename T>
-Trie<T>::Trie(): size(0) {
-    T flag;
-    root = new tnode<T>(flag, nullptr, -1);
-    size = 0;
+Trie<T>::Trie() : size_(0) {
+  T flag;
+  root = new tnode<T>(flag, nullptr, -1);
+  size_ = 0;
 }
 
 template <typename T>
@@ -26,7 +26,7 @@ void Trie<T>::insert(std::string key, T val) {
     }
   }
   if (!node->isEnd()) {
-    this->size += 1;
+    this->size_ += 1;
   }
   node->update(val);
   node->markEnd(key);
@@ -54,7 +54,12 @@ bool Trie<T>::exist(std::string key) {
 
 template <typename T>
 bool Trie<T>::empty() {
-  return this->size == 0;
+  return this->size_ == 0;
+}
+
+template <typename T>
+int Trie<T>::size() {
+  return this->size_;
 }
 
 template <typename T>

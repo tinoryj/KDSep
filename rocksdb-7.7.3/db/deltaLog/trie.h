@@ -13,6 +13,7 @@ class Trie {
   void insert(std::string, T);
   bool exist(std::string);
   bool empty();
+  int size();
   iterator begin();
   iterator end();
   reverse_iterator rbegin();
@@ -21,7 +22,7 @@ class Trie {
 
  private:
   tnode<T>* root;
-  int size;
+  int size_;
 };
 
 #include "trie.hpp"

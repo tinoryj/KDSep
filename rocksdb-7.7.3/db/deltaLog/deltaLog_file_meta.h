@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cassert>
+#include <fstream>
 #include <iosfwd>
 #include <iostream>
 #include <memory>
@@ -59,9 +60,11 @@ class DeltaLogFileManager {
         deltaLogGlobalGCTriggerSize_(deltaLogGlobalGCTriggerSize) {
     std::cerr << "DeltaLog file manager created" << std::endl;
   };
+
   ~DeltaLogFileManager() {
     std::cerr << "DeltaLog file manager deleted" << std::endl;
   };
+
   DeltaLogFileManager& operator=(const DeltaLogFileManager&) = delete;
 
   DeltaLogFileMetaData* GetDeltaLogFileMetaData(uint64_t userKeyFullHash);
@@ -79,8 +82,9 @@ class DeltaLogFileManager {
     return shouldDeltaLogPerformGlobalGC_;
   };  // return processed file number
 
-  bool RetriveDeltaLogFileMetaData();
-  bool PersistDeltaLogFileMetaData();
+  bool RetriveDeltaLogFileMetaDataList(std::string workingDir);
+  bool UpdateDeltaLogFileMetaDataList(std::string workingDir);
+  bool CreateDeltaLogFileMetaDataListIfNotExist(std::string workingDir);
 
  private:
   bool shouldDeltaLogPerformGlobalGC_ = false;
