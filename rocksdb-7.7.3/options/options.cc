@@ -107,7 +107,6 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
       blob_file_starting_level(options.blob_file_starting_level),
       blob_cache(options.blob_cache),
       prepopulate_blob_cache(options.prepopulate_blob_cache),
-      enable_deltaLog_files(options.enable_deltaLog_files),
       min_deltaLog_size(options.min_deltaLog_size),
       deltaLog_file_size(options.deltaLog_file_size),
       deltaLog_compression_type(options.deltaLog_compression_type),
