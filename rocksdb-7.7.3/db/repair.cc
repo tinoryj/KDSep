@@ -35,7 +35,6 @@
 // (1) smallest/largest for the table
 // (2) largest sequence number in the table
 // (3) oldest blob file referred to by the table (if applicable)
-// (4) oldest deltaLog file referred to by the table (if applicable)
 //
 // If we are unable to scan the file, then we ignore the table.
 //
@@ -282,7 +281,7 @@ class Repairer {
     std::vector<std::string> to_search_paths;
 
     for (size_t path_id = 0; path_id < db_options_.db_paths.size(); path_id++) {
-      to_search_paths.push_back(db_options_.db_paths[path_id].path);
+        to_search_paths.push_back(db_options_.db_paths[path_id].path);
     }
 
     // search wal_dir if user uses a customize wal_dir
@@ -333,8 +332,7 @@ class Repairer {
   void ConvertLogFilesToTables() {
     const auto& wal_dir = immutable_db_options_.GetWalDir();
     for (size_t i = 0; i < logs_.size(); i++) {
-      // we should use LogFileName(wal_dir, logs_[i]) here. user might uses
-      // wal_dir option.
+      // we should use LogFileName(wal_dir, logs_[i]) here. user might uses wal_dir option.
       std::string logname = LogFileName(wal_dir, logs_[i]);
       Status status = ConvertLogToTable(wal_dir, logs_[i]);
       if (!status.ok()) {
@@ -395,8 +393,8 @@ class Repairer {
     int counter = 0;
     while (reader.ReadRecord(&record, &scratch)) {
       if (record.size() < WriteBatchInternal::kHeader) {
-        reporter.Corruption(record.size(),
-                            Status::Corruption("log record too small"));
+        reporter.Corruption(
+            record.size(), Status::Corruption("log record too small"));
         continue;
       }
       Status record_status = WriteBatchInternal::SetContents(&batch, record);
@@ -459,13 +457,11 @@ class Repairer {
           dbname_, /* versions */ nullptr, immutable_db_options_, tboptions,
           file_options_, table_cache_.get(), iter.get(),
           std::move(range_del_iters), &meta, nullptr /* blob_file_additions */,
-          nullptr /* deltaLog_file_additions */, {}, kMaxSequenceNumber,
-          kMaxSequenceNumber, snapshot_checker, false /* paranoid_file_checks*/,
-          nullptr /* internal_stats */, &io_s, nullptr /*IOTracer*/,
-          BlobFileCreationReason::kRecovery,
-          DeltaLogFileCreationReason::kRecovery, empty_seqno_time_mapping,
-          nullptr /* event_logger */, 0 /* job_id */, Env::IO_HIGH,
-          nullptr /* table_properties */, write_hint);
+          {}, kMaxSequenceNumber, kMaxSequenceNumber, snapshot_checker,
+          false /* paranoid_file_checks*/, nullptr /* internal_stats */, &io_s,
+          nullptr /*IOTracer*/, BlobFileCreationReason::kRecovery,
+          empty_seqno_time_mapping, nullptr /* event_logger */, 0 /* job_id */,
+          Env::IO_HIGH, nullptr /* table_properties */, write_hint);
       ROCKS_LOG_INFO(db_options_.info_log,
                      "Log #%" PRIu64 ": %d ops saved to Table #%" PRIu64 " %s",
                      log, counter, meta.fd.GetNumber(),
@@ -657,7 +653,6 @@ class Repairer {
             table->meta.largest, table->meta.fd.smallest_seqno,
             table->meta.fd.largest_seqno, table->meta.marked_for_compaction,
             table->meta.temperature, table->meta.oldest_blob_file_number,
-            table->meta.oldest_deltaLog_file_id,
             table->meta.oldest_ancester_time, table->meta.file_creation_time,
             table->meta.file_checksum, table->meta.file_checksum_func_name,
             table->meta.unique_id);
@@ -720,7 +715,8 @@ Status GetDefaultCFOptions(
 }  // anonymous namespace
 
 Status RepairDB(const std::string& dbname, const DBOptions& db_options,
-                const std::vector<ColumnFamilyDescriptor>& column_families) {
+                const std::vector<ColumnFamilyDescriptor>& column_families
+                ) {
   ColumnFamilyOptions default_cf_opts;
   Status status = GetDefaultCFOptions(column_families, &default_cf_opts);
   if (!status.ok()) {
@@ -760,7 +756,8 @@ Status RepairDB(const std::string& dbname, const Options& options) {
   DBOptions db_options(opts);
   ColumnFamilyOptions cf_options(opts);
 
-  Repairer repairer(dbname, db_options, {}, cf_options /* default_cf_opts */,
+  Repairer repairer(dbname, db_options,
+                    {}, cf_options /* default_cf_opts */,
                     cf_options /* unknown_cf_opts */,
                     true /* create_unknown_cfs */);
   Status status = repairer.Run();

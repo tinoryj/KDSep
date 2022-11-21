@@ -37,7 +37,6 @@
 #include "db/compaction/compaction.h"
 #include "db/compaction/compaction_picker.h"
 #include "db/dbformat.h"
-#include "db/deltaLog/deltaLog_file_meta.h"
 #include "db/file_indexer.h"
 #include "db/log_reader.h"
 #include "db/range_del_aggregator.h"
@@ -70,7 +69,6 @@ class Writer;
 }
 
 class BlobIndex;
-class DeltaLogIndex;
 class Compaction;
 class LogBuffer;
 class LookupKey;
@@ -232,7 +230,9 @@ class VersionStorageInfo {
       double blob_garbage_collection_age_cutoff,
       double blob_garbage_collection_force_threshold);
 
-  bool level0_non_overlapping() const { return level0_non_overlapping_; }
+  bool level0_non_overlapping() const {
+    return level0_non_overlapping_;
+  }
 
   // Updates the oldest snapshot and related internal state, like the bottommost
   // files marked for compaction.
@@ -814,8 +814,8 @@ class Version {
 
   Status OverlapWithLevelIterator(const ReadOptions&, const FileOptions&,
                                   const Slice& smallest_user_key,
-                                  const Slice& largest_user_key, int level,
-                                  bool* overlap);
+                                  const Slice& largest_user_key,
+                                  int level, bool* overlap);
 
   // Lookup the value for key or get all merge operands for key.
   // If do_merge = true (default) then lookup value for key.
@@ -846,8 +846,7 @@ class Version {
            PinnedIteratorsManager* pinned_iters_mgr,
            bool* value_found = nullptr, bool* key_exists = nullptr,
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
-           bool* is_blob = nullptr, bool* is_deltaLog = nullptr,
-           bool do_merge = true);
+           bool* is_blob = nullptr, bool do_merge = true);
 
   void MultiGet(const ReadOptions&, MultiGetRange* range,
                 ReadCallback* callback = nullptr);
@@ -873,11 +872,6 @@ class Version {
   using BlobReadContexts = std::vector<BlobReadContext>;
   void MultiGetBlob(const ReadOptions& read_options, MultiGetRange& range,
                     std::unordered_map<uint64_t, BlobReadContexts>& blob_ctxs);
-
-  // Retrieves a deltaLog using a deltaLog reference and saves it in *value,
-  // assuming the corresponding deltaLog file is part of this Version.
-  Status GetDeltaLog(const ReadOptions& read_options, const Slice& user_key,
-                     autovector<Slice>& value_vec, uint64_t* bytes_read) const;
 
   // Loads some stats information from files (if update_stats is set) and
   // populates derived data structures. Call without mutex held. It needs to be
@@ -1035,14 +1029,13 @@ class Version {
   Statistics* db_statistics_;
   TableCache* table_cache_;
   BlobSource* blob_source_;
-  DeltaLogSource* deltaLog_source_;
   const MergeOperator* merge_operator_;
 
   VersionStorageInfo storage_info_;
-  VersionSet* vset_;  // VersionSet to which this Version belongs
-  Version* next_;     // Next version in linked list
-  Version* prev_;     // Previous version in linked list
-  int refs_;          // Number of live refs to this version
+  VersionSet* vset_;            // VersionSet to which this Version belongs
+  Version* next_;               // Next version in linked list
+  Version* prev_;               // Previous version in linked list
+  int refs_;                    // Number of live refs to this version
   const FileOptions file_options_;
   const MutableCFOptions mutable_cf_options_;
   // Cached value to avoid recomputing it on every read.
@@ -1404,7 +1397,7 @@ class VersionSet {
                             FileMetaData** metadata, ColumnFamilyData** cfd);
 
   // This function doesn't support leveldb SST filenames
-  void GetLiveFilesMetaData(std::vector<LiveFileMetaData>* metadata);
+  void GetLiveFilesMetaData(std::vector<LiveFileMetaData> *metadata);
 
   void AddObsoleteBlobFile(uint64_t blob_file_number, std::string path) {
     assert(table_cache_);

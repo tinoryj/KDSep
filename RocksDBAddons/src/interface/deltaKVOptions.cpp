@@ -1,5 +1,3 @@
-#pragma once
-
 #include "interface/deltaKVOptions.hpp"
 
 namespace DELTAKV_NAMESPACE {
@@ -16,6 +14,8 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     dumpOptionsOutStream << "\tenable_deltaStore_garbage_collection = " << enable_deltaStore_garbage_collection << endl;
     dumpOptionsOutStream << "\tdeltaStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(deltaStore_base_cache_mode) << endl;
     dumpOptionsOutStream << "\tdeltaStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(deltaStore_base_store_mode) << endl;
+    dumpOptionsOutStream << "\tdeltaStore_fileLvel_cache_size = " << deltaStore_fileLvel_cache_size << endl;
+    dumpOptionsOutStream << "\tdeltaStore_KDLevel_cahce_size = " << deltaStore_KDLevel_cahce_size << endl;
     dumpOptionsOutStream << "\textract_to_deltaStore_size_lower_bound = " << extract_to_deltaStore_size_lower_bound << endl;
     dumpOptionsOutStream << "\textract_to_deltaStore_size_upper_bound = " << extract_to_deltaStore_size_upper_bound << endl;
     dumpOptionsOutStream << "\tdeltaStore_single_file_maximum_size = " << deltaStore_single_file_maximum_size << endl;
@@ -32,6 +32,8 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     dumpOptionsOutStream << "\tenable_valueStore_garbage_collection = " << enable_valueStore_garbage_collection << endl;
     dumpOptionsOutStream << "\tvalueStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(valueStore_base_cache_mode) << endl;
     dumpOptionsOutStream << "\tvalueStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(valueStore_base_store_mode) << endl;
+    dumpOptionsOutStream << "\tvalueStore_fileLvel_cache_size = " << valueStore_fileLvel_cache_size << endl;
+    dumpOptionsOutStream << "\tvalueStore_KDLevel_cahce_size = " << valueStore_KDLevel_cahce_size << endl;
     dumpOptionsOutStream << "\textract_to_valueStore_size_lower_bound = " << extract_to_valueStore_size_lower_bound << endl;
     dumpOptionsOutStream << "\textract_to_valueStore_size_upper_bound = " << extract_to_valueStore_size_upper_bound << endl;
     dumpOptionsOutStream << "\tvalueStore_single_file_maximum_size = " << valueStore_single_file_maximum_size << endl;

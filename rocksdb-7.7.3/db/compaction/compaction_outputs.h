@@ -105,31 +105,6 @@ class CompactionOutputs {
     }
   }
 
-  // TODO: Move the DeltaLogDB builder into CompactionOutputs
-  const std::vector<DeltaLogFileAddition>& GetDeltaLogFileAdditions() const {
-    if (is_penultimate_level_) {
-      assert(deltaLog_file_additions_.empty());
-    }
-    return deltaLog_file_additions_;
-  }
-
-  std::vector<DeltaLogFileAddition>* GetDeltaLogFileAdditionsPtr() {
-    assert(!is_penultimate_level_);
-    return &deltaLog_file_additions_;
-  }
-
-  bool HasDeltaLogFileAdditions() const {
-    return !deltaLog_file_additions_.empty();
-  }
-
-  void UpdateDeltaLogStats() {
-    assert(!is_penultimate_level_);
-    stats_.num_output_files_deltaLog = deltaLog_file_additions_.size();
-    for (const auto& deltaLog : deltaLog_file_additions_) {
-      stats_.bytes_written_deltaLog += deltaLog.GetTotalDeltaLogBytes();
-    }
-  }
-
   // Finish the current output file
   Status Finish(const Status& intput_status,
                 const SeqnoToTimeMapping& seqno_time_mapping);
@@ -306,9 +281,6 @@ class CompactionOutputs {
   // BlobDB info
   std::vector<BlobFileAddition> blob_file_additions_;
   std::unique_ptr<BlobGarbageMeter> blob_garbage_meter_;
-
-  // DeltaLogDB info
-  std::vector<DeltaLogFileAddition> deltaLog_file_additions_;
 
   // Basic compaction output stats for this level's outputs
   InternalStats::CompactionOutputsStats stats_;

@@ -8,7 +8,6 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/arena_wrapped_db_iter.h"
-
 #include "memory/arena.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
@@ -36,14 +35,13 @@ void ArenaWrappedDBIter::Init(
     const MutableCFOptions& mutable_cf_options, const Version* version,
     const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iteration,
     uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
-    ColumnFamilyData* cfd, bool expose_blob_index, bool expose_deltaLog_index,
-    bool allow_refresh) {
+    ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
   auto mem = arena_.AllocateAligned(sizeof(DBIter));
-  db_iter_ = new (mem)
-      DBIter(env, read_options, ioptions, mutable_cf_options,
-             ioptions.user_comparator, /* iter */ nullptr, version, sequence,
-             true, max_sequential_skip_in_iteration, read_callback, db_impl,
-             cfd, expose_blob_index, expose_deltaLog_index);
+  db_iter_ =
+      new (mem) DBIter(env, read_options, ioptions, mutable_cf_options,
+                       ioptions.user_comparator, /* iter */ nullptr, version,
+                       sequence, true, max_sequential_skip_in_iteration,
+                       read_callback, db_impl, cfd, expose_blob_index);
   sv_number_ = version_number;
   read_options_ = read_options;
   allow_refresh_ = allow_refresh;
@@ -76,7 +74,7 @@ Status ArenaWrappedDBIter::Refresh() {
          sv->current, latest_seq,
          sv->mutable_cf_options.max_sequential_skip_in_iterations,
          cur_sv_number, read_callback_, db_impl_, cfd_, expose_blob_index_,
-         expose_deltaLog_index_, allow_refresh_);
+         allow_refresh_);
 
     InternalIterator* internal_iter = db_impl_->NewInternalIterator(
         read_options_, cfd_, sv, &arena_, latest_seq,
@@ -146,16 +144,13 @@ ArenaWrappedDBIter* NewArenaWrappedDbIterator(
     const MutableCFOptions& mutable_cf_options, const Version* version,
     const SequenceNumber& sequence, uint64_t max_sequential_skip_in_iterations,
     uint64_t version_number, ReadCallback* read_callback, DBImpl* db_impl,
-    ColumnFamilyData* cfd, bool expose_blob_index, bool expose_deltaLog_index,
-    bool allow_refresh) {
+    ColumnFamilyData* cfd, bool expose_blob_index, bool allow_refresh) {
   ArenaWrappedDBIter* iter = new ArenaWrappedDBIter();
   iter->Init(env, read_options, ioptions, mutable_cf_options, version, sequence,
              max_sequential_skip_in_iterations, version_number, read_callback,
-             db_impl, cfd, expose_blob_index, expose_deltaLog_index,
-             allow_refresh);
+             db_impl, cfd, expose_blob_index, allow_refresh);
   if (db_impl != nullptr && cfd != nullptr && allow_refresh) {
-    iter->StoreRefreshInfo(db_impl, cfd, read_callback, expose_blob_index,
-                           expose_deltaLog_index);
+    iter->StoreRefreshInfo(db_impl, cfd, read_callback, expose_blob_index);
   }
 
   return iter;

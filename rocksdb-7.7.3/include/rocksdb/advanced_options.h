@@ -240,20 +240,15 @@ enum class CacheTier : uint8_t {
   kNonVolatileBlockTier = 0x01,
 };
 
-enum UpdateStatus {     // Return status For inplace update callback
-  UPDATE_FAILED = 0,    // Nothing to update
-  UPDATED_INPLACE = 1,  // Value updated inplace
-  UPDATED = 2,          // No inplace update. Merged value set
+enum UpdateStatus {    // Return status For inplace update callback
+  UPDATE_FAILED   = 0, // Nothing to update
+  UPDATED_INPLACE = 1, // Value updated inplace
+  UPDATED         = 2, // No inplace update. Merged value set
 };
 
 enum class PrepopulateBlobCache : uint8_t {
   kDisable = 0x0,    // Disable prepopulate blob cache
   kFlushOnly = 0x1,  // Prepopulate blobs during flush only
-};
-
-enum class PrepopulateDeltaLogCache : uint8_t {
-  kDisable = 0x0,    // Disable prepopulate deltaLog cache
-  kFlushOnly = 0x1,  // Prepopulate deltaLogs during flush only
 };
 
 struct AdvancedColumnFamilyOptions {
@@ -1031,132 +1026,6 @@ struct AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through the SetOptions() API
   PrepopulateBlobCache prepopulate_blob_cache = PrepopulateBlobCache::kDisable;
-
-  // When set, large values (deltaLogs) are written to separate deltaLog files,
-  // and only pointers to them are stored in SST files. This can reduce write
-  // amplification for large-value use cases at the cost of introducing a level
-  // of indirection for reads. See also the options min_deltaLog_size,
-  // deltaLog_file_size, deltaLog_compression_type,
-  // enable_deltaLog_garbage_collection, deltaLog_garbage_collection_age_cutoff,
-  // deltaLog_garbage_collection_force_threshold, and
-  // deltaLog_compaction_readahead_size below.
-  //
-  // Default: false
-  //
-  // Dynamically changeable through the SetOptions() API
-  bool enable_deltaLog_files = false;
-
-  // The size of the smallest value to be stored separately in a deltaLog file.
-  // Values which have an uncompressed size smaller than this threshold are
-  // stored alongside the keys in SST files in the usual fashion. A value of
-  // zero for this option means that all values are stored in deltaLog files.
-  // Note that enable_deltaLog_files has to be set in order for this option to
-  // have any effect.
-  //
-  // Default: 0
-  //
-  // Dynamically changeable through the SetOptions() API
-  uint64_t min_deltaLog_size = 0;
-
-  // The size limit for deltaLog files. When writing deltaLog files, a new file
-  // is opened once this limit is reached. Note that enable_deltaLog_files has
-  // to be set in order for this option to have any effect.
-  //
-  // Default: 256 MB
-  //
-  // Dynamically changeable through the SetOptions() API
-  uint64_t deltaLog_file_size = 1ULL << 28;
-
-  // The compression algorithm to use for large values stored in deltaLog files.
-  // Note that enable_deltaLog_files has to be set in order for this option to
-  // have any effect.
-  //
-  // Default: no compression
-  //
-  // Dynamically changeable through the SetOptions() API
-  CompressionType deltaLog_compression_type = kNoCompression;
-
-  // Enables garbage collection of deltaLogs. DeltaLog GC is performed as part
-  // of compaction. Valid deltaLogs residing in deltaLog files older than a
-  // cutoff get relocated to new files as they are encountered during
-  // compaction, which makes it possible to clean up deltaLog files once they
-  // contain nothing but obsolete/garbage deltaLogs. See also
-  // deltaLog_garbage_collection_age_cutoff and
-  // deltaLog_garbage_collection_force_threshold below.
-  //
-  // Default: false
-  //
-  // Dynamically changeable through the SetOptions() API
-  bool enable_deltaLog_garbage_collection = false;
-
-  // The cutoff in terms of deltaLog file age for garbage collection. DeltaLogs
-  // in the oldest N deltaLog files will be relocated when encountered during
-  // compaction, where N = garbage_collection_cutoff * number_of_deltaLog_files.
-  // Note that enable_deltaLog_garbage_collection has to be set in order for
-  // this option to have any effect.
-  //
-  // Default: 0.25
-  //
-  // Dynamically changeable through the SetOptions() API
-  double deltaLog_garbage_collection_age_cutoff = 0.25;
-
-  // If the ratio of garbage in the oldest deltaLog files exceeds this
-  // threshold, targeted compactions are scheduled in order to force garbage
-  // collecting the deltaLog files in question, assuming they are all eligible
-  // based on the value of deltaLog_garbage_collection_age_cutoff above. This
-  // option is currently only supported with leveled compactions. Note that
-  // enable_deltaLog_garbage_collection has to be set in order for this option
-  // to have any effect.
-  //
-  // Default: 1.0
-  //
-  // Dynamically changeable through the SetOptions() API
-  double deltaLog_garbage_collection_force_threshold = 1.0;
-
-  // Compaction readahead for deltaLog files.
-  //
-  // Default: 0
-  //
-  // Dynamically changeable through the SetOptions() API
-  uint64_t deltaLog_compaction_readahead_size = 0;
-
-  // Enable deltaLog files starting from a certain LSM tree level.
-  //
-  // For certain use cases that have a mix of short-lived and long-lived values,
-  // it might make sense to support extracting large values only during
-  // compactions whose output level is greater than or equal to a specified LSM
-  // tree level (e.g. compactions into L1/L2/... or above). This could reduce
-  // the space amplification caused by large values that are turned into garbage
-  // shortly after being written at the price of some write amplification
-  // incurred by long-lived values whose extraction to deltaLog files is
-  // delayed.
-  //
-  // Default: 0
-  //
-  // Dynamically changeable through the SetOptions() API
-  int deltaLog_file_starting_level = 0;
-
-  // This feature is WORK IN PROGRESS
-  // If non-NULL use the specified cache for deltaLogs.
-  // If NULL, rocksdb will not use a deltaLog cache.
-  //
-  // Default: nullptr (disabled)
-  std::shared_ptr<Cache> deltaLog_cache = nullptr;
-
-  // If enabled, prepopulate warm/hot deltaLogs which are already in memory into
-  // deltaLog cache at the time of flush. On a flush, the deltaLog that is in
-  // memory (in memtables) get flushed to the device. If using Direct IO,
-  // additional IO is incurred to read this deltaLog back into memory again,
-  // which is avoided by enabling this option. This further helps if the
-  // workload exhibits high temporal locality, where most of the reads go to
-  // recently written data. This also helps in case of the remote file system
-  // since it involves network traffic and higher latencies.
-  //
-  // Default: disabled
-  //
-  // Dynamically changeable through the SetOptions() API
-  PrepopulateDeltaLogCache prepopulate_deltaLog_cache =
-      PrepopulateDeltaLogCache::kDisable;
 
   // Enable memtable per key-value checksum protection.
   //

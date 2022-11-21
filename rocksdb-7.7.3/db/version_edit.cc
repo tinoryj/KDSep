@@ -20,7 +20,9 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-namespace {}  // anonymous namespace
+namespace {
+
+}  // anonymous namespace
 
 uint64_t PackFileNumberAndPathId(uint64_t number, uint64_t path_id) {
   assert(number <= kFileNumberMask);
@@ -499,7 +501,8 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         break;
 
       case kCompactCursor:
-        if (GetLevel(&input, &level, &msg) && GetInternalKey(&input, &key)) {
+        if (GetLevel(&input, &level, &msg) &&
+            GetInternalKey(&input, &key)) {
           // Here we re-use the output format of compact pointer in LevelDB
           // to persist compact_cursors_
           compact_cursors_.push_back(std::make_pair(level, key));

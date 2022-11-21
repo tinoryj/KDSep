@@ -59,6 +59,7 @@ namespace ROCKSDB_NAMESPACE {
 extern const std::string kHashIndexPrefixesBlock;
 extern const std::string kHashIndexPrefixesMetadataBlock;
 
+
 // Without anonymous namespace here, we fail the warning -Wmissing-prototypes
 namespace {
 
@@ -992,6 +993,7 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
     NotifyCollectTableCollectorsOnAdd(key, value, r->get_offset(),
                                       r->table_properties_collectors,
                                       r->ioptions.logger);
+
   } else if (value_type == kTypeRangeDeletion) {
     r->range_del_block.Add(key, value);
     // TODO offset passed in is not accurate for parallel compression case
@@ -1010,7 +1012,7 @@ void BlockBasedTableBuilder::Add(const Slice& key, const Slice& value) {
   } else if (value_type == kTypeRangeDeletion) {
     r->props.num_deletions++;
     r->props.num_range_deletions++;
-  } else if (value_type == kTypeMerge || value_type == kTypeDeltaLogIndex) {
+  } else if (value_type == kTypeMerge) {
     r->props.num_merge_operands++;
   }
 }

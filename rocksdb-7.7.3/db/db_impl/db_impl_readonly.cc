@@ -100,7 +100,6 @@ Status DBImplReadOnly::Get(const ReadOptions& read_options,
         /*value_found*/ nullptr,
         /*key_exists*/ nullptr, /*seq*/ nullptr, &read_cb,
         /*is_blob*/ nullptr,
-        /*is_deltaLog*/ nullptr,
         /*do_merge*/ true);
     RecordTick(stats_, MEMTABLE_MISS);
   }

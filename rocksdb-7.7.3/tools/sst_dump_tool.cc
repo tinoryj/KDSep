@@ -69,9 +69,6 @@ void print_help(bool to_stderr) {
     --decode_blob_index
       Decode blob indexes and print them in a human-readable format during scans.
 
-    --decode_deltaLog_index
-      Decode deltaLog indexes and print them in a human-readable format during scans.
-
     --from=<user_key>
       Key to start reading from when executing check|scan
 
@@ -163,7 +160,6 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
   bool verify_checksum = false;
   bool output_hex = false;
   bool decode_blob_index = false;
-  bool decode_deltaLog_index = false;
   bool input_key_hex = false;
   bool has_from = false;
   bool has_to = false;
@@ -211,8 +207,6 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
       output_hex = true;
     } else if (strcmp(argv[i], "--decode_blob_index") == 0) {
       decode_blob_index = true;
-    } else if (strcmp(argv[i], "--decode_deltaLog_index") == 0) {
-      decode_deltaLog_index = true;
     } else if (strcmp(argv[i], "--input_key_hex") == 0) {
       input_key_hex = true;
     } else if (sscanf(argv[i], "--read_num=%lu%c", (unsigned long*)&n, &junk) ==
@@ -265,9 +259,9 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
       try {
         in_key = ROCKSDB_NAMESPACE::LDBCommand::HexToString(in_key);
       } catch (...) {
-        std::cerr << "ERROR: Invalid key input '" << in_key
-                  << "' Use 0x{hex representation of internal rocksdb key}"
-                  << std::endl;
+        std::cerr << "ERROR: Invalid key input '"
+          << in_key
+          << "' Use 0x{hex representation of internal rocksdb key}" << std::endl;
         return -1;
       }
       Slice sl_key = ROCKSDB_NAMESPACE::Slice(in_key);
@@ -337,15 +331,14 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
     }
   }
 
-  if (has_compression_level_from && has_compression_level_to) {
-    if (!has_specified_compression_types || compression_types.size() != 1) {
+  if(has_compression_level_from && has_compression_level_to) {
+    if(!has_specified_compression_types || compression_types.size() != 1) {
       fprintf(stderr, "Specify one compression type.\n\n");
       exit(1);
     }
-  } else if (has_compression_level_from || has_compression_level_to) {
-    fprintf(stderr,
-            "Specify both --compression_level_from and "
-            "--compression_level_to.\n\n");
+  } else if(has_compression_level_from || has_compression_level_to) {
+    fprintf(stderr, "Specify both --compression_level_from and "
+                     "--compression_level_to.\n\n");
     exit(1);
   }
 
@@ -428,7 +421,7 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
 
     ROCKSDB_NAMESPACE::SstFileDumper dumper(
         options, filename, Temperature::kUnknown, readahead_size,
-        verify_checksum, output_hex, decode_blob_index, decode_deltaLog_index);
+        verify_checksum, output_hex, decode_blob_index);
     // Not a valid SST
     if (!dumper.getStatus().ok()) {
       fprintf(stderr, "%s: %s\n", filename.c_str(),
@@ -483,7 +476,8 @@ int SSTDumpTool::Run(int argc, char const* const* argv, Options options) {
           has_from || use_from_as_prefix, from_key, has_to, to_key,
           use_from_as_prefix);
       if (!st.ok()) {
-        fprintf(stderr, "%s: %s\n", filename.c_str(), st.ToString().c_str());
+        fprintf(stderr, "%s: %s\n", filename.c_str(),
+            st.ToString().c_str());
       }
       total_read += dumper.GetReadNumber();
       if (read_num > 0 && total_read > read_num) {

@@ -43,8 +43,7 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
                const Version* version, SequenceNumber s, bool arena_mode,
                uint64_t max_sequential_skip_in_iterations,
                ReadCallback* read_callback, DBImpl* db_impl,
-               ColumnFamilyData* cfd, bool expose_blob_index,
-               bool expose_deltaLog_index)
+               ColumnFamilyData* cfd, bool expose_blob_index)
     : prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       env_(_env),
       clock_(ioptions.clock),
@@ -76,7 +75,6 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       fill_cache_(read_options.fill_cache),
       verify_checksums_(read_options.verify_checksums),
       expose_blob_index_(expose_blob_index),
-      expose_deltaLog_index_(expose_deltaLog_index),
       is_blob_(false),
       arena_mode_(arena_mode),
       db_impl_(db_impl),
@@ -212,44 +210,6 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
   }
 
   is_blob_ = true;
-  return true;
-}
-
-bool DBIter::SetDeltaLogValueIfNeeded(const Slice& user_key,
-                                      const Slice& deltaLog_index) {
-  assert(!is_deltaLog_);
-  assert(deltaLog_value_vec_.empty());
-
-  if (expose_deltaLog_index_) {  // Stacked DeltaLogDB implementation
-    is_deltaLog_ = true;
-    return true;
-  }
-
-  if (!version_) {
-    status_ = Status::Corruption("Encountered unexpected deltaLog index.");
-    valid_ = false;
-    return false;
-  }
-
-  // TODO: consider moving ReadOptions from ArenaWrappedDBIter to DBIter to
-  // avoid having to copy options back and forth.
-  ReadOptions read_options;
-  read_options.read_tier = read_tier_;
-  read_options.fill_cache = fill_cache_;
-  read_options.verify_checksums = verify_checksums_;
-
-  constexpr uint64_t* bytes_read = nullptr;
-
-  const Status s = version_->GetDeltaLog(read_options, user_key,
-                                         deltaLog_value_vec_, bytes_read);
-
-  if (!s.ok()) {
-    status_ = s;
-    valid_ = false;
-    return false;
-  }
-
-  is_deltaLog_ = true;
   return true;
 }
 
@@ -433,19 +393,6 @@ bool DBIter::FindNextUserEntryInternal(bool skipping_saved_key,
             valid_ = true;
             return true;
             break;
-          case kTypeDeltaLogIndex:
-            saved_key_.SetUserKey(
-                ikey_.user_key,
-                !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
-            // By now, we are sure the current ikey is going to yield a merge
-            // operator
-            current_entry_is_merged_ = true;
-            if (!SetDeltaLogValueIfNeeded(ikey_.user_key, iter_.value())) {
-              return false;
-            }
-            valid_ = true;
-            return MergeValuesNewToOld();  // Go to a different state machine
-            break;
           case kTypeMerge:
             saved_key_.SetUserKey(
                 ikey_.user_key,
@@ -606,18 +553,6 @@ bool DBIter::MergeValuesNewToOld() {
       }
       return true;
     } else if (kTypeMerge == ikey.type) {
-      // hit a merge, add the value as an operand and run associative merge.
-      // when complete, add result to operands and continue.
-      merge_context_.PushOperand(
-          iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
-      PERF_COUNTER_ADD(internal_merge_count, 1);
-    } else if (kTypeDeltaLogIndex == ikey.type) {
-      if (expose_deltaLog_index_) {
-        status_ =
-            Status::NotSupported("DeltaLogDB does not support merge operator.");
-        valid_ = false;
-        return false;
-      }
       // hit a merge, add the value as an operand and run associative merge.
       // when complete, add result to operands and continue.
       merge_context_.PushOperand(
@@ -958,12 +893,6 @@ bool DBIter::FindValueForCurrentKey() {
         last_not_merge_type = last_key_entry_type;
         PERF_COUNTER_ADD(internal_delete_skipped_count, 1);
         break;
-      case kTypeDeltaLogIndex: {
-        assert(merge_operator_ != nullptr);
-        merge_context_.PushOperandBack(
-            iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
-        PERF_COUNTER_ADD(internal_merge_count, 1);
-      } break;
       case kTypeMerge: {
         assert(merge_operator_ != nullptr);
         merge_context_.PushOperandBack(
@@ -1082,36 +1011,6 @@ bool DBIter::FindValueForCurrentKey() {
       SetValueAndColumnsFromPlain(expose_blob_index_ ? pinned_value_
                                                      : blob_value_);
 
-      break;
-    case kTypeDeltaLogIndex:
-      current_entry_is_merged_ = true;
-      if (last_not_merge_type == kTypeDeletion ||
-          last_not_merge_type == kTypeSingleDeletion) {
-        s = Merge(nullptr, saved_key_.GetUserKey());
-        if (!s.ok()) {
-          return false;
-        }
-        return true;
-      } else if (last_not_merge_type == kTypeBlobIndex) {
-        if (expose_blob_index_) {
-          status_ =
-              Status::NotSupported("BlobDB does not support merge operator.");
-          valid_ = false;
-          return false;
-        }
-        if (!SetBlobValueIfNeeded(saved_key_.GetUserKey(), pinned_value_)) {
-          return false;
-        }
-        valid_ = true;
-        s = Merge(&blob_value_, saved_key_.GetUserKey());
-        if (!s.ok()) {
-          return false;
-        }
-
-        ResetBlobValue();
-
-        return true;
-      }
       break;
     case kTypeWideColumnEntity:
       if (!SetValueAndColumnsFromEntity(pinned_value_)) {
@@ -1241,12 +1140,11 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
 
   // kTypeMerge. We need to collect all kTypeMerge values and save them
   // in operands
-  assert(ikey.type == kTypeMerge || ikey.type == kTypeDeltaLogIndex);
+  assert(ikey.type == kTypeMerge);
   current_entry_is_merged_ = true;
   merge_context_.Clear();
   merge_context_.PushOperand(
       iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
-
   while (true) {
     iter_.Next();
 
@@ -1279,10 +1177,6 @@ bool DBIter::FindValueForCurrentKeyUsingSeek() {
       }
       return true;
     } else if (ikey.type == kTypeMerge) {
-      merge_context_.PushOperand(
-          iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
-      PERF_COUNTER_ADD(internal_merge_count, 1);
-    } else if (ikey.type == kTypeDeltaLogIndex) {
       merge_context_.PushOperand(
           iter_.value(), iter_.iter()->IsValuePinned() /* operand_pinned */);
       PERF_COUNTER_ADD(internal_merge_count, 1);
@@ -1774,13 +1668,12 @@ Iterator* NewDBIterator(Env* env, const ReadOptions& read_options,
                         const SequenceNumber& sequence,
                         uint64_t max_sequential_skip_in_iterations,
                         ReadCallback* read_callback, DBImpl* db_impl,
-                        ColumnFamilyData* cfd, bool expose_blob_index,
-                        bool expose_deltaLog_index) {
+                        ColumnFamilyData* cfd, bool expose_blob_index) {
   DBIter* db_iter =
       new DBIter(env, read_options, ioptions, mutable_cf_options,
                  user_key_comparator, internal_iter, version, sequence, false,
                  max_sequential_skip_in_iterations, read_callback, db_impl, cfd,
-                 expose_blob_index, expose_deltaLog_index);
+                 expose_blob_index);
   return db_iter;
 }
 

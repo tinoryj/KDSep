@@ -5,8 +5,7 @@
 
 #include "table/get_context.h"
 
-#include "db/blob/blob_fetcher.h"
-#include "db/deltaLog/deltaLog_fetcher.h"
+#include "db/blob//blob_fetcher.h"
 #include "db/merge_helper.h"
 #include "db/pinned_iterators_manager.h"
 #include "db/read_callback.h"
@@ -50,8 +49,7 @@ GetContext::GetContext(
     bool do_merge, SequenceNumber* _max_covering_tombstone_seq,
     SystemClock* clock, SequenceNumber* seq,
     PinnedIteratorsManager* _pinned_iters_mgr, ReadCallback* callback,
-    bool* is_blob_index, bool* is_deltaLog_index, uint64_t tracing_get_id,
-    BlobFetcher* blob_fetcher, DeltaLogFetcher* deltaLog_fetcher)
+    bool* is_blob_index, uint64_t tracing_get_id, BlobFetcher* blob_fetcher)
     : ucmp_(ucmp),
       merge_operator_(merge_operator),
       logger_(logger),
@@ -71,32 +69,30 @@ GetContext::GetContext(
       callback_(callback),
       do_merge_(do_merge),
       is_blob_index_(is_blob_index),
-      is_deltaLog_index_(is_deltaLog_index),
       tracing_get_id_(tracing_get_id),
-      blob_fetcher_(blob_fetcher),
-      deltaLog_fetcher_(deltaLog_fetcher) {
+      blob_fetcher_(blob_fetcher) {
   if (seq_) {
     *seq_ = kMaxSequenceNumber;
   }
   sample_ = should_sample_file_read();
 }
 
-GetContext::GetContext(
-    const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,
-    Statistics* statistics, GetState init_state, const Slice& user_key,
-    PinnableSlice* pinnable_val, PinnableWideColumns* columns,
-    bool* value_found, MergeContext* merge_context, bool do_merge,
-    SequenceNumber* _max_covering_tombstone_seq, SystemClock* clock,
-    SequenceNumber* seq, PinnedIteratorsManager* _pinned_iters_mgr,
-    ReadCallback* callback, bool* is_blob_index, bool* is_deltaLog_index,
-    uint64_t tracing_get_id, BlobFetcher* blob_fetcher,
-    DeltaLogFetcher* deltaLog_fetcher)
+GetContext::GetContext(const Comparator* ucmp,
+                       const MergeOperator* merge_operator, Logger* logger,
+                       Statistics* statistics, GetState init_state,
+                       const Slice& user_key, PinnableSlice* pinnable_val,
+                       PinnableWideColumns* columns, bool* value_found,
+                       MergeContext* merge_context, bool do_merge,
+                       SequenceNumber* _max_covering_tombstone_seq,
+                       SystemClock* clock, SequenceNumber* seq,
+                       PinnedIteratorsManager* _pinned_iters_mgr,
+                       ReadCallback* callback, bool* is_blob_index,
+                       uint64_t tracing_get_id, BlobFetcher* blob_fetcher)
     : GetContext(ucmp, merge_operator, logger, statistics, init_state, user_key,
                  pinnable_val, columns, /*timestamp=*/nullptr, value_found,
                  merge_context, do_merge, _max_covering_tombstone_seq, clock,
                  seq, _pinned_iters_mgr, callback, is_blob_index,
-                 is_deltaLog_index, tracing_get_id, blob_fetcher,
-                 deltaLog_fetcher) {}
+                 tracing_get_id, blob_fetcher) {}
 
 // Called from TableCache::Get and Table::Get when file/block in which
 // key may exist are not there in TableCache/BlockCache respectively. In this
@@ -266,8 +262,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
 
     auto type = parsed_key.type;
     // Key matches. Process it
-    if ((type == kTypeValue || type == kTypeMerge ||
-         type == kTypeDeltaLogIndex || type == kTypeBlobIndex ||
+    if ((type == kTypeValue || type == kTypeMerge || type == kTypeBlobIndex ||
          type == kTypeWideColumnEntity) &&
         max_covering_tombstone_seq_ != nullptr &&
         *max_covering_tombstone_seq_ > parsed_key.sequence) {
@@ -369,6 +364,7 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
             return false;
           } else {
             assert(type == kTypeValue);
+
             state_ = kFound;
             if (do_merge_) {
               Merge(&value);
@@ -381,36 +377,6 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
           }
         }
         return false;
-      case kTypeDeltaLogIndex:
-        assert(state_ == kNotFound || state_ == kMerge);
-        state_ = kMerge;
-
-        if (is_deltaLog_index_ == nullptr) {
-          // DeltaLog value not supported. Stop.
-          state_ = kUnexpectedDeltaLogIndex;
-          return false;
-        } else {
-          *is_deltaLog_index_ = (type == kTypeDeltaLogIndex);
-        }
-
-        assert(merge_operator_ != nullptr);
-        {
-          autovector<Slice> pin_val_vec;
-          if (GetDeltaLogValue(pin_val_vec) == false) {
-            return false;
-          }
-          for (auto deltaLogIndex : pin_val_vec) {
-            push_operand(deltaLogIndex, nullptr);
-          }
-        }
-        if (do_merge_ && merge_operator_ != nullptr &&
-            merge_operator_->ShouldMerge(
-                merge_context_->GetOperandsDirectionBackward())) {
-          state_ = kFound;
-          Merge(nullptr);
-          return false;
-        }
-        return true;
 
       case kTypeDeletion:
       case kTypeDeletionWithTimestamp:
@@ -424,8 +390,8 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         } else if (kMerge == state_) {
           state_ = kFound;
           Merge(nullptr);
-          // If do_merge_ = false then the current value shouldn't be part
-          // of merge_context_->operand_list
+          // If do_merge_ = false then the current value shouldn't be part of
+          // merge_context_->operand_list
         }
         return false;
 
@@ -484,25 +450,6 @@ bool GetContext::GetBlobValue(const Slice& blob_index,
     return false;
   }
   *is_blob_index_ = false;
-  return true;
-}
-
-bool GetContext::GetDeltaLogValue(autovector<Slice>& deltaLog_value_vec) {
-  constexpr FilePrefetchBuffer* prefetch_buffer = nullptr;
-  constexpr uint64_t* bytes_read = nullptr;
-
-  Status status = deltaLog_fetcher_->FetchDeltaLog(
-      user_key_, deltaLog_value_vec, bytes_read);
-  if (!status.ok()) {
-    if (status.IsIncomplete()) {
-      // FIXME: this code is not covered by unit tests
-      MarkKeyMayExist();
-      return false;
-    }
-    state_ = kCorrupt;
-    return false;
-  }
-  *is_deltaLog_index_ = false;
   return true;
 }
 

@@ -68,11 +68,9 @@ enum ValueType : unsigned char {
   kTypeCommitXIDAndTimestamp = 0x15,  // WAL only
   kTypeWideColumnEntity = 0x16,
   kTypeColumnFamilyWideColumnEntity = 0x17,  // WAL only
-  kTypeColumnFamilyDeltaLogIndex = 0x18,     // Delta log only
-  kTypeDeltaLogIndex = 0x19,                 // Delta log only
-  kTypeMaxValid,     // Should be after the last valid type, only used for
-                     // validation
-  kMaxValue = 0x7F,  // Not used for storing records.
+  kTypeMaxValid,    // Should be after the last valid type, only used for
+                    // validation
+  kMaxValue = 0x7F  // Not used for storing records.
 };
 
 // Defined in dbformat.cc
@@ -83,8 +81,7 @@ extern const ValueType kValueTypeForSeekForPrev;
 // (i.e. a type used in memtable skiplist and sst file datablock).
 inline bool IsValueType(ValueType t) {
   return t <= kTypeMerge || kTypeSingleDeletion == t || kTypeBlobIndex == t ||
-         kTypeDeltaLogIndex == t || kTypeDeletionWithTimestamp == t ||
-         kTypeWideColumnEntity == t;
+         kTypeDeletionWithTimestamp == t || kTypeWideColumnEntity == t;
 }
 
 // Checks whether a type is from user operation

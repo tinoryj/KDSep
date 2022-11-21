@@ -153,7 +153,8 @@ Status DBImplSecondary::MaybeInitLogReader(
     {
       std::unique_ptr<FSSequentialFile> file;
       Status status = fs_->NewSequentialFile(
-          fname, fs_->OptimizeForLogRead(file_options_), &file, nullptr);
+          fname, fs_->OptimizeForLogRead(file_options_), &file,
+          nullptr);
       if (!status.ok()) {
         *log_reader = nullptr;
         return status;
@@ -195,7 +196,7 @@ Status DBImplSecondary::RecoverLogFiles(
     assert(reader != nullptr);
   }
   for (auto log_number : log_numbers) {
-    auto it = log_readers_.find(log_number);
+    auto it  = log_readers_.find(log_number);
     assert(it != log_readers_.end());
     log::FragmentBufferedReader* reader = it->second->reader_;
     Status* wal_read_status = it->second->status_;
@@ -417,7 +418,6 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
         &merge_context, &max_covering_tombstone_seq, &pinned_iters_mgr,
         /*value_found*/ nullptr,
         /*key_exists*/ nullptr, /*seq*/ nullptr, &read_cb, /*is_blob*/ nullptr,
-        /*is_deltaLog*/ nullptr,
         /*do_merge*/ true);
     RecordTick(stats_, MEMTABLE_MISS);
   }
@@ -479,7 +479,7 @@ Iterator* DBImplSecondary::NewIterator(const ReadOptions& read_options,
 ArenaWrappedDBIter* DBImplSecondary::NewIteratorImpl(
     const ReadOptions& read_options, ColumnFamilyData* cfd,
     SequenceNumber snapshot, ReadCallback* read_callback,
-    bool expose_blob_index, bool expose_deltaLog_index, bool allow_refresh) {
+    bool expose_blob_index, bool allow_refresh) {
   assert(nullptr != cfd);
   SuperVersion* super_version = cfd->GetReferencedSuperVersion(this);
   assert(snapshot == kMaxSequenceNumber);
@@ -490,8 +490,7 @@ ArenaWrappedDBIter* DBImplSecondary::NewIteratorImpl(
       super_version->current, snapshot,
       super_version->mutable_cf_options.max_sequential_skip_in_iterations,
       super_version->version_number, read_callback, this, cfd,
-      expose_blob_index, expose_deltaLog_index,
-      read_options.snapshot ? false : allow_refresh);
+      expose_blob_index, read_options.snapshot ? false : allow_refresh);
   auto internal_iter = NewInternalIterator(
       db_iter->GetReadOptions(), cfd, super_version, db_iter->GetArena(),
       snapshot, /* allow_unprepared_value */ true, db_iter);

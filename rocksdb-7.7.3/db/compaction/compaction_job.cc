@@ -25,9 +25,6 @@
 #include "db/compaction/compaction_state.h"
 #include "db/db_impl/db_impl.h"
 #include "db/dbformat.h"
-#include "db/deltaLog/deltaLog_counting_iterator.h"
-#include "db/deltaLog/deltaLog_file_addition.h"
-#include "db/deltaLog/deltaLog_file_builder.h"
 #include "db/error_handler.h"
 #include "db/event_helpers.h"
 #include "db/history_trimming_iterator.h"
@@ -100,8 +97,6 @@ const char* GetCompactionReasonString(CompactionReason compaction_reason) {
       return "ChangeTemperature";
     case CompactionReason::kForcedBlobGC:
       return "ForcedBlobGC";
-    case CompactionReason::kForcedDeltaLogGC:
-      return "ForcedDeltaLogGC";
     case CompactionReason::kNumOfReasons:
       // fall through
     default:
@@ -116,8 +111,8 @@ CompactionJob::CompactionJob(
     VersionSet* versions, const std::atomic<bool>* shutting_down,
     LogBuffer* log_buffer, FSDirectory* db_directory,
     FSDirectory* output_directory, FSDirectory* blob_output_directory,
-    FSDirectory* deltaLog_output_directory, Statistics* stats,
-    InstrumentedMutex* db_mutex, ErrorHandler* db_error_handler,
+    Statistics* stats, InstrumentedMutex* db_mutex,
+    ErrorHandler* db_error_handler,
     std::vector<SequenceNumber> existing_snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
     const SnapshotChecker* snapshot_checker, JobContext* job_context,
@@ -128,9 +123,8 @@ CompactionJob::CompactionJob(
     const std::atomic<bool>& manual_compaction_canceled,
     const std::string& db_id, const std::string& db_session_id,
     std::string full_history_ts_low, std::string trim_ts,
-    BlobFileCompletionCallback* blob_callback,
-    DeltaLogFileCompletionCallback* deltaLog_callback,
-    int* bg_compaction_scheduled, int* bg_bottom_compaction_scheduled)
+    BlobFileCompletionCallback* blob_callback, int* bg_compaction_scheduled,
+    int* bg_bottom_compaction_scheduled)
     : compact_(new CompactionState(compaction)),
       compaction_stats_(compaction->compaction_reason(), 1),
       db_options_(db_options),
@@ -156,7 +150,6 @@ CompactionJob::CompactionJob(
       manual_compaction_canceled_(manual_compaction_canceled),
       db_directory_(db_directory),
       blob_output_directory_(blob_output_directory),
-      deltaLog_output_directory_(deltaLog_output_directory),
       db_mutex_(db_mutex),
       db_error_handler_(db_error_handler),
       existing_snapshots_(std::move(existing_snapshots)),
@@ -171,7 +164,6 @@ CompactionJob::CompactionJob(
       full_history_ts_low_(std::move(full_history_ts_low)),
       trim_ts_(std::move(trim_ts)),
       blob_callback_(blob_callback),
-      deltaLog_callback_(deltaLog_callback),
       extra_num_subcompaction_threads_reserved_(0),
       bg_compaction_scheduled_(bg_compaction_scheduled),
       bg_bottom_compaction_scheduled_(bg_bottom_compaction_scheduled) {
@@ -625,7 +617,6 @@ Status CompactionJob::Run() {
   Status status;
   IOStatus io_s;
   bool wrote_new_blob_files = false;
-  bool wrote_new_deltaLog_files = false;
 
   for (const auto& state : compact_->sub_compact_states) {
     if (!state.status.ok()) {
@@ -636,10 +627,6 @@ Status CompactionJob::Run() {
 
     if (state.Current().HasBlobFileAdditions()) {
       wrote_new_blob_files = true;
-    }
-
-    if (state.Current().HasDeltaLogFileAdditions()) {
-      wrote_new_deltaLog_files = true;
     }
   }
 
@@ -658,13 +645,6 @@ Status CompactionJob::Run() {
     if (io_s.ok() && wrote_new_blob_files && blob_output_directory_ &&
         blob_output_directory_ != output_directory_) {
       io_s = blob_output_directory_->FsyncWithDirOptions(
-          IOOptions(), dbg,
-          DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
-    }
-
-    if (io_s.ok() && wrote_new_deltaLog_files && deltaLog_output_directory_ &&
-        deltaLog_output_directory_ != output_directory_) {
-      io_s = deltaLog_output_directory_->FsyncWithDirOptions(
           IOOptions(), dbg,
           DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
     }
@@ -694,12 +674,11 @@ Status CompactionJob::Run() {
           break;
         }
         // Verify that the table is usable
-        // We set for_compaction to false and don't
-        // OptimizeForCompactionTableRead here because this is a special case
-        // after we finish the table building No matter whether
-        // use_direct_io_for_flush_and_compaction is true, we will regard this
-        // verification as user reads since the goal is to cache it here for
-        // further user reads
+        // We set for_compaction to false and don't OptimizeForCompactionTableRead
+        // here because this is a special case after we finish the table building
+        // No matter whether use_direct_io_for_flush_and_compaction is true,
+        // we will regard this verification as user reads since the goal is
+        // to cache it here for further user reads
         ReadOptions read_options;
         InternalIterator* iter = cfd->table_cache()->NewIterator(
             read_options, file_options_, cfd->internal_comparator(),
@@ -745,8 +724,8 @@ Status CompactionJob::Run() {
       }
     };
     for (size_t i = 1; i < compact_->sub_compact_states.size(); i++) {
-      thread_pool.emplace_back(
-          verify_table, std::ref(compact_->sub_compact_states[i].status));
+      thread_pool.emplace_back(verify_table,
+                               std::ref(compact_->sub_compact_states[i].status));
     }
     verify_table(compact_->sub_compact_states[0].status);
     for (auto& thread : thread_pool) {
@@ -819,22 +798,18 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   double bytes_read_per_sec = 0;
   double bytes_written_per_sec = 0;
 
-  const uint64_t bytes_read_non_output_and_blob_and_deltaLog =
-      stats.bytes_read_non_output_levels + stats.bytes_read_blob +
-      stats.bytes_read_deltaLog;
-  const uint64_t bytes_read_all = stats.bytes_read_output_level +
-                                  bytes_read_non_output_and_blob_and_deltaLog;
-  const uint64_t bytes_written_all = stats.bytes_written +
-                                     stats.bytes_written_blob +
-                                     stats.bytes_written_deltaLog;
+  const uint64_t bytes_read_non_output_and_blob =
+      stats.bytes_read_non_output_levels + stats.bytes_read_blob;
+  const uint64_t bytes_read_all =
+      stats.bytes_read_output_level + bytes_read_non_output_and_blob;
+  const uint64_t bytes_written_all =
+      stats.bytes_written + stats.bytes_written_blob;
 
-  if (bytes_read_non_output_and_blob_and_deltaLog > 0) {
-    read_write_amp =
-        (bytes_written_all + bytes_read_all) /
-        static_cast<double>(bytes_read_non_output_and_blob_and_deltaLog);
+  if (bytes_read_non_output_and_blob > 0) {
+    read_write_amp = (bytes_written_all + bytes_read_all) /
+                     static_cast<double>(bytes_read_non_output_and_blob);
     write_amp =
-        bytes_written_all /
-        static_cast<double>(bytes_read_non_output_and_blob_and_deltaLog);
+        bytes_written_all / static_cast<double>(bytes_read_non_output_and_blob);
   }
   if (stats.micros > 0) {
     bytes_read_per_sec = bytes_read_all / static_cast<double>(stats.micros);
@@ -851,8 +826,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
       "[%s] compacted to: %s, MB/sec: %.1f rd, %.1f wr, level %d, "
       "files in(%d, %d) out(%d +%d blob) "
       "MB in(%.1f, %.1f +%.1f blob) out(%.1f +%.1f blob), "
-      "files in(%d, %d) out(%d +%d deltaLog) "
-      "MB in(%.1f, %.1f +%.1f deltaLog) out(%.1f +%.1f deltaLog), "
       "read-write-amplify(%.1f) write-amplify(%.1f) %s, records in: %" PRIu64
       ", records dropped: %" PRIu64 " output_compression: %s\n",
       column_family_name.c_str(), vstorage->LevelSummary(&tmp),
@@ -862,12 +835,9 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
       stats.num_input_files_in_output_level, stats.num_output_files,
       stats.num_output_files_blob, stats.bytes_read_non_output_levels / kMB,
       stats.bytes_read_output_level / kMB, stats.bytes_read_blob / kMB,
-      stats.bytes_written / kMB, stats.bytes_written_blob / kMB,
-      stats.num_output_files_deltaLog, stats.bytes_read_non_output_levels / kMB,
-      stats.bytes_read_output_level / kMB, stats.bytes_read_deltaLog / kMB,
-      stats.bytes_written / kMB, stats.bytes_written_deltaLog / kMB,
-      read_write_amp, write_amp, status.ToString().c_str(),
-      stats.num_input_records, stats.num_dropped_records,
+      stats.bytes_written / kMB, stats.bytes_written_blob / kMB, read_write_amp,
+      write_amp, status.ToString().c_str(), stats.num_input_records,
+      stats.num_dropped_records,
       CompressionTypeToString(compact_->compaction->output_compression())
           .c_str());
 
@@ -909,11 +879,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   if (stats.num_output_files_blob > 0) {
     stream << "num_blob_output_files" << stats.num_output_files_blob
            << "total_blob_output_size" << stats.bytes_written_blob;
-  }
-
-  if (stats.num_output_files_deltaLog > 0) {
-    stream << "num_deltaLog_output_files" << stats.num_output_files_deltaLog
-           << "total_deltaLog_output_size" << stats.bytes_written_deltaLog;
   }
 
   stream << "num_input_records" << stats.num_input_records
@@ -962,10 +927,6 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
            << pl_stats.num_output_files_blob;
     stream << "penultimate_level_bytes_written_blob"
            << pl_stats.bytes_written_blob;
-    stream << "penultimate_level_num_output_files_deltaLog"
-           << pl_stats.num_output_files_deltaLog;
-    stream << "penultimate_level_bytes_written_deltaLog"
-           << pl_stats.bytes_written_deltaLog;
   }
 
   CleanupCompaction();
@@ -1232,25 +1193,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
                 sub_compact->Current().GetBlobFileAdditionsPtr())
           : nullptr);
 
-  std::vector<std::string> deltaLog_file_paths;
-
-  // TODO: DeltaLogDB to support output_to_penultimate_level compaction, which
-  // needs
-  //  2 builders, so may need to move to `CompactionOutputs`
-  std::unique_ptr<DeltaLogFileBuilder> deltaLog_file_builder(
-      (mutable_cf_options->enable_deltaLog_files &&
-       sub_compact->compaction->output_level() >=
-           mutable_cf_options->deltaLog_file_starting_level)
-          ? new DeltaLogFileBuilder(
-                versions_, fs_.get(),
-                sub_compact->compaction->immutable_options(),
-                mutable_cf_options, &file_options_, db_id_, db_session_id_,
-                job_id_, cfd->GetID(), cfd->GetName(), Env::IOPriority::IO_LOW,
-                write_hint_, io_tracer_, deltaLog_callback_,
-                DeltaLogFileCreationReason::kCompaction, &deltaLog_file_paths,
-                sub_compact->Current().GetDeltaLogFileAdditionsPtr())
-          : nullptr);
-
   TEST_SYNC_POINT("CompactionJob::Run():Inprogress");
   TEST_SYNC_POINT_CALLBACK(
       "CompactionJob::Run():PausingManualCompaction:1",
@@ -1268,8 +1210,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       &existing_snapshots_, earliest_write_conflict_snapshot_, job_snapshot_seq,
       snapshot_checker_, env_, ShouldReportDetailedTime(env_, stats_),
       /*expect_valid_internal_key=*/true, range_del_agg.get(),
-      blob_file_builder.get(), deltaLog_file_builder.get(),
-      db_options_.allow_data_in_errors,
+      blob_file_builder.get(), db_options_.allow_data_in_errors,
       db_options_.enforce_single_del_contracts, manual_compaction_canceled_,
       sub_compact->compaction, compaction_filter, shutting_down_,
       db_options_.info_log, full_history_ts_low,
@@ -1334,10 +1275,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       c_iter_stats.num_blobs_read;
   sub_compact->compaction_job_stats.total_blob_bytes_read =
       c_iter_stats.total_blob_bytes_read;
-  sub_compact->compaction_job_stats.num_deltaLogs_read =
-      c_iter_stats.num_deltaLogs_read;
-  sub_compact->compaction_job_stats.total_deltaLog_bytes_read =
-      c_iter_stats.total_deltaLog_bytes_read;
   sub_compact->compaction_job_stats.num_input_deletion_records =
       c_iter_stats.num_input_deletion_records;
   sub_compact->compaction_job_stats.num_corrupt_keys =
@@ -1361,15 +1298,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   if (c_iter_stats.total_blob_bytes_relocated > 0) {
     RecordTick(stats_, BLOB_DB_GC_BYTES_RELOCATED,
                c_iter_stats.total_blob_bytes_relocated);
-  }
-
-  if (c_iter_stats.num_deltaLogs_relocated > 0) {
-    RecordTick(stats_, DELTALOG_DB_GC_NUM_KEYS_RELOCATED,
-               c_iter_stats.num_deltaLogs_relocated);
-  }
-  if (c_iter_stats.total_deltaLog_bytes_relocated > 0) {
-    RecordTick(stats_, DELTALOG_DB_GC_BYTES_RELOCATED,
-               c_iter_stats.total_deltaLog_bytes_relocated);
   }
 
   RecordDroppedKeys(c_iter_stats, &sub_compact->compaction_job_stats);
@@ -1409,16 +1337,6 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     }
     blob_file_builder.reset();
     sub_compact->Current().UpdateBlobStats();
-  }
-
-  if (deltaLog_file_builder) {
-    if (status.ok()) {
-      status = deltaLog_file_builder->Finish();
-    } else {
-      deltaLog_file_builder->Abandon(status);
-    }
-    deltaLog_file_builder.reset();
-    sub_compact->Current().UpdateDeltaLogStats();
   }
 
   sub_compact->compaction_job_stats.cpu_micros =
@@ -1632,13 +1550,11 @@ Status CompactionJob::FinishCompactionOutputFile(
   std::string fname;
   FileDescriptor output_fd;
   uint64_t oldest_blob_file_number = kInvalidBlobFileNumber;
-  uint64_t oldest_deltaLog_file_id = kGCSelectedDeltaLogFileID;
   Status status_for_listener = s;
   if (meta != nullptr) {
     fname = GetTableFileName(meta->fd.GetNumber());
     output_fd = meta->fd;
     oldest_blob_file_number = meta->oldest_blob_file_number;
-    oldest_deltaLog_file_id = meta->oldest_deltaLog_file_id;
   } else {
     fname = "(nil)";
     if (s.ok()) {
@@ -1647,7 +1563,7 @@ Status CompactionJob::FinishCompactionOutputFile(
   }
   EventHelpers::LogAndNotifyTableFileCreationFinished(
       event_logger_, cfd->ioptions()->listeners, dbname_, cfd->GetName(), fname,
-      job_id_, output_fd, oldest_blob_file_number, oldest_deltaLog_file_id, tp,
+      job_id_, output_fd, oldest_blob_file_number, tp,
       TableFileCreationReason::kCompaction, status_for_listener, file_checksum,
       file_checksum_func_name);
 
@@ -1734,11 +1650,6 @@ Status CompactionJob::InstallCompactionResults(
                                                    flow.GetGarbageBytes());
         }
       }
-    }
-
-    for (const auto& deltaLog :
-         sub_compact.Current().GetDeltaLogFileAdditions()) {
-      edit->AddDeltaLogFile(deltaLog);
     }
   }
 
@@ -1844,9 +1755,8 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
     EventHelpers::LogAndNotifyTableFileCreationFinished(
         event_logger_, cfd->ioptions()->listeners, dbname_, cfd->GetName(),
         fname, job_id_, FileDescriptor(), kInvalidBlobFileNumber,
-        kGCSelectedDeltaLogFileID, TableProperties(),
-        TableFileCreationReason::kCompaction, s, kUnknownFileChecksum,
-        kUnknownFileChecksumFuncName);
+        TableProperties(), TableFileCreationReason::kCompaction, s,
+        kUnknownFileChecksum, kUnknownFileChecksumFuncName);
     return s;
   }
 
@@ -1972,8 +1882,7 @@ void CompactionJob::UpdateCompactionStats() {
   assert(compaction_job_stats_);
   compaction_stats_.stats.bytes_read_blob =
       compaction_job_stats_->total_blob_bytes_read;
-  compaction_stats_.stats.bytes_read_deltaLog =
-      compaction_job_stats_->total_deltaLog_bytes_read;
+
   compaction_stats_.stats.num_dropped_records =
       compaction_stats_.DroppedRecords();
 }
@@ -2011,13 +1920,9 @@ void CompactionJob::UpdateCompactionJobStats(
   // output information
   compaction_job_stats_->total_output_bytes = stats.bytes_written;
   compaction_job_stats_->total_output_bytes_blob = stats.bytes_written_blob;
-  compaction_job_stats_->total_output_bytes_deltaLog =
-      stats.bytes_written_deltaLog;
   compaction_job_stats_->num_output_records = stats.num_output_records;
   compaction_job_stats_->num_output_files = stats.num_output_files;
   compaction_job_stats_->num_output_files_blob = stats.num_output_files_blob;
-  compaction_job_stats_->num_output_files_deltaLog =
-      stats.num_output_files_deltaLog;
 
   if (stats.num_output_files > 0) {
     CopyPrefix(compact_->SmallestUserKey(),

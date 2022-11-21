@@ -247,10 +247,7 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
       atomic_flush_install_cv_(&mutex_),
       blob_callback_(immutable_db_options_.sst_file_manager.get(), &mutex_,
                      &error_handler_, &event_logger_,
-                     immutable_db_options_.listeners, dbname_),
-      deltaLog_callback_(&mutex_, &error_handler_, &event_logger_,
-                         immutable_db_options_.listeners, dbname_),
-      deltaLogFileManager_(8, 0, 0) {
+                     immutable_db_options_.listeners, dbname_) {
   // !batch_per_trx_ implies seq_per_batch_ because it is only unset for
   // WriteUnprepared, which should use seq_per_batch_.
   assert(batch_per_txn_ || seq_per_batch_);
@@ -297,11 +294,6 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
                             std::memory_order_relaxed);
   if (write_buffer_manager_) {
     wbm_stall_.reset(new WBMStallInterface());
-  }
-  // create deltaLog file maneger if need
-  if (immutable_db_options_.enable_deltaLog_files == true) {
-    deltaLogFileManager_.UpdateSettingsWithDir(
-        8, 0, 0, immutable_db_options_.GetWalDir());
   }
 }
 
@@ -1360,7 +1352,7 @@ Status DBImpl::SetDBOptions(
       file_options_for_compaction_ = fs_->OptimizeForCompactionTableWrite(
           file_options_for_compaction_, immutable_db_options_);
       versions_->ChangeFileOptions(mutable_db_options_);
-      // TODO(xiez): clarify why apply optimize for read to write options
+      //TODO(xiez): clarify why apply optimize for read to write options
       file_options_for_compaction_ = fs_->OptimizeForCompactionTableRead(
           file_options_for_compaction_, immutable_db_options_);
       file_options_for_compaction_.compaction_readahead_size =
@@ -2075,8 +2067,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
               get_impl_options.columns, timestamp, &s, &merge_context,
               &max_covering_tombstone_seq, read_options,
               false /* immutable_memtable */, get_impl_options.callback,
-              get_impl_options.is_blob_index,
-              get_impl_options.is_deltaLog_index)) {
+              get_impl_options.is_blob_index)) {
         done = true;
 
         if (get_impl_options.value) {
@@ -2085,14 +2076,14 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
 
         RecordTick(stats_, MEMTABLE_HIT);
       } else if ((s.ok() || s.IsMergeInProgress()) &&
-                 sv->imm->Get(
-                     lkey,
-                     get_impl_options.value ? get_impl_options.value->GetSelf()
-                                            : nullptr,
-                     get_impl_options.columns, timestamp, &s, &merge_context,
-                     &max_covering_tombstone_seq, read_options,
-                     get_impl_options.callback, get_impl_options.is_blob_index,
-                     get_impl_options.is_deltaLog_index)) {
+                 sv->imm->Get(lkey,
+                              get_impl_options.value
+                                  ? get_impl_options.value->GetSelf()
+                                  : nullptr,
+                              get_impl_options.columns, timestamp, &s,
+                              &merge_context, &max_covering_tombstone_seq,
+                              read_options, get_impl_options.callback,
+                              get_impl_options.is_blob_index)) {
         done = true;
 
         if (get_impl_options.value) {
@@ -2107,8 +2098,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
       if (sv->mem->Get(lkey, /*value=*/nullptr, /*columns=*/nullptr,
                        /*timestamp=*/nullptr, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
-                       false /* immutable_memtable */, nullptr /*ReadCallback*/,
-                       nullptr /*is_blob_index*/, nullptr /*is_deltaLog_index*/,
+                       false /* immutable_memtable */, nullptr, nullptr,
                        false)) {
         done = true;
         RecordTick(stats_, MEMTABLE_HIT);
@@ -2138,8 +2128,6 @@ Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
         nullptr, nullptr,
         get_impl_options.get_value ? get_impl_options.callback : nullptr,
         get_impl_options.get_value ? get_impl_options.is_blob_index : nullptr,
-        get_impl_options.get_value ? get_impl_options.is_deltaLog_index
-                                   : nullptr,
         get_impl_options.get_value);
     RecordTick(stats_, MEMTABLE_MISS);
   }
@@ -2352,8 +2340,8 @@ std::vector<Status> DBImpl::MultiGet(
     std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
 
     LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
-    auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(
-        column_family[keys_read]);
+    auto cfh =
+        static_cast_with_check<ColumnFamilyHandleImpl>(column_family[keys_read]);
     SequenceNumber max_covering_tombstone_seq = 0;
     auto mgd_iter = multiget_cf_data.find(cfh->cfd()->GetID());
     assert(mgd_iter != multiget_cf_data.end());
@@ -3300,10 +3288,12 @@ Iterator* DBImpl::NewIterator(const ReadOptions& read_options,
   return result;
 }
 
-ArenaWrappedDBIter* DBImpl::NewIteratorImpl(
-    const ReadOptions& read_options, ColumnFamilyData* cfd,
-    SequenceNumber snapshot, ReadCallback* read_callback,
-    bool expose_blob_index, bool expose_deltaLog_index, bool allow_refresh) {
+ArenaWrappedDBIter* DBImpl::NewIteratorImpl(const ReadOptions& read_options,
+                                            ColumnFamilyData* cfd,
+                                            SequenceNumber snapshot,
+                                            ReadCallback* read_callback,
+                                            bool expose_blob_index,
+                                            bool allow_refresh) {
   SuperVersion* sv = cfd->GetReferencedSuperVersion(this);
 
   TEST_SYNC_POINT("DBImpl::NewIterator:1");
@@ -3370,7 +3360,6 @@ ArenaWrappedDBIter* DBImpl::NewIteratorImpl(
       env_, read_options, *cfd->ioptions(), sv->mutable_cf_options, sv->current,
       snapshot, sv->mutable_cf_options.max_sequential_skip_in_iterations,
       sv->version_number, read_callback, this, cfd, expose_blob_index,
-      expose_deltaLog_index,
       read_options.snapshot != nullptr ? false : allow_refresh);
 
   InternalIterator* internal_iter = NewInternalIterator(
@@ -3975,7 +3964,8 @@ SuperVersion* DBImpl::GetAndRefSuperVersion(uint32_t column_family_id) {
 void DBImpl::CleanupSuperVersion(SuperVersion* sv) {
   // Release SuperVersion
   if (sv->Unref()) {
-    bool defer_purge = immutable_db_options().avoid_unnecessary_blocking_io;
+    bool defer_purge =
+            immutable_db_options().avoid_unnecessary_blocking_io;
     {
       InstrumentedMutexLock l(&mutex_);
       sv->Cleanup();
@@ -4607,7 +4597,7 @@ Status DestroyDB(const std::string& dbname, const Options& options,
         if (type == kMetaDatabase) {
           del = DestroyDB(path_to_delete, options);
         } else if (type == kTableFile || type == kWalFile ||
-                   type == kBlobFile || type == kDeltaLogFile) {
+                   type == kBlobFile) {
           del = DeleteDBFile(
               &soptions, path_to_delete, dbname,
               /*force_bg=*/false,
@@ -4634,8 +4624,8 @@ Status DestroyDB(const std::string& dbname, const Options& options,
       if (env->GetChildren(path, &filenames).ok()) {
         for (const auto& fname : filenames) {
           if (ParseFileName(fname, &number, &type) &&
-              (type == kTableFile || type == kBlobFile ||
-               type == kDeltaLogFile)) {  // Lock file will be deleted at end
+              (type == kTableFile ||
+               type == kBlobFile)) {  // Lock file will be deleted at end
             std::string file_path = path + "/" + fname;
             Status del = DeleteDBFile(&soptions, file_path, dbname,
                                       /*force_bg=*/false, /*force_fg=*/false);
@@ -4940,7 +4930,7 @@ SequenceNumber DBImpl::GetEarliestMemTableSequenceNumber(SuperVersion* sv,
 Status DBImpl::GetLatestSequenceForKey(
     SuperVersion* sv, const Slice& key, bool cache_only,
     SequenceNumber lower_bound_seq, SequenceNumber* seq, std::string* timestamp,
-    bool* found_record_for_key, bool* is_blob_index, bool* is_deltaLog_index) {
+    bool* found_record_for_key, bool* is_blob_index) {
   Status s;
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
@@ -4971,7 +4961,7 @@ Status DBImpl::GetLatestSequenceForKey(
   sv->mem->Get(lkey, /*value=*/nullptr, /*columns=*/nullptr, timestamp, &s,
                &merge_context, &max_covering_tombstone_seq, seq, read_options,
                false /* immutable_memtable */, nullptr /*read_callback*/,
-               is_blob_index, is_deltaLog_index);
+               is_blob_index);
 
   if (!(s.ok() || s.IsNotFound() || s.IsMergeInProgress())) {
     // unexpected error reading memtable.
@@ -5004,7 +4994,7 @@ Status DBImpl::GetLatestSequenceForKey(
   // Check if there is a record for this key in the immutable memtables
   sv->imm->Get(lkey, /*value=*/nullptr, /*columns=*/nullptr, timestamp, &s,
                &merge_context, &max_covering_tombstone_seq, seq, read_options,
-               nullptr /*read_callback*/, is_blob_index, is_deltaLog_index);
+               nullptr /*read_callback*/, is_blob_index);
 
   if (!(s.ok() || s.IsNotFound() || s.IsMergeInProgress())) {
     // unexpected error reading memtable.
@@ -5037,7 +5027,7 @@ Status DBImpl::GetLatestSequenceForKey(
   sv->imm->GetFromHistory(lkey, /*value=*/nullptr, /*columns=*/nullptr,
                           timestamp, &s, &merge_context,
                           &max_covering_tombstone_seq, seq, read_options,
-                          is_blob_index, is_deltaLog_index);
+                          is_blob_index);
 
   if (!(s.ok() || s.IsNotFound() || s.IsMergeInProgress())) {
     // unexpected error reading memtable.
@@ -5074,7 +5064,7 @@ Status DBImpl::GetLatestSequenceForKey(
                      timestamp, &s, &merge_context, &max_covering_tombstone_seq,
                      &pinned_iters_mgr, nullptr /* value_found */,
                      found_record_for_key, seq, nullptr /*read_callback*/,
-                     is_blob_index, is_deltaLog_index);
+                     is_blob_index);
 
     if (!(s.ok() || s.IsNotFound() || s.IsMergeInProgress())) {
       // unexpected error reading SST files
@@ -5637,7 +5627,8 @@ Status DBImpl::VerifyChecksumInternal(const ReadOptions& read_options,
     }
   }
 
-  bool defer_purge = immutable_db_options().avoid_unnecessary_blocking_io;
+  bool defer_purge =
+          immutable_db_options().avoid_unnecessary_blocking_io;
   {
     InstrumentedMutexLock l(&mutex_);
     for (auto sv : sv_list) {

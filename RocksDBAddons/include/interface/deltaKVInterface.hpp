@@ -22,15 +22,12 @@ public:
     bool Get(const string& key, string* value);
     bool Merge(const string& key, const string& value);
     vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
-    vector<bool> MultiGetByPrefix(const string& keyPrefix, const vector<string>& keys, vector<string>* values);
-    vector<bool> MultiGetByNumber(const uint64_t targetGetNumber, const vector<string>& keys, vector<string>* values);
+    vector<bool> GetByPrefix(const string& key, vector<string>* keys, vector<string>* values);
+    vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
     bool SingleDelete(const string& key);
-    bool RangeDelete(const string& begin_key, const string& end_key);
-    bool KeyMayExist(const string& key, string* value, bool* value_found = nullptr);
 
 private:
-    rocksdb::DB* pointerToRawRocksDB_;
-    rocksdb::Options rawRocksDBOptions_;
+    static rocksdb::DB* pointerToRawRocksDB_;
 };
 
 }

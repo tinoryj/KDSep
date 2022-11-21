@@ -48,8 +48,6 @@ class InstrumentedMutexLock;
 struct SuperVersionContext;
 class BlobFileCache;
 class BlobSource;
-class DeltaLogFileCache;
-class DeltaLogSource;
 
 extern const double kIncSlowdownRatio;
 // This file contains a list of data structures for managing column family
@@ -165,8 +163,8 @@ extern const double kIncSlowdownRatio;
 class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
  public:
   // create while holding the mutex
-  ColumnFamilyHandleImpl(ColumnFamilyData* cfd, DBImpl* db,
-                         InstrumentedMutex* mutex);
+  ColumnFamilyHandleImpl(
+      ColumnFamilyData* cfd, DBImpl* db, InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
   virtual ColumnFamilyData* cfd() const { return cfd_; }
@@ -191,8 +189,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
 class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
  public:
   ColumnFamilyHandleInternal()
-      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr),
-        internal_cfd_(nullptr) {}
+      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr), internal_cfd_(nullptr) {}
 
   void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
   virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
@@ -360,7 +357,7 @@ class ColumnFamilyData {
   Version* current() { return current_; }
   Version* dummy_versions() { return dummy_versions_; }
   void SetCurrent(Version* _current);
-  uint64_t GetNumLiveVersions() const;    // REQUIRE: DB mutex held
+  uint64_t GetNumLiveVersions() const;  // REQUIRE: DB mutex held
   uint64_t GetTotalSstFilesSize() const;  // REQUIRE: DB mutex held
   uint64_t GetLiveSstFilesSize() const;   // REQUIRE: DB mutex held
   uint64_t GetTotalBlobFileSize() const;  // REQUIRE: DB mutex held
@@ -381,7 +378,6 @@ class ColumnFamilyData {
 
   TableCache* table_cache() const { return table_cache_.get(); }
   BlobSource* blob_source() const { return blob_source_.get(); }
-  DeltaLogSource* deltaLog_source() const { return deltaLog_source_.get(); }
 
   // See documentation in compaction_picker.h
   // REQUIRES: DB mutex held
@@ -556,7 +552,7 @@ class ColumnFamilyData {
   Version* dummy_versions_;  // Head of circular doubly-linked list of versions.
   Version* current_;         // == dummy_versions->prev_
 
-  std::atomic<int> refs_;  // outstanding references to ColumnFamilyData
+  std::atomic<int> refs_;      // outstanding references to ColumnFamilyData
   std::atomic<bool> initialized_;
   std::atomic<bool> dropped_;  // true if client dropped it
 
@@ -572,8 +568,6 @@ class ColumnFamilyData {
   std::unique_ptr<TableCache> table_cache_;
   std::unique_ptr<BlobFileCache> blob_file_cache_;
   std::unique_ptr<BlobSource> blob_source_;
-  std::unique_ptr<DeltaLogFileCache> deltaLog_file_cache_;
-  std::unique_ptr<DeltaLogSource> deltaLog_source_;
 
   std::unique_ptr<InternalStats> internal_stats_;
 
@@ -662,7 +656,8 @@ class ColumnFamilySet {
   // ColumnFamilySet supports iteration
   class iterator {
    public:
-    explicit iterator(ColumnFamilyData* cfd) : current_(cfd) {}
+    explicit iterator(ColumnFamilyData* cfd)
+        : current_(cfd) {}
     // NOTE: minimum operators for for-loop iteration
     iterator& operator++() {
       current_ = current_->next_;

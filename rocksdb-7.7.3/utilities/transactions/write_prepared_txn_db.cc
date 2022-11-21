@@ -309,6 +309,7 @@ void WritePreparedTxnDB::UpdateCFComparatorMap(ColumnFamilyHandle* h) {
   handle_map_.reset(handle_map);
 }
 
+
 std::vector<Status> WritePreparedTxnDB::MultiGet(
     const ReadOptions& options,
     const std::vector<ColumnFamilyHandle*>& column_family,
@@ -345,7 +346,6 @@ static void CleanupWritePreparedTxnDBIterator(void* arg1, void* /*arg2*/) {
 Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& options,
                                           ColumnFamilyHandle* column_family) {
   constexpr bool expose_blob_index = false;
-  constexpr bool expose_deltaLog_index = false;
   constexpr bool allow_refresh = false;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
   SequenceNumber snapshot_seq = kMaxSequenceNumber;
@@ -369,9 +369,9 @@ Iterator* WritePreparedTxnDB::NewIterator(const ReadOptions& options,
       static_cast_with_check<ColumnFamilyHandleImpl>(column_family)->cfd();
   auto* state =
       new IteratorState(this, snapshot_seq, own_snapshot, min_uncommitted);
-  auto* db_iter = db_impl_->NewIteratorImpl(
-      options, cfd, snapshot_seq, &state->callback, expose_blob_index,
-      expose_deltaLog_index, allow_refresh);
+  auto* db_iter =
+      db_impl_->NewIteratorImpl(options, cfd, snapshot_seq, &state->callback,
+                                expose_blob_index, allow_refresh);
   db_iter->RegisterCleanup(CleanupWritePreparedTxnDBIterator, state, nullptr);
   return db_iter;
 }
@@ -381,7 +381,6 @@ Status WritePreparedTxnDB::NewIterators(
     const std::vector<ColumnFamilyHandle*>& column_families,
     std::vector<Iterator*>* iterators) {
   constexpr bool expose_blob_index = false;
-  constexpr bool expose_deltaLog_index = false;
   constexpr bool allow_refresh = false;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
   SequenceNumber snapshot_seq = kMaxSequenceNumber;
@@ -407,9 +406,9 @@ Status WritePreparedTxnDB::NewIterators(
         static_cast_with_check<ColumnFamilyHandleImpl>(column_family)->cfd();
     auto* state =
         new IteratorState(this, snapshot_seq, own_snapshot, min_uncommitted);
-    auto* db_iter = db_impl_->NewIteratorImpl(
-        options, cfd, snapshot_seq, &state->callback, expose_blob_index,
-        expose_deltaLog_index, allow_refresh);
+    auto* db_iter =
+        db_impl_->NewIteratorImpl(options, cfd, snapshot_seq, &state->callback,
+                                  expose_blob_index, allow_refresh);
     db_iter->RegisterCleanup(CleanupWritePreparedTxnDBIterator, state, nullptr);
     iterators->push_back(db_iter);
   }
@@ -609,8 +608,7 @@ void WritePreparedTxnDB::RemovePrepared(const uint64_t prepare_seq,
 bool WritePreparedTxnDB::GetCommitEntry(const uint64_t indexed_seq,
                                         CommitEntry64b* entry_64b,
                                         CommitEntry* entry) const {
-  *entry_64b = commit_cache_[static_cast<size_t>(indexed_seq)].load(
-      std::memory_order_acquire);
+  *entry_64b = commit_cache_[static_cast<size_t>(indexed_seq)].load(std::memory_order_acquire);
   bool valid = entry_64b->Parse(indexed_seq, entry, FORMAT);
   return valid;
 }
@@ -619,9 +617,8 @@ bool WritePreparedTxnDB::AddCommitEntry(const uint64_t indexed_seq,
                                         const CommitEntry& new_entry,
                                         CommitEntry* evicted_entry) {
   CommitEntry64b new_entry_64b(new_entry, FORMAT);
-  CommitEntry64b evicted_entry_64b =
-      commit_cache_[static_cast<size_t>(indexed_seq)].exchange(
-          new_entry_64b, std::memory_order_acq_rel);
+  CommitEntry64b evicted_entry_64b = commit_cache_[static_cast<size_t>(indexed_seq)].exchange(
+      new_entry_64b, std::memory_order_acq_rel);
   bool valid = evicted_entry_64b.Parse(indexed_seq, evicted_entry, FORMAT);
   return valid;
 }

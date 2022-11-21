@@ -261,22 +261,6 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
   cf_opts->blob_file_starting_level = moptions.blob_file_starting_level;
   cf_opts->prepopulate_blob_cache = moptions.prepopulate_blob_cache;
 
-  // DeltaLog file related options
-  cf_opts->enable_deltaLog_files = moptions.enable_deltaLog_files;
-  cf_opts->min_deltaLog_size = moptions.min_deltaLog_size;
-  cf_opts->deltaLog_file_size = moptions.deltaLog_file_size;
-  cf_opts->deltaLog_compression_type = moptions.deltaLog_compression_type;
-  cf_opts->enable_deltaLog_garbage_collection =
-      moptions.enable_deltaLog_garbage_collection;
-  cf_opts->deltaLog_garbage_collection_age_cutoff =
-      moptions.deltaLog_garbage_collection_age_cutoff;
-  cf_opts->deltaLog_garbage_collection_force_threshold =
-      moptions.deltaLog_garbage_collection_force_threshold;
-  cf_opts->deltaLog_compaction_readahead_size =
-      moptions.deltaLog_compaction_readahead_size;
-  cf_opts->deltaLog_file_starting_level = moptions.deltaLog_file_starting_level;
-  cf_opts->prepopulate_deltaLog_cache = moptions.prepopulate_deltaLog_cache;
-
   // Misc options
   cf_opts->max_sequential_skip_in_iterations =
       moptions.max_sequential_skip_in_iterations;
@@ -326,7 +310,6 @@ void UpdateColumnFamilyOptions(const ImmutableCFOptions& ioptions,
   cf_opts->compaction_thread_limiter = ioptions.compaction_thread_limiter;
   cf_opts->sst_partitioner_factory = ioptions.sst_partitioner_factory;
   cf_opts->blob_cache = ioptions.blob_cache;
-  cf_opts->deltaLog_cache = ioptions.deltaLog_cache;
   cf_opts->preclude_last_level_data_seconds =
       ioptions.preclude_last_level_data_seconds;
 
@@ -500,11 +483,13 @@ bool SerializeSingleOptionHelper(const void* opt_address,
     case OptionType::kInt32T:
       *value = std::to_string(*(static_cast<const int32_t*>(opt_address)));
       break;
-    case OptionType::kInt64T: {
-      int64_t v;
-      GetUnaligned(static_cast<const int64_t*>(opt_address), &v);
-      *value = std::to_string(v);
-    } break;
+    case OptionType::kInt64T:
+      {
+        int64_t v;
+        GetUnaligned(static_cast<const int64_t*>(opt_address), &v);
+        *value = std::to_string(v);
+      }
+      break;
     case OptionType::kUInt:
       *value = std::to_string(*(static_cast<const unsigned int*>(opt_address)));
       break;
@@ -514,16 +499,20 @@ bool SerializeSingleOptionHelper(const void* opt_address,
     case OptionType::kUInt32T:
       *value = std::to_string(*(static_cast<const uint32_t*>(opt_address)));
       break;
-    case OptionType::kUInt64T: {
-      uint64_t v;
-      GetUnaligned(static_cast<const uint64_t*>(opt_address), &v);
-      *value = std::to_string(v);
-    } break;
-    case OptionType::kSizeT: {
-      size_t v;
-      GetUnaligned(static_cast<const size_t*>(opt_address), &v);
-      *value = std::to_string(v);
-    } break;
+    case OptionType::kUInt64T:
+      {
+        uint64_t v;
+        GetUnaligned(static_cast<const uint64_t*>(opt_address), &v);
+        *value = std::to_string(v);
+      }
+      break;
+    case OptionType::kSizeT:
+      {
+        size_t v;
+        GetUnaligned(static_cast<const size_t*>(opt_address), &v);
+        *value = std::to_string(v);
+      }
+      break;
     case OptionType::kDouble:
       *value = std::to_string(*(static_cast<const double*>(opt_address)));
       break;
@@ -584,6 +573,7 @@ Status ConfigureFromMap(
   return s;
 }
 
+
 Status StringToMap(const std::string& opts_str,
                    std::unordered_map<std::string, std::string>* opts_map) {
   assert(opts_map);
@@ -627,6 +617,7 @@ Status StringToMap(const std::string& opts_str,
   return Status::OK();
 }
 
+
 Status GetStringFromDBOptions(std::string* opt_string,
                               const DBOptions& db_options,
                               const std::string& delimiter) {
@@ -643,6 +634,7 @@ Status GetStringFromDBOptions(const ConfigOptions& config_options,
   auto config = DBOptionsAsConfigurable(db_options);
   return config->GetOptionString(config_options, opt_string);
 }
+
 
 Status GetStringFromColumnFamilyOptions(std::string* opt_string,
                                         const ColumnFamilyOptions& cf_options,
@@ -704,9 +696,10 @@ Status GetColumnFamilyOptionsFromMap(
   }
 }
 
-Status GetColumnFamilyOptionsFromString(const ColumnFamilyOptions& base_options,
-                                        const std::string& opts_str,
-                                        ColumnFamilyOptions* new_options) {
+Status GetColumnFamilyOptionsFromString(
+    const ColumnFamilyOptions& base_options,
+    const std::string& opts_str,
+    ColumnFamilyOptions* new_options) {
   ConfigOptions config_options;
   config_options.input_strings_escaped = false;
   config_options.ignore_unknown_options = false;
@@ -865,11 +858,6 @@ std::unordered_map<std::string, PrepopulateBlobCache>
     OptionsHelper::prepopulate_blob_cache_string_map = {
         {"kDisable", PrepopulateBlobCache::kDisable},
         {"kFlushOnly", PrepopulateBlobCache::kFlushOnly}};
-
-std::unordered_map<std::string, PrepopulateDeltaLogCache>
-    OptionsHelper::prepopulate_deltaLog_cache_string_map = {
-        {"kDisable", PrepopulateDeltaLogCache::kDisable},
-        {"kFlushOnly", PrepopulateDeltaLogCache::kFlushOnly}};
 
 Status OptionTypeInfo::NextToken(const std::string& opts, char delimiter,
                                  size_t pos, size_t* end, std::string* token) {

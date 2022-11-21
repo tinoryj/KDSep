@@ -14,8 +14,6 @@
 
 #include "db/blob/blob_file_reader.h"
 #include "db/blob/blob_source.h"
-#include "db/deltaLog/deltaLog_file_reader.h"
-#include "db/deltaLog/deltaLog_source.h"
 #include "logging/logging.h"
 #include "monitoring/persistent_stats_history.h"
 
@@ -334,12 +332,6 @@ bool VersionEditHandler::HasMissingFiles() const {
         break;
       }
     }
-    for (const auto& elem : cf_to_missing_deltaLog_files_high_) {
-      if (elem.second != kGCSelectedDeltaLogFileID) {
-        ret = true;
-        break;
-      }
-    }
   }
   return ret;
 }
@@ -496,8 +488,6 @@ ColumnFamilyData* VersionEditHandler::CreateCfAndInit(
                                  std::unordered_set<uint64_t>());
     cf_to_missing_blob_files_high_.emplace(edit.column_family_,
                                            kInvalidBlobFileNumber);
-    cf_to_missing_deltaLog_files_high_.emplace(edit.column_family_,
-                                               kGCSelectedDeltaLogFileID);
   }
   return cfd;
 }
@@ -517,12 +507,6 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
     assert(missing_blob_files_high_iter !=
            cf_to_missing_blob_files_high_.end());
     cf_to_missing_blob_files_high_.erase(missing_blob_files_high_iter);
-
-    auto missing_deltaLog_files_high_iter =
-        cf_to_missing_deltaLog_files_high_.find(edit.column_family_);
-    assert(missing_deltaLog_files_high_iter !=
-           cf_to_missing_deltaLog_files_high_.end());
-    cf_to_missing_deltaLog_files_high_.erase(missing_deltaLog_files_high_iter);
   }
   ColumnFamilyData* ret =
       version_set_->GetColumnFamilySet()->GetColumnFamily(edit.column_family_);
@@ -732,19 +716,6 @@ Status VersionEditHandlerPointInTime::MaybeCreateVersion(
     assert(builder != nullptr);
   }
 
-  auto missing_deltaLog_files_high_iter =
-      cf_to_missing_deltaLog_files_high_.find(cfd->GetID());
-  assert(missing_deltaLog_files_high_iter !=
-         cf_to_missing_deltaLog_files_high_.end());
-  const uint64_t prev_missing_deltaLog_file_high =
-      missing_deltaLog_files_high_iter->second;
-
-  if (prev_missing_deltaLog_file_high != kGCSelectedDeltaLogFileID) {
-    auto builder_iter = builders_.find(cfd->GetID());
-    assert(builder_iter != builders_.end());
-    builder = builder_iter->second->version_builder();
-    assert(builder != nullptr);
-  }
   // At this point, we have not yet applied the new version edits read from the
   // MANIFEST. We check whether we have any missing table and blob files.
   const bool prev_has_missing_files =

@@ -85,9 +85,9 @@ void EventHelpers::LogAndNotifyTableFileCreationFinished(
     const std::vector<std::shared_ptr<EventListener>>& listeners,
     const std::string& db_name, const std::string& cf_name,
     const std::string& file_path, int job_id, const FileDescriptor& fd,
-    uint64_t oldest_blob_file_number, uint64_t oldest_deltaLog_file_id,
-    const TableProperties& table_properties, TableFileCreationReason reason,
-    const Status& s, const std::string& file_checksum,
+    uint64_t oldest_blob_file_number, const TableProperties& table_properties,
+    TableFileCreationReason reason, const Status& s,
+    const std::string& file_checksum,
     const std::string& file_checksum_func_name) {
   if (s.ok() && event_logger) {
     JSONWriter jwriter;
@@ -172,10 +172,6 @@ void EventHelpers::LogAndNotifyTableFileCreationFinished(
 
     if (oldest_blob_file_number != kInvalidBlobFileNumber) {
       jwriter << "oldest_blob_file_number" << oldest_blob_file_number;
-    }
-
-    if (oldest_deltaLog_file_id != kGCSelectedDeltaLogFileID) {
-      jwriter << "oldest_deltaLog_file_id" << oldest_deltaLog_file_id;
     }
 
     jwriter.EndObject();
@@ -293,21 +289,6 @@ void EventHelpers::NotifyBlobFileCreationStarted(
     listener->OnBlobFileCreationStarted(info);
   }
 }
-
-void EventHelpers::NotifyDeltaLogFileCreationStarted(
-    const std::vector<std::shared_ptr<EventListener>>& listeners,
-    const std::string& db_name, const std::string& cf_name,
-    const std::string& file_path, int job_id,
-    DeltaLogFileCreationReason creation_reason) {
-  if (listeners.empty()) {
-    return;
-  }
-  DeltaLogFileCreationBriefInfo info(db_name, cf_name, file_path, job_id,
-                                     creation_reason);
-  for (const auto& listener : listeners) {
-    listener->OnDeltaLogFileCreationStarted(info);
-  }
-}
 #endif  // !ROCKSDB_LITE
 
 void EventHelpers::LogAndNotifyBlobFileCreationFinished(
@@ -342,44 +323,6 @@ void EventHelpers::LogAndNotifyBlobFileCreationFinished(
                             s, file_checksum, file_checksum_func_name);
   for (const auto& listener : listeners) {
     listener->OnBlobFileCreated(info);
-  }
-  info.status.PermitUncheckedError();
-#else
-  (void)listeners;
-  (void)db_name;
-  (void)file_path;
-  (void)creation_reason;
-#endif
-}
-
-void EventHelpers::LogAndNotifyDeltaLogFileCreationFinished(
-    EventLogger* event_logger,
-    const std::vector<std::shared_ptr<EventListener>>& listeners,
-    const std::string& db_name, const std::string& cf_name,
-    const std::string& file_path, int job_id, uint64_t file_number,
-    DeltaLogFileCreationReason creation_reason, const Status& s,
-    uint64_t total_deltaLog_count, uint64_t total_deltaLog_bytes) {
-  if (s.ok() && event_logger) {
-    JSONWriter jwriter;
-    AppendCurrentTime(&jwriter);
-    jwriter << "cf_name" << cf_name << "job" << job_id << "event"
-            << "deltaLog_file_creation"
-            << "file_number" << file_number << "total_deltaLog_count"
-            << total_deltaLog_count << "total_deltaLog_bytes"
-            << total_deltaLog_bytes << "status" << s.ToString();
-
-    jwriter.EndObject();
-    event_logger->Log(jwriter);
-  }
-#ifndef ROCKSDB_LITE
-  if (listeners.empty()) {
-    return;
-  }
-  DeltaLogFileCreationInfo info(db_name, cf_name, file_path, job_id,
-                                creation_reason, total_deltaLog_count,
-                                total_deltaLog_bytes, s);
-  for (const auto& listener : listeners) {
-    listener->OnDeltaLogFileCreated(info);
   }
   info.status.PermitUncheckedError();
 #else
@@ -425,38 +368,4 @@ void EventHelpers::LogAndNotifyBlobFileDeletion(
 #endif  // !ROCKSDB_LITE
 }
 
-void EventHelpers::LogAndNotifyDeltaLogFileDeletion(
-    EventLogger* event_logger,
-    const std::vector<std::shared_ptr<EventListener>>& listeners, int job_id,
-    uint64_t file_number, const std::string& file_path, const Status& status,
-    const std::string& dbname) {
-  if (event_logger) {
-    JSONWriter jwriter;
-    AppendCurrentTime(&jwriter);
-
-    jwriter << "job" << job_id << "event"
-            << "deltaLog_file_deletion"
-            << "file_number" << file_number;
-    if (!status.ok()) {
-      jwriter << "status" << status.ToString();
-    }
-
-    jwriter.EndObject();
-    event_logger->Log(jwriter);
-  }
-#ifndef ROCKSDB_LITE
-  if (listeners.empty()) {
-    return;
-  }
-  DeltaLogFileDeletionInfo info(dbname, file_path, job_id, status);
-  for (const auto& listener : listeners) {
-    listener->OnDeltaLogFileDeleted(info);
-  }
-  info.status.PermitUncheckedError();
-#else
-  (void)listeners;
-  (void)dbname;
-  (void)file_path;
-#endif  // !ROCKSDB_LITE
-}
 }  // namespace ROCKSDB_NAMESPACE

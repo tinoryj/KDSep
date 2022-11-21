@@ -12,8 +12,6 @@
 #include "db/blob/blob_file_builder.h"
 #include "db/blob/blob_index.h"
 #include "db/blob/prefetch_buffer_collection.h"
-#include "db/deltaLog/deltaLog_fetcher.h"
-#include "db/deltaLog/deltaLog_file_builder.h"
 #include "db/snapshot_checker.h"
 #include "logging/logging.h"
 #include "port/likely.h"
@@ -29,8 +27,7 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder,
-    DeltaLogFileBuilder* deltaLog_file_builder, bool allow_data_in_errors,
+    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
     bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     const Compaction* compaction, const CompactionFilter* compaction_filter,
@@ -42,8 +39,8 @@ CompactionIterator::CompactionIterator(
           input, cmp, merge_helper, last_sequence, snapshots,
           earliest_write_conflict_snapshot, job_snapshot, snapshot_checker, env,
           report_detailed_time, expect_valid_internal_key, range_del_agg,
-          blob_file_builder, deltaLog_file_builder, allow_data_in_errors,
-          enforce_single_del_contracts, manual_compaction_canceled,
+          blob_file_builder, allow_data_in_errors, enforce_single_del_contracts,
+          manual_compaction_canceled,
           std::unique_ptr<CompactionProxy>(
               compaction ? new RealCompaction(compaction) : nullptr),
           compaction_filter, shutting_down, info_log, full_history_ts_low,
@@ -56,8 +53,7 @@ CompactionIterator::CompactionIterator(
     SequenceNumber job_snapshot, const SnapshotChecker* snapshot_checker,
     Env* env, bool report_detailed_time, bool expect_valid_internal_key,
     CompactionRangeDelAggregator* range_del_agg,
-    BlobFileBuilder* blob_file_builder,
-    DeltaLogFileBuilder* deltaLog_file_builder, bool allow_data_in_errors,
+    BlobFileBuilder* blob_file_builder, bool allow_data_in_errors,
     bool enforce_single_del_contracts,
     const std::atomic<bool>& manual_compaction_canceled,
     std::unique_ptr<CompactionProxy> compaction,
@@ -80,7 +76,6 @@ CompactionIterator::CompactionIterator(
       expect_valid_internal_key_(expect_valid_internal_key),
       range_del_agg_(range_del_agg),
       blob_file_builder_(blob_file_builder),
-      deltaLog_file_builder_(deltaLog_file_builder),
       compaction_(std::move(compaction)),
       compaction_filter_(compaction_filter),
       shutting_down_(shutting_down),
@@ -105,9 +100,6 @@ CompactionIterator::CompactionIterator(
       blob_garbage_collection_cutoff_file_number_(
           ComputeBlobGarbageCollectionCutoffFileNumber(compaction_.get())),
       blob_fetcher_(CreateBlobFetcherIfNeeded(compaction_.get())),
-      deltaLog_garbage_collection_cutoff_file_number_(
-          ComputeDeltaLogGarbageCollectionCutoffFileNumber(compaction_.get())),
-      deltaLog_fetcher_(CreateDeltaLogFetcherIfNeeded(compaction_.get())),
       prefetch_buffers_(
           CreatePrefetchBufferCollectionIfNeeded(compaction_.get())),
       current_key_committed_(false),
@@ -146,20 +138,11 @@ void CompactionIterator::ResetRecordCounts() {
 }
 
 void CompactionIterator::SeekToFirst() {
-  // printf("Call seek to first (start) in compaction_iterator.cc:%d\n",
-  // __LINE__);
   NextFromInput();
-  // printf("Call seek to first (processed next) in
-  // compaction_iterator.cc:%d\n",
-  //        __LINE__);
   PrepareOutput();
-  // printf("Call seek to first (processed output) in
-  // compaction_iterator.cc:%d\n",
-  //        __LINE__);
 }
 
 void CompactionIterator::Next() {
-  // printf("Call Next (start) in compaction_iterator.cc:%d\n", __LINE__);
   // If there is a merge output, return it before continuing to process the
   // input.
   if (merge_out_iter_.Valid()) {
@@ -192,8 +175,6 @@ void CompactionIterator::Next() {
       // records, so even though we reached the end of the merge output, we do
       // not want to advance the iterator.
       NextFromInput();
-      // printf("Call Next (process input) in compaction_iterator.cc:%d\n",
-      //        __LINE__);
     }
   } else {
     // Only advance the input iterator if there is no merge output and the
@@ -202,8 +183,6 @@ void CompactionIterator::Next() {
       AdvanceInputIter();
     }
     NextFromInput();
-    // printf("Call Next (process input) in compaction_iterator.cc:%d\n",
-    //        __LINE__);
   }
 
   if (Valid()) {
@@ -212,8 +191,6 @@ void CompactionIterator::Next() {
   }
 
   PrepareOutput();
-  // printf("Call Next (process output) in compaction_iterator.cc:%d\n",
-  // __LINE__);
 }
 
 bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
@@ -390,7 +367,6 @@ void CompactionIterator::NextFromInput() {
     key_ = input_.key();
     value_ = input_.value();
     blob_value_.Reset();
-    deltaLog_value_.Reset();
     iter_stats_.num_input_records++;
 
     Status pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
@@ -845,8 +821,8 @@ void CompactionIterator::NextFromInput() {
                  cmp_with_history_ts_low_ < 0)) &&
                bottommost_level_) {
       // Handle the case where we have a delete key at the bottom most level
-      // We can skip outputting the key iff there are no subsequent puts for
-      // this key
+      // We can skip outputting the key iff there are no subsequent puts for this
+      // key
       assert(!compaction_ || compaction_->KeyNotExistsBeyondOutputLevel(
                                  ikey_.user_key, &level_ptrs_));
       ParsedInternalKey next_ikey;
@@ -873,8 +849,8 @@ void CompactionIterator::NextFromInput() {
               DefinitelyNotInSnapshot(next_ikey.sequence, prev_snapshot))) {
         AdvanceInputIter();
       }
-      // If you find you still need to output a row with this key, we need to
-      // output the delete too
+      // If you find you still need to output a row with this key, we need to output the
+      // delete too
       if (input_.Valid() &&
           (ParseInternalKey(input_.key(), &next_ikey, allow_data_in_errors_)
                .ok()) &&
@@ -883,9 +859,6 @@ void CompactionIterator::NextFromInput() {
         at_next_ = true;
       }
     } else if (ikey_.type == kTypeMerge) {
-#ifndef NDEBUG
-      printf("Find kTypeMerge at compaction_iterator.cc line %d\n", __LINE__);
-#endif
       if (!merge_helper_->HasOperator()) {
         status_ = Status::InvalidArgument(
             "merge_operator is not properly initialized.");
@@ -900,16 +873,15 @@ void CompactionIterator::NextFromInput() {
       // object to minimize change to the existing flow.
       Status s = merge_helper_->MergeUntil(
           &input_, range_del_agg_, prev_snapshot, bottommost_level_,
-          allow_data_in_errors_, blob_fetcher_.get(), deltaLog_fetcher_.get(),
-          prefetch_buffers_.get(), &iter_stats_);
+          allow_data_in_errors_, blob_fetcher_.get(), prefetch_buffers_.get(),
+          &iter_stats_);
       merge_out_iter_.SeekToFirst();
 
       if (!s.ok() && !s.IsMergeInProgress()) {
         status_ = s;
         return;
       } else if (merge_out_iter_.Valid()) {
-        // printf("Did merge operation in compaction_iterator.cc:%d\n",
-        // __LINE__); NOTE: key, value, and ikey_ refer to old entries.
+        // NOTE: key, value, and ikey_ refer to old entries.
         //       These will be correctly set below.
         key_ = merge_out_iter_.key();
         value_ = merge_out_iter_.value();
@@ -929,76 +901,15 @@ void CompactionIterator::NextFromInput() {
         ikey_.user_key = current_key_.GetUserKey();
         validity_info_.SetValid(ValidContext::kMerge2);
       } else {
-        // printf("Did merge operation in compaction_iterator.cc:%d\n",
-        // __LINE__); all merge operands were filtered out. reset the user key,
-        // since the batch consumed by the merge operator should not shadow any
-        // keys coming after the merges
+        // all merge operands were filtered out. reset the user key, since the
+        // batch consumed by the merge operator should not shadow any keys
+        // coming after the merges
         has_current_user_key_ = false;
         pinned_iters_mgr_.ReleasePinnedData();
 
         if (merge_helper_->FilteredUntil(&skip_until)) {
           need_skip = true;
         }
-      }
-    } else if (ikey_.type == kTypeDeltaLogIndex) {
-#ifndef NDEBUG
-      printf("Find kTypeDeltaLogIndex at compaction_iterator.cc line %d\n",
-             __LINE__);
-#endif
-      if (!merge_helper_->HasOperator()) {
-        status_ = Status::InvalidArgument(
-            "merge_operator is not properly initialized.");
-        return;
-      }
-
-      pinned_iters_mgr_.StartPinning();
-
-      // We know the merge type entry is not hidden, otherwise we would
-      // have hit (A)
-      // We encapsulate the merge related state machine in a different
-      // object to minimize change to the existing flow.
-      Status s = merge_helper_->MergeUntil(
-          &input_, range_del_agg_, prev_snapshot, bottommost_level_,
-          allow_data_in_errors_, blob_fetcher_.get(), deltaLog_fetcher_.get(),
-          prefetch_buffers_.get(), &iter_stats_);
-      merge_out_iter_.SeekToFirst();
-
-      if (!s.ok() && !s.IsMergeInProgress()) {
-        status_ = s;
-        return;
-      } else if (merge_out_iter_.Valid()) {
-        // printf("Did merge operation in compaction_iterator.cc:%d\n",
-        // __LINE__); NOTE: key, value, and ikey_ refer to old entries.
-        //       These will be correctly set below.
-        key_ = merge_out_iter_.key();
-        value_ = merge_out_iter_.value();
-        pik_status = ParseInternalKey(key_, &ikey_, allow_data_in_errors_);
-        // MergeUntil stops when it encounters a corrupt key and does not
-        // include them in the result, so we expect the keys here to valid.
-        if (!pik_status.ok()) {
-          ROCKS_LOG_FATAL(
-              info_log_, "Invalid key %s in compaction. %s",
-              allow_data_in_errors_ ? key_.ToString(true).c_str() : "hidden",
-              pik_status.getState());
-          assert(false);
-        }
-        // Keep current_key_ in sync.
-        current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
-        key_ = current_key_.GetInternalKey();
-        ikey_.user_key = current_key_.GetUserKey();
-        validity_info_.SetValid(ValidContext::kMerge2);
-      } else {
-        printf("Did merge operation in compaction_iterator.cc:%d\n", __LINE__);
-        // all merge operands were filtered out. reset the user key,
-        // since the batch consumed by the merge operator should not shadow any
-        // keys coming after the merges
-        has_current_user_key_ = false;
-        pinned_iters_mgr_.ReleasePinnedData();
-
-        if (merge_helper_->FilteredUntil(&skip_until)) {
-          need_skip = true;
-        }
-        // printf("Did FilteredUntil in compaction_iterator.cc:%d\n", __LINE__);
       }
     } else {
       // 1. new user key -OR-
@@ -1022,17 +933,15 @@ void CompactionIterator::NextFromInput() {
   if (!Valid() && IsShuttingDown()) {
     status_ = Status::ShutdownInProgress();
   }
-  // printf("Did IsShuttingDown in compaction_iterator.cc:%d\n", __LINE__);
+
   if (IsPausingManualCompaction()) {
     status_ = Status::Incomplete(Status::SubCode::kManualCompactionPaused);
   }
-  // printf("Did IsPausingManualCompaction in compaction_iterator.cc:%d\n",
-  //        __LINE__);
+
   // Propagate corruption status from memtable itereator
   if (!input_.Valid() && input_.status().IsCorruption()) {
     status_ = input_.status();
   }
-  // printf("Did IsCorruption in compaction_iterator.cc:%d\n", __LINE__);
 }
 
 bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
@@ -1056,29 +965,6 @@ bool CompactionIterator::ExtractLargeValueIfNeededImpl() {
 
   value_ = blob_index_;
 
-  return true;
-}
-
-bool CompactionIterator::ExtractLargeDeltaIfNeededImpl() {
-  if (!deltaLog_file_builder_) {
-    return false;
-  }
-
-  deltaLog_index_.clear();
-  const Status s =
-      deltaLog_file_builder_->Add(user_key(), value_, &deltaLog_index_);
-
-  if (!s.ok()) {
-    status_ = s;
-    validity_info_.Invalidate();
-    return false;
-  }
-
-  if (deltaLog_index_.empty()) {
-    return false;
-  }
-
-  value_ = deltaLog_index_;
   return true;
 }
 
@@ -1192,31 +1078,6 @@ void CompactionIterator::GarbageCollectBlobIfNeeded() {
   }
 }
 
-void CompactionIterator::ExtractLargeDeltaIfNeeded() {
-  assert(ikey_.type == kTypeMerge);
-
-  if (!ExtractLargeDeltaIfNeededImpl()) {
-    return;
-  }
-
-  ikey_.type = kTypeDeltaLogIndex;
-  current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
-}
-
-void CompactionIterator::GarbageCollectDeltaLogIfNeeded() {
-  assert(ikey_.type == kTypeDeltaLogIndex);
-  if (!compaction_) {
-    return;
-  }
-
-  // GC for integrated DeltaLogDB
-  if (compaction_->enable_deltaLog_garbage_collection()) {
-    ikey_.type = kTypeDeltaLogIndex;
-    current_key_.UpdateInternalKey(ikey_.sequence, ikey_.type);
-    return;
-  }
-}
-
 void CompactionIterator::DecideOutputLevel() {
 #ifndef NDEBUG
   // Could be overridden by unittest
@@ -1269,12 +1130,6 @@ void CompactionIterator::PrepareOutput() {
       ExtractLargeValueIfNeeded();
     } else if (ikey_.type == kTypeBlobIndex) {
       GarbageCollectBlobIfNeeded();
-    }
-
-    if (ikey_.type == kTypeMerge) {
-      ExtractLargeDeltaIfNeeded();
-    } else if (ikey_.type == kTypeDeltaLogIndex) {
-      GarbageCollectDeltaLogIfNeeded();
     }
 
     if (compaction_ != nullptr && compaction_->SupportsPerKeyPlacement()) {
@@ -1343,8 +1198,8 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     ROCKS_LOG_FATAL(info_log_,
                     "No snapshot left in findEarliestVisibleSnapshot");
   }
-  auto snapshots_iter =
-      std::lower_bound(snapshots_->begin(), snapshots_->end(), in);
+  auto snapshots_iter = std::lower_bound(
+      snapshots_->begin(), snapshots_->end(), in);
   assert(prev_snapshot != nullptr);
   if (snapshots_iter == snapshots_->begin()) {
     *prev_snapshot = 0;
@@ -1359,8 +1214,8 @@ inline SequenceNumber CompactionIterator::findEarliestVisibleSnapshot(
     }
   }
   if (snapshot_checker_ == nullptr) {
-    return snapshots_iter != snapshots_->end() ? *snapshots_iter
-                                               : kMaxSequenceNumber;
+    return snapshots_iter != snapshots_->end()
+      ? *snapshots_iter : kMaxSequenceNumber;
   }
   bool has_released_snapshot = !released_snapshots_.empty();
   for (; snapshots_iter != snapshots_->end(); ++snapshots_iter) {
@@ -1418,11 +1273,6 @@ uint64_t CompactionIterator::ComputeBlobGarbageCollectionCutoffFileNumber(
   return meta->GetBlobFileNumber();
 }
 
-uint64_t CompactionIterator::ComputeDeltaLogGarbageCollectionCutoffFileNumber(
-    const CompactionProxy* compaction) {
-  return 0;
-}
-
 std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
     const CompactionProxy* compaction) {
   if (!compaction) {
@@ -1440,25 +1290,6 @@ std::unique_ptr<BlobFetcher> CompactionIterator::CreateBlobFetcherIfNeeded(
   return std::unique_ptr<BlobFetcher>(new BlobFetcher(version, read_options));
 }
 
-std::unique_ptr<DeltaLogFetcher>
-CompactionIterator::CreateDeltaLogFetcherIfNeeded(
-    const CompactionProxy* compaction) {
-  if (!compaction) {
-    return nullptr;
-  }
-
-  const Version* const version = compaction->input_version();
-  if (!version) {
-    return nullptr;
-  }
-
-  ReadOptions read_options;
-  read_options.fill_cache = false;
-
-  return std::unique_ptr<DeltaLogFetcher>(
-      new DeltaLogFetcher(version, read_options));
-}
-
 std::unique_ptr<PrefetchBufferCollection>
 CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
     const CompactionProxy* compaction) {
@@ -1474,9 +1305,7 @@ CompactionIterator::CreatePrefetchBufferCollectionIfNeeded(
     return nullptr;
   }
 
-  const uint64_t readahead_size =
-      compaction->deltaLog_compaction_readahead_size() +
-      compaction->blob_compaction_readahead_size();
+  const uint64_t readahead_size = compaction->blob_compaction_readahead_size();
   if (!readahead_size) {
     return nullptr;
   }

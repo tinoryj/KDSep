@@ -657,17 +657,7 @@ set(SOURCES
         cache/lru_cache.cc
         cache/sharded_cache.cc
         db/arena_wrapped_db_iter.cc
-        db/deltaLog/deltaLog_contents.cc
-        db/deltaLog/deltaLog_fetcher.cc
-        db/deltaLog/deltaLog_file_addition.cc
-        db/deltaLog/deltaLog_file_builder.cc
-        db/deltaLog/deltaLog_file_cache.cc
-        db/deltaLog/deltaLog_file_meta.cc
-        db/deltaLog/deltaLog_file_reader.cc
-        db/deltaLog/deltaLog_log_format.cc
-        db/deltaLog/deltaLog_log_writer.cc
-        db/deltaLog/deltaLog_source.cc
-        db/deltaLog/deltaLog_contents.cc
+        db/blob/blob_contents.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
         db/blob/blob_file_builder.cc
@@ -902,7 +892,6 @@ set(SOURCES
         utilities/blob_db/blob_db_impl.cc
         utilities/blob_db/blob_db_impl_filesnapshot.cc
         utilities/blob_db/blob_dump_tool.cc
-        utilities/deltaLog_db/deltaLog_dump_tool.cc
         utilities/blob_db/blob_file.cc
         utilities/cache_dump_load.cc
         utilities/cache_dump_load_impl.cc

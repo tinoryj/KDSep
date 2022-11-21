@@ -15,7 +15,6 @@
 
 #include "db/blob/blob_file_builder.h"
 #include "db/compaction/compaction_iterator.h"
-#include "db/deltaLog/deltaLog_file_builder.h"
 #include "db/event_helpers.h"
 #include "db/internal_stats.h"
 #include "db/merge_helper.h"
@@ -62,22 +61,18 @@ Status BuildTable(
     std::vector<std::unique_ptr<FragmentedRangeTombstoneIterator>>
         range_del_iters,
     FileMetaData* meta, std::vector<BlobFileAddition>* blob_file_additions,
-    std::vector<DeltaLogFileAddition>* deltaLog_file_additions,
     std::vector<SequenceNumber> snapshots,
     SequenceNumber earliest_write_conflict_snapshot,
     SequenceNumber job_snapshot, SnapshotChecker* snapshot_checker,
     bool paranoid_file_checks, InternalStats* internal_stats,
     IOStatus* io_status, const std::shared_ptr<IOTracer>& io_tracer,
     BlobFileCreationReason blob_creation_reason,
-    DeltaLogFileCreationReason deltaLog_creation_reason,
     const SeqnoToTimeMapping& seqno_to_time_mapping, EventLogger* event_logger,
     int job_id, const Env::IOPriority io_priority,
     TableProperties* table_properties, Env::WriteLifeTimeHint write_hint,
     const std::string* full_history_ts_low,
-    BlobFileCompletionCallback* blob_callback,
-    DeltaLogFileCompletionCallback* deltaLog_callback,
-    uint64_t* num_input_entries, uint64_t* memtable_payload_bytes,
-    uint64_t* memtable_garbage_bytes) {
+    BlobFileCompletionCallback* blob_callback, uint64_t* num_input_entries,
+    uint64_t* memtable_payload_bytes, uint64_t* memtable_garbage_bytes) {
   assert((tboptions.column_family_id ==
           TablePropertiesCollectorFactory::Context::kUnknownColumnFamily) ==
          tboptions.column_family_name.empty());
@@ -109,7 +104,6 @@ Status BuildTable(
   std::string fname = TableFileName(ioptions.cf_paths, meta->fd.GetNumber(),
                                     meta->fd.GetPathId());
   std::vector<std::string> blob_file_paths;
-  std::vector<std::string> deltaLog_file_paths;
   std::string file_checksum = kUnknownFileChecksum;
   std::string file_checksum_func_name = kUnknownFileChecksumFuncName;
 #ifndef ROCKSDB_LITE
@@ -163,8 +157,8 @@ Status BuildTable(
         EventHelpers::LogAndNotifyTableFileCreationFinished(
             event_logger, ioptions.listeners, dbname,
             tboptions.column_family_name, fname, job_id, meta->fd,
-            kInvalidBlobFileNumber, kGCSelectedDeltaLogFileID, tp,
-            tboptions.reason, s, file_checksum, file_checksum_func_name);
+            kInvalidBlobFileNumber, tp, tboptions.reason, s, file_checksum,
+            file_checksum_func_name);
         return s;
       }
 
@@ -200,20 +194,6 @@ Status BuildTable(
                   blob_creation_reason, &blob_file_paths, blob_file_additions)
             : nullptr);
 
-    std::unique_ptr<DeltaLogFileBuilder> deltaLog_file_builder(
-        (mutable_cf_options.enable_deltaLog_files &&
-         tboptions.level_at_creation >=
-             mutable_cf_options.deltaLog_file_starting_level &&
-         deltaLog_file_additions)
-            ? new DeltaLogFileBuilder(
-                  versions, fs, &ioptions, &mutable_cf_options, &file_options,
-                  tboptions.db_id, tboptions.db_session_id, job_id,
-                  tboptions.column_family_id, tboptions.column_family_name,
-                  io_priority, write_hint, io_tracer, deltaLog_callback,
-                  deltaLog_creation_reason, &deltaLog_file_paths,
-                  deltaLog_file_additions)
-            : nullptr);
-
     const std::atomic<bool> kManualCompactionCanceledFalse{false};
     CompactionIterator c_iter(
         iter, tboptions.internal_comparator.user_comparator(), &merge,
@@ -221,8 +201,8 @@ Status BuildTable(
         job_snapshot, snapshot_checker, env,
         ShouldReportDetailedTime(env, ioptions.stats),
         true /* internal key corruption is not ok */, range_del_agg.get(),
-        blob_file_builder.get(), deltaLog_file_builder.get(),
-        ioptions.allow_data_in_errors, ioptions.enforce_single_del_contracts,
+        blob_file_builder.get(), ioptions.allow_data_in_errors,
+        ioptions.enforce_single_del_contracts,
         /*manual_compaction_canceled=*/kManualCompactionCanceledFalse,
         /*compaction=*/nullptr, compaction_filter.get(),
         /*shutting_down=*/nullptr, db_options.info_log, full_history_ts_low);
@@ -301,8 +281,7 @@ Status BuildTable(
       meta->fd.file_size = file_size;
       meta->marked_for_compaction = builder->NeedCompact();
       assert(meta->fd.GetFileSize() > 0);
-      tp = builder
-               ->GetTableProperties();  // refresh now that builder is finished
+      tp = builder->GetTableProperties(); // refresh now that builder is finished
       if (memtable_payload_bytes != nullptr &&
           memtable_garbage_bytes != nullptr) {
         const CompactionIterationStats& ci_stats = c_iter.iter_stats();
@@ -366,15 +345,6 @@ Status BuildTable(
         blob_file_builder->Abandon(s);
       }
       blob_file_builder.reset();
-    }
-
-    if (deltaLog_file_builder) {
-      if (s.ok()) {
-        s = deltaLog_file_builder->Finish();
-      } else {
-        deltaLog_file_builder->Abandon(s);
-      }
-      deltaLog_file_builder.reset();
     }
 
     // TODO Also check the IO status when create the Iterator.
@@ -441,17 +411,6 @@ Status BuildTable(
         TEST_SYNC_POINT("BuildTable::AfterDeleteFile");
       }
     }
-
-    assert(deltaLog_file_additions || deltaLog_file_paths.empty());
-
-    if (deltaLog_file_additions) {
-      for (const std::string& deltaLog_file_path : deltaLog_file_paths) {
-        Status ignored = DeleteDBFile(&db_options, deltaLog_file_path, dbname,
-                                      /*force_bg=*/false, /*force_fg=*/false);
-        ignored.PermitUncheckedError();
-        TEST_SYNC_POINT("BuildTable::AfterDeleteFile");
-      }
-    }
   }
 
   Status status_for_listener = s;
@@ -464,9 +423,9 @@ Status BuildTable(
   // Output to event logger and fire events.
   EventHelpers::LogAndNotifyTableFileCreationFinished(
       event_logger, ioptions.listeners, dbname, tboptions.column_family_name,
-      fname, job_id, meta->fd, meta->oldest_blob_file_number,
-      meta->oldest_deltaLog_file_id, tp, tboptions.reason, status_for_listener,
-      file_checksum, file_checksum_func_name);
+      fname, job_id, meta->fd, meta->oldest_blob_file_number, tp,
+      tboptions.reason, status_for_listener, file_checksum,
+      file_checksum_func_name);
 
   return s;
 }

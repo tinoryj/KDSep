@@ -11,17 +11,6 @@ LIB_SOURCES =                                                   \
   cache/compressed_secondary_cache.cc                           \
   cache/sharded_cache.cc                                        \
   db/arena_wrapped_db_iter.cc                                   \
-  db/deltaLog/deltaLog_contents.cc                              \
-  db/deltaLog/deltaLog_fetcher.cc                               \
-  db/deltaLog/deltaLog_file_addition.cc                         \
-  db/deltaLog/deltaLog_file_builder.cc                          \
-  db/deltaLog/deltaLog_file_cache.cc                            \
-  db/deltaLog/deltaLog_file_meta.cc                             \
-  db/deltaLog/deltaLog_file_reader.cc                           \
-  db/deltaLog/deltaLog_log_format.cc                            \
-  db/deltaLog/deltaLog_log_writer.cc                            \
-  db/deltaLog/deltaLog_source.cc                                \
-  db/deltaLog/murmurHash3.cc                                    \
   db/blob/blob_contents.cc                                      \
   db/blob/blob_fetcher.cc                                       \
   db/blob/blob_file_addition.cc                                 \
@@ -354,7 +343,6 @@ TOOL_LIB_SOURCES =                                              \
   tools/ldb_tool.cc                                             \
   tools/sst_dump_tool.cc                                        \
   utilities/blob_db/blob_dump_tool.cc                           \
-  utilities/deltaLog_db/deltaLog_dump_tool.cc                           \
 
 ANALYZER_LIB_SOURCES =                                          \
   tools/block_cache_analyzer/block_cache_trace_analyzer.cc      \
@@ -407,7 +395,6 @@ FOLLY_SOURCES =                                                 \
 TOOLS_MAIN_SOURCES =                                                    \
   db_stress_tool/db_stress.cc                                           \
   tools/blob_dump.cc                                                    \
-  tools/deltaLog_dump.cc                                                    \
   tools/block_cache_analyzer/block_cache_trace_analyzer_tool.cc         \
   tools/db_repl_stress.cc                                               \
   tools/db_sanity_test.cc                                               \

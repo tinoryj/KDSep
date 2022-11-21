@@ -69,26 +69,23 @@ class CompactionFilter;
 // A Compaction encapsulates metadata about a compaction.
 class Compaction {
  public:
-  Compaction(
-      VersionStorageInfo* input_version,
-      const ImmutableOptions& immutable_options,
-      const MutableCFOptions& mutable_cf_options,
-      const MutableDBOptions& mutable_db_options,
-      std::vector<CompactionInputFiles> inputs, int output_level,
-      uint64_t target_file_size, uint64_t max_compaction_bytes,
-      uint32_t output_path_id, CompressionType compression,
-      CompressionOptions compression_opts, Temperature output_temperature,
-      uint32_t max_subcompactions, std::vector<FileMetaData*> grandparents,
-      bool manual_compaction = false, const std::string& trim_ts = "",
-      double score = -1, bool deletion_compaction = false,
-      bool l0_files_might_overlap = true,
-      CompactionReason compaction_reason = CompactionReason::kUnknown,
-      BlobGarbageCollectionPolicy blob_garbage_collection_policy =
-          BlobGarbageCollectionPolicy::kUseDefault,
-      double blob_garbage_collection_age_cutoff = -1,
-      DeltaLogGarbageCollectionPolicy deltaLog_garbage_collection_policy =
-          DeltaLogGarbageCollectionPolicy::kUseDefault,
-      double deltaLog_garbage_collection_age_cutoff = -1);
+  Compaction(VersionStorageInfo* input_version,
+             const ImmutableOptions& immutable_options,
+             const MutableCFOptions& mutable_cf_options,
+             const MutableDBOptions& mutable_db_options,
+             std::vector<CompactionInputFiles> inputs, int output_level,
+             uint64_t target_file_size, uint64_t max_compaction_bytes,
+             uint32_t output_path_id, CompressionType compression,
+             CompressionOptions compression_opts,
+             Temperature output_temperature, uint32_t max_subcompactions,
+             std::vector<FileMetaData*> grandparents,
+             bool manual_compaction = false, const std::string& trim_ts = "",
+             double score = -1, bool deletion_compaction = false,
+             bool l0_files_might_overlap = true,
+             CompactionReason compaction_reason = CompactionReason::kUnknown,
+             BlobGarbageCollectionPolicy blob_garbage_collection_policy =
+                 BlobGarbageCollectionPolicy::kUseDefault,
+             double blob_garbage_collection_age_cutoff = -1);
 
   // No copying allowed
   Compaction(const Compaction&) = delete;
@@ -350,14 +347,6 @@ class Compaction {
     return blob_garbage_collection_age_cutoff_;
   }
 
-  bool enable_deltaLog_garbage_collection() const {
-    return enable_deltaLog_garbage_collection_;
-  }
-
-  double deltaLog_garbage_collection_age_cutoff() const {
-    return deltaLog_garbage_collection_age_cutoff_;
-  }
-
   // start and end are sub compact range. Null if no boundary.
   // This is used to filter out some input files' ancester's time range.
   uint64_t MinInputFileOldestAncesterTime(const InternalKey* start,
@@ -498,12 +487,6 @@ class Compaction {
 
   // Blob garbage collection age cutoff.
   double blob_garbage_collection_age_cutoff_;
-
-  // Enable/disable GC collection for deltaLogs during compaction.
-  bool enable_deltaLog_garbage_collection_;
-
-  // DeltaLog garbage collection age cutoff.
-  double deltaLog_garbage_collection_age_cutoff_;
 
   // only set when per_key_placement feature is enabled, -1 (kInvalidLevel)
   // means not supported.

@@ -19,7 +19,6 @@
 
 #include "db/blob/blob_file_completion_callback.h"
 #include "db/column_family.h"
-#include "db/deltaLog/deltaLog_file_completion_callback.h"
 #include "db/flush_scheduler.h"
 #include "db/internal_stats.h"
 #include "db/job_context.h"
@@ -77,8 +76,7 @@ class FlushJob {
            const SeqnoToTimeMapping& seq_time_mapping,
            const std::string& db_id = "", const std::string& db_session_id = "",
            std::string full_history_ts_low = "",
-           BlobFileCompletionCallback* blob_callback = nullptr,
-           DeltaLogFileCompletionCallback* deltaLog_callback = nullptr);
+           BlobFileCompletionCallback* blob_callback = nullptr);
 
   ~FlushJob();
 
@@ -195,7 +193,6 @@ class FlushJob {
 
   const std::string full_history_ts_low_;
   BlobFileCompletionCallback* blob_callback_;
-  DeltaLogFileCompletionCallback* deltaLog_callback_;
 
   // reference to the seqno_time_mapping_ in db_impl.h, not safe to read without
   // db mutex

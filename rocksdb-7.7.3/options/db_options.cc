@@ -183,10 +183,6 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct ImmutableDBOptions, create_if_missing),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
-        {"enable_deltaLog_files",
-         {offsetof(struct ImmutableDBOptions, enable_deltaLog_files),
-          OptionType::kBoolean, OptionVerificationType::kNormal,
-          OptionTypeFlags::kNone}},
         {"create_missing_column_families",
          {offsetof(struct ImmutableDBOptions, create_missing_column_families),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -680,7 +676,6 @@ ImmutableDBOptions::ImmutableDBOptions() : ImmutableDBOptions(Options()) {}
 
 ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
     : create_if_missing(options.create_if_missing),
-      enable_deltaLog_files(options.enable_deltaLog_files),
       create_missing_column_families(options.create_missing_column_families),
       error_if_exists(options.error_if_exists),
       paranoid_checks(options.paranoid_checks),
@@ -775,9 +770,6 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    error_if_exists);
   ROCKS_LOG_HEADER(log, "                      Options.create_if_missing: %d",
                    create_if_missing);
-  ROCKS_LOG_HEADER(log,
-                   "                      Options.enable_deltaLog_files: %d",
-                   enable_deltaLog_files);
   ROCKS_LOG_HEADER(log, "                        Options.paranoid_checks: %d",
                    paranoid_checks);
   ROCKS_LOG_HEADER(log, "            Options.flush_verify_memtable_count: %d",
@@ -912,7 +904,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(log, "            Options.wal_compression: %d",
                    wal_compression);
   ROCKS_LOG_HEADER(log, "            Options.atomic_flush: %d", atomic_flush);
-  ROCKS_LOG_HEADER(log, "            Options.avoid_unnecessary_blocking_io: %d",
+  ROCKS_LOG_HEADER(log,
+                   "            Options.avoid_unnecessary_blocking_io: %d",
                    avoid_unnecessary_blocking_io);
   ROCKS_LOG_HEADER(log, "                Options.persist_stats_to_disk: %u",
                    persist_stats_to_disk);
@@ -1048,13 +1041,14 @@ void MutableDBOptions::Dump(Logger* log) const {
   ROCKS_LOG_HEADER(log,
                    "                     Options.wal_bytes_per_sync: %" PRIu64,
                    wal_bytes_per_sync);
-  ROCKS_LOG_HEADER(log, "                  Options.strict_bytes_per_sync: %d",
+  ROCKS_LOG_HEADER(log,
+                   "                  Options.strict_bytes_per_sync: %d",
                    strict_bytes_per_sync);
   ROCKS_LOG_HEADER(log,
                    "      Options.compaction_readahead_size: %" ROCKSDB_PRIszt,
                    compaction_readahead_size);
   ROCKS_LOG_HEADER(log, "                 Options.max_background_flushes: %d",
-                   max_background_flushes);
+                          max_background_flushes);
 }
 
 #ifndef ROCKSDB_LITE

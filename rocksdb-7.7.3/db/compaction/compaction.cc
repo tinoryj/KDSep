@@ -217,9 +217,7 @@ Compaction::Compaction(
     bool _deletion_compaction, bool l0_files_might_overlap,
     CompactionReason _compaction_reason,
     BlobGarbageCollectionPolicy _blob_garbage_collection_policy,
-    double _blob_garbage_collection_age_cutoff,
-    DeltaLogGarbageCollectionPolicy _deltaLog_garbage_collection_policy,
-    double _deltaLog_garbage_collection_age_cutoff)
+    double _blob_garbage_collection_age_cutoff)
     : input_vstorage_(vstorage),
       start_level_(_inputs[0].level),
       output_level_(_output_level),
@@ -260,20 +258,6 @@ Compaction::Compaction(
                   _blob_garbage_collection_age_cutoff > 1
               ? mutable_cf_options()->blob_garbage_collection_age_cutoff
               : _blob_garbage_collection_age_cutoff),
-      enable_deltaLog_garbage_collection_(
-          _deltaLog_garbage_collection_policy ==
-                  DeltaLogGarbageCollectionPolicy::kForce
-              ? true
-              : (_deltaLog_garbage_collection_policy ==
-                         DeltaLogGarbageCollectionPolicy::kDisable
-                     ? false
-                     : mutable_cf_options()
-                           ->enable_deltaLog_garbage_collection)),
-      deltaLog_garbage_collection_age_cutoff_(
-          _deltaLog_garbage_collection_age_cutoff < 0 ||
-                  _deltaLog_garbage_collection_age_cutoff > 1
-              ? mutable_cf_options()->deltaLog_garbage_collection_age_cutoff
-              : _deltaLog_garbage_collection_age_cutoff),
       penultimate_level_(EvaluatePenultimateLevel(
           immutable_options_, start_level_, output_level_)) {
   MarkFilesBeingCompacted(true);

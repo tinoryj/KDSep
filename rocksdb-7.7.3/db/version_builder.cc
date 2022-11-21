@@ -26,7 +26,6 @@
 #include "cache/cache_reservation_manager.h"
 #include "db/blob/blob_file_meta.h"
 #include "db/dbformat.h"
-#include "db/deltaLog/deltaLog_file_meta.h"
 #include "db/internal_stats.h"
 #include "db/table_cache.h"
 #include "db/version_set.h"
@@ -625,19 +624,18 @@ class VersionBuilder::Rep {
   Status ApplyBlobFileGarbage(const BlobFileGarbage& blob_file_garbage) {
     const uint64_t blob_file_number = blob_file_garbage.GetBlobFileNumber();
 
-    MutableBlobFileMetaData* const mutable_meta_blob =
+    MutableBlobFileMetaData* const mutable_meta =
         GetOrCreateMutableBlobFileMetaData(blob_file_number);
 
-    if (!mutable_meta_blob) {
+    if (!mutable_meta) {
       std::ostringstream oss;
       oss << "Blob file #" << blob_file_number << " not found";
 
       return Status::Corruption("VersionBuilder", oss.str());
     }
 
-    if (!mutable_meta_blob->AddGarbage(
-            blob_file_garbage.GetGarbageBlobCount(),
-            blob_file_garbage.GetGarbageBlobBytes())) {
+    if (!mutable_meta->AddGarbage(blob_file_garbage.GetGarbageBlobCount(),
+                                  blob_file_garbage.GetGarbageBlobBytes())) {
       std::ostringstream oss;
       oss << "Garbage overflow for blob file #" << blob_file_number;
       return Status::Corruption("VersionBuilder", oss.str());
@@ -715,10 +713,10 @@ class VersionBuilder::Rep {
         GetOldestBlobFileNumberForTableFile(level, file_number);
 
     if (blob_file_number != kInvalidBlobFileNumber) {
-      MutableBlobFileMetaData* const mutable_meta_blob =
+      MutableBlobFileMetaData* const mutable_meta =
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
-      if (mutable_meta_blob) {
-        mutable_meta_blob->UnlinkSst(file_number);
+      if (mutable_meta) {
+        mutable_meta->UnlinkSst(file_number);
       }
     }
 
@@ -801,10 +799,10 @@ class VersionBuilder::Rep {
     const uint64_t blob_file_number = f->oldest_blob_file_number;
 
     if (blob_file_number != kInvalidBlobFileNumber) {
-      MutableBlobFileMetaData* const mutable_meta_blob =
+      MutableBlobFileMetaData* const mutable_meta =
           GetOrCreateMutableBlobFileMetaData(blob_file_number);
-      if (mutable_meta_blob) {
-        mutable_meta_blob->LinkSst(file_number);
+      if (mutable_meta) {
+        mutable_meta->LinkSst(file_number);
       }
     }
 
@@ -928,9 +926,9 @@ class VersionBuilder::Rep {
 
         ++base_it;
       } else if (mutable_blob_file_number < base_blob_file_number) {
-        const auto& mutable_meta_blob = mutable_it->second;
+        const auto& mutable_meta = mutable_it->second;
 
-        if (!process_mutable(mutable_meta_blob)) {
+        if (!process_mutable(mutable_meta)) {
           return;
         }
 
@@ -938,9 +936,9 @@ class VersionBuilder::Rep {
       } else {
         assert(base_blob_file_number == mutable_blob_file_number);
 
-        const auto& mutable_meta_blob = mutable_it->second;
+        const auto& mutable_meta = mutable_it->second;
 
-        if (!process_both(base_meta, mutable_meta_blob)) {
+        if (!process_both(base_meta, mutable_meta)) {
           return;
         }
 
@@ -960,9 +958,9 @@ class VersionBuilder::Rep {
     }
 
     while (mutable_it != mutable_it_end) {
-      const auto& mutable_meta_blob = mutable_it->second;
+      const auto& mutable_meta = mutable_it->second;
 
-      if (!process_mutable(mutable_meta_blob)) {
+      if (!process_mutable(mutable_meta)) {
         return;
       }
 
@@ -1000,24 +998,23 @@ class VersionBuilder::Rep {
           return CheckLinkedSsts(*base_meta, &min_oldest_blob_file_num);
         };
 
-    auto process_mutable =
-        [&min_oldest_blob_file_num](
-            const MutableBlobFileMetaData& mutable_meta_blob) {
-          return CheckLinkedSsts(mutable_meta_blob, &min_oldest_blob_file_num);
-        };
+    auto process_mutable = [&min_oldest_blob_file_num](
+                               const MutableBlobFileMetaData& mutable_meta) {
+      return CheckLinkedSsts(mutable_meta, &min_oldest_blob_file_num);
+    };
 
     auto process_both = [&min_oldest_blob_file_num](
                             const std::shared_ptr<BlobFileMetaData>& base_meta,
-                            const MutableBlobFileMetaData& mutable_meta_blob) {
+                            const MutableBlobFileMetaData& mutable_meta) {
 #ifndef NDEBUG
       assert(base_meta);
-      assert(base_meta->GetSharedMeta() == mutable_meta_blob.GetSharedMeta());
+      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
 #else
       (void)base_meta;
 #endif
 
-      // Look at mutable_meta_blob since it supersedes *base_meta
-      return CheckLinkedSsts(mutable_meta_blob, &min_oldest_blob_file_num);
+      // Look at mutable_meta since it supersedes *base_meta
+      return CheckLinkedSsts(mutable_meta, &min_oldest_blob_file_num);
     };
 
     MergeBlobFileMetas(kInvalidBlobFileNumber, process_base, process_mutable,
@@ -1027,11 +1024,10 @@ class VersionBuilder::Rep {
   }
 
   static std::shared_ptr<BlobFileMetaData> CreateBlobFileMetaData(
-      const MutableBlobFileMetaData& mutable_meta_blob) {
-    return BlobFileMetaData::Create(mutable_meta_blob.GetSharedMeta(),
-                                    mutable_meta_blob.GetLinkedSsts(),
-                                    mutable_meta_blob.GetGarbageBlobCount(),
-                                    mutable_meta_blob.GetGarbageBlobBytes());
+      const MutableBlobFileMetaData& mutable_meta) {
+    return BlobFileMetaData::Create(
+        mutable_meta.GetSharedMeta(), mutable_meta.GetLinkedSsts(),
+        mutable_meta.GetGarbageBlobCount(), mutable_meta.GetGarbageBlobBytes());
   }
 
   // Add the blob file specified by meta to *vstorage if it is determined to
@@ -1071,32 +1067,31 @@ class VersionBuilder::Rep {
         };
 
     auto process_mutable =
-        [vstorage](const MutableBlobFileMetaData& mutable_meta_blob) {
-          AddBlobFileIfNeeded(vstorage,
-                              CreateBlobFileMetaData(mutable_meta_blob));
+        [vstorage](const MutableBlobFileMetaData& mutable_meta) {
+          AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta));
 
           return true;
         };
 
     auto process_both = [vstorage](
                             const std::shared_ptr<BlobFileMetaData>& base_meta,
-                            const MutableBlobFileMetaData& mutable_meta_blob) {
+                            const MutableBlobFileMetaData& mutable_meta) {
       assert(base_meta);
-      assert(base_meta->GetSharedMeta() == mutable_meta_blob.GetSharedMeta());
+      assert(base_meta->GetSharedMeta() == mutable_meta.GetSharedMeta());
 
-      if (!mutable_meta_blob.HasDelta()) {
+      if (!mutable_meta.HasDelta()) {
         assert(base_meta->GetGarbageBlobCount() ==
-               mutable_meta_blob.GetGarbageBlobCount());
+               mutable_meta.GetGarbageBlobCount());
         assert(base_meta->GetGarbageBlobBytes() ==
-               mutable_meta_blob.GetGarbageBlobBytes());
-        assert(base_meta->GetLinkedSsts() == mutable_meta_blob.GetLinkedSsts());
+               mutable_meta.GetGarbageBlobBytes());
+        assert(base_meta->GetLinkedSsts() == mutable_meta.GetLinkedSsts());
 
         AddBlobFileIfNeeded(vstorage, base_meta);
 
         return true;
       }
 
-      AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta_blob));
+      AddBlobFileIfNeeded(vstorage, CreateBlobFileMetaData(mutable_meta));
 
       return true;
     };

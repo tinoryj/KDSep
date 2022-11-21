@@ -1,5 +1,3 @@
-#pragma once
-
 #include "interface/mergeOperation.hpp"
 
 namespace DELTAKV_NAMESPACE {

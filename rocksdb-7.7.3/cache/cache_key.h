@@ -74,7 +74,7 @@ constexpr uint8_t kCacheKeySize = static_cast<uint8_t>(sizeof(CacheKey));
 // general approach is dicussed here: https://github.com/pdillinger/unique_id
 // Heavily related to GetUniqueIdFromTableProperties.
 //
-// If the db_id, db_session_id, and file_id come from the file's table
+// If the db_id, db_session_id, and file_number come from the file's table
 // properties, then the keys will be stable across DB::Open/Close, backup/
 // restore, import/export, etc.
 //
@@ -88,7 +88,7 @@ class OffsetableCacheKey : private CacheKey {
   // Constructs an OffsetableCacheKey with the given information about a file.
   // This constructor never generates an "empty" base key.
   OffsetableCacheKey(const std::string &db_id, const std::string &db_session_id,
-                     uint64_t file_id);
+                     uint64_t file_number);
 
   // Creates an OffsetableCacheKey from an SST unique ID, so that cache keys
   // can be derived from DB manifest data before reading the file from
@@ -96,7 +96,7 @@ class OffsetableCacheKey : private CacheKey {
   // cache.
   //
   // Calling GetSstInternalUniqueId() on a db_id, db_session_id, and
-  // file_id and passing the result to this function produces the same
+  // file_number and passing the result to this function produces the same
   // base cache key as feeding those inputs directly to the constructor.
   //
   // This is a bijective transformation assuming either id is empty or

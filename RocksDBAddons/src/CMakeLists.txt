@@ -6,13 +6,12 @@ if(Boost_FOUND)
 endif()
 
 include_directories(../include)
-link_directories(util)
 
 set(BOOST_LIBRARY_OBJ boost_thread boost_system boost_serialization)
 set(SYSTEM_LIBRARY_OBJ pthread rt dl)
 set(ROCKSDB_LIBRARY_OBJ pthread rocksdb)
 
-set(LINK_OBJ ${UTILS_OBJ} ${ROCKSDB_LIBRARY_OBJ} ${BOOST_LIBRARY_OBJ} ${SYSTEM_LIBRARY_OBJ})
+set(LINK_OBJ ${ROCKSDB_LIBRARY_OBJ} ${BOOST_LIBRARY_OBJ} ${SYSTEM_LIBRARY_OBJ})
 
 #-fno-builtin-memset
 
@@ -24,10 +23,10 @@ if (NOT CMAKE_BUILD_TYPE)
    )
 endif ()
 
-set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c1x -g -ggdb -g2") 
-set(CMAKE_CXX_FLAGS_DEBUG "-Wall -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c1x") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c1x")
+set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c17 -g -ggdb -g2") 
+set(CMAKE_CXX_FLAGS_DEBUG "-Wall -std=c++17 -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17") 
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17")
 
 SET (CMAKE_C_COMPILER               "/usr/bin/clang")
 SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
@@ -37,7 +36,14 @@ SET (CMAKE_NM                       "/usr/bin/llvm-nm")
 SET (CMAKE_OBJDUMP                  "/usr/bin/llvm-objdump")
 SET (CMAKE_RANLIB                   "/usr/bin/llvm-ranlib")
 
-add_subdirectory(interface)
-add_subdirectory(indexBasedStore)
-add_subdirectory(hashBasedStore)
-add_subdirectory(utils)
+add_library(DeltaKV STATIC 
+    interface/deltaKVOptions.cpp
+    interface/deltaKVInterface.cpp
+    interface/mergeOperation.cpp
+    utils/murmurHash.cpp
+    utils/trie.cpp
+    utils/messageQueue.cpp
+    utils/lruCache.cpp
+    utils/boostLruCache.cpp
+)
+target_link_libraries(DeltaKV ${LINK_OBJ})

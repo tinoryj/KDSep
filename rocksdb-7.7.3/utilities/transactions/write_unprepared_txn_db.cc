@@ -6,7 +6,6 @@
 #ifndef ROCKSDB_LITE
 
 #include "utilities/transactions/write_unprepared_txn_db.h"
-
 #include "db/arena_wrapped_db_iter.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "util/cast_util.h"
@@ -391,7 +390,6 @@ Iterator* WriteUnpreparedTxnDB::NewIterator(const ReadOptions& options,
                                             WriteUnpreparedTxn* txn) {
   // TODO(lth): Refactor so that this logic is shared with WritePrepared.
   constexpr bool expose_blob_index = false;
-  constexpr bool expose_deltaLog_index = false;
   constexpr bool allow_refresh = false;
   std::shared_ptr<ManagedSnapshot> own_snapshot = nullptr;
   SequenceNumber snapshot_seq = kMaxSequenceNumber;
@@ -465,7 +463,7 @@ Iterator* WriteUnpreparedTxnDB::NewIterator(const ReadOptions& options,
       new IteratorState(this, snapshot_seq, own_snapshot, min_uncommitted, txn);
   auto* db_iter = db_impl_->NewIteratorImpl(
       options, cfd, state->MaxVisibleSeq(), &state->callback, expose_blob_index,
-      expose_deltaLog_index, allow_refresh);
+      allow_refresh);
   db_iter->RegisterCleanup(CleanupWriteUnpreparedTxnDBIterator, state, nullptr);
   return db_iter;
 }

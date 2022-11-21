@@ -119,7 +119,7 @@ class DBIter final : public Iterator {
          InternalIterator* iter, const Version* version, SequenceNumber s,
          bool arena_mode, uint64_t max_sequential_skip_in_iterations,
          ReadCallback* read_callback, DBImpl* db_impl, ColumnFamilyData* cfd,
-         bool expose_blob_index, bool expose_deltaLog_index);
+         bool expose_blob_index);
 
   // No copying allowed
   DBIter(const DBIter&) = delete;
@@ -302,16 +302,6 @@ class DBIter final : public Iterator {
     blob_value_.Reset();
   }
 
-  // Retrieves the deltaLog value for the specified user key using the given
-  // deltaLog index when using the integrated DeltaLogDB implementation.
-  bool SetDeltaLogValueIfNeeded(const Slice& user_key,
-                                const Slice& deltaLog_index);
-
-  void ResetDeltaLogValue() {
-    is_deltaLog_ = false;
-    deltaLog_value_vec_.clear();
-  }
-
   void SetValueAndColumnsFromPlain(const Slice& slice) {
     assert(value_.empty());
     assert(wide_columns_.empty());
@@ -351,7 +341,6 @@ class DBIter final : public Iterator {
   Slice pinned_value_;
   // for prefix seek mode to support prev()
   PinnableSlice blob_value_;
-  autovector<Slice> deltaLog_value_vec_;
   // Value of the default column
   Slice value_;
   // All columns (i.e. name-value pairs)
@@ -391,9 +380,7 @@ class DBIter final : public Iterator {
   // Whether the iterator is allowed to expose blob references. Set to true when
   // the stacked BlobDB implementation is used, false otherwise.
   bool expose_blob_index_;
-  bool expose_deltaLog_index_;
   bool is_blob_;
-  bool is_deltaLog_;
   bool arena_mode_;
   // List of operands for merge operator.
   MergeContext merge_context_;
@@ -426,6 +413,6 @@ extern Iterator* NewDBIterator(
     const Version* version, const SequenceNumber& sequence,
     uint64_t max_sequential_skip_in_iterations, ReadCallback* read_callback,
     DBImpl* db_impl = nullptr, ColumnFamilyData* cfd = nullptr,
-    bool expose_blob_index = false, bool expose_deltaLog_index = false);
+    bool expose_blob_index = false);
 
 }  // namespace ROCKSDB_NAMESPACE

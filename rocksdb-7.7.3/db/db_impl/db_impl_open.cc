@@ -267,8 +267,7 @@ Status DBImpl::ValidateOptions(const DBOptions& db_options) {
   if (db_options.unordered_write &&
       !db_options.allow_concurrent_memtable_write) {
     return Status::InvalidArgument(
-        "unordered_write is incompatible with "
-        "!allow_concurrent_memtable_write");
+        "unordered_write is incompatible with !allow_concurrent_memtable_write");
   }
 
   if (db_options.unordered_write && db_options.enable_pipelined_write) {
@@ -1044,8 +1043,9 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     std::unique_ptr<SequentialFileReader> file_reader;
     {
       std::unique_ptr<FSSequentialFile> file;
-      status = fs_->NewSequentialFile(
-          fname, fs_->OptimizeForLogRead(file_options_), &file, nullptr);
+      status = fs_->NewSequentialFile(fname,
+                                      fs_->OptimizeForLogRead(file_options_),
+                                      &file, nullptr);
       if (!status.ok()) {
         MaybeIgnoreError(&status);
         if (!status.ok()) {
@@ -1472,7 +1472,6 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
 
   FileMetaData meta;
   std::vector<BlobFileAddition> blob_file_additions;
-  std::vector<DeltaLogFileAddition> deltaLog_file_additions;
 
   std::unique_ptr<std::list<uint64_t>::iterator> pending_outputs_inserted_elem(
       new std::list<uint64_t>::iterator(
@@ -1540,14 +1539,12 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
           dbname_, versions_.get(), immutable_db_options_, tboptions,
           file_options_for_compaction_, cfd->table_cache(), iter.get(),
           std::move(range_del_iters), &meta, &blob_file_additions,
-          &deltaLog_file_additions, snapshot_seqs,
-          earliest_write_conflict_snapshot, kMaxSequenceNumber,
+          snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
           snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
           io_tracer_, BlobFileCreationReason::kRecovery,
-          DeltaLogFileCreationReason::kRecovery, empty_seqno_time_mapping,
-          &event_logger_, job_id, Env::IO_HIGH, nullptr /* table_properties */,
-          write_hint, nullptr /*full_history_ts_low*/, &blob_callback_,
-          &deltaLog_callback_);
+          empty_seqno_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
+          nullptr /* table_properties */, write_hint,
+          nullptr /*full_history_ts_low*/, &blob_callback_);
       LogFlush(immutable_db_options_.info_log);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                       "[%s] [WriteLevel0TableForRecovery]"
@@ -1571,20 +1568,16 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
   constexpr int level = 0;
 
   if (s.ok() && has_output) {
-    edit->AddFile(
-        level, meta.fd.GetNumber(), meta.fd.GetPathId(), meta.fd.GetFileSize(),
-        meta.smallest, meta.largest, meta.fd.smallest_seqno,
-        meta.fd.largest_seqno, meta.marked_for_compaction, meta.temperature,
-        meta.oldest_blob_file_number, meta.oldest_deltaLog_file_id,
-        meta.oldest_ancester_time, meta.file_creation_time, meta.file_checksum,
-        meta.file_checksum_func_name, meta.unique_id);
+    edit->AddFile(level, meta.fd.GetNumber(), meta.fd.GetPathId(),
+                  meta.fd.GetFileSize(), meta.smallest, meta.largest,
+                  meta.fd.smallest_seqno, meta.fd.largest_seqno,
+                  meta.marked_for_compaction, meta.temperature,
+                  meta.oldest_blob_file_number, meta.oldest_ancester_time,
+                  meta.file_creation_time, meta.file_checksum,
+                  meta.file_checksum_func_name, meta.unique_id);
 
     for (const auto& blob : blob_file_additions) {
       edit->AddBlobFile(blob);
-    }
-
-    for (const auto& deltaLog : deltaLog_file_additions) {
-      edit->AddDeltaLogFile(deltaLog);
     }
   }
 
@@ -1603,18 +1596,10 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
 
   stats.num_output_files_blob = static_cast<int>(blobs.size());
 
-  const auto& deltaLogs = edit->GetDeltaLogFileAdditions();
-  for (const auto& deltaLog : deltaLogs) {
-    stats.bytes_written_deltaLog += deltaLog.GetTotalDeltaLogBytes();
-  }
-
-  stats.num_output_files_deltaLog = static_cast<int>(deltaLogs.size());
-
   cfd->internal_stats()->AddCompactionStats(level, Env::Priority::USER, stats);
-  cfd->internal_stats()->AddCFStats(InternalStats::BYTES_FLUSHED,
-                                    stats.bytes_written +
-                                        stats.bytes_written_blob +
-                                        stats.bytes_written_deltaLog);
+  cfd->internal_stats()->AddCFStats(
+      InternalStats::BYTES_FLUSHED,
+      stats.bytes_written + stats.bytes_written_blob);
   RecordTick(stats_, COMPACT_WRITE_BYTES, meta.fd.GetFileSize());
   return s;
 }
@@ -1791,6 +1776,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }
+
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
   if (!impl->immutable_db_options_.info_log) {
     s = impl->init_logger_creation_s_;
@@ -1799,7 +1785,6 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   } else {
     assert(impl->init_logger_creation_s_.ok());
   }
-
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
   if (s.ok()) {
     std::vector<std::string> paths;
@@ -2046,8 +2031,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         FileType file_type;
         std::string file_path = path + "/" + file_name;
         if (ParseFileName(file_name, &file_number, &file_type) &&
-            (file_type == kTableFile || file_type == kBlobFile ||
-             file_type == kDeltaLogFile)) {
+            (file_type == kTableFile || file_type == kBlobFile)) {
           // TODO: Check for errors from OnAddFile?
           if (known_file_sizes.count(file_name)) {
             // We're assuming that each sst file name exists in at most one of

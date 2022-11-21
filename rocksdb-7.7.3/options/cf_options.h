@@ -82,7 +82,6 @@ struct ImmutableCFOptions {
   std::shared_ptr<SstPartitionerFactory> sst_partitioner_factory;
 
   std::shared_ptr<Cache> blob_cache;
-  std::shared_ptr<Cache> deltaLog_cache;
 };
 
 struct ImmutableOptions : public ImmutableDBOptions, public ImmutableCFOptions {
@@ -149,20 +148,6 @@ struct MutableCFOptions {
         blob_compaction_readahead_size(options.blob_compaction_readahead_size),
         blob_file_starting_level(options.blob_file_starting_level),
         prepopulate_blob_cache(options.prepopulate_blob_cache),
-        enable_deltaLog_files(options.enable_deltaLog_files),
-        min_deltaLog_size(options.min_deltaLog_size),
-        deltaLog_file_size(options.deltaLog_file_size),
-        deltaLog_compression_type(options.deltaLog_compression_type),
-        enable_deltaLog_garbage_collection(
-            options.enable_deltaLog_garbage_collection),
-        deltaLog_garbage_collection_age_cutoff(
-            options.deltaLog_garbage_collection_age_cutoff),
-        deltaLog_garbage_collection_force_threshold(
-            options.deltaLog_garbage_collection_force_threshold),
-        deltaLog_compaction_readahead_size(
-            options.deltaLog_compaction_readahead_size),
-        deltaLog_file_starting_level(options.deltaLog_file_starting_level),
-        prepopulate_deltaLog_cache(options.prepopulate_deltaLog_cache),
         max_sequential_skip_in_iterations(
             options.max_sequential_skip_in_iterations),
         check_flush_compaction_key_order(
@@ -220,16 +205,6 @@ struct MutableCFOptions {
         blob_compaction_readahead_size(0),
         blob_file_starting_level(0),
         prepopulate_blob_cache(PrepopulateBlobCache::kDisable),
-        enable_deltaLog_files(false),
-        min_deltaLog_size(0),
-        deltaLog_file_size(0),
-        deltaLog_compression_type(kNoCompression),
-        enable_deltaLog_garbage_collection(false),
-        deltaLog_garbage_collection_age_cutoff(0.0),
-        deltaLog_garbage_collection_force_threshold(0.0),
-        deltaLog_compaction_readahead_size(0),
-        deltaLog_file_starting_level(0),
-        prepopulate_deltaLog_cache(PrepopulateDeltaLogCache::kDisable),
         max_sequential_skip_in_iterations(0),
         check_flush_compaction_key_order(true),
         paranoid_file_checks(false),
@@ -316,18 +291,6 @@ struct MutableCFOptions {
   int blob_file_starting_level;
   PrepopulateBlobCache prepopulate_blob_cache;
 
-  // DeltaLog file related options
-  bool enable_deltaLog_files;
-  uint64_t min_deltaLog_size;
-  uint64_t deltaLog_file_size;
-  CompressionType deltaLog_compression_type;
-  bool enable_deltaLog_garbage_collection;
-  double deltaLog_garbage_collection_age_cutoff;
-  double deltaLog_garbage_collection_force_threshold;
-  uint64_t deltaLog_compaction_readahead_size;
-  int deltaLog_file_starting_level;
-  PrepopulateDeltaLogCache prepopulate_deltaLog_cache;
-
   // Misc options
   uint64_t max_sequential_skip_in_iterations;
   bool check_flush_compaction_key_order;
@@ -351,10 +314,9 @@ struct MutableCFOptions {
 uint64_t MultiplyCheckOverflow(uint64_t op1, double op2);
 
 // Get the max file size in a given level.
-uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options, int level,
-                             CompactionStyle compaction_style,
-                             int base_level = 1,
-                             bool level_compaction_dynamic_level_bytes = false);
+uint64_t MaxFileSizeForLevel(const MutableCFOptions& cf_options,
+    int level, CompactionStyle compaction_style, int base_level = 1,
+    bool level_compaction_dynamic_level_bytes = false);
 
 // Get the max size of an L0 file for which we will pin its meta-blocks when
 // `pin_l0_filter_and_index_blocks_in_cache` is set.

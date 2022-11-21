@@ -17,7 +17,6 @@
 #include "db/compaction/compaction.h"
 #include "db/compaction/compaction_iterator.h"
 #include "db/compaction/compaction_outputs.h"
-#include "db/deltaLog/deltaLog_file_addition.h"
 #include "db/internal_stats.h"
 #include "db/output_validator.h"
 #include "db/range_del_aggregator.h"

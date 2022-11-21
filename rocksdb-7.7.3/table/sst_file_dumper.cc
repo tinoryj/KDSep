@@ -44,14 +44,13 @@ SstFileDumper::SstFileDumper(const Options& options,
                              const std::string& file_path,
                              Temperature file_temp, size_t readahead_size,
                              bool verify_checksum, bool output_hex,
-                             bool decode_blob_index, bool decode_deltaLog_index,
-                             const EnvOptions& soptions, bool silent)
+                             bool decode_blob_index, const EnvOptions& soptions,
+                             bool silent)
     : file_name_(file_path),
       read_num_(0),
       file_temp_(file_temp),
       output_hex_(output_hex),
       decode_blob_index_(decode_blob_index),
-      decode_deltaLog_index_(decode_deltaLog_index),
       soptions_(soptions),
       silent_(silent),
       options_(options),
@@ -224,8 +223,9 @@ Status SstFileDumper::CalculateCompressedTableSize(
   table_options.block_size = block_size;
   BlockBasedTableFactory block_based_tf(table_options);
   std::unique_ptr<TableBuilder> table_builder;
-  table_builder.reset(
-      block_based_tf.NewTableBuilder(tb_options, dest_writer.get()));
+  table_builder.reset(block_based_tf.NewTableBuilder(
+      tb_options,
+      dest_writer.get()));
   std::unique_ptr<InternalIterator> iter(table_reader_->NewIterator(
       read_options_, moptions_.prefix_extractor.get(), /*arena=*/nullptr,
       /*skip_filters=*/false, TableReaderCaller::kSSTDumpTool));
@@ -477,7 +477,11 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
     }
 
     if (print_kv) {
-      if (decode_blob_index_ && ikey.type == kTypeBlobIndex) {
+      if (!decode_blob_index_ || ikey.type != kTypeBlobIndex) {
+        fprintf(stdout, "%s => %s\n",
+                ikey.DebugString(true, output_hex_).c_str(),
+                value.ToString(output_hex_).c_str());
+      } else {
         BlobIndex blob_index;
 
         const Status s = blob_index.DecodeFrom(value);
@@ -490,13 +494,6 @@ Status SstFileDumper::ReadSequential(bool print_kv, uint64_t read_num,
         fprintf(stdout, "%s => %s\n",
                 ikey.DebugString(true, output_hex_).c_str(),
                 blob_index.DebugString(output_hex_).c_str());
-      } else if (decode_deltaLog_index_ && ikey.type == kTypeDeltaLogIndex) {
-        fprintf(stdout, "%s => %s\n",
-                ikey.DebugString(true, output_hex_).c_str());
-      } else {
-        fprintf(stdout, "%s => %s\n",
-                ikey.DebugString(true, output_hex_).c_str(),
-                value.ToString(output_hex_).c_str());
       }
     }
   }

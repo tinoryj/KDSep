@@ -60,7 +60,6 @@
 #ifndef ROCKSDB_LITE
 #include "rocksdb/utilities/replayer.h"
 #endif  // ROCKSDB_LITE
-#include "db/deltaLog/deltaLog_file_meta.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "table/merging_iterator.h"
 #include "table/scoped_arena_iterator.h"
@@ -185,8 +184,6 @@ class DBImpl : public DB {
   void operator=(const DBImpl&) = delete;
 
   virtual ~DBImpl();
-
-  DeltaLogFileManager deltaLogFileManager_;
 
   // ---- Implementations of the DB interface ----
 
@@ -475,7 +472,8 @@ class DBImpl : public DB {
   virtual Status GetSortedWalFiles(VectorLogPtr& files) override;
   virtual Status GetCurrentWalFile(
       std::unique_ptr<LogFile>* current_log_file) override;
-  virtual Status GetCreationTimeOfOldestFile(uint64_t* creation_time) override;
+  virtual Status GetCreationTimeOfOldestFile(
+      uint64_t* creation_time) override;
 
   virtual Status GetUpdatesSince(
       SequenceNumber seq_number, std::unique_ptr<TransactionLogIterator>* iter,
@@ -601,7 +599,6 @@ class DBImpl : public DB {
     bool* value_found = nullptr;
     ReadCallback* callback = nullptr;
     bool* is_blob_index = nullptr;
-    bool* is_deltaLog_index = nullptr;
     // If true return value associated with key via value pointer else return
     // all merge operands for key via merge_operands pointer
     bool get_value = true;
@@ -629,7 +626,6 @@ class DBImpl : public DB {
                                       SequenceNumber snapshot,
                                       ReadCallback* read_callback,
                                       bool expose_blob_index = false,
-                                      bool expose_deltaLog_index = false,
                                       bool allow_refresh = true);
 
   virtual SequenceNumber GetLastPublishedSequence() const {
@@ -706,7 +702,7 @@ class DBImpl : public DB {
                                  SequenceNumber lower_bound_seq,
                                  SequenceNumber* seq, std::string* timestamp,
                                  bool* found_record_for_key,
-                                 bool* is_blob_index, bool* is_deltaLog_index);
+                                 bool* is_blob_index);
 
   Status TraceIteratorSeek(const uint32_t& cf_id, const Slice& key,
                            const Slice& lower_bound, const Slice upper_bound);
@@ -1112,9 +1108,7 @@ class DBImpl : public DB {
   void TEST_GetFilesMetaData(
       ColumnFamilyHandle* column_family,
       std::vector<std::vector<FileMetaData>>* metadata,
-      std::vector<std::shared_ptr<BlobFileMetaData>>* blob_metadata = nullptr,
-      std::vector<std::shared_ptr<DeltaLogFileMetaData>>* deltaLog_metadata =
-          nullptr);
+      std::vector<std::shared_ptr<BlobFileMetaData>>* blob_metadata = nullptr);
 
   void TEST_LockMutex();
 
@@ -1564,7 +1558,6 @@ class DBImpl : public DB {
   friend class WriteCallbackPTest_WriteWithCallbackTest_Test;
   friend class XFTransactionWriteHandler;
   friend class DBBlobIndexTest;
-  friend class DBDeltaLogIndexTest;
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
 #endif
 
@@ -1728,8 +1721,8 @@ class DBImpl : public DB {
     const InternalKey* begin = nullptr;  // nullptr means beginning of key range
     const InternalKey* end = nullptr;    // nullptr means end of key range
     InternalKey* manual_end = nullptr;   // how far we are compacting
-    InternalKey tmp_storage;   // Used to keep track of compaction progress
-    InternalKey tmp_storage1;  // Used to keep track of compaction progress
+    InternalKey tmp_storage;      // Used to keep track of compaction progress
+    InternalKey tmp_storage1;     // Used to keep track of compaction progress
 
     // When the user provides a canceled pointer in CompactRangeOptions, the
     // above varaibe is the reference of the user-provided
@@ -2669,7 +2662,6 @@ class DBImpl : public DB {
   std::atomic<uint64_t> max_total_wal_size_;
 
   BlobFileCompletionCallback blob_callback_;
-  DeltaLogFileCompletionCallback deltaLog_callback_;
 
   // Pointer to WriteBufferManager stalling interface.
   std::unique_ptr<StallInterface> wbm_stall_;

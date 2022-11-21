@@ -47,7 +47,6 @@ class LogReaderContainer {
     delete reporter_;
     delete status_;
   }
-
  private:
   struct LogReporter : public log::Reader::Reporter {
     Env* env;
@@ -126,7 +125,6 @@ class DBImplSecondary : public DBImpl {
                                       SequenceNumber snapshot,
                                       ReadCallback* read_callback,
                                       bool expose_blob_index = false,
-                                      bool expose_deltaLog_index = false,
                                       bool allow_refresh = true);
 
   Status NewIterators(const ReadOptions& options,
@@ -249,6 +247,7 @@ class DBImplSecondary : public DBImpl {
   // method can take long time due to all the I/O and CPU costs.
   Status TryCatchUpWithPrimary() override;
 
+
   // Try to find log reader using log_number from log_readers_ map, initialize
   // if it doesn't exist
   Status MaybeInitLogReader(uint64_t log_number,
@@ -320,11 +319,6 @@ class DBImplSecondary : public DBImpl {
 
     Status PutBlobIndexCF(uint32_t column_family_id, const Slice&,
                           const Slice&) override {
-      return AddColumnFamilyId(column_family_id);
-    }
-
-    Status PutDeltaLogIndexCF(uint32_t column_family_id, const Slice&,
-                              const Slice&) override {
       return AddColumnFamilyId(column_family_id);
     }
 

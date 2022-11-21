@@ -220,7 +220,7 @@ Status DBImpl::FlushMemTableToOutputFile(
       &event_logger_, mutable_cf_options.report_bg_io_stats,
       true /* sync_output_directory */, true /* write_manifest */, thread_pri,
       io_tracer_, seqno_time_mapping_, db_id_, db_session_id_,
-      cfd->GetFullHistoryTsLow(), &blob_callback_, &deltaLog_callback_);
+      cfd->GetFullHistoryTsLow(), &blob_callback_);
   FileMetaData file_meta;
 
   Status s;
@@ -468,7 +468,7 @@ Status DBImpl::AtomicFlushMemTablesToOutputFiles(
         stats_, &event_logger_, mutable_cf_options.report_bg_io_stats,
         false /* sync_output_directory */, false /* write_manifest */,
         thread_pri, io_tracer_, seqno_time_mapping_, db_id_, db_session_id_,
-        cfd->GetFullHistoryTsLow(), &blob_callback_, &deltaLog_callback_));
+        cfd->GetFullHistoryTsLow(), &blob_callback_));
   }
 
   std::vector<FileMetaData> file_meta(num_cfs);
@@ -1408,7 +1408,6 @@ Status DBImpl::CompactFilesImpl(
       file_options_for_compaction_, versions_.get(), &shutting_down_,
       log_buffer, directories_.GetDbDir(),
       GetDataDir(c->column_family_data(), c->output_path_id()),
-      GetDataDir(c->column_family_data(), 0),
       GetDataDir(c->column_family_data(), 0), stats_, &mutex_, &error_handler_,
       snapshot_seqs, earliest_write_conflict_snapshot, snapshot_checker,
       job_context, table_cache_, &event_logger_,
@@ -1417,7 +1416,7 @@ Status DBImpl::CompactFilesImpl(
       &compaction_job_stats, Env::Priority::USER, io_tracer_,
       kManualCompactionCanceledFalse_, db_id_, db_session_id_,
       c->column_family_data()->GetFullHistoryTsLow(), c->trim_ts(),
-      &blob_callback_, &deltaLog_callback_, &bg_compaction_scheduled_,
+      &blob_callback_, &bg_compaction_scheduled_,
       &bg_bottom_compaction_scheduled_);
 
   // Creating a compaction influences the compaction score because the score
@@ -1500,11 +1499,6 @@ Status DBImpl::CompactFilesImpl(
       output_file_names->push_back(
           BlobFileName(c->immutable_options()->cf_paths.front().path,
                        blob_file.GetBlobFileNumber()));
-    }
-    for (const auto& deltaLog_file : c->edit()->GetDeltaLogFileAdditions()) {
-      output_file_names->push_back(
-          DeltaLogFileName(c->immutable_options()->cf_paths.front().path,
-                           deltaLog_file.GetDeltaLogFileID()));
     }
   }
 
@@ -1695,13 +1689,12 @@ Status DBImpl::ReFitLevel(ColumnFamilyData* cfd, int level, int target_level) {
     edit.SetColumnFamily(cfd->GetID());
     for (const auto& f : vstorage->LevelFiles(level)) {
       edit.DeleteFile(level, f->fd.GetNumber());
-      edit.AddFile(to_level, f->fd.GetNumber(), f->fd.GetPathId(),
-                   f->fd.GetFileSize(), f->smallest, f->largest,
-                   f->fd.smallest_seqno, f->fd.largest_seqno,
-                   f->marked_for_compaction, f->temperature,
-                   f->oldest_blob_file_number, f->oldest_deltaLog_file_id,
-                   f->oldest_ancester_time, f->file_creation_time,
-                   f->file_checksum, f->file_checksum_func_name, f->unique_id);
+      edit.AddFile(
+          to_level, f->fd.GetNumber(), f->fd.GetPathId(), f->fd.GetFileSize(),
+          f->smallest, f->largest, f->fd.smallest_seqno, f->fd.largest_seqno,
+          f->marked_for_compaction, f->temperature, f->oldest_blob_file_number,
+          f->oldest_ancester_time, f->file_creation_time, f->file_checksum,
+          f->file_checksum_func_name, f->unique_id);
     }
     ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
                     "[%s] Apply version edit:\n%s", cfd->GetName().c_str(),
@@ -3325,9 +3318,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
             c->output_level(), f->fd.GetNumber(), f->fd.GetPathId(),
             f->fd.GetFileSize(), f->smallest, f->largest, f->fd.smallest_seqno,
             f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
-            f->oldest_blob_file_number, f->oldest_deltaLog_file_id,
-            f->oldest_ancester_time, f->file_creation_time, f->file_checksum,
-            f->file_checksum_func_name, f->unique_id);
+            f->oldest_blob_file_number, f->oldest_ancester_time,
+            f->file_creation_time, f->file_checksum, f->file_checksum_func_name,
+            f->unique_id);
 
         ROCKS_LOG_BUFFER(
             log_buffer,
@@ -3421,7 +3414,6 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         mutable_db_options_, file_options_for_compaction_, versions_.get(),
         &shutting_down_, log_buffer, directories_.GetDbDir(),
         GetDataDir(c->column_family_data(), c->output_path_id()),
-        GetDataDir(c->column_family_data(), 0),
         GetDataDir(c->column_family_data(), 0), stats_, &mutex_,
         &error_handler_, snapshot_seqs, earliest_write_conflict_snapshot,
         snapshot_checker, job_context, table_cache_, &event_logger_,
@@ -3431,8 +3423,8 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
         is_manual ? manual_compaction->canceled
                   : kManualCompactionCanceledFalse_,
         db_id_, db_session_id_, c->column_family_data()->GetFullHistoryTsLow(),
-        c->trim_ts(), &blob_callback_, &deltaLog_callback_,
-        &bg_compaction_scheduled_, &bg_bottom_compaction_scheduled_);
+        c->trim_ts(), &blob_callback_, &bg_compaction_scheduled_,
+        &bg_bottom_compaction_scheduled_);
     compaction_job.Prepare();
 
     NotifyOnCompactionBegin(c->column_family_data(), c.get(), status,
@@ -3723,18 +3715,6 @@ void DBImpl::BuildCompactionJobInfo(
         blob_file.GetGarbageBlobBytes());
     compaction_job_info->blob_file_garbage_infos.emplace_back(
         std::move(blob_file_garbage_info));
-  }
-  // Update DeltaLogFilesInfo.
-  for (const auto& deltaLog_file : c->edit()->GetDeltaLogFileAdditions()) {
-    DeltaLogFileAdditionInfo deltaLog_file_addition_info(
-        DeltaLogFileName(
-            c->immutable_options()->cf_paths.front().path,
-            deltaLog_file.GetDeltaLogFileID()) /*deltaLog_file_path*/,
-        deltaLog_file.GetDeltaLogFileID(),
-        deltaLog_file.GetTotalDeltaLogCount(),
-        deltaLog_file.GetTotalDeltaLogBytes());
-    compaction_job_info->deltaLog_file_addition_infos.emplace_back(
-        std::move(deltaLog_file_addition_info));
   }
 }
 #endif

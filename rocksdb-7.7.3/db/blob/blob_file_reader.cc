@@ -290,6 +290,7 @@ Status BlobFileReader::GetBlob(
     FilePrefetchBuffer* prefetch_buffer, MemoryAllocator* allocator,
     std::unique_ptr<BlobContents>* result, uint64_t* bytes_read) const {
   assert(result);
+
   const uint64_t key_size = user_key.size();
 
   if (!IsValidBlobOffset(offset, key_size, value_size, file_size_)) {

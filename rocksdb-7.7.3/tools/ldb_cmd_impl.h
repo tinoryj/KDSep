@@ -5,12 +5,12 @@
 
 #pragma once
 
+#include "rocksdb/utilities/ldb_cmd.h"
+
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "rocksdb/utilities/ldb_cmd.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -48,8 +48,6 @@ class DBFileDumperCommand : public LDBCommand {
  private:
   bool decode_blob_index_;
   bool dump_uncompressed_blobs_;
-  bool decode_deltaLog_index_;
-  bool dump_uncompressed_deltaLogs_;
 };
 
 class DBLiveFilesMetadataDumperCommand : public LDBCommand {
@@ -87,7 +85,7 @@ class DBDumperCommand : public LDBCommand {
   /**
    * Extract file name from the full path. We handle both the forward slash (/)
    * and backslash (\) to make sure that different OS-s are supported.
-   */
+  */
   static std::string GetFileNameFromPath(const std::string& s) {
     std::size_t n = s.find_last_of("/\\");
 
@@ -112,8 +110,6 @@ class DBDumperCommand : public LDBCommand {
   std::string path_;
   bool decode_blob_index_;
   bool dump_uncompressed_blobs_;
-  bool decode_deltaLog_index_;
-  bool dump_uncompressed_deltaLogs_;
 
   static const std::string ARG_COUNT_ONLY;
   static const std::string ARG_COUNT_DELIM;
@@ -145,9 +141,7 @@ class InternalDumpCommand : public LDBCommand {
   bool print_stats_;
   bool is_input_key_hex_;
   bool decode_blob_index_;
-  bool decode_deltaLog_index_;
-  bool dump_uncompressed_deltaLogs_;
-  
+
   static const std::string ARG_DELIM;
   static const std::string ARG_COUNT_ONLY;
   static const std::string ARG_COUNT_DELIM;
@@ -579,15 +573,14 @@ class CheckPointCommand : public LDBCommand {
   static std::string Name() { return "checkpoint"; }
 
   CheckPointCommand(const std::vector<std::string>& params,
-                    const std::map<std::string, std::string>& options,
-                    const std::vector<std::string>& flags);
+                const std::map<std::string, std::string>& options,
+                const std::vector<std::string>& flags);
 
   void DoCommand() override;
 
   static void Help(std::string& ret);
 
   std::string checkpoint_dir_;
-
  private:
   static const std::string ARG_CHECKPOINT_DIR;
 };
