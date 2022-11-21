@@ -1,0 +1,5 @@
+#src/indexBasedStore
+
+add_library(indexBasedStoreFileManager STATIC indexBasedStoreFileManager.cpp)
+
+set(INDEX_BASED_STORE_OBJ indexBasedStoreFileManager)
