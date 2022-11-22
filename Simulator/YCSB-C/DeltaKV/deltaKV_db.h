@@ -43,8 +43,8 @@ class DeltaKVDB : public YCSBDB {
 
    private:
     std::ofstream outputStream_;
-    DeltaKV *db_;
-    DeltaKVOptions options_;
+    DELTAKV_NAMESPACE::DeltaKV db_;
+    DELTAKV_NAMESPACE::DeltaKVOptions options_;
 };
 }  // namespace ycsbc
 #endif  // YCSB_C_DeltaKVDB_DB_H

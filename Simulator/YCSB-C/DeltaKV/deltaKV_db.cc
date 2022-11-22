@@ -79,7 +79,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
     cerr << "Start create DeltaKVDB instance" << endl;
 
-    bool dbOpenStatus = db_->Open(options_, dbfilename);
+    bool dbOpenStatus = db_.Open(options_, dbfilename);
     if (!dbOpenStatus) {
         cerr << "Can't open DeltaKV " << dbfilename << endl;
         exit(0);
@@ -91,14 +91,14 @@ int DeltaKVDB::Read(const std::string &table, const std::string &key,
                     std::vector<KVPair> &result) {
     string value;
     // cerr << "[YCSB] Read op, key = " << key << endl;
-    return db_->Get(key, &value);
+    return db_.Get(key, &value);
 }
 
 int DeltaKVDB::Scan(const std::string &table, const std::string &key, int len,
                     const std::vector<std::string> *fields,
                     std::vector<std::vector<KVPair>> &result) {
     vector<string> keys, values;
-    db_->GetByPrefix(key, &keys, &values);
+    db_.GetByPrefix(key, &keys, &values);
     return 1;
 }
 
@@ -110,7 +110,7 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
-    bool status = db_->Put(key, fullValue);
+    bool status = db_.Put(key, fullValue);
     if (!status) {
         cerr << "insert error"
              << endl;
@@ -122,14 +122,14 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
 int DeltaKVDB::Update(const std::string &table, const std::string &key,
                       std::vector<KVPair> &values) {
     for (KVPair &p : values) {
-        bool status = db_->Merge(key, p.second);
+        bool status = db_.Merge(key, p.second);
         if (!status) {
             cout << "Merge value failed" << endl;
             exit(-1);
         }
         // outputStream_ << "[YCSB] Update op, key = " << key << ", op value = " << p.second << endl;
     }
-    // s = db_->Flush(rocksdb::FlushOptions());
+    // s = db_.Flush(rocksdb::FlushOptions());
     return 1;
 }
 
@@ -140,7 +140,7 @@ int DeltaKVDB::OverWrite(const std::string &table, const std::string &key,
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
-    bool status = db_->Put(key, fullValue);
+    bool status = db_.Put(key, fullValue);
     if (!status) {
         cerr << "OverWrite error" << endl;
         exit(0);
@@ -150,14 +150,13 @@ int DeltaKVDB::OverWrite(const std::string &table, const std::string &key,
 }
 
 int DeltaKVDB::Delete(const std::string &table, const std::string &key) {
-    return db_->SingleDelete(key);  // Undefined result
+    return db_.SingleDelete(key);  // Undefined result
 }
 
 void DeltaKVDB::printStats() {
 }
 
 DeltaKVDB::~DeltaKVDB() {
-    delete db_;
     outputStream_.close();
 }
 }  // namespace ycsbc
