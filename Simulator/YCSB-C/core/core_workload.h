@@ -1,14 +1,15 @@
 #ifndef YCSB_C_CORE_WORKLOAD_H_
 #define YCSB_C_CORE_WORKLOAD_H_
 
+#include <string>
+#include <vector>
+
 #include "counter_generator.h"
 #include "db.h"
 #include "discrete_generator.h"
 #include "generator.h"
 #include "properties.h"
 #include "utils.h"
-#include <string>
-#include <vector>
 
 namespace ycsbc {
 
@@ -22,7 +23,7 @@ enum Operation {
 };
 
 class CoreWorkload {
-public:
+   public:
     ///
     /// The name of the database table to run queries against.
     ///
@@ -151,12 +152,12 @@ public:
     ///
     virtual void Init(const utils::Properties& p, bool run_phase = false);
 
-    virtual void BuildValues(std::vector<ycsbc::DB::KVPair>& values);
-    virtual void BuildUpdate(std::vector<ycsbc::DB::KVPair>& update);
+    virtual void BuildValues(std::vector<ycsbc::YCSBDB::KVPair>& values);
+    virtual void BuildUpdate(std::vector<ycsbc::YCSBDB::KVPair>& update);
 
     virtual std::string NextTable() { return table_name_; }
-    virtual std::string NextSequenceKey(); /// Used for loading data
-    virtual std::string NextTransactionKey(); /// Used for transactions
+    virtual std::string NextSequenceKey();     /// Used for loading data
+    virtual std::string NextTransactionKey();  /// Used for transactions
     virtual Operation NextOperation() { return op_chooser_.Next(); }
     virtual std::string NextFieldName();
     virtual size_t NextScanLength() { return scan_len_chooser_->Next(); }
@@ -165,23 +166,10 @@ public:
     bool write_all_fields() const { return write_all_fields_; }
 
     CoreWorkload()
-        : field_count_(0)
-        , read_all_fields_(false)
-        , write_all_fields_(false)
-        , field_len_generator_(NULL)
-        , key_generator_(NULL)
-        , key_chooser_(NULL)
-        , field_chooser_(NULL)
-        , scan_len_chooser_(NULL)
-        , insert_key_sequence_(3)
-        , ordered_inserts_(true)
-        , record_count_(0)
-        , is_run_phase_(false)
-    {
+        : field_count_(0), read_all_fields_(false), write_all_fields_(false), field_len_generator_(NULL), key_generator_(NULL), key_chooser_(NULL), field_chooser_(NULL), scan_len_chooser_(NULL), insert_key_sequence_(3), ordered_inserts_(true), record_count_(0), is_run_phase_(false) {
     }
 
-    virtual ~CoreWorkload()
-    {
+    virtual ~CoreWorkload() {
         if (field_len_generator_)
             delete field_len_generator_;
         if (key_generator_)
@@ -194,7 +182,7 @@ public:
             delete scan_len_chooser_;
     }
 
-protected:
+   protected:
     Generator<uint64_t>* GetFieldLenGenerator(const utils::Properties& p);
     std::string BuildKeyName(uint64_t key_num);
 
@@ -215,14 +203,12 @@ protected:
     bool is_run_phase_;
 };
 
-inline std::string CoreWorkload::NextSequenceKey()
-{
+inline std::string CoreWorkload::NextSequenceKey() {
     uint64_t key_num = key_generator_->Next();
     return BuildKeyName(key_num);
 }
 
-inline std::string CoreWorkload::NextTransactionKey()
-{
+inline std::string CoreWorkload::NextTransactionKey() {
     uint64_t key_num;
     do {
         key_num = key_chooser_->Next();
@@ -230,8 +216,7 @@ inline std::string CoreWorkload::NextTransactionKey()
     return BuildKeyName(key_num);
 }
 
-inline std::string CoreWorkload::BuildKeyName(uint64_t key_num)
-{
+inline std::string CoreWorkload::BuildKeyName(uint64_t key_num) {
     if (!ordered_inserts_) {
         key_num = utils::Hash(key_num);
     }
@@ -239,11 +224,10 @@ inline std::string CoreWorkload::BuildKeyName(uint64_t key_num)
     return std::string("user").append(std::to_string(key_num));
 }
 
-inline std::string CoreWorkload::NextFieldName()
-{
+inline std::string CoreWorkload::NextFieldName() {
     return std::string("field").append(std::to_string(field_chooser_->Next()));
 }
 
-} // ycsbc
+}  // namespace ycsbc
 
-#endif // YCSB_C_CORE_WORKLOAD_H_
+#endif  // YCSB_C_CORE_WORKLOAD_H_

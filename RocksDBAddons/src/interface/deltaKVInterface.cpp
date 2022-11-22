@@ -11,13 +11,18 @@ DeltaKV::~DeltaKV()
     delete pointerToRawRocksDB_;
 }
 
-bool DeltaKV::Open(const DeltaKVOptions& options, const string& name)
+bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 {
+    options.rocksdbRawOptions_.merge_operator.reset(
+        new RocksDBInternalMergeOperator);
+    cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, name = " << name << endl;
+    cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, pointerToRawRocksDB_ = " << &pointerToRawRocksDB_ << endl;
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!s.ok()) {
         cerr << "[ERROR]:[Addons]-[DeltaKVInterface]-[Construction] Can't open underlying rocksdb" << endl;
         return false;
     } else {
+        cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb success" << endl;
         return true;
     }
 }
@@ -78,10 +83,10 @@ vector<bool> DeltaKV::MultiGet(const vector<string>& keys, vector<string>* value
     return queryStatus;
 }
 
-vector<bool> DeltaKV::GetByPrefix(const string& prefixKey, vector<string>* keys, vector<string>* values)
+vector<bool> DeltaKV::GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values)
 {
     auto it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
-    it->Seek(prefixKey);
+    it->Seek(targetKeyPrefix);
     vector<bool> queryStatus;
     for (int i = 0; it->Valid(); i++) {
         string tempKey, tempValue;
@@ -127,4 +132,4 @@ bool DeltaKV::SingleDelete(const string& key)
     }
 }
 
-}
+} // namespace DELTAKV_NAMESPACE

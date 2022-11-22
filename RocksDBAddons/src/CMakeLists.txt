@@ -25,8 +25,8 @@ endif ()
 
 set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c17 -g -ggdb -g2") 
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -std=c++17 -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -g") 
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -g")
 
 SET (CMAKE_C_COMPILER               "/usr/bin/clang")
 SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")

@@ -6,15 +6,15 @@
 
 namespace ycsbc {
 
-class DB {
-public:
+class YCSBDB {
+   public:
     typedef std::pair<std::string, std::string> KVPair;
     static const int kOK = 0;
     static const int kErrorNoData = 1;
     static const int kErrorConflict = 2;
 
-    virtual void Init() { }
-    virtual void Close() { }
+    virtual void Init() {}
+    virtual void Close() {}
 
     ///
     /// Reads a record from the database.
@@ -27,9 +27,8 @@ public:
     /// @return Zero on success, or a non-zero error code on error/record-miss.
     ///
     virtual int Read(const std::string& table, const std::string& key,
-        const std::vector<std::string>* fields,
-        std::vector<KVPair>& result)
-        = 0;
+                     const std::vector<std::string>* fields,
+                     std::vector<KVPair>& result) = 0;
 
     ///
     /// Performs a range scan for a set of records in the database.
@@ -44,9 +43,8 @@ public:
     /// @return Zero on success, or a non-zero error code on error.
     ///
     virtual int Scan(const std::string& table, const std::string& key,
-        int record_count, const std::vector<std::string>* fields,
-        std::vector<std::vector<KVPair>>& result)
-        = 0;
+                     int record_count, const std::vector<std::string>* fields,
+                     std::vector<std::vector<KVPair>>& result) = 0;
 
     ///
     /// Updates a record in the database.
@@ -59,8 +57,7 @@ public:
     /// @return Zero on success, a non-zero error code on error.
     ///
     virtual int Update(const std::string& table, const std::string& key,
-        std::vector<KVPair>& values)
-        = 0;
+                       std::vector<KVPair>& values) = 0;
 
     ///
     /// Overwrite a record in the database.
@@ -73,8 +70,7 @@ public:
     /// @return Zero on success, a non-zero error code on error.
     ///
     virtual int OverWrite(const std::string& table, const std::string& key,
-        std::vector<KVPair>& values)
-        = 0;
+                          std::vector<KVPair>& values) = 0;
 
     ///
     /// Inserts a record into the database.
@@ -86,8 +82,7 @@ public:
     /// @return Zero on success, a non-zero error code on error.
     ///
     virtual int Insert(const std::string& table, const std::string& key,
-        std::vector<KVPair>& values)
-        = 0;
+                       std::vector<KVPair>& values) = 0;
 
     ///
     /// Deletes a record from the database.
@@ -98,11 +93,11 @@ public:
     ///
     virtual int Delete(const std::string& table, const std::string& key) = 0;
 
-    virtual void printStats() {};
+    virtual void printStats(){};
 
-    virtual ~DB() { }
+    virtual ~YCSBDB() {}
 };
 
-} // ycsbc
+}  // namespace ycsbc
 
-#endif // YCSB_C_DB_H_
+#endif  // YCSB_C_DB_H_

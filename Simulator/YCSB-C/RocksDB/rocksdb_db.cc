@@ -289,8 +289,7 @@ int RocksDB::OverWrite(const std::string &table, const std::string &key,
 
 int RocksDB::Delete(const std::string &table, const std::string &key) {
     std::string value;
-    rocksdb::Status s = db_->SingleDelete(rocksdb::WriteOptions(), key,
-                                          value);  // Undefined result
+    rocksdb::Status s = db_->SingleDelete(rocksdb::WriteOptions(), key);  // Undefined result
     return s.ok();
 }
 

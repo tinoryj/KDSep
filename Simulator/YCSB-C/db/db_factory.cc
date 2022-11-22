@@ -1,20 +1,19 @@
 #include "db/db_factory.h"
-#include "RocksDB/rocksdb_db.h"
+
 #include <string>
 
+#include "DeltaKV/deltaKV_db.h"
+// #include "RocksDB/rocksdb_db.h"
+
 using namespace std;
-using ycsbc::DB;
+using ycsbc::YCSBDB;
 using ycsbc::DBFactory;
 
-DB *DBFactory::CreateDB(utils::Properties &props)
-{
-    if (props["dbname"] == "rocksdb")
-    {
-        return new RocksDB(props["dbfilename"].c_str(), props["configpath"]);
+YCSBDB *DBFactory::CreateDB(utils::Properties &props) {
+    if (props["dbname"] == "rocksdb") {
+        return new DeltaKVDB(props["dbfilename"].c_str(), props["configpath"]);
         // cerr << props["dbfilename"].c_str() << props["configpath"] << endl;
-    }
-    else
-    {
+    } else {
         return NULL;
     }
 }

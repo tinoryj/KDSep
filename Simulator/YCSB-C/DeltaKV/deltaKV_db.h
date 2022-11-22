@@ -1,5 +1,5 @@
-#ifndef YCSB_C_ROCKSDB_DB_H
-#define YCSB_C_ROCKSDB_DB_H
+#ifndef YCSB_C_DeltaKVDB_DB_H
+#define YCSB_C_DeltaKVDB_DB_H
 
 #include <assert.h>
 
@@ -10,25 +10,13 @@
 
 #include "core/db.h"
 #include "core/properties.h"
-#include "rocksdb/cache.h"
-#include "rocksdb/db.h"
-#include "rocksdb/env.h"
-#include "rocksdb/filter_policy.h"
-#include "rocksdb/flush_block_policy.h"
-#include "rocksdb/iostats_context.h"
-#include "rocksdb/merge_operator.h"
-#include "rocksdb/options.h"
-#include "rocksdb/perf_context.h"
-#include "rocksdb/slice.h"
-#include "rocksdb/statistics.h"
-#include "rocksdb/status.h"
-#include "rocksdb/table.h"
-#include "rocksdb/trace_reader_writer.h"
+#include "interface/deltaKVInterface.hpp"
+#include "interface/deltaKVOptions.hpp"
 
 namespace ycsbc {
-class RocksDB : public YCSBDB {
+class DeltaKVDB : public YCSBDB {
    public:
-    RocksDB(const char *dbfilename, const std::string &config_file_path);
+    DeltaKVDB(const char *dbfilename, const std::string &config_file_path);
 
     int Read(const std::string &table, const std::string &key,
              const std::vector<std::string> *fields,
@@ -51,13 +39,12 @@ class RocksDB : public YCSBDB {
 
     void printStats();
 
-    ~RocksDB();
+    ~DeltaKVDB();
 
    private:
     std::ofstream outputStream_;
-    rocksdb::DB *db_;
-    rocksdb::Options options_;
-    // rocksdb::Iterator *it{nullptr};
+    DeltaKV *db_;
+    DeltaKVOptions options_;
 };
 }  // namespace ycsbc
-#endif  // YCSB_C_ROCKSDB_DB_H
+#endif  // YCSB_C_DeltaKVDB_DB_H

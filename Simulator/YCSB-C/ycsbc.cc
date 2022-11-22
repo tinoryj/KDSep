@@ -71,7 +71,7 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
 double ops_time[6] = {0.0};
 long ops_cnt[6] = {0};
 
-int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
+int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops,
                    bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> &histogram) {
     db->Init();
     ycsbc::Client client(*db, *wl);
@@ -114,7 +114,7 @@ int main(const int argc, const char *argv[]) {
     utils::Properties props;
     string file_name = ParseCommandLine(argc, argv, props);
 
-    ycsbc::DB *db = ycsbc::DBFactory::CreateDB(props);
+    ycsbc::YCSBDB *db = ycsbc::DBFactory::CreateDB(props);
     if (!db) {
         cout << "Unknown database name " << props["dbname"] << endl;
         exit(0);
@@ -420,7 +420,7 @@ void UsageMessage(const char *command) {
     cout << "Usage: " << command << " [options]" << endl;
     cout << "Options:" << endl;
     cout << "  -threads n: execute using n threads (default: 1)" << endl;
-    cout << "  -db dbname: specify the name of the DB (rocksdb)" << endl;
+    cout << "  -db dbname: specify the name of the YCSBDB (rocksdb)" << endl;
     cout << "  -phase load/run/both: load the database or run the benchamark" << endl;
     cout << "  -dbfilename path: specify the path of the database (make sure path exist" << endl;
     cout << "  -configpath path: specify the path of the config file (templetes config fi-" << endl;

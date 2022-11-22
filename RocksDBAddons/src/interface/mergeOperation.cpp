@@ -2,9 +2,9 @@
 
 namespace DELTAKV_NAMESPACE {
 
-bool RocksDBInternalMergeOperator::FullMerge(const rocksdb::Slice& key, const rocksdb::Slice* existing_value,
+bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
     const std::deque<std::string>& operand_list,
-    std::string* new_value, rocksdb::Logger* logger) const
+    std::string* new_value, Logger* logger) const
 {
     externalValueType tempExternalValueTypeStructForCheck;
     memcpy(&tempExternalValueTypeStructForCheck, existing_value->data(), sizeof(externalValueType));
@@ -16,9 +16,9 @@ bool RocksDBInternalMergeOperator::FullMerge(const rocksdb::Slice& key, const ro
     return true;
 };
 
-bool RocksDBInternalMergeOperator::PartialMerge(const rocksdb::Slice& key, const rocksdb::Slice& left_operand,
-    const rocksdb::Slice& right_operand, std::string* new_value,
-    rocksdb::Logger* logger) const
+bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
+    const Slice& right_operand, std::string* new_value,
+    Logger* logger) const
 {
     string emptyValueStr = "";
     new_value->assign(emptyValueStr);
@@ -43,9 +43,9 @@ vector<string> FieldUpdateMergeOperator::stringSplit(string str, string token) c
     return result;
 };
 
-bool FieldUpdateMergeOperator::FullMerge(const rocksdb::Slice& key, const rocksdb::Slice* existing_value,
+bool FieldUpdateMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
     const std::deque<std::string>& operand_list,
-    std::string* new_value, rocksdb::Logger* logger) const
+    std::string* new_value, Logger* logger) const
 {
     vector<std::string> words = stringSplit(existing_value->ToString(), ",");
     for (auto q : operand_list) {
@@ -63,9 +63,9 @@ bool FieldUpdateMergeOperator::FullMerge(const rocksdb::Slice& key, const rocksd
     return true;
 };
 
-bool FieldUpdateMergeOperator::PartialMerge(const rocksdb::Slice& key, const rocksdb::Slice& left_operand,
-    const rocksdb::Slice& right_operand, std::string* new_value,
-    rocksdb::Logger* logger) const
+bool FieldUpdateMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
+    const Slice& right_operand, std::string* new_value,
+    Logger* logger) const
 {
     new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
     return true;
