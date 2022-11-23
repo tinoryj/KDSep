@@ -25,13 +25,31 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     return true;
 };
 
-DeltaKV::DeltaKV()
+DeltaKV::DeltaKV(DeltaKVOptions& options, const string& name)
 {
+    // Create objects
+    if (options.enable_deltaStore == true) {
+        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, hashStoreGCManagerPtr_);
+    }
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add HashStoreInterfaceObjPtr_ success" << RESET << endl;
+    // start threadPool, memPool, etc.
+    launchThreadPool(options.deltaKV_thread_number_limit);
+    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] start thread for HashStoreFileOperator::operationWorker success" << RESET << endl;
 }
 
 DeltaKV::~DeltaKV()
 {
-    delete pointerToRawRocksDB_;
+    if (pointerToRawRocksDB_ != nullptr) {
+        delete pointerToRawRocksDB_;
+    }
+    if (HashStoreInterfaceObjPtr_ != nullptr) {
+        delete HashStoreInterfaceObjPtr_;
+        // delete related object pointers
+        delete hashStoreFileManagerPtr_;
+        delete hashStoreFileOperatorPtr_;
+        delete hashStoreGCManagerPtr_;
+    }
     deleteThreadPool();
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Deconstruction] delete thread pool and underlying rocksdb success" << RESET << endl;
 }
@@ -50,14 +68,13 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb success" << RESET << endl;
     }
     // Create objects
-    if (options.enable_deltaStore == true) {
-        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name);
+    if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
+        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, hashStoreGCManagerPtr_);
     }
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add HashStoreInterfaceObjPtr_ success" << RESET << endl;
     // start threadPool, memPool, etc.
     launchThreadPool(options.deltaKV_thread_number_limit);
-    HashStoreFileOperator* hashStoreFileOperatorPtr = HashStoreInterfaceObjPtr_->hashStoreFileOperator_;
-    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr));
+    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] start thread for HashStoreFileOperator::operationWorker success" << RESET << endl;
     return true;
 }

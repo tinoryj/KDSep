@@ -12,7 +12,9 @@ namespace DELTAKV_NAMESPACE {
 
 class HashStoreInterface {
 public:
-    HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr);
+    HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager* hashStoreFileManager,
+        HashStoreFileOperator* hashStoreFileOperator,
+        HashStoreGCManager* hashStoreGCManager);
     ~HashStoreInterface();
     bool put(const string& keyStr, const string& valueStr);
     vector<bool> multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec);
@@ -20,13 +22,13 @@ public:
     vector<bool> multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();
 
-    // get function pointers
-    HashStoreFileManager* hashStoreFileManager_;
-    HashStoreFileOperator* hashStoreFileOperator_;
-    HashStoreGCManager* hashStoreGCManager_;
-
 private:
     DeltaKVOptions* internalOptionsPtr_;
+    // get function pointers
+    HashStoreFileManager* hashStoreFileManagerPtr_;
+    HashStoreFileOperator* hashStoreFileOperatorPtr_;
+    HashStoreGCManager* hashStoreGCManagerPtr_;
+    // message queues for internal usage
     messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ_;
     messageQueue<hashStoreFileMetaDataHandler*>* GCNotifyFileMetaDataUpdateMQ_;
 };

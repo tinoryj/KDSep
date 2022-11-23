@@ -1,6 +1,9 @@
 #pragma once
 
 #include "common/rocksdbHeaders.hpp"
+#include "hashBasedStore/hashStoreFileManager.hpp"
+#include "hashBasedStore/hashStoreFileOperator.hpp"
+#include "hashBasedStore/hashStoreGCManager.hpp"
 #include "hashBasedStore/hashStoreInterface.hpp"
 #include "indexBasedStore/indexStoreInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
@@ -32,7 +35,8 @@ class DeltaKV {
 public:
     rocksdb::DB* pointerToRawRocksDB_;
     // Abstract class ctor
-    DeltaKV();
+    DeltaKV() = default;
+    DeltaKV(DeltaKVOptions& options, const string& name);
     // No copying allowed
     DeltaKV(const DeltaKV&) = delete;
     void operator=(const DeltaKV&) = delete;
@@ -57,6 +61,9 @@ private:
     bool deleteThreadPool();
     // Storage component
     HashStoreInterface* HashStoreInterfaceObjPtr_;
+    HashStoreFileManager* hashStoreFileManagerPtr_;
+    HashStoreFileOperator* hashStoreFileOperatorPtr_;
+    HashStoreGCManager* hashStoreGCManagerPtr_;
 };
 
 } // namespace DELTAKV_NAMESPACE
