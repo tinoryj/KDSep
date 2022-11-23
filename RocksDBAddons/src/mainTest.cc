@@ -1,10 +1,26 @@
 #include "interface/deltaKVInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
+#include "utils/murmurHash.hpp"
 
 using namespace DELTAKV_NAMESPACE;
 
 int main()
 {
+    // partial function test
+    // u_char murmurHashResultBuffer[16];
+    // string rawStr = "test";
+    // MurmurHash3_x64_128((void*)rawStr.c_str(), rawStr.size(), 0, murmurHashResultBuffer);
+    // uint64_t firstFourByte;
+    // string prefixStr;
+    // memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
+    // cout << hex << firstFourByte << endl;
+    // while (firstFourByte != 0) {
+    //     prefixStr += ((firstFourByte & 1) + '0');
+    //     firstFourByte >>= 1;
+    // }
+    // cout << prefixStr << endl;
+
+    // DeltaKV test
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;

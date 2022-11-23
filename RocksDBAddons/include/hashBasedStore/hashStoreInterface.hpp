@@ -2,6 +2,7 @@
 
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
+#include "hashBasedStore/hashStoreGCManager.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include <bits/stdc++.h>
 
@@ -22,11 +23,12 @@ public:
     // get function pointers
     HashStoreFileManager* hashStoreFileManager_;
     HashStoreFileOperator* hashStoreFileOperator_;
+    HashStoreGCManager* hashStoreGCManager_;
 
 private:
     DeltaKVOptions* internalOptionsPtr_;
     messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ_;
-    messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_;
+    messageQueue<hashStoreFileMetaDataHandler*>* GCNotifyFileMetaDataUpdateMQ_;
 };
 
 }

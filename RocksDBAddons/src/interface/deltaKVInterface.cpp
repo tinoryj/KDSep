@@ -56,7 +56,8 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add HashStoreInterfaceObjPtr_ success" << RESET << endl;
     // start threadPool, memPool, etc.
     launchThreadPool(options.deltaKV_thread_number_limit);
-    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, HashStoreInterfaceObjPtr_->hashStoreFileOperator_));
+    HashStoreFileOperator* hashStoreFileOperatorPtr = HashStoreInterfaceObjPtr_->hashStoreFileOperator_;
+    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr));
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] start thread for HashStoreFileOperator::operationWorker success" << RESET << endl;
     return true;
 }
