@@ -1,7 +1,14 @@
+#pragma once
+
 #include "common/rocksdbHeaders.hpp"
+#include "hashBasedStore/hashStoreInterface.hpp"
+#include "indexBasedStore/indexStoreInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/loggerColor.hpp"
+#include <boost/asio/io_service.hpp>
+#include <boost/bind.hpp>
+#include <boost/thread/thread.hpp>
 
 using namespace std;
 
@@ -23,6 +30,7 @@ public:
 
 class DeltaKV {
 public:
+    rocksdb::DB* pointerToRawRocksDB_;
     // Abstract class ctor
     DeltaKV();
     // No copying allowed
@@ -43,7 +51,12 @@ public:
     bool SingleDelete(const string& key);
 
 private:
-    rocksdb::DB* pointerToRawRocksDB_;
+    boost::asio::io_service ioService_;
+    boost::thread_group threadpool_;
+    bool launchThreadPool(uint64_t totalThreadNumber);
+    bool deleteThreadPool();
+    // Storage component
+    HashStoreInterface* HashStoreInterfaceObjPtr_;
 };
 
 } // namespace DELTAKV_NAMESPACE

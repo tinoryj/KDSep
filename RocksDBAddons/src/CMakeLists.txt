@@ -28,8 +28,8 @@ endif ()
 
 set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c17 -fPIC -frtti -g -ggdb -g2") 
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -fPIC -frtti -g -ggdb -g2") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -fPIC -frtti -g -ggdb -g2")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -fPIC -frtti -g") 
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -fPIC -frtti -g")
 
 SET (CMAKE_C_COMPILER               "/usr/bin/clang")
 SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
@@ -40,16 +40,16 @@ SET (CMAKE_OBJDUMP                  "/usr/bin/llvm-objdump")
 SET (CMAKE_RANLIB                   "/usr/bin/llvm-ranlib")
 
 add_library(DeltaKV STATIC 
-    interface/deltaKVOptions.cpp
-    interface/deltaKVInterface.cpp
-    interface/mergeOperation.cpp
-    hashBasedStore/hashStoreInterface.cpp
-    indexBasedStore/indexStoreInterface.cpp
-    utils/murmurHash.cpp
-    utils/trie.cpp
-    utils/messageQueue.cpp
-    utils/lruCache.cpp
-    utils/boostLruCache.cpp
+      utils/murmurHash.cpp
+      utils/lruCache.cpp
+      utils/boostLruCache.cpp
+      hashBasedStore/hashStoreInterface.cpp
+      hashBasedStore/hashStoreFileManager.cpp
+      hashBasedStore/hashStoreFileOperator.cpp
+      indexBasedStore/indexStoreInterface.cpp
+      interface/deltaKVOptions.cpp
+      interface/deltaKVInterface.cpp
+      interface/mergeOperation.cpp
 )
 
 target_link_libraries(DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})

@@ -7,7 +7,7 @@ namespace DELTAKV_NAMESPACE {
 
 class indexStoreInterface {
 public:
-    indexStoreInterface(DeltaKVOptions* options);
+    indexStoreInterface(DeltaKVOptions* options, rocksdb::DB* pointerToRawRocksDB);
     ~indexStoreInterface();
     bool put(const string& keyStr, const string& valueStr);
     vector<bool> multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec);
@@ -17,6 +17,7 @@ public:
 
 private:
     DeltaKVOptions* internalOptionsPtr_;
+    rocksdb::DB* pointerToRawRocksDBForGC_;
 };
 
 }

@@ -6,12 +6,12 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     const std::deque<std::string>& operand_list,
     std::string* new_value, Logger* logger) const
 {
-    externalValueType tempExternalValueTypeStructForCheck;
-    memcpy(&tempExternalValueTypeStructForCheck, existing_value->data(), sizeof(externalValueType));
-    if (tempExternalValueTypeStructForCheck.mergeFlag_ == false) {
-        cerr << RED << "[ERROR]:[Addons]-[RocksDBInternalMergeOperator]-[FullMerge] find object request merge without correct merge flag" << RESET << endl;
-        return false;
-    }
+    // externalValueType tempExternalValueTypeStructForCheck;
+    // memcpy(&tempExternalValueTypeStructForCheck, existing_value->data(), sizeof(externalValueType));
+    // if (tempExternalValueTypeStructForCheck.mergeFlag_ == false) {
+    //     cerr << RED << "[ERROR]:[Addons]-[RocksDBInternalMergeOperator]-[FullMerge] find object request merge without correct merge flag" << RESET << endl;
+    //     return false;
+    // }
     new_value->assign(existing_value->data());
     return true;
 };
@@ -32,6 +32,8 @@ DeltaKV::DeltaKV()
 DeltaKV::~DeltaKV()
 {
     delete pointerToRawRocksDB_;
+    deleteThreadPool();
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Deconstruction] delete thread pool and underlying rocksdb success" << RESET << endl;
 }
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
@@ -46,8 +48,17 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         return false;
     } else {
         cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb success" << RESET << endl;
-        return true;
     }
+    // Create objects
+    if (options.enable_deltaStore == true) {
+        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name);
+    }
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add HashStoreInterfaceObjPtr_ success" << RESET << endl;
+    // start threadPool, memPool, etc.
+    launchThreadPool(options.deltaKV_thread_number_limit);
+    ioService_.post(boost::bind(&HashStoreFileOperator::operationWorker, HashStoreInterfaceObjPtr_->hashStoreFileOperator_));
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] start thread for HashStoreFileOperator::operationWorker success" << RESET << endl;
+    return true;
 }
 
 bool DeltaKV::Close()
@@ -153,6 +164,41 @@ bool DeltaKV::SingleDelete(const string& key)
     } else {
         return true;
     }
+}
+
+bool DeltaKV::launchThreadPool(uint64_t totalThreadNumber)
+{
+    /*
+     * This will start the ioService_ processing loop. All tasks
+     * assigned with ioService_.post() will start executing.
+     */
+    boost::asio::io_service::work work(ioService_);
+
+    /*
+     * This will add totalThreadNumber threads to the thread pool.
+     */
+    for (uint64_t i = 0; i < totalThreadNumber; i++) {
+        threadpool_.create_thread(
+            boost::bind(&boost::asio::io_service::run, &ioService_));
+    }
+    return true;
+}
+
+bool DeltaKV::deleteThreadPool()
+{
+    /*
+     * This will stop the ioService_ processing loop. Any tasks
+     * you add behind this point will not execute.
+     */
+    ioService_.stop();
+
+    /*
+     * Will wait till all the threads in the thread pool are finished with
+     * their assigned tasks and 'join' them. Just assume the threads inside
+     * the threadpool_ will be destroyed by this method.
+     */
+    threadpool_.join_all();
+    return true;
 }
 
 } // namespace DELTAKV_NAMESPACE

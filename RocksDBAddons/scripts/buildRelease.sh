@@ -1,7 +1,7 @@
 #!/bin/bash
 if [ ! -d "/opt/rocksdb-7.7.3" ]; then
     echo "Not found rocksdb-7.7.3 in /opt"
-    if [ -f "../rocksdb-7.7.3/librocksdb.a" ]; then
+    if [ ! -f "../rocksdb-7.7.3/librocksdb.a" ]; then
         echo "Not found librocksdb.a in ../rocksdb-7.7.3 start build"
         cd ../rocksdb-7.7.3 || exit
         make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j16
@@ -20,11 +20,15 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(shell grep -c ^processor /proc/cpuinfo 2>/dev/null)
 cd .. || exit
 
-echo -e "\n"
+if [ ! -f "bin/test" ]; then
+    echo -e "\033[31mBuild error, exit without testing \033[0m"
+else
+    echo -e "\n"
+    ulimit -n 65536
+    echo "Local Test with simple operations ===>"
+    bin/test
+    echo "Local Test with simple operations <==="
 
-echo "Local Test with simple operations ===>"
-bin/test
-echo "Local Test with simple operations <==="
-
-# Clean up TempDB
-rm -rf TempDB
+    # Clean up TempDB
+    rm -rf TempDB
+fi

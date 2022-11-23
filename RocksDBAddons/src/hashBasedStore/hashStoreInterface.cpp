@@ -2,38 +2,49 @@
 
 namespace DELTAKV_NAMESPACE {
 
-hashStoreInterface::hashStoreInterface(DeltaKVOptions* options)
+HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr)
 {
     internalOptionsPtr_ = options;
+    fileManagerNotifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
+    operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
+
+    hashStoreFileManager_ = new HashStoreFileManager(internalOptionsPtr_->hashStore_init_prefix_bit_number, internalOptionsPtr_->deltaStore_garbage_collection_start_single_file_minimum_occupancy * internalOptionsPtr_->deltaStore_single_file_maximum_size, internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size, workingDirStr, fileManagerNotifyGCMQ_);
+    hashStoreFileOperator_ = new HashStoreFileOperator(operationToWorkerMQ_);
+    if (!hashStoreFileManager_) {
+        cerr << RED << "[ERROR]:[Addons]-[HashStoreInterface]-[Construction] Create HashStoreFileManager error" << RESET << endl;
+    }
+    if (!hashStoreFileOperator_) {
+        cerr << RED << "[ERROR]:[Addons]-[HashStoreInterface]-[Construction] Create HashStoreFileOperator error" << RESET << endl;
+    }
 }
 
-hashStoreInterface::~hashStoreInterface()
+HashStoreInterface::~HashStoreInterface()
 {
 }
 
-bool hashStoreInterface::put(const string& keyStr, const string& valueStr)
+bool HashStoreInterface::put(const string& keyStr, const string& valueStr)
 {
     return true;
 }
 
-vector<bool> hashStoreInterface::multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
+vector<bool> HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
 {
     vector<bool> resultBoolVec;
     return resultBoolVec;
 }
 
-bool hashStoreInterface::get(const string& keyStr, string* valueStrPtr)
+bool HashStoreInterface::get(const string& keyStr, string* valueStrPtr)
 {
     return true;
 }
 
-vector<bool> hashStoreInterface::multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
+vector<bool> HashStoreInterface::multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
 {
     vector<bool> resultBoolVec;
     return resultBoolVec;
 }
 
-bool hashStoreInterface::forcedManualGarbageCollection()
+bool HashStoreInterface::forcedManualGarbageCollection()
 {
     return true;
 }

@@ -67,6 +67,7 @@ public:
 
     // common options
     uint64_t deltaKV_thread_number_limit = 8;
+    uint64_t hashStore_init_prefix_bit_number = 8;
 
     bool dumpOptions(string dumpPath);
 };

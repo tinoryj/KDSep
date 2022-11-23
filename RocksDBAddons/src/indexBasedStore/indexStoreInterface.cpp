@@ -2,9 +2,10 @@
 
 namespace DELTAKV_NAMESPACE {
 
-indexStoreInterface::indexStoreInterface(DeltaKVOptions* options)
+indexStoreInterface::indexStoreInterface(DeltaKVOptions* options, rocksdb::DB* pointerToRawRocksDB)
 {
     internalOptionsPtr_ = options;
+    pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
 }
 
 indexStoreInterface::~indexStoreInterface()

@@ -1,11 +1,10 @@
 #pragma once
 
+#include "utils/_trie_node.h"
+#include "utils/_trie_util.h"
 #include <iostream>
 #include <iterator>
 #include <string>
-
-#include "_trie_node.h"
-#include "_trie_util.h"
 
 /*
   Iterator class definition.
