@@ -2,29 +2,6 @@
 
 namespace DELTAKV_NAMESPACE {
 
-bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
-    const std::deque<std::string>& operand_list,
-    std::string* new_value, Logger* logger) const
-{
-    externalValueType tempExternalValueTypeStructForCheck;
-    memcpy(&tempExternalValueTypeStructForCheck, existing_value->data(), sizeof(externalValueType));
-    if (tempExternalValueTypeStructForCheck.mergeFlag_ == false) {
-        cerr << "[ERROR]:[Addons]-[RocksDBInternalMergeOperator]-[FullMerge] find object request merge without correct merge flag" << endl;
-        return false;
-    }
-    new_value->assign(existing_value->data());
-    return true;
-};
-
-bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
-    const Slice& right_operand, std::string* new_value,
-    Logger* logger) const
-{
-    string emptyValueStr = "";
-    new_value->assign(emptyValueStr);
-    return true;
-};
-
 vector<string> FieldUpdateMergeOperator::stringSplit(string str, string token) const
 {
     vector<string> result;

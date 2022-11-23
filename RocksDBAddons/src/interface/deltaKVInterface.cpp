@@ -2,6 +2,29 @@
 
 namespace DELTAKV_NAMESPACE {
 
+bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
+    const std::deque<std::string>& operand_list,
+    std::string* new_value, Logger* logger) const
+{
+    externalValueType tempExternalValueTypeStructForCheck;
+    memcpy(&tempExternalValueTypeStructForCheck, existing_value->data(), sizeof(externalValueType));
+    if (tempExternalValueTypeStructForCheck.mergeFlag_ == false) {
+        cerr << RED << "[ERROR]:[Addons]-[RocksDBInternalMergeOperator]-[FullMerge] find object request merge without correct merge flag" << RESET << endl;
+        return false;
+    }
+    new_value->assign(existing_value->data());
+    return true;
+};
+
+bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
+    const Slice& right_operand, std::string* new_value,
+    Logger* logger) const
+{
+    string emptyValueStr = "";
+    new_value->assign(emptyValueStr);
+    return true;
+};
+
 DeltaKV::DeltaKV()
 {
 }
@@ -15,14 +38,14 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 {
     options.rocksdbRawOptions_.merge_operator.reset(
         new RocksDBInternalMergeOperator);
-    cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, name = " << name << endl;
-    cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, pointerToRawRocksDB_ = " << &pointerToRawRocksDB_ << endl;
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, name = " << name << RESET << endl;
+    cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, pointerToRawRocksDB_ = " << &pointerToRawRocksDB_ << RESET << endl;
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!s.ok()) {
-        cerr << "[ERROR]:[Addons]-[DeltaKVInterface]-[Construction] Can't open underlying rocksdb" << endl;
+        cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Construction] Can't open underlying rocksdb" << RESET << endl;
         return false;
     } else {
-        cerr << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb success" << endl;
+        cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb success" << RESET << endl;
         return true;
     }
 }

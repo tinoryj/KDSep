@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rocksdb/options.h"
+#include "utils/loggerColor.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -39,6 +40,7 @@ public:
     uint64_t extract_to_deltaStore_size_upper_bound = 0x3f3f3f;
     uint64_t deltaStore_single_file_maximum_size = 1 * 1024 * 1024;
     uint64_t deltaStore_total_storage_maximum_size = 1024 * 1024 * deltaStore_single_file_maximum_size;
+    uint64_t deltaStore_thread_number_limit = 4;
     float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_start_total_storage_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;
@@ -57,10 +59,14 @@ public:
     uint64_t extract_to_valueStore_size_upper_bound = 0x3f3f3f;
     uint64_t valueStore_single_file_maximum_size = 1 * 1024 * 1024;
     uint64_t valueStore_total_storage_maximum_size = 1024 * 1024 * valueStore_single_file_maximum_size;
+    uint64_t valueStore_thread_number_limit = 4;
     float valueStore_garbage_collection_start_single_file_minimum_occupancy = 0.8;
     float valueStore_garbage_collection_start_total_storage_minimum_occupancy = 0.8;
     float valueStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;
     float valueStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
+
+    // common options
+    uint64_t deltaKV_thread_number_limit = 8;
 
     bool dumpOptions(string dumpPath);
 };

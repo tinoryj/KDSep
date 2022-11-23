@@ -34,16 +34,34 @@ int main()
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
-    cerr << "Start create DeltaKVDB instance" << endl;
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
-        cerr << "Can't open DeltaKV "
-             << dbNameStr << endl;
+        cerr << RED << "[ERROR]:[Addons]-[MainTest] Can't open DeltaKV "
+             << dbNameStr << RESET << endl;
         exit(0);
     } else {
-        cerr << "Create DeltaKV success" << endl;
+        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
     }
+
+    // operations
+    string key = "Key1";
+    string value = "Value1,value2";
+    string merge = "1,value3";
+    string valueTemp;
+    if (!db_.Put(key, value)) {
+        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
+    } else if (!db_.Get(key, &valueTemp)) {
+        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
+    } else if (!db_.Merge(key, merge)) {
+        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
+    } else if (!db_.Get(key, &valueTemp)) {
+        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
+    } else {
+        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Function test fully correct" << RESET << endl;
+        return 0;
+    }
+    cerr << RED << "[ERROR]:[Addons]-[MainTest] Function test not correct" << RESET << endl;
     return 0;
 }

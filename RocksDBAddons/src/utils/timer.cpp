@@ -18,7 +18,7 @@ void Timer::triggerTimer(bool start = true, const char* label = 0)
         _startTime = chrono::system_clock::now();
     } else {
         chrono::system_clock::time_point endTime = chrono::system_clock::now();
-        cout << (label == 0 ? "NIL" : label) << ": " << (chrono::duration_cast<chrono::microseconds>(endTime - _startTime).count() + _prev) << " us" << endl;
+        cout << (label == 0 ? "NIL" : label) << ": " << (chrono::duration_cast<chrono::microseconds>(endTime - _startTime).count() + _prev) << " us" << RESET << endl;
     }
 }
 
