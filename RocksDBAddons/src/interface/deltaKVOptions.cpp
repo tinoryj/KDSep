@@ -11,6 +11,7 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     dumpOptionsOutStream << "\tdeltaKV_thread_number_limit = " << deltaKV_thread_number_limit << endl;
     dumpOptionsOutStream << "\thashStore_init_prefix_bit_number = " << hashStore_init_prefix_bit_number << endl;
     dumpOptionsOutStream << "\thashStore_max_prefix_bit_number = " << hashStore_max_prefix_bit_number << endl;
+    dumpOptionsOutStream << "\tdeltaKV_merge_operation_ptr = " << deltaKV_merge_operation_ptr->kClassName() << endl;
     if (enable_deltaStore == true) {
         dumpOptionsOutStream << "DeltaStore options:" << endl;
         dumpOptionsOutStream << "\tenable_deltaStore = " << enable_deltaStore << endl;

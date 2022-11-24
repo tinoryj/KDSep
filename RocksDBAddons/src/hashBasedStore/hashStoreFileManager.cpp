@@ -251,4 +251,5 @@ uint64_t HashStoreFileManager::newFileIDGenerator()
 void HashStoreFileManager::processGCRequestWorker()
 {
 }
+
 }

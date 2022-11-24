@@ -5,17 +5,21 @@ using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
-class indexStoreInterface {
+class IndexStoreInterface {
 public:
-    indexStoreInterface(DeltaKVOptions* options, rocksdb::DB* pointerToRawRocksDB);
-    ~indexStoreInterface();
-    bool put(const string& keyStr, const string& valueStr);
-    vector<bool> multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec);
-    bool get(const string& keyStr, string* valueStrPtr);
-    vector<bool> multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec);
+    IndexStoreInterface(DeltaKVOptions* options, string workingDir, rocksdb::DB* pointerToRawRocksDB);
+    ~IndexStoreInterface();
+
+    uint64_t getExtractSizeThreshold();
+    bool put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr);
+    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo>* storageInfoVecPtr);
+    bool get(string keyStr, externalIndexInfo storageInfo, string* valueStrPtr);
+    bool multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();
 
 private:
+    uint64_t extractValueSizeThreshold_;
+    string workingDir_;
     DeltaKVOptions* internalOptionsPtr_;
     rocksdb::DB* pointerToRawRocksDBForGC_;
 };

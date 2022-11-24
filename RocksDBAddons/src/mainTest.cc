@@ -1,5 +1,6 @@
 #include "interface/deltaKVInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
+#include "interface/mergeOperation.hpp"
 #include "utils/murmurHash.hpp"
 
 using namespace DELTAKV_NAMESPACE;
@@ -51,6 +52,8 @@ int main()
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
+    options_.deltaKV_merge_operation_ptr.reset(new FieldUpdateMergeOperator);
+
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
@@ -60,7 +63,8 @@ int main()
     } else {
         cerr << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
     }
-
+    // dump operations
+    options_.dumpOptions("options.dump");
     // operations
     string key = "Key1";
     string value = "Value1,value2";

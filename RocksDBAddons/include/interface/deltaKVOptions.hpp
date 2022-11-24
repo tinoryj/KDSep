@@ -1,5 +1,6 @@
 #pragma once
 
+#include "interface/mergeOperation.hpp"
 #include "rocksdb/options.h"
 #include "utils/loggerColor.hpp"
 #include <bits/stdc++.h>
@@ -69,6 +70,7 @@ public:
     uint64_t deltaKV_thread_number_limit = 8;
     uint64_t hashStore_init_prefix_bit_number = 8;
     uint64_t hashStore_max_prefix_bit_number = 16;
+    shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
 
     bool dumpOptions(string dumpPath);
 };

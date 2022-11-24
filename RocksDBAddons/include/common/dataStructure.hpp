@@ -5,9 +5,11 @@
 
 using namespace std;
 
-typedef struct externalValueType {
-    bool mergeFlag_;
-} externalValueType;
+typedef struct internalValueType {
+    bool mergeFlag_; // true if the value request merge.
+    bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree
+    uint32_t rawValueSize_; // store the raw value size, in case some delta are not separated.
+} internalValueType;
 
 typedef struct externalIndexInfo {
     uint32_t externalFileID_;

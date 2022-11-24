@@ -8,20 +8,16 @@ using namespace rocksdb;
 
 namespace DELTAKV_NAMESPACE {
 
-class FieldUpdateMergeOperator : public MergeOperator {
+class DeltaKVMergeOperator {
 public:
-    bool FullMerge(const Slice& key, const Slice* existing_value,
-        const std::deque<std::string>& operand_list,
-        std::string* new_value, Logger* logger) const override;
+    virtual bool Merge(string rawValue, vector<string> operandList, string* finalValue) = 0;
+    virtual string kClassName() = 0;
+};
 
-    bool PartialMerge(const Slice& key, const Slice& left_operand,
-        const Slice& right_operand, std::string* new_value,
-        Logger* logger) const override;
-
-    static const char* kClassName() { return "FieldUpdateMergeOperator"; }
-    const char* Name() const override { return kClassName(); }
-
-    vector<string> stringSplit(string str, string token) const;
+class FieldUpdateMergeOperator : public DeltaKVMergeOperator {
+public:
+    bool Merge(string rawValue, vector<string> operandList, string* finalValue);
+    string kClassName();
 };
 
 } // namespace DELTAKV_NAMESPACE

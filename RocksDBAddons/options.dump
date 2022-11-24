@@ -1,0 +1,5 @@
+Common options:
+	deltaKV_thread_number_limit = 8
+	hashStore_init_prefix_bit_number = 8
+	hashStore_max_prefix_bit_number = 16
+	deltaKV_merge_operation_ptr = FieldUpdateMergeOperator

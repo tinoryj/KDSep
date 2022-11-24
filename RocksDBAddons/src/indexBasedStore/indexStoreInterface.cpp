@@ -2,39 +2,43 @@
 
 namespace DELTAKV_NAMESPACE {
 
-indexStoreInterface::indexStoreInterface(DeltaKVOptions* options, rocksdb::DB* pointerToRawRocksDB)
+IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string workingDir, rocksdb::DB* pointerToRawRocksDB)
 {
     internalOptionsPtr_ = options;
+    workingDir_ = workingDir;
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
+    extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
 }
 
-indexStoreInterface::~indexStoreInterface()
+IndexStoreInterface::~IndexStoreInterface()
 {
 }
 
-bool indexStoreInterface::put(const string& keyStr, const string& valueStr)
+uint64_t IndexStoreInterface::getExtractSizeThreshold()
 {
-    return true;
+    return extractValueSizeThreshold_;
 }
 
-vector<bool> indexStoreInterface::multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
-{
-    vector<bool> resultBoolVec;
-    return resultBoolVec;
-}
-
-bool get(const string& keyStr, string* valueStrPtr)
+bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr)
 {
     return true;
 }
 
-vector<bool> indexStoreInterface::multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
+bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo>* storageInfoVecPtr)
 {
-    vector<bool> resultBoolVec;
-    return resultBoolVec;
+    return true;
 }
 
-bool indexStoreInterface::forcedManualGarbageCollection()
+bool IndexStoreInterface::get(string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
+{
+    return true;
+}
+bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)
+{
+    return true;
+}
+
+bool IndexStoreInterface::forcedManualGarbageCollection()
 {
     return true;
 }

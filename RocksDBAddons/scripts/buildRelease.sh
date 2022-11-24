@@ -4,6 +4,7 @@ if [ ! -d "/opt/rocksdb-7.7.3" ]; then
     if [ ! -f "../rocksdb-7.7.3/librocksdb.a" ]; then
         echo "Not found librocksdb.a in ../rocksdb-7.7.3 start build"
         cd ../rocksdb-7.7.3 || exit
+        make clean # clean up current build result since it may have errors
         make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j16
         cd ../RocksDBAddons || exit
     fi

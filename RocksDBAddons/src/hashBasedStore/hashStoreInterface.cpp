@@ -7,6 +7,8 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     HashStoreGCManager* hashStoreGCManager)
 {
     internalOptionsPtr_ = options;
+    extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
+
     fileManagerNotifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     GCNotifyFileMetaDataUpdateMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
 
@@ -30,28 +32,77 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
 
 HashStoreInterface::~HashStoreInterface()
 {
+    delete fileManagerNotifyGCMQ_;
+    delete GCNotifyFileMetaDataUpdateMQ_;
 }
 
-bool HashStoreInterface::put(const string& keyStr, const string& valueStr)
+uint64_t HashStoreInterface::getExtractSizeThreshold()
 {
-    return true;
+    return extractValueSizeThreshold_;
 }
 
-vector<bool> HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
+bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
-    vector<bool> resultBoolVec;
-    return resultBoolVec;
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
+        return false;
+    } else {
+        if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
+            return false;
+        } else {
+            return true;
+        }
+    }
 }
 
-bool HashStoreInterface::get(const string& keyStr, string* valueStrPtr)
+bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<bool> isAnchorVec)
 {
-    return true;
+    vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
+    for (auto i = 0; i < keyStrVec.size(); i++) {
+        hashStoreFileMetaDataHandler* currentFileHandlerPtr;
+        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kPut, currentFileHandlerPtr) != true) {
+            return false;
+        } else {
+            tempFileHandlerVec.push_back(currentFileHandlerPtr);
+        }
+    }
+    if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerVec, keyStrVec, valueStrPtrVec, isAnchorVec) != true) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
-vector<bool> HashStoreInterface::multiGet(vector<string> keyStrVec, vector<string*> valueStrPtrVec)
+bool HashStoreInterface::get(const string& keyStr, vector<string>* valueStrVecPtr)
 {
-    vector<bool> resultBoolVec;
-    return resultBoolVec;
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
+        return false;
+    } else {
+        if (hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVecPtr) != true) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
+bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>*>* valueStrVecVecPtr)
+{
+    vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
+    for (auto i = 0; i < keyStrVec.size(); i++) {
+        hashStoreFileMetaDataHandler* currentFileHandlerPtr;
+        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kGet, currentFileHandlerPtr) != true) {
+            return false;
+        } else {
+            tempFileHandlerVec.push_back(currentFileHandlerPtr);
+        }
+    }
+    if (hashStoreFileOperatorPtr_->putReadOperationsVectorIntoJobQueue(tempFileHandlerVec, keyStrVec, valueStrVecVecPtr) != true) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 bool HashStoreInterface::forcedManualGarbageCollection()
