@@ -47,6 +47,11 @@ add_library(DeltaKV STATIC
       hashBasedStore/hashStoreGCManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp
       indexBasedStore/indexStoreInterface.cpp
+      indexBasedStore/indexStoreConfig.cpp
+      indexBasedStore/indexStoreDevice.cpp
+      indexBasedStore/indexStoreInterface.cpp
+      indexBasedStore/indexStoreValueManager.cpp
+      indexBasedStore/statsRecorder.cc
       interface/deltaKVOptions.cpp
       interface/deltaKVInterface.cpp
       interface/mergeOperation.cpp

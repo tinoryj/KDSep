@@ -30,3 +30,4 @@ Simulator/SSTAnalysis/ldb
 Simulator/YCSB-C/dbtest
 Simulator/YCSB-C/ResultLogs
 *.sst
+*.swp
