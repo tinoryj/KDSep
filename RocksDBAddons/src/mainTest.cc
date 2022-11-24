@@ -5,6 +5,72 @@
 
 using namespace DELTAKV_NAMESPACE;
 
+vector<string> split(string str, string token)
+{
+    vector<string> result;
+    while (str.size()) {
+        size_t index = str.find(token);
+        if (index != std::string::npos) {
+            result.push_back(str.substr(0, index));
+            str = str.substr(index + token.size());
+            if (str.size() == 0)
+                result.push_back(str);
+        } else {
+            result.push_back(str);
+            str = "";
+        }
+    }
+    return result;
+}
+
+class FieldUpdateMergeOperatorInternal : public MergeOperator {
+public:
+    // Gives the client a way to express the read -> modify -> write semantics
+    // key:         (IN) The key that's associated with this merge operation.
+    // existing:    (IN) null indicates that the key does not exist before this op
+    // operand_list:(IN) the sequence of merge operations to apply, front() first.
+    // new_value:  (OUT) Client is responsible for filling the merge result here
+    // logger:      (IN) Client could use this to log errors during merge.
+    //
+    // Return true on success, false on failure/corruption/etc.
+    bool FullMerge(const Slice& key, const Slice* existing_value,
+        const std::deque<std::string>& operand_list,
+        std::string* new_value, Logger* logger) const override
+    {
+        vector<std::string> words = split(existing_value->ToString(), ",");
+        for (auto q : operand_list) {
+            vector<string> operandVector = split(q, ",");
+            for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
+                words[stoi(operandVector[i])] = operandVector[i + 1];
+            }
+        }
+        string temp;
+        for (long unsigned int i = 0; i < words.size() - 1; i++) {
+            temp += words[i] + ",";
+        }
+        temp += words[words.size() - 1];
+        new_value->assign(temp);
+        return true;
+    };
+
+    // This function performs merge(left_op, right_op)
+    // when both the operands are themselves merge operation types.
+    // Save the result in *new_value and return true. If it is impossible
+    // or infeasible to combine the two operations, return false instead.
+    bool PartialMerge(const Slice& key, const Slice& left_operand,
+        const Slice& right_operand, std::string* new_value,
+        Logger* logger) const override
+    {
+        new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
+        return true;
+    };
+
+    // The name of the MergeOperator. Used to check for MergeOperator
+    // mismatches (i.e., a DB created with one MergeOperator is
+    // accessed using a different MergeOperator)
+    const char* Name() const override { return "FieldUpdateMergeOperatorInternal"; }
+};
+
 int main()
 {
     // partial function test
@@ -52,6 +118,7 @@ int main()
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
+    options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     options_.deltaKV_merge_operation_ptr.reset(new FieldUpdateMergeOperator);
 
     string dbNameStr = "TempDB";
@@ -64,7 +131,8 @@ int main()
         cerr << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
     }
     // dump operations
-    options_.dumpOptions("options.dump");
+    options_.dumpOptions("TempDB/options.dump");
+    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Dump DeltaKV options success" << RESET << endl;
     // operations
     string key = "Key1";
     string value = "Value1,value2";
@@ -72,15 +140,24 @@ int main()
     string valueTemp;
     if (!db_.Put(key, value)) {
         cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
-    } else if (!db_.Get(key, &valueTemp)) {
-        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
-    } else if (!db_.Merge(key, merge)) {
-        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
-    } else if (!db_.Get(key, &valueTemp)) {
-        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
     } else {
-        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Function test fully correct" << RESET << endl;
-        return 0;
+        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct" << RESET << endl;
+        if (!db_.Get(key, &valueTemp)) {
+            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
+        } else {
+            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct" << RESET << endl;
+            if (!db_.Merge(key, merge)) {
+                cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
+            } else {
+                cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
+                if (!db_.Get(key, &valueTemp)) {
+                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
+                } else {
+                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct" << RESET << endl;
+                    return 0;
+                }
+            }
+        }
     }
     cerr << RED << "[ERROR]:[Addons]-[MainTest] Function test not correct" << RESET << endl;
     return 0;

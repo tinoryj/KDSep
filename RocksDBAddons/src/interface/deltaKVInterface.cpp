@@ -13,14 +13,11 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     memcpy(&tempInternalValueTypeStructForCheck, existing_value->data(), sizeof(internalValueType));
     tempInternalValueTypeStructForCheck.mergeFlag_ = true;
     memcpy(contentBuffer, &tempInternalValueTypeStructForCheck, sizeof(internalValueType));
-    // for (auto operandListIt : operand_list) {
-    // }
-    // if (tempInternalValueTypeStructForCheck.mergeFlag_ == false) {
-    //     cerr << RED << "[ERROR]:[Addons]-[RocksDBInternalMergeOperator]-[FullMerge] find object request merge without correct merge flag" << RESET << endl;
-    //     return false;
-    // }
     string newValueStr(contentBuffer, existing_value->size());
     new_value->assign(newValueStr);
+    for (auto operandListIt : operand_list) {
+        new_value->append(operandListIt);
+    }
     return true;
 };
 
@@ -28,8 +25,10 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     const Slice& right_operand, std::string* new_value,
     Logger* logger) const
 {
-    string emptyValueStr = "";
-    new_value->assign(emptyValueStr);
+    string leftOpStr(left_operand.data(), left_operand.size());
+    string rightOpStr(right_operand.data(), right_operand.size());
+    new_value->assign(leftOpStr);
+    new_value->append(rightOpStr);
     return true;
 };
 
@@ -64,8 +63,6 @@ DeltaKV::~DeltaKV()
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 {
-    options.rocksdbRawOptions_.merge_operator.reset(
-        new RocksDBInternalMergeOperator);
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, name = " << name << RESET << endl;
     cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] Open underlying rocksdb, pointerToRawRocksDB_ = " << &pointerToRawRocksDB_ << RESET << endl;
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
@@ -79,6 +76,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     launchThreadPool(options.deltaKV_thread_number_limit);
     // Create objects
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
+        options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset internal merge operator
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, hashStoreGCManagerPtr_);
         cerr << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add deltaStore success" << RESET << endl;
         // create deltaStore related threads
@@ -195,83 +193,125 @@ bool DeltaKV::Get(const string& key, string* value)
         cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read underlying rocksdb fault" << RESET << endl;
         return false;
     } else {
-        // check value status
-        internalValueType tempInternalValueHeader;
-        memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
-        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
-            // get value from value store first
-            string externalRawValue;
-            if (tempInternalValueHeader.mergeFlag_ == true) {
-                // get deltas from delta store
-                vector<pair<bool, string>>* deltaInfoVec;
-                processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
-                vector<string>* deltaValueFromExternalStoreVec;
-                if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
-                    cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
-                    return false;
-                } else {
-                    vector<string> finalDeltaOperatorsVec;
-                    auto index = 0;
-                    for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                        if (deltaInfoVec->at(i).first == true) {
-                            finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
-                            index++;
+        if (IndexStoreInterfaceObjPtr_ != nullptr) {
+            // check value status
+            internalValueType tempInternalValueHeader;
+            memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
+            if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+                // get value from value store first
+                string externalRawValue;
+                if (tempInternalValueHeader.mergeFlag_ == true) {
+                    // get deltas from delta store
+                    vector<pair<bool, string>>* deltaInfoVec;
+                    processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
+                    if (HashStoreInterfaceObjPtr_ != nullptr) {
+                        vector<string>* deltaValueFromExternalStoreVec;
+                        if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
+                            return false;
                         } else {
-                            finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                            vector<string> finalDeltaOperatorsVec;
+                            auto index = 0;
+                            for (auto i = 0; i < deltaInfoVec->size(); i++) {
+                                if (deltaInfoVec->at(i).first == true) {
+                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
+                                    index++;
+                                } else {
+                                    finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                }
+                            }
+                            if (index != (deltaValueFromExternalStoreVec->size() - 1)) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                                return false;
+                            } else {
+                                deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value);
+                                return true;
+                            }
+                        }
+                    } else {
+                        vector<string> finalDeltaOperatorsVec;
+                        auto index = 0;
+                        for (auto i = 0; i < deltaInfoVec->size(); i++) {
+                            if (deltaInfoVec->at(i).first == true) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
+                                return false;
+                            } else {
+                                finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                            }
+                        }
+                        if (deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value) != true) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] DeltaKV merge operation fault" << RESET << endl;
+                            return false;
+                        } else {
+                            return true;
                         }
                     }
-                    if (index != (deltaValueFromExternalStoreVec->size() - 1)) {
-                        cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
-                        return false;
-                    } else {
-                        deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value);
-                        return true;
-                    }
+                } else {
+                    value->assign(externalRawValue);
+                    return true;
                 }
             } else {
-                value->assign(externalRawValue);
-                return true;
+                // value stored inside LSM-tree
+                char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+                string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+
+                if (tempInternalValueHeader.mergeFlag_ == true) {
+                    // get deltas from delta store
+                    vector<pair<bool, string>>* deltaInfoVec;
+                    processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
+                    if (HashStoreInterfaceObjPtr_ != nullptr) {
+                        vector<string>* deltaValueFromExternalStoreVec;
+                        if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
+                            return false;
+                        } else {
+                            vector<string> finalDeltaOperatorsVec;
+                            auto index = 0;
+                            for (auto i = 0; i < deltaInfoVec->size(); i++) {
+                                if (deltaInfoVec->at(i).first == true) {
+                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
+                                    index++;
+                                } else {
+                                    finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                }
+                            }
+                            if (index != (deltaValueFromExternalStoreVec->size() - 1)) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                                return false;
+                            } else {
+                                deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
+                                return true;
+                            }
+                        }
+                    } else {
+                        vector<string> finalDeltaOperatorsVec;
+                        auto index = 0;
+                        for (auto i = 0; i < deltaInfoVec->size(); i++) {
+                            if (deltaInfoVec->at(i).first == true) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
+                                return false;
+                            } else {
+                                finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                            }
+                        }
+                        if (deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value) != true) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] DeltaKV merge operation fault" << RESET << endl;
+                            return false;
+                        } else {
+                            return true;
+                        }
+                    }
+                } else {
+                    value->assign(internalRawValueStr);
+                    return true;
+                }
             }
         } else {
-            // value stored inside LSM-tree
-            char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-            string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
-
-            if (tempInternalValueHeader.mergeFlag_ == true) {
-                // get deltas from delta store
-                vector<pair<bool, string>>* deltaInfoVec;
-                processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
-                vector<string>* deltaValueFromExternalStoreVec;
-                if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
-                    cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
-                    return false;
-                } else {
-                    vector<string> finalDeltaOperatorsVec;
-                    auto index = 0;
-                    for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                        if (deltaInfoVec->at(i).first == true) {
-                            finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
-                            index++;
-                        } else {
-                            finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
-                        }
-                    }
-                    if (index != (deltaValueFromExternalStoreVec->size() - 1)) {
-                        cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
-                        return false;
-                    } else {
-                        deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
-                        return true;
-                    }
-                }
-            } else {
-                value->assign(internalRawValueStr);
-                return true;
-            }
+            value->assign(internalValueStr);
+            return true;
         }
     }
-    return true;
 }
 
 bool DeltaKV::Merge(const string& key, const string& value)
