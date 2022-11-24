@@ -31,7 +31,7 @@ public:
     bool getValueFromBuffer (const char *keyStr, char *&valueStr, len_t &valueSize);
     bool getValueFromDisk (const char *keyStr, ValueLocation valueLoc, char *&valueStr, len_t &valueSize);
 
-    ValueLocation putValue (char *keyStr, len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness);
+    ValueLocation putValue (char *keyStr, len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness = 1);
 
     bool forceSync();
 

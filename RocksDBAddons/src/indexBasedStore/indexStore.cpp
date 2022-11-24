@@ -1,21 +1,22 @@
 #include <stdlib.h>
 #include "indexBasedStore/util/debug.hh"
 #include "indexBasedStore/util/timer.hh"
-#include "kvServer.hpp"
+#include "indexBasedStore/indexStore.hh"
 //#include "leveldbKeyManager.hh"
-#include "statsRecorder.hpp"
+#include "indexBasedStore/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
 KvServer::KvServer() : KvServer(0) {
 }
 
-KvServer::KvServer(DeviceManager *deviceManager) {
+KvServer::KvServer(indexStoreDevice *deviceManager) {
+    cerr << GREEN << "[INFO]:[Addons]-[KvServer]-[Construct] " << RESET << endl;
     // devices
     if (deviceManager) {
         _deviceManager = deviceManager;
     } else {
-        _deviceManager = new DeviceManager();
+        _deviceManager = new indexStoreDevice();
     }
     _freeDeviceManager = (deviceManager == 0);
     // metadata log
@@ -27,7 +28,7 @@ KvServer::KvServer(DeviceManager *deviceManager) {
     _segmentGroupManager = new SegmentGroupManager();
     // values
 //    _valueManager = new ValueManager(_deviceManager, _segmentGroupManager, _keyManager, _logManager);
-    _valueManager = new ValueManager(_deviceManager, _segmentGroupManager);
+    _valueManager = new indexStoreValueManager(_deviceManager, _segmentGroupManager);
     // gc
 //    _gcManager = new GCManager(_keyManager, _valueManager, _deviceManager, _segmentGroupManager);
     
@@ -52,9 +53,10 @@ bool KvServer::checkKeySize(len_t &keySize) {
     return (keySize == KEY_SIZE);
 }
 
-bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& curValueLoc) {
+bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& indexInfo) {
     bool ret = false;
-    ValueLocation oldValueLoc;
+    ValueLocation oldValueLoc, curValueLoc;
+
     oldValueLoc.value.clear();
     // only support fixed key size
     if (checkKeySize(keySize) == false)
@@ -87,7 +89,12 @@ retry_update:
     bool inLSM = oldValueLoc.segmentId == LSM_SEGMENT;
     StatsRecorder::getInstance()->timeProcess(StatsType::UPDATE_KEY_LOOKUP, keyLookupStartTime);
     // update the value of the key, get the new location of value
-    STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(key, keySize, value, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
+    char* ckey = new char[keySize];
+    char* cvalue = new char[valueSize];
+    memcpy(ckey, key, keySize);
+    memcpy(cvalue, value, valueSize);
+    STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
+
     debug_info("Update key %x%x to segment id=%lu,ofs=%lu,len=%lu\n", key[0], key[KEY_SIZE-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
@@ -103,6 +110,11 @@ retry_update:
     } else {
         ret = (curValueLoc.length == valueSize + (curValueLoc.segmentId == LSM_SEGMENT? 0 : sizeof(len_t)));
     }
+    indexInfo.externalFileID_ = 0;
+    indexInfo.externalFileOffset_ = curValueLoc.offset;
+    indexInfo.externalContentSize_ = curValueLoc.length;
+    delete[] ckey;
+    delete[] cvalue;
     return ret;
 }
 
@@ -119,7 +131,7 @@ retry_update:
 //    keysInProcess--;
 //}
 
-bool KvServer::getValue(char *key, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfoVec, bool timed) {
+bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfoVec, bool timed) {
     bool ret = false;
 
     if (checkKeySize(keySize) == false)
@@ -128,8 +140,11 @@ bool KvServer::getValue(char *key, len_t keySize, char *&value, len_t &valueSize
     struct timeval startTime;
     gettimeofday(&startTime, 0);
 
+    char* ckey = new char[keySize];
+    memcpy(ckey, key, keySize);
+
     // get value using the location
-    ret = (_valueManager->getValueFromBuffer(key, value, valueSize));
+    ret = (_valueManager->getValueFromBuffer(ckey, value, valueSize));
 
     if (ret) {
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
@@ -158,8 +173,10 @@ bool KvServer::getValue(char *key, len_t keySize, char *&value, len_t &valueSize
     // not found
     if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
 
-    ret = _valueManager->getValueFromDisk(key, readValueLoc, value, valueSize);
+    ret = _valueManager->getValueFromDisk(ckey, readValueLoc, value, valueSize);
     if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+
+    delete[] ckey;
 
     return ret;
 }

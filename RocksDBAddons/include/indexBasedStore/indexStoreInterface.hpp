@@ -1,4 +1,3 @@
-#include "interface/deltaKVOptions.hpp"
 #include "indexStore.hh"
 #include <bits/stdc++.h>
 

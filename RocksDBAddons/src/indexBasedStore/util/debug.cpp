@@ -1,4 +1,4 @@
-#include "debug.hh"
+#include "indexBasedStore/util/debug.hh"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

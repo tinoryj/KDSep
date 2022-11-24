@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include "define.hh"
+#include "interface/deltaKVOptions.hpp"
 #include "indexStoreDevice.hh"
 //#include "keyManager.hh"
 #include "indexStoreValueManager.hh"

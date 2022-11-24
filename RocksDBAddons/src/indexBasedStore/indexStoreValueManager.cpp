@@ -1368,6 +1368,26 @@ bool indexStoreValueManager::forceSync() {
     return true;
 }
 
+void indexStoreValueManager::printSlaveStats(FILE *out) {
+//    if (_isSlave) {
+//        fprintf(out,
+//                "(This) Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
+//                , ConfigManager::getInstance().getColdStorageCapacity()
+//                , _slave.writtenBytes
+//                , _slave.validBytes
+//               );
+//        _gcManager->printStats(out);
+//    } else if (ConfigManager::getInstance().useSlave() && _slaveValueManager && _slave.gcm) {
+//        fprintf(out,
+//                "Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
+//                , ConfigManager::getInstance().getColdStorageCapacity()
+//                , _slaveValueManager->_slave.writtenBytes
+//                , _slaveValueManager->_slave.validBytes
+//               );
+//        _slave.gcm->printStats(out);
+//    }
+}
+
 }
 
 #undef RECORD_SIZE
