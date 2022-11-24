@@ -118,7 +118,11 @@ int main()
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
-    options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
+    // deltaKV settings
+    options_.enable_deltaStore = true;
+    if (options_.enable_deltaStore == false) {
+        options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
+    }
     options_.deltaKV_merge_operation_ptr.reset(new FieldUpdateMergeOperator);
 
     string dbNameStr = "TempDB";
@@ -128,32 +132,33 @@ int main()
              << dbNameStr << RESET << endl;
         exit(0);
     } else {
-        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
+        cout << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");
-    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Dump DeltaKV options success" << RESET << endl;
+    cout << GREEN << "[INFO]:[Addons]-[MainTest] Dump DeltaKV options success" << RESET << endl;
     // operations
     string key = "Key1";
     string value = "Value1,value2";
     string merge = "1,value3";
-    string valueTemp;
     if (!db_.Put(key, value)) {
         cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
     } else {
         cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct" << RESET << endl;
-        if (!db_.Get(key, &valueTemp)) {
+        string valueTempForRaw;
+        if (!db_.Get(key, &valueTempForRaw)) {
             cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
         } else {
-            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct" << RESET << endl;
+            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct, value size = " << valueTempForRaw.size() << " content = " << valueTempForRaw << RESET << endl;
             if (!db_.Merge(key, merge)) {
                 cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
             } else {
                 cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
-                if (!db_.Get(key, &valueTemp)) {
+                string valueTempForMerged;
+                if (!db_.Get(key, &valueTempForMerged)) {
                     cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
                 } else {
-                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct" << RESET << endl;
+                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged << RESET << endl;
                     return 0;
                 }
             }

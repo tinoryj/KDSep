@@ -19,7 +19,7 @@ HashStoreFileManager::~HashStoreFileManager()
 }
 
 // Recovery
-bool HashStoreFileManager::recoveryFromFailuer(unordered_map<string, pair<bool, string>>* targetListForRedo)
+bool HashStoreFileManager::recoveryFromFailuer(unordered_map<string, pair<bool, string>>*& targetListForRedo)
 {
 }
 
@@ -153,7 +153,7 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
 }
 
 // file operations
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler* fileHandlerPtr)
+bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     string prefixStr;
     bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
@@ -166,7 +166,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         cerr << RED << "[ERROR]:[Addons]-[HashStoreFileManager]-[getHashStoreFileHandlerByInputKeyStr] get operation meet not stored buckets, key = " << keyStr << RESET << endl;
         return false;
     } else if (fileHandlerUsedPrefixLength == 0 && opType == kPut) {
-        bool createNewFileHandlerStatus = createAnfGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
+        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
         if (!createNewFileHandlerStatus) {
             cerr << RED << "[ERROR]:[Addons]-[HashStoreFileManager]-[getHashStoreFileHandlerByInputKeyStr] create new bucket for put operation error, key = " << keyStr << RESET << endl;
             return false;
@@ -211,15 +211,16 @@ bool HashStoreFileManager::generateHashBasedPrefix(const string rawStr, string& 
     return true;
 }
 
-bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler* fileHandlerPtr)
+bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     Trie<hashStoreFileMetaDataHandler*>::iterator it = objectFileMetaDataTrie_.find(prefixStr.substr(0, prefixUsageLength));
     fileHandlerPtr = (*it);
     return true;
 }
 
-bool HashStoreFileManager::createAnfGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler* fileHandlerPtr)
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
+    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileManager]-[createAndGetNewHashStoreFileHandlerByPrefix] create new fileHandler" << RESET << endl;
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->current_prefix_used_bit_ = initialTrieBitNumber_;
     currentFileHandlerPtr->target_file_id_ = newFileIDGenerator();
@@ -234,10 +235,13 @@ bool HashStoreFileManager::createAnfGetNewHashStoreFileHandlerByPrefix(const str
     memcpy(fileHeaderWriteBuffer, &newFileHeader, sizeof(newFileHeader));
     // write header to current file
     currentFileHandlerPtr->fileOperationMutex_.lock();
-    currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + to_string(currentFileHandlerPtr->target_file_id_), ios::in | ios::out);
+    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileManager]-[createAndGetNewHashStoreFileHandlerByPrefix] in lock, file name = " << workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta" << RESET << endl;
+    currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta", ios::out | ios::in | ios::binary);
     currentFileHandlerPtr->file_operation_stream_.write(fileHeaderWriteBuffer, sizeof(newFileHeader));
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
+    objectFileMetaDataTrie_.insert(prefixStr.substr(0, initialTrieBitNumber_), currentFileHandlerPtr);
+    hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHandlerPtr->target_file_id_, prefixStr.substr(0, initialTrieBitNumber_)));
     fileHandlerPtr = currentFileHandlerPtr;
     return true;
 }

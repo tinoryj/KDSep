@@ -43,13 +43,13 @@ typedef struct hashStoreReadOperationHandler {
     vector<string>* value_str_vec_;
 } hashStoreReadOperationHandler;
 
-typedef union hashStoreOperationHandler {
-    hashStoreFileMetaDataHandler* file_handler;
+typedef struct hashStoreOperationHandler {
+    hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
     hashStoreFileOperationType opType_;
     bool jobDone = false;
-    hashStoreOperationHandler() {};
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {

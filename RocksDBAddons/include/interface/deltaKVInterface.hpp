@@ -9,8 +9,10 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/loggerColor.hpp"
-#include <boost/asio/io_service.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/bind.hpp>
+#include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
 
 using namespace std;
@@ -55,8 +57,7 @@ public:
     bool SingleDelete(const string& key);
 
 private:
-    boost::asio::io_service ioService_;
-    boost::thread_group threadpool_;
+    boost::asio::thread_pool* threadpool_;
     bool launchThreadPool(uint64_t totalThreadNumber);
     bool deleteThreadPool();
     // for separated operations
