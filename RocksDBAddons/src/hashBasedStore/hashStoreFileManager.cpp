@@ -63,7 +63,7 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->total_object_bytes_ = currentFileStoredBytes;
             // open current file for further usage
             currentFileHandlerPtr->fileOperationMutex_.lock();
-            currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + to_string(currentFileHandlerPtr->target_file_id_), ios::in | ios::out);
+            currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + to_string(currentFileHandlerPtr->target_file_id_), ios::in | ios::out | ios::binary);
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
             objectFileMetaDataTrie_.insert(prefixHashStr, currentFileHandlerPtr);
@@ -236,8 +236,10 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     // write header to current file
     currentFileHandlerPtr->fileOperationMutex_.lock();
     cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileManager]-[createAndGetNewHashStoreFileHandlerByPrefix] in lock, file name = " << workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta" << RESET << endl;
-    currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta", ios::out | ios::in | ios::binary);
+    currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta", ios::in | ios::out | ios::binary);
+    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileManager]-[createAndGetNewHashStoreFileHandlerByPrefix] current file read pointer = " << currentFileHandlerPtr->file_operation_stream_.tellg() << ", current file write pointer = " << currentFileHandlerPtr->file_operation_stream_.tellp() << RESET << endl;
     currentFileHandlerPtr->file_operation_stream_.write(fileHeaderWriteBuffer, sizeof(newFileHeader));
+    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileManager]-[createAndGetNewHashStoreFileHandlerByPrefix] after write current file read pointer = " << currentFileHandlerPtr->file_operation_stream_.tellg() << ", current file write pointer = " << currentFileHandlerPtr->file_operation_stream_.tellp() << RESET << endl;
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
     objectFileMetaDataTrie_.insert(prefixStr.substr(0, initialTrieBitNumber_), currentFileHandlerPtr);

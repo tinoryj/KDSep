@@ -259,16 +259,17 @@ bool DeltaKV::Get(const string& key, string* value)
         cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read underlying rocksdb fault" << RESET << endl;
         return false;
     } else {
+        // check value status
+        internalValueType tempInternalValueHeader;
+        memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
         if (IndexStoreInterfaceObjPtr_ != nullptr) {
-            // check value status
-            internalValueType tempInternalValueHeader;
-            memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
+
             if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
                 // get value from value store first
                 string externalRawValue;
                 if (tempInternalValueHeader.mergeFlag_ == true) {
                     // get deltas from delta store
-                    vector<pair<bool, string>>* deltaInfoVec;
+                    vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
                     if (HashStoreInterfaceObjPtr_ != nullptr) {
                         vector<string> deltaValueFromExternalStoreVec;
@@ -278,12 +279,12 @@ bool DeltaKV::Get(const string& key, string* value)
                         } else {
                             vector<string> finalDeltaOperatorsVec;
                             auto index = 0;
-                            for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                                if (deltaInfoVec->at(i).first == true) {
+                            for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                                if (deltaInfoVec[i].first == true) {
                                     finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
                                     index++;
                                 } else {
-                                    finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                    finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
                             if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
@@ -297,12 +298,12 @@ bool DeltaKV::Get(const string& key, string* value)
                     } else {
                         vector<string> finalDeltaOperatorsVec;
                         auto index = 0;
-                        for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                            if (deltaInfoVec->at(i).first == true) {
+                        for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                            if (deltaInfoVec[i].first == true) {
                                 cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
                                 return false;
                             } else {
-                                finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                             }
                         }
                         if (deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value) != true) {
@@ -325,7 +326,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 if (tempInternalValueHeader.mergeFlag_ == true) {
                     cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] read value with mergeFlag_ == true" << RESET << endl;
                     // get deltas from delta store
-                    vector<pair<bool, string>>* deltaInfoVec;
+                    vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
                     if (HashStoreInterfaceObjPtr_ != nullptr) {
                         vector<string> deltaValueFromExternalStoreVec;
@@ -335,12 +336,12 @@ bool DeltaKV::Get(const string& key, string* value)
                         } else {
                             vector<string> finalDeltaOperatorsVec;
                             auto index = 0;
-                            for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                                if (deltaInfoVec->at(i).first == true) {
+                            for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                                if (deltaInfoVec[i].first == true) {
                                     finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
                                     index++;
                                 } else {
-                                    finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                    finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
                             if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
@@ -354,12 +355,12 @@ bool DeltaKV::Get(const string& key, string* value)
                     } else {
                         vector<string> finalDeltaOperatorsVec;
                         auto index = 0;
-                        for (auto i = 0; i < deltaInfoVec->size(); i++) {
-                            if (deltaInfoVec->at(i).first == true) {
+                        for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                            if (deltaInfoVec[i].first == true) {
                                 cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
                                 return false;
                             } else {
-                                finalDeltaOperatorsVec.push_back(deltaInfoVec->at(i).second);
+                                finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                             }
                         }
                         if (deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value) != true) {
@@ -380,7 +381,41 @@ bool DeltaKV::Get(const string& key, string* value)
             }
         } else {
             if (HashStoreInterfaceObjPtr_ != nullptr) {
-                value->assign(internalValueStr.substr(sizeof(internalValueType), internalValueStr.size()));
+                char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+                string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+                if (tempInternalValueHeader.mergeFlag_ == true) {
+                    cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] read value with mergeFlag_ == true" << RESET << endl;
+                    // get deltas from delta store
+                    vector<pair<bool, string>> deltaInfoVec;
+                    processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec);
+                    cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] read deltaInfoVec from LSM-tree size = " << deltaInfoVec.size() << RESET << endl;
+                    vector<string> deltaValueFromExternalStoreVec;
+                    if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
+                        cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
+                        return false;
+                    } else {
+                        vector<string> finalDeltaOperatorsVec;
+                        auto index = 0;
+                        for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                            if (deltaInfoVec[i].first == true) {
+                                finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
+                                index++;
+                            } else {
+                                finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
+                            }
+                        }
+                        if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                            return false;
+                        } else {
+                            deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
+                            return true;
+                        }
+                    }
+                } else {
+                    value->assign(internalRawValueStr);
+                }
             } else {
                 value->assign(internalValueStr);
             }
@@ -515,9 +550,10 @@ bool DeltaKV::deleteThreadPool()
     return true;
 }
 
-bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>* mergeOperatorsVec)
+bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec)
 {
     uint64_t internalValueSize = internalValue.size();
+    cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[processValueWithMergeRequestToValueAndMergeOperations] internalValueSize = " << internalValueSize << ", skipSize = " << skipSize << RESET << endl;
     uint64_t currentProcessLocationIndex = skipSize;
     while (currentProcessLocationIndex != internalValueSize) {
         internalValueType currentInternalValueTypeHeader;
@@ -526,9 +562,9 @@ bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string inter
         if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
             string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
             currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;
-            mergeOperatorsVec->push_back(make_pair(false, currentValue));
+            mergeOperatorsVec.push_back(make_pair(false, currentValue));
         } else {
-            mergeOperatorsVec->push_back(make_pair(true, ""));
+            mergeOperatorsVec.push_back(make_pair(true, ""));
         }
     }
     return true;

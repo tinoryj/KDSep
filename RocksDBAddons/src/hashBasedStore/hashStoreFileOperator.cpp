@@ -31,7 +31,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     operationToWorkerMQ_->push(currentHandler);
     cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[putWriteOperationIntoJobQueue] put write operation to job queue success, operation handler address = " << currentHandler << RESET << endl;
     while (!currentHandler->jobDone) {
-        cerr << "";
+        asm volatile("");
     }
     cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[putWriteOperationIntoJobQueue] get write operation success flag" << RESET << endl;
     delete currentHandler;
@@ -54,7 +54,6 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(vector<hashStor
     while (currentOperationHandlerVec.size() != 0) {
         for (vector<hashStoreOperationHandler*>::iterator currentIt = currentOperationHandlerVec.begin(); currentIt != currentOperationHandlerVec.end(); currentIt++) {
             if ((*currentIt)->jobDone == true) {
-                cerr << "";
                 delete (*currentIt);
                 currentOperationHandlerVec.erase(currentIt);
             }
@@ -69,10 +68,10 @@ bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHa
     currentHandler->jobDone = false;
     currentHandler->read_operation_.key_str_ = &key;
     currentHandler->read_operation_.value_str_vec_ = &valueVec;
-    currentHandler->opType_ = kPut;
+    currentHandler->opType_ = kGet;
     operationToWorkerMQ_->push(currentHandler);
     while (currentHandler->jobDone == false) {
-        cerr << "";
+        asm volatile("");
     }
     delete currentHandler;
     return true;
@@ -93,7 +92,6 @@ bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStore
     while (currentOperationHandlerVec.size() != 0) {
         for (vector<hashStoreOperationHandler*>::iterator currentIt = currentOperationHandlerVec.begin(); currentIt != currentOperationHandlerVec.end(); currentIt++) {
             if ((*currentIt)->jobDone == true) {
-                cerr << "";
                 delete (*currentIt);
                 currentOperationHandlerVec.erase(currentIt);
             }
@@ -168,7 +166,10 @@ void HashStoreFileOperator::operationWorker()
                     } else {
                         char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
+                        currentHandlerPtr->file_handler_->file_operation_stream_.clear(ios::goodbit);
+                        currentHandlerPtr->file_handler_->file_operation_stream_.seekg(ios::beg);
                         currentHandlerPtr->file_handler_->file_operation_stream_.read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read file content (cache enabled) = " << readBuffer << RESET << endl;
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
@@ -198,7 +199,12 @@ void HashStoreFileOperator::operationWorker()
                     // no cache, only read content
                     char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
+                    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] target read file content (cache not enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", current file read pointer = " << currentHandlerPtr->file_handler_->file_operation_stream_.tellg() << ", current file write pointer = " << currentHandlerPtr->file_handler_->file_operation_stream_.tellp() << RESET << endl;
+                    currentHandlerPtr->file_handler_->file_operation_stream_.clear();
+                    currentHandlerPtr->file_handler_->file_operation_stream_.seekg(0, ios::beg);
+                    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] target read file content (cache not enabled) after reset file read pointer = " << currentHandlerPtr->file_handler_->file_operation_stream_.tellg() << RESET << endl;
                     currentHandlerPtr->file_handler_->file_operation_stream_.read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read file content (cache not enabled) = " << readBuffer << RESET << endl;
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
