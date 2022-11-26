@@ -24,10 +24,14 @@ bool FieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList
 {
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
     for (auto q : operandList) {
+        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand = " << q << RESET << endl;
         string indexStr = q.substr(0, q.find(","));
+        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current indexStr = " << indexStr << RESET << endl;
         int index = stoi(indexStr);
+        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current index = " << index << RESET << endl;
         string updateContentStr = q.substr(q.find(",") + 1, q.size());
-        rawValueFieldsVec[index + 1].assign(updateContentStr);
+        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current update target content = " << updateContentStr << RESET << endl;
+        rawValueFieldsVec[index - 1].assign(updateContentStr);
     }
 
     string temp;

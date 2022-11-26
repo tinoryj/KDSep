@@ -120,6 +120,7 @@ int main()
 
     // deltaKV settings
     options_.enable_deltaStore = true;
+    options_.enable_deltaStore_KDLevel_cache = false;
     if (options_.enable_deltaStore == false) {
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
@@ -136,11 +137,13 @@ int main()
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");
+    options_.dumpDataStructureInfo("TempDB/structure.dump");
     cout << GREEN << "[INFO]:[Addons]-[MainTest] Dump DeltaKV options success" << RESET << endl;
     // operations
     string key = "Key1";
     string value = "Value1,value2";
     string merge = "1,value3";
+    string merge2 = "2,value5";
     if (!db_.Put(key, value)) {
         cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
     } else {
@@ -150,15 +153,78 @@ int main()
             cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
         } else {
             cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct, value size = " << valueTempForRaw.size() << " content = " << valueTempForRaw << RESET << endl;
+            // merge 1
+            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 1" << RESET << endl;
             if (!db_.Merge(key, merge)) {
                 cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
             } else {
                 cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
-                string valueTempForMerged;
-                if (!db_.Get(key, &valueTempForMerged)) {
+                string valueTempForMerged1;
+                if (!db_.Get(key, &valueTempForMerged1)) {
                     cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
                 } else {
-                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged << RESET << endl;
+                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged1 << RESET << endl;
+                    if (options_.enable_deltaStore_KDLevel_cache == true) {
+                        // test cache
+                        string valueTempForMerged2;
+                        cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
+                        if (!db_.Get(key, &valueTempForMerged2)) {
+                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
+                        } else {
+                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged2 << RESET << endl;
+                            // merge 2
+                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 2" << RESET << endl;
+                            if (!db_.Merge(key, merge2)) {
+                                cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
+                            } else {
+                                cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
+                                string valueTempForMerged3;
+                                if (!db_.Get(key, &valueTempForMerged3)) {
+                                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
+                                } else {
+                                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged3 << RESET << endl;
+                                    if (options_.enable_deltaStore_KDLevel_cache == true) {
+                                        // test cache
+                                        string valueTempForMerged4;
+                                        cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
+                                        if (!db_.Get(key, &valueTempForMerged4)) {
+                                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
+                                        } else {
+                                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged4 << RESET << endl;
+                                            return 0;
+                                        }
+                                    }
+                                    return 0;
+                                }
+                            }
+                            return 0;
+                        }
+                    }
+                    // merge 2
+                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 2" << RESET << endl;
+                    if (!db_.Merge(key, merge2)) {
+                        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
+                    } else {
+                        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
+                        string valueTempForMerged5;
+                        if (!db_.Get(key, &valueTempForMerged5)) {
+                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
+                        } else {
+                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged5 << RESET << endl;
+                            if (options_.enable_deltaStore_KDLevel_cache == true) {
+                                // test cache
+                                string valueTempForMerged6;
+                                cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
+                                if (!db_.Get(key, &valueTempForMerged6)) {
+                                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
+                                } else {
+                                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged6 << RESET << endl;
+                                    return 0;
+                                }
+                            }
+                            return 0;
+                        }
+                    }
                     return 0;
                 }
             }

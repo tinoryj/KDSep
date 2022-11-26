@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/dataStructure.hpp"
 #include "interface/mergeOperation.hpp"
 #include "rocksdb/options.h"
 #include "utils/loggerColor.hpp"
@@ -73,6 +74,7 @@ public:
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
 
     bool dumpOptions(string dumpPath);
+    bool dumpDataStructureInfo(string dumpPath);
 };
 
 } // namespace DELTAKV_NAMESPACE

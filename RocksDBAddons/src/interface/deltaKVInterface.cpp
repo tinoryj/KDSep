@@ -90,6 +90,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     // Create objects
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset internal merge operator
+        deltaKVMergeOperatorPtr_ = options.deltaKV_merge_operation_ptr;
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, hashStoreGCManagerPtr_);
         cout << GREEN << "[INFO]:[Addons]-[DeltaKVInterface]-[Construction] add deltaStore success" << RESET << endl;
         // create deltaStore related threads
@@ -287,10 +288,11 @@ bool DeltaKV::Get(const string& key, string* value)
                                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
-                            if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
-                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                            if (index != deltaValueFromExternalStoreVec.size()) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
                                 return false;
                             } else {
+                                cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, externalRawValue = " << externalRawValue << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;
                                 deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value);
                                 return true;
                             }
@@ -344,10 +346,11 @@ bool DeltaKV::Get(const string& key, string* value)
                                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
-                            if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
-                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                            if (index != deltaValueFromExternalStoreVec.size()) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
                                 return false;
                             } else {
+                                cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;
                                 deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
                                 return true;
                             }
@@ -405,10 +408,11 @@ bool DeltaKV::Get(const string& key, string* value)
                                 finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                             }
                         }
-                        if (index != (deltaValueFromExternalStoreVec.size() - 1)) {
-                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent)" << RESET << endl;
+                        if (index != deltaValueFromExternalStoreVec.size()) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
                             return false;
                         } else {
+                            cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;
                             deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
                             return true;
                         }

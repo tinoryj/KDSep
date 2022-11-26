@@ -6,7 +6,10 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
 {
     ofstream dumpOptionsOutStream;
     dumpOptionsOutStream.open(dumpPath, ios::out);
-
+    if (!dumpOptionsOutStream.is_open()) {
+        cerr << RED << "[ERROR]-[Addons]-[DeltaKVOptions]-[dumpOptions] can not open target file" << RESET << endl;
+        return false;
+    }
     dumpOptionsOutStream << "Common options:" << endl;
     dumpOptionsOutStream << "\tdeltaKV_thread_number_limit = " << deltaKV_thread_number_limit << endl;
     dumpOptionsOutStream << "\thashStore_init_prefix_bit_number = " << hashStore_init_prefix_bit_number << endl;
@@ -55,6 +58,29 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
 
     dumpOptionsOutStream.flush();
     dumpOptionsOutStream.close();
+    return true;
+}
+
+bool DeltaKVOptions::dumpDataStructureInfo(string dumpPath)
+{
+    ofstream dumpStructureSizeOutStream;
+    dumpStructureSizeOutStream.open(dumpPath, ios::out);
+    if (!dumpStructureSizeOutStream.is_open()) {
+        cerr << RED << "[ERROR]-[Addons]-[DeltaKVOptions]-[dumpDataStructureInfo] can not open target file" << RESET << endl;
+        return false;
+    }
+    // write content
+    dumpStructureSizeOutStream << "Size of internalValueType = " << sizeof(internalValueType) << endl;
+    dumpStructureSizeOutStream << "Size of externalIndexInfo = " << sizeof(externalIndexInfo) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreFileMetaDataHandler = " << sizeof(hashStoreFileMetaDataHandler) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreWriteOperationHandler = " << sizeof(hashStoreWriteOperationHandler) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreReadOperationHandler = " << sizeof(hashStoreReadOperationHandler) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreOperationHandler = " << sizeof(hashStoreOperationHandler) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreFileHeader = " << sizeof(hashStoreFileHeader) << endl;
+    dumpStructureSizeOutStream << "Size of hashStoreRecordHeader = " << sizeof(hashStoreRecordHeader) << endl;
+
+    dumpStructureSizeOutStream.flush();
+    dumpStructureSizeOutStream.close();
     return true;
 }
 

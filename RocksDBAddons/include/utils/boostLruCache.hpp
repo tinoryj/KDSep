@@ -19,7 +19,7 @@ public:
     ~BOOSTLRUCache();
     void insertToCache(keyType& cacheKey, valueType& data);
     bool existsInCache(keyType& cacheKey);
-    valueType* getFromCache(keyType& cacheKey);
+    valueType getFromCache(keyType& cacheKey);
 };
 
 template <typename keyType, typename valueType>
@@ -52,10 +52,10 @@ bool BOOSTLRUCache<keyType, valueType>::existsInCache(keyType& cacheKey)
 }
 
 template <typename keyType, typename valueType>
-valueType* BOOSTLRUCache<keyType, valueType>::getFromCache(keyType& cacheKey)
+valueType BOOSTLRUCache<keyType, valueType>::getFromCache(keyType& cacheKey)
 {
     boost::optional<valueType> optionalValue = Cache_->get(cacheKey);
-    return &(optionalValue.get());
+    return optionalValue.get();
 }
 
 } // DELTAKV_NAMESPACE

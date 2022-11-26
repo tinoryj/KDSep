@@ -13,8 +13,9 @@ namespace DELTAKV_NAMESPACE {
 template <typename T>
 class messageQueue {
 public:
-    messageQueue() = default;
+    messageQueue();
     ~messageQueue() = default;
+    boost::atomic<bool> done_;
     bool push(T& data);
     bool pop(T& data);
     bool isEmpty();
@@ -22,6 +23,12 @@ public:
 private:
     boost::lockfree::queue<T, boost::lockfree::capacity<500>> lockFreeQueue_;
 };
+
+template <typename T>
+messageQueue<T>::messageQueue()
+{
+    done_ = false;
+}
 
 template <typename T>
 bool messageQueue<T>::push(T& data)
