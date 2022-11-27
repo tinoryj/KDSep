@@ -273,7 +273,7 @@ bool DeltaKV::Get(const string& key, string* value)
                     vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
                     if (HashStoreInterfaceObjPtr_ != nullptr) {
-                        vector<string> deltaValueFromExternalStoreVec;
+                        vector<string>* deltaValueFromExternalStoreVec;
                         if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
                             cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
                             return false;
@@ -282,14 +282,14 @@ bool DeltaKV::Get(const string& key, string* value)
                             auto index = 0;
                             for (auto i = 0; i < deltaInfoVec.size(); i++) {
                                 if (deltaInfoVec[i].first == true) {
-                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
+                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
                                     index++;
                                 } else {
                                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
-                            if (index != deltaValueFromExternalStoreVec.size()) {
-                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
+                            if (index != deltaValueFromExternalStoreVec->size()) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec->size() << ", current index = " << index << RESET << endl;
                                 return false;
                             } else {
                                 cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, externalRawValue = " << externalRawValue << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;
@@ -331,7 +331,7 @@ bool DeltaKV::Get(const string& key, string* value)
                     vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
                     if (HashStoreInterfaceObjPtr_ != nullptr) {
-                        vector<string> deltaValueFromExternalStoreVec;
+                        vector<string>* deltaValueFromExternalStoreVec;
                         if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
                             cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
                             return false;
@@ -340,14 +340,14 @@ bool DeltaKV::Get(const string& key, string* value)
                             auto index = 0;
                             for (auto i = 0; i < deltaInfoVec.size(); i++) {
                                 if (deltaInfoVec[i].first == true) {
-                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
+                                    finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
                                     index++;
                                 } else {
                                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                                 }
                             }
-                            if (index != deltaValueFromExternalStoreVec.size()) {
-                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
+                            if (index != deltaValueFromExternalStoreVec->size()) {
+                                cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec->size() << ", current index = " << index << RESET << endl;
                                 return false;
                             } else {
                                 cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;
@@ -393,7 +393,7 @@ bool DeltaKV::Get(const string& key, string* value)
                     vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec);
                     cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] read deltaInfoVec from LSM-tree size = " << deltaInfoVec.size() << RESET << endl;
-                    vector<string> deltaValueFromExternalStoreVec;
+                    vector<string>* deltaValueFromExternalStoreVec;
                     if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
                         cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore fault" << RESET << endl;
                         return false;
@@ -402,14 +402,14 @@ bool DeltaKV::Get(const string& key, string* value)
                         auto index = 0;
                         for (auto i = 0; i < deltaInfoVec.size(); i++) {
                             if (deltaInfoVec[i].first == true) {
-                                finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec[index]);
+                                finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
                                 index++;
                             } else {
                                 finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                             }
                         }
-                        if (index != deltaValueFromExternalStoreVec.size()) {
-                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec.size() << ", current index = " << index << RESET << endl;
+                        if (index != deltaValueFromExternalStoreVec->size()) {
+                            cerr << RED << "[ERROR]:[Addons]-[DeltaKVInterface]-[Get] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec->size() << ", current index = " << index << RESET << endl;
                             return false;
                         } else {
                             cerr << BLUE << "[DEBUG-LOG]:[Addons]-[DeltaKVInterface]-[Get] Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << ", deltaKVMergeOperatorPtr_ = " << deltaKVMergeOperatorPtr_ << RESET << endl;

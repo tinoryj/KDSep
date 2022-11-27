@@ -7,7 +7,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, messageQue
     operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
     fileManagerNotifyGCMQ_ = fileManagerNotifyGCMQ;
     if (options->enable_deltaStore_KDLevel_cache == true) {
-        keyToValueListCache_ = new BOOSTLRUCache<string, vector<string>>(options->deltaStore_KDLevel_cache_size);
+        keyToValueListCache_ = new BOOSTLRUCache<string, vector<string>*>(options->deltaStore_KDLevel_cache_size);
     }
 }
 
@@ -64,12 +64,12 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(vector<hashStor
     return true;
 }
 
-bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec)
+bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec)
 {
     hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(fileHandler);
     currentHandler->jobDone = false;
     currentHandler->read_operation_.key_str_ = &key;
-    currentHandler->read_operation_.value_str_vec_ = &valueVec;
+    currentHandler->read_operation_.value_str_vec_ = valueVec;
     currentHandler->opType_ = kGet;
     operationToWorkerMQ_->push(currentHandler);
     while (currentHandler->jobDone == false) {
@@ -79,14 +79,14 @@ bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHa
     return true;
 }
 
-bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>& valueVecVec)
+bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec)
 {
     vector<hashStoreOperationHandler*> currentOperationHandlerVec;
     for (auto i = 0; i < fileHandlerVec.size(); i++) {
         hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(fileHandlerVec[i]);
         currentHandler->jobDone = false;
         currentHandler->read_operation_.key_str_ = &keyVec[i];
-        currentHandler->read_operation_.value_str_vec_ = valueVecVec[i];
+        currentHandler->read_operation_.value_str_vec_ = valueVecVec->at(i);
         currentHandler->opType_ = kGet;
         operationToWorkerMQ_->push(currentHandler);
         currentOperationHandlerVec.push_back(currentHandler);
@@ -102,7 +102,7 @@ bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStore
     return true;
 }
 
-uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
+uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>*>& resultMap)
 {
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
@@ -120,7 +120,7 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
         cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[processReadContentToValueLists] current key = " << currentKeyStr << RESET << endl;
         if (currentObjectRecordHeader.is_anchor_ == true) {
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                resultMap.at(currentKeyStr).clear();
+                resultMap.at(currentKeyStr)->clear();
                 continue;
             } else {
                 continue;
@@ -128,14 +128,14 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
         } else {
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMap.at(currentKeyStr).push_back(currentValueStr);
+                resultMap.at(currentKeyStr)->push_back(currentValueStr);
                 cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[processReadContentToValueLists] current value = " << currentValueStr << RESET << endl;
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             } else {
-                vector<string> newValuesRelatedToCurrentKeyVec;
+                vector<string>* newValuesRelatedToCurrentKeyVec = new vector<string>;
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
+                newValuesRelatedToCurrentKeyVec->push_back(currentValueStr);
                 resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
                 cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[processReadContentToValueLists] current value = " << currentValueStr << RESET << endl;
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
@@ -165,9 +165,9 @@ void HashStoreFileOperator::operationWorker()
                 if (keyToValueListCache_) {
                     cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read operations from cache" << RESET << endl;
                     if (keyToValueListCache_->existsInCache(*currentHandlerPtr->read_operation_.key_str_)) {
-                        cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read operations from cache, cache hit, hit vec size = " << keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_).size() << RESET << endl;
-                        vector<string> tempCopyVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_);
-                        currentHandlerPtr->read_operation_.value_str_vec_->assign(tempCopyVec.begin(), tempCopyVec.end());
+                        cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read operations from cache, cache hit, hit vec size = " << keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_)->size() << RESET << endl;
+                        currentHandlerPtr->read_operation_.value_str_vec_ = keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_);
+                        // currentHandlerPtr->read_operation_.value_str_vec_->assign(tempCopyVec->begin(), tempCopyVec->end());
                         // for (int i = 0; i < keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_).size(); i++) {
                         //     currentHandlerPtr->read_operation_.value_str_vec_->push_back(keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_)[i]);
                         // }
@@ -186,7 +186,7 @@ void HashStoreFileOperator::operationWorker()
                         cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read file content buffer size (cache enabled) = " << sizeof(readBuffer) << RESET << endl;
                         currentHandlerPtr->file_handler_->file_operation_stream_.seekp(0, ios::end);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
-                        unordered_map<string, vector<string>> currentFileProcessMap;
+                        unordered_map<string, vector<string>*> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                         if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
                             cerr << RED << "[ERROR]:[Addons]-[HashStoreFileOperator]-[operationWorker] read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
@@ -198,7 +198,7 @@ void HashStoreFileOperator::operationWorker()
                                 currentHandlerPtr->jobDone = true;
                                 continue;
                             } else {
-                                currentHandlerPtr->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).begin(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).end());
+                                currentHandlerPtr->read_operation_.value_str_vec_ = currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_);
                                 currentHandlerPtr->jobDone = true;
                                 // insert to cache
                                 for (auto mapIt : currentFileProcessMap) {
@@ -222,7 +222,7 @@ void HashStoreFileOperator::operationWorker()
                     cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] read file content buffer size (cache not enabled) = " << sizeof(readBuffer) << RESET << endl;
                     currentHandlerPtr->file_handler_->file_operation_stream_.seekp(0, ios::end);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
-                    unordered_map<string, vector<string>> currentFileProcessMap;
+                    unordered_map<string, vector<string>*> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                     if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
                         cerr << RED << "[ERROR]:[Addons]-[HashStoreFileOperator]-[operationWorker] read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
@@ -234,8 +234,8 @@ void HashStoreFileOperator::operationWorker()
                             currentHandlerPtr->jobDone = true;
                             continue;
                         } else {
-                            cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] get current key related values success, key = " << *currentHandlerPtr->read_operation_.key_str_ << ", value number = " << currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).size() << RESET << endl;
-                            currentHandlerPtr->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).begin(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).end());
+                            cout << BLUE << "[DEBUG-LOG]:[Addons]-[HashStoreFileOperator]-[operationWorker] get current key related values success, key = " << *currentHandlerPtr->read_operation_.key_str_ << ", value number = " << currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_)->size() << RESET << endl;
+                            currentHandlerPtr->read_operation_.value_str_vec_ = currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_);
                             currentHandlerPtr->jobDone = true;
                             continue;
                         }
@@ -283,19 +283,19 @@ void HashStoreFileOperator::operationWorker()
                 if (keyToValueListCache_ != nullptr) {
                     if (keyToValueListCache_->existsInCache(*currentHandlerPtr->write_operation_.key_str_)) {
                         if (currentHandlerPtr->write_operation_.is_anchor == true) {
-                            keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).clear();
+                            keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_)->clear();
                         } else {
-                            vector<string> tempInsertCacheVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_);
-                            tempInsertCacheVec.push_back(*currentHandlerPtr->write_operation_.value_str_);
+                            vector<string>* tempInsertCacheVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_);
+                            tempInsertCacheVec->push_back(*currentHandlerPtr->write_operation_.value_str_);
                             keyToValueListCache_->insertToCache(*currentHandlerPtr->write_operation_.key_str_, tempInsertCacheVec);
                         }
                     } else {
                         if (currentHandlerPtr->write_operation_.is_anchor == true) {
                             cout << GREEN << "[INFO]:[Addons]-[HashStoreFileOperator]-[operationWorker] Skip put anchor into cache without deltas" << RESET << endl;
                         } else {
-                            vector<string> tempValueVec;
-                            tempValueVec.push_back(*currentHandlerPtr->write_operation_.value_str_);
-                            keyToValueListCache_->insertToCache(*currentHandlerPtr->write_operation_.key_str_, tempValueVec);
+                            vector<string>* tempValueVecPtr = new vector<string>;
+                            tempValueVecPtr->push_back(*currentHandlerPtr->write_operation_.value_str_);
+                            keyToValueListCache_->insertToCache(*currentHandlerPtr->write_operation_.key_str_, tempValueVecPtr);
                         }
                     }
                 }

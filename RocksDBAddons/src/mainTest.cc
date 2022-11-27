@@ -1,6 +1,7 @@
 #include "interface/deltaKVInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
+#include "utils/boostLruCache.hpp"
 #include "utils/murmurHash.hpp"
 
 using namespace DELTAKV_NAMESPACE;
@@ -73,6 +74,27 @@ public:
 
 int main()
 {
+    // BOOSTLRUCache<string, vector<string>*>* keyToValueListCache_ = nullptr;
+    // keyToValueListCache_ = new BOOSTLRUCache<string, vector<string>*>(1000);
+
+    // string keyStr = "key1";
+    // vector<string>* testValueVec = new vector<string>;
+    // testValueVec->push_back("test1");
+    // keyToValueListCache_->insertToCache(keyStr, testValueVec);
+    // if (keyToValueListCache_->existsInCache(keyStr) == true) {
+    //     vector<string>* testValueVecRead = keyToValueListCache_->getFromCache(keyStr);
+    //     for (auto index = 0; index < testValueVecRead->size(); index++) {
+    //         cout << testValueVecRead->at(index) << endl;
+    //     }
+    //     testValueVecRead->push_back("test2");
+    //     cout << "After insert" << endl;
+    //     keyToValueListCache_->getFromCache(keyStr);
+    //     for (auto index = 0; index < testValueVecRead->size(); index++) {
+    //         cout << testValueVecRead->at(index) << endl;
+    //     }
+    // }
+    // return 0;
+
     // partial function test
     // u_char murmurHashResultBuffer[16];
     // string rawStr = "test";

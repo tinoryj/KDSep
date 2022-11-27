@@ -20,8 +20,8 @@ public:
     uint64_t getExtractSizeThreshold();
     bool put(const string& keyStr, const string& valueStr, bool isAnchor);
     bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<bool> isAnchorVec);
-    bool get(const string& keyStr, vector<string>& valueStrVecPtr);
-    bool multiGet(vector<string> keyStrVec, vector<vector<string>*>& valueStrVecVecPtr);
+    bool get(const string& keyStr, vector<string>*& valueStrVecPtr);
+    bool multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();
 
 private:

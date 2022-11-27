@@ -77,7 +77,7 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
     }
 }
 
-bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
+bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
@@ -91,7 +91,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
 }
 
-bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>*>& valueStrVecVec)
+bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVec)
 {
     vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
     for (auto i = 0; i < keyStrVec.size(); i++) {
