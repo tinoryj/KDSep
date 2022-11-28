@@ -3,7 +3,6 @@
 #include "common/rocksdbHeaders.hpp"
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreGCManager.hpp"
 #include "hashBasedStore/hashStoreInterface.hpp"
 #include "indexBasedStore/indexStoreInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
@@ -66,7 +65,6 @@ private:
     HashStoreInterface* HashStoreInterfaceObjPtr_;
     HashStoreFileManager* hashStoreFileManagerPtr_;
     HashStoreFileOperator* hashStoreFileOperatorPtr_;
-    HashStoreGCManager* hashStoreGCManagerPtr_;
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     // Storage component for value store
     IndexStoreInterface* IndexStoreInterfaceObjPtr_;

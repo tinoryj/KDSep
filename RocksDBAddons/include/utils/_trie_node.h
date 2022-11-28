@@ -7,6 +7,7 @@ template <typename T>
 class tnode {
 public:
     explicit tnode(T v, tnode<T>* p, int ascii, bool eow = false);
+    ~tnode();
     void addChild(tnode* child, int key);
     std::string getKey();
     tnode<T>* getChild(int key);
@@ -34,7 +35,12 @@ tnode<T>::tnode(T val, tnode<T>* p, int ascii, bool eow)
     this->p_index = ascii;
     this->keyStr = "";
     this->parent = p;
-    this->children = *(new std::vector<tnode<T>*>(128, nullptr));
+    this->children = std::vector<tnode<T>*>(128, nullptr);
+}
+
+template <typename T>
+tnode<T>::~tnode()
+{
 }
 
 template <typename T>

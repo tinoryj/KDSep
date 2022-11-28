@@ -2,7 +2,7 @@
 
 #include "common/dataStructure.hpp"
 #include "interface/deltaKVOptions.hpp"
-#include "utils/boostLruCache.hpp"
+#include "utils/appendAbleLRUCache.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
 #include "utils/trie.hpp"
@@ -29,13 +29,13 @@ public:
     void operationWorker();
 
 private:
-    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>*>& resultMap);
+    uint64_t perFileFlushBufferSizeLimit_;
+    uint64_t perFileGCSizeLimit_;
+    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
     // message management
-    messageQueue<hashStoreOperationHandler*>*
-        operationToWorkerMQ_
-        = nullptr;
-    messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ_ = nullptr;
-    BOOSTLRUCache<string, vector<string>*>* keyToValueListCache_ = nullptr;
+    messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
+    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
+    AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
 };
 
 } // namespace DELTAKV_NAMESPACE

@@ -53,7 +53,7 @@ trie_iterator<T>::trie_iterator(tnode<T>* root)
 template <typename T>
 trie_iterator<T>::trie_iterator()
 {
-    this->cur_node = nullptr;
+    delete this->cur_node;
 }
 
 template <typename T>

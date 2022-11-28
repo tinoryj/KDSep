@@ -28,8 +28,8 @@ endif ()
 
 set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c17 -fPIC -frtti -g -ggdb -g2") 
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -fPIC -frtti -g") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -fPIC -frtti -g")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -fPIC -frtti -g -fsanitize=leak") 
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -fPIC -frtti -g -fsanitize=leak")
 
 SET (CMAKE_C_COMPILER               "/usr/bin/clang")
 SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
@@ -44,7 +44,6 @@ add_library(DeltaKV STATIC
       utils/lruCache.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
-      hashBasedStore/hashStoreGCManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp
       indexBasedStore/indexStoreInterface.cpp
       interface/deltaKVOptions.cpp

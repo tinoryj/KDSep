@@ -42,6 +42,7 @@ Trie<T>::Trie()
 template <typename T>
 Trie<T>::~Trie()
 {
+    delete root_;
 }
 
 template <typename T>

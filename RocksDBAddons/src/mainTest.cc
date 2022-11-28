@@ -1,7 +1,7 @@
 #include "interface/deltaKVInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
-#include "utils/boostLruCache.hpp"
+#include "utils/appendAbleLRUCache.hpp"
 #include "utils/murmurHash.hpp"
 
 using namespace DELTAKV_NAMESPACE;
@@ -72,44 +72,83 @@ public:
     const char* Name() const override { return "FieldUpdateMergeOperatorInternal"; }
 };
 
+bool testPut(DeltaKV& db_, string key, string& value)
+{
+    if (!db_.Put(key, value)) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not put KV pairs to DB" << RESET << endl;
+        return false;
+    } else {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Put key = " << key
+             << ", value = " << value << " success" << RESET << endl;
+        return true;
+    }
+}
+
+bool testGet(DeltaKV& db_, string key, string& value)
+{
+    if (!db_.Get(key, &value)) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "):Could not read KV pairs from DB" << RESET << endl;
+        return false;
+    } else {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read key = " << key
+             << ", value = " << value << " success" << RESET << endl;
+        return true;
+    }
+}
+
+bool testMerge(DeltaKV& db_, string key, string& value)
+{
+    if (!db_.Merge(key, value)) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
+        return false;
+    } else {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
+             << ", value = " << value << " success" << RESET << endl;
+        return true;
+    }
+}
+
+bool LRUCacheTest()
+{
+    AppendAbleLRUCache<string, vector<string>*>* keyToValueListCache_ = nullptr;
+    keyToValueListCache_ = new AppendAbleLRUCache<string, vector<string>*>(1000);
+
+    string keyStr = "key1";
+    vector<string>* testValueVec = new vector<string>;
+    testValueVec->push_back("test1");
+    keyToValueListCache_->insertToCache(keyStr, testValueVec);
+    if (keyToValueListCache_->existsInCache(keyStr) == true) {
+        vector<string>* testValueVecRead = keyToValueListCache_->getFromCache(keyStr);
+        for (auto index = 0; index < testValueVecRead->size(); index++) {
+            cout << testValueVecRead->at(index) << endl;
+        }
+        testValueVecRead->push_back("test2");
+        cout << "After insert" << endl;
+        keyToValueListCache_->getFromCache(keyStr);
+        for (auto index = 0; index < testValueVecRead->size(); index++) {
+            cout << testValueVecRead->at(index) << endl;
+        }
+    }
+    return true;
+}
+
+bool murmurHashTest(string rawStr)
+{
+    u_char murmurHashResultBuffer[16];
+    MurmurHash3_x64_128((void*)rawStr.c_str(), rawStr.size(), 0, murmurHashResultBuffer);
+    uint64_t firstFourByte;
+    string prefixStr;
+    memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
+    while (firstFourByte != 0) {
+        prefixStr += ((firstFourByte & 1) + '0');
+        firstFourByte >>= 1;
+    }
+    cout << "\tPrefix first 64 bit in BIN: " << prefixStr << endl;
+    return true;
+}
+
 int main()
 {
-    // BOOSTLRUCache<string, vector<string>*>* keyToValueListCache_ = nullptr;
-    // keyToValueListCache_ = new BOOSTLRUCache<string, vector<string>*>(1000);
-
-    // string keyStr = "key1";
-    // vector<string>* testValueVec = new vector<string>;
-    // testValueVec->push_back("test1");
-    // keyToValueListCache_->insertToCache(keyStr, testValueVec);
-    // if (keyToValueListCache_->existsInCache(keyStr) == true) {
-    //     vector<string>* testValueVecRead = keyToValueListCache_->getFromCache(keyStr);
-    //     for (auto index = 0; index < testValueVecRead->size(); index++) {
-    //         cout << testValueVecRead->at(index) << endl;
-    //     }
-    //     testValueVecRead->push_back("test2");
-    //     cout << "After insert" << endl;
-    //     keyToValueListCache_->getFromCache(keyStr);
-    //     for (auto index = 0; index < testValueVecRead->size(); index++) {
-    //         cout << testValueVecRead->at(index) << endl;
-    //     }
-    // }
-    // return 0;
-
-    // partial function test
-    // u_char murmurHashResultBuffer[16];
-    // string rawStr = "test";
-    // MurmurHash3_x64_128((void*)rawStr.c_str(), rawStr.size(), 0, murmurHashResultBuffer);
-    // uint64_t firstFourByte;
-    // string prefixStr;
-    // memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
-    // cout << hex << firstFourByte << endl;
-    // while (firstFourByte != 0) {
-    //     prefixStr += ((firstFourByte & 1) + '0');
-    //     firstFourByte >>= 1;
-    // }
-    // cout << prefixStr << endl;
-
-    // DeltaKV test
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;
@@ -142,7 +181,7 @@ int main()
 
     // deltaKV settings
     options_.enable_deltaStore = true;
-    options_.enable_deltaStore_KDLevel_cache = false;
+    options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
@@ -151,107 +190,66 @@ int main()
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
-        cerr << RED << "[ERROR]:[Addons]-[MainTest] Can't open DeltaKV "
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open DeltaKV "
              << dbNameStr << RESET << endl;
         exit(0);
     } else {
-        cout << GREEN << "[INFO]:[Addons]-[MainTest] Create DeltaKV success" << RESET << endl;
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create DeltaKV success" << RESET << endl;
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");
     options_.dumpDataStructureInfo("TempDB/structure.dump");
-    cout << GREEN << "[INFO]:[Addons]-[MainTest] Dump DeltaKV options success" << RESET << endl;
+    cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Dump DeltaKV options success" << RESET << endl;
     // operations
-    string key = "Key1";
-    string value = "Value1,value2";
-    string merge = "1,value3";
-    string merge2 = "2,value5";
-    if (!db_.Put(key, value)) {
-        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
-    } else {
-        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct" << RESET << endl;
-        string valueTempForRaw;
-        if (!db_.Get(key, &valueTempForRaw)) {
-            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
-        } else {
-            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct, value size = " << valueTempForRaw.size() << " content = " << valueTempForRaw << RESET << endl;
-            // merge 1
-            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 1" << RESET << endl;
-            if (!db_.Merge(key, merge)) {
-                cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
-            } else {
-                cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
-                string valueTempForMerged1;
-                if (!db_.Get(key, &valueTempForMerged1)) {
-                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
-                } else {
-                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged1 << RESET << endl;
-                    if (options_.enable_deltaStore_KDLevel_cache == true) {
-                        // test cache
-                        string valueTempForMerged2;
-                        cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
-                        if (!db_.Get(key, &valueTempForMerged2)) {
-                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
-                        } else {
-                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged2 << RESET << endl;
-                            // merge 2
-                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 2" << RESET << endl;
-                            if (!db_.Merge(key, merge2)) {
-                                cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
-                            } else {
-                                cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
-                                string valueTempForMerged3;
-                                if (!db_.Get(key, &valueTempForMerged3)) {
-                                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
-                                } else {
-                                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged3 << RESET << endl;
-                                    if (options_.enable_deltaStore_KDLevel_cache == true) {
-                                        // test cache
-                                        string valueTempForMerged4;
-                                        cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
-                                        if (!db_.Get(key, &valueTempForMerged4)) {
-                                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
-                                        } else {
-                                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged4 << RESET << endl;
-                                            return 0;
-                                        }
-                                    }
-                                    return 0;
-                                }
-                            }
-                            return 0;
-                        }
-                    }
-                    // merge 2
-                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Do merge operation test 2" << RESET << endl;
-                    if (!db_.Merge(key, merge2)) {
-                        cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
-                    } else {
-                        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Merge function test correct" << RESET << endl;
-                        string valueTempForMerged5;
-                        if (!db_.Get(key, &valueTempForMerged5)) {
-                            cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB" << RESET << endl;
-                        } else {
-                            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test correct, value = " << valueTempForMerged5 << RESET << endl;
-                            if (options_.enable_deltaStore_KDLevel_cache == true) {
-                                // test cache
-                                string valueTempForMerged6;
-                                cerr << BLUE << "[DEBUG-LOG]:[Addons]-[MainTest] Read merged value function test with cache" << RESET << endl;
-                                if (!db_.Get(key, &valueTempForMerged6)) {
-                                    cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get merged KV pairs from DB with KD cache" << RESET << endl;
-                                } else {
-                                    cerr << GREEN << "[INFO]:[Addons]-[MainTest] Read merged value function test with cache correct, value = " << valueTempForMerged6 << RESET << endl;
-                                    return 0;
-                                }
-                            }
-                            return 0;
-                        }
-                    }
-                    return 0;
-                }
-            }
-        }
+    string key1 = "Key001";
+    string key2 = "Key002";
+    string value1 = "Value1,value2";
+    string value2 = "Value3,value4";
+    string merge1 = "1,value5";
+    string merge2 = "2,value6";
+
+    vector<bool> testResultBoolVec;
+    // put
+    bool statusPut1 = testPut(db_, key1, value1);
+    testResultBoolVec.push_back(statusPut1);
+    string tempReadStr1;
+    // get raw value
+    bool statusGet1 = testGet(db_, key1, tempReadStr1);
+    testResultBoolVec.push_back(statusGet1);
+    bool statusMerge1 = testMerge(db_, key1, merge1);
+    testResultBoolVec.push_back(statusMerge1);
+    bool statusMerge2 = testMerge(db_, key1, merge2);
+    testResultBoolVec.push_back(statusMerge2);
+    // get merged value
+    string tempReadStr2;
+    bool statusGet2 = testGet(db_, key1, tempReadStr2);
+    testResultBoolVec.push_back(statusGet2);
+    bool statusPut2 = testPut(db_, key1, value2);
+    testResultBoolVec.push_back(statusPut2);
+    // get overwrited value
+    string tempReadStr3;
+    bool statusGet3 = testGet(db_, key1, tempReadStr3);
+    testResultBoolVec.push_back(statusGet3);
+    // new key test
+    bool statusPut3 = testPut(db_, key2, value1);
+    testResultBoolVec.push_back(statusPut3);
+    string tempReadStr4;
+    bool statusGet4 = testGet(db_, key2, tempReadStr4);
+    testResultBoolVec.push_back(statusGet4);
+    bool finalStatus = true;
+    for (int i = 0; i < testResultBoolVec.size(); i++) {
+        finalStatus = finalStatus && testResultBoolVec[i];
     }
-    cerr << RED << "[ERROR]:[Addons]-[MainTest] Function test not correct" << RESET << endl;
+    if (finalStatus) {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
+        murmurHashTest(key1);
+        murmurHashTest(key2);
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test correct" << RESET << endl;
+    } else {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
+        murmurHashTest(key1);
+        murmurHashTest(key2);
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test not correct" << RESET << endl;
+    }
     return 0;
 }

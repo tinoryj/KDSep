@@ -24,13 +24,12 @@ bool FieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList
 {
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
     for (auto q : operandList) {
-        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand = " << q << RESET << endl;
+        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand = " << q << RESET << endl;
         string indexStr = q.substr(0, q.find(","));
-        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current indexStr = " << indexStr << RESET << endl;
         int index = stoi(indexStr);
-        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current index = " << index << RESET << endl;
+        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand current index = " << index << RESET << endl;
         string updateContentStr = q.substr(q.find(",") + 1, q.size());
-        cout << BLUE << "[DEBUG-LOG]:[Addons]-[FieldUpdateMergeOperator]-[Merge] merge operand current update target content = " << updateContentStr << RESET << endl;
+        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand current update target content = " << updateContentStr << RESET << endl;
         rawValueFieldsVec[index - 1].assign(updateContentStr);
     }
 

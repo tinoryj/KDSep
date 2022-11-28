@@ -23,11 +23,18 @@ enum hashStoreFileCreateReason { kNewFile = 0,
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1 };
 
+enum hashStoreFileGCType { kNew = 0,
+    kMayGC = 1,
+    kNoGC = 2,
+    kShouldDelete = 3 };
+
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_;
     uint64_t current_prefix_used_bit_;
     uint64_t total_object_count_;
     uint64_t total_object_bytes_;
+    uint64_t temp_not_flushed_data_bytes_;
+    hashStoreFileGCType gc_status_flag_;
     fstream file_operation_stream_;
     boost::shared_mutex fileOperationMutex_;
 } hashStoreFileMetaDataHandler;
@@ -54,7 +61,6 @@ typedef struct hashStoreOperationHandler {
 
 typedef struct hashStoreFileHeader {
     uint64_t file_id_;
-    uint64_t current_prefix_used_in_int_;
     uint64_t current_prefix_used_bit_;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;

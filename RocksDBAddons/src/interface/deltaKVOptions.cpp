@@ -7,7 +7,7 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     ofstream dumpOptionsOutStream;
     dumpOptionsOutStream.open(dumpPath, ios::out);
     if (!dumpOptionsOutStream.is_open()) {
-        cerr << RED << "[ERROR]-[Addons]-[DeltaKVOptions]-[dumpOptions] can not open target file" << RESET << endl;
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
         return false;
     }
     dumpOptionsOutStream << "Common options:" << endl;
@@ -23,8 +23,8 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "\tenable_deltaStore_garbage_collection = " << enable_deltaStore_garbage_collection << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(deltaStore_base_cache_mode) << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(deltaStore_base_store_mode) << endl;
-        dumpOptionsOutStream << "\tdeltaStore_fileLvel_cache_size = " << deltaStore_fileLvel_cache_size << endl;
-        dumpOptionsOutStream << "\tdeltaStore_KDLevel_cache_size = " << deltaStore_KDLevel_cache_size << endl;
+        dumpOptionsOutStream << "\tdeltaStore_KDLevel_cache_item_number = " << deltaStore_KDLevel_cache_item_number << endl;
+        dumpOptionsOutStream << "\tdeltaStore_KDLevel_cache_peritem_value_number = " << deltaStore_KDLevel_cache_peritem_value_number << endl;
         dumpOptionsOutStream << "\textract_to_deltaStore_size_lower_bound = " << extract_to_deltaStore_size_lower_bound << endl;
         dumpOptionsOutStream << "\textract_to_deltaStore_size_upper_bound = " << extract_to_deltaStore_size_upper_bound << endl;
         dumpOptionsOutStream << "\tdeltaStore_single_file_maximum_size = " << deltaStore_single_file_maximum_size << endl;
@@ -66,7 +66,7 @@ bool DeltaKVOptions::dumpDataStructureInfo(string dumpPath)
     ofstream dumpStructureSizeOutStream;
     dumpStructureSizeOutStream.open(dumpPath, ios::out);
     if (!dumpStructureSizeOutStream.is_open()) {
-        cerr << RED << "[ERROR]-[Addons]-[DeltaKVOptions]-[dumpDataStructureInfo] can not open target file" << RESET << endl;
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
         return false;
     }
     // write content

@@ -2,7 +2,6 @@
 
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreGCManager.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include <bits/stdc++.h>
 
@@ -13,8 +12,7 @@ namespace DELTAKV_NAMESPACE {
 class HashStoreInterface {
 public:
     HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-        HashStoreFileOperator*& hashStoreFileOperator,
-        HashStoreGCManager*& hashStoreGCManager);
+        HashStoreFileOperator*& hashStoreFileOperator);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
@@ -31,10 +29,8 @@ private:
     // get function pointers
     HashStoreFileManager* hashStoreFileManagerPtr_;
     HashStoreFileOperator* hashStoreFileOperatorPtr_;
-    HashStoreGCManager* hashStoreGCManagerPtr_;
     // message queues for internal usage
-    messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ_;
-    messageQueue<hashStoreFileMetaDataHandler*>* GCNotifyFileMetaDataUpdateMQ_;
+    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
 };
 
 }

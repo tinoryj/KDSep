@@ -12,20 +12,22 @@ namespace DELTAKV_NAMESPACE {
 class HashStoreFileManager {
 public:
     HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ, messageQueue<hashStoreFileMetaDataHandler*>* GCNotifyFileMetaDataUpdateMQ);
+        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
     // Manager's metadata management
     bool RetriveHashStoreFileMetaDataList();
     bool UpdateHashStoreFileMetaDataList();
+    bool CloseHashStoreFileMetaDataList();
     bool CreateHashStoreFileMetaDataListIfNotExist();
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
 
-    // corporate with GCManager
+    // GC manager
     void processGCRequestWorker();
+    void scheduleMetadataUpdateWorker();
 
 private:
     // settings
@@ -47,12 +49,12 @@ private:
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     uint64_t newFileIDGenerator();
+    // recovery and GC
     bool recoveryFromFailuer(unordered_map<string, pair<bool, string>>*& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
-
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap);
+    bool stopMessageQueueFlag_ = false;
     // message management
-    messageQueue<hashStoreFileMetaDataHandler*>*
-        fileManagerNotifyGCMQ_;
-    messageQueue<hashStoreFileMetaDataHandler*>* GCNotifyFileMetaDataUpdateMQ_;
+    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
 };
 
 } // namespace DELTAKV_NAMESPACE
