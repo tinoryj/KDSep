@@ -77,6 +77,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
+    // deltaKV settings
+    options_.enable_deltaStore = true;
+    options_.enable_deltaStore_KDLevel_cache = true;
+    options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
+
     cerr << "Start create DeltaKVDB instance" << endl;
 
     bool dbOpenStatus = db_.Open(options_, dbfilename);

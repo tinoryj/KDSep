@@ -24,6 +24,7 @@ HashStoreFileManager::~HashStoreFileManager()
 // Recovery
 bool HashStoreFileManager::recoveryFromFailuer(unordered_map<string, pair<bool, string>>*& targetListForRedo)
 {
+    return true;
 }
 
 // Manager's metadata management
@@ -72,7 +73,7 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_), ios::in | ios::out | ios::binary);
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
-            objectFileMetaDataTrie_.insert(prefixHashStr, currentFileHandlerPtr);
+            objectFileMetaDataTrie_.insert(make_pair(prefixHashStr, currentFileHandlerPtr));
             hashStoreFileIDToPrefixMap_.insert(make_pair(hashStoreFileID, prefixHashStr));
         }
     } else {
@@ -101,31 +102,31 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
         ios::out);
     if (objectFileMetaDataTrie_.size() != 0) {
-        for (Trie<hashStoreFileMetaDataHandler*>::iterator it = objectFileMetaDataTrie_.begin();
-             it != objectFileMetaDataTrie_.end(); it++) {
-            if ((*it)->gc_status_flag_ == kShouldDelete) {
-                (*it)->file_operation_stream_.close();
-                string targetRemoveFileName = workingDir_ + "/" + to_string((*it)->target_file_id_) + ".delta";
+        for (auto it : objectFileMetaDataTrie_) {
+            if (it.second->gc_status_flag_ == kShouldDelete) {
+                it.second->file_operation_stream_.close();
+                string targetRemoveFileName = workingDir_ + "/" + to_string(it.second->target_file_id_) + ".delta";
                 auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
                 if (removeObsoleteFileStatus == -1) {
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
                 } else {
                     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveFileName << RESET << endl;
-                    hashStoreFileIDToPrefixMap_.erase((*it)->target_file_id_);
+                    hashStoreFileIDToPrefixMap_.erase(it.second->target_file_id_);
+                    objectFileMetaDataTrie_.erase(it.first);
                 }
                 // skip deleted file
                 continue;
             }
-            hashStoreFileManifestStream << hashS toreFileIDToPrefixMap_.at((*it)->target_file_id_) << endl;
-            hashStoreFileManifestStream << (*it)->target_file_id_ << endl;
-            hashStoreFileManifestStream << (*it)->current_prefix_used_bit_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_count_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_bytes_ << endl;
-            (*it)->fileOperationMutex_.lock();
-            (*it)->file_operation_stream_.flush();
-            (*it)->file_operation_stream_.close();
-            cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << (*it)->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at((*it)->target_file_id_) << RESET << endl;
-            (*it)->fileOperationMutex_.unlock();
+            hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << endl;
+            hashStoreFileManifestStream << it.second->target_file_id_ << endl;
+            hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_count_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
+            it.second->fileOperationMutex_.lock();
+            it.second->file_operation_stream_.flush();
+            it.second->file_operation_stream_.close();
+            cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
+            it.second->fileOperationMutex_.unlock();
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
@@ -171,18 +172,18 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
         ios::out);
     if (objectFileMetaDataTrie_.size() != 0) {
-        for (Trie<hashStoreFileMetaDataHandler*>::iterator it = objectFileMetaDataTrie_.begin();
-             it != objectFileMetaDataTrie_.end(); it++) {
-            hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at((*it)->target_file_id_) << endl;
-            hashStoreFileManifestStream << (*it)->target_file_id_ << endl;
-            hashStoreFileManifestStream << (*it)->current_prefix_used_bit_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_count_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_bytes_ << endl;
-            (*it)->fileOperationMutex_.lock();
-            (*it)->file_operation_stream_.flush();
-            (*it)->file_operation_stream_.close();
-            cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << (*it)->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at((*it)->target_file_id_) << RESET << endl;
-            (*it)->fileOperationMutex_.unlock();
+        for (auto it : objectFileMetaDataTrie_) {
+            hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << endl;
+            hashStoreFileManifestStream << it.second->target_file_id_ << endl;
+            hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_count_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
+            it.second->fileOperationMutex_.lock();
+            it.second->file_operation_stream_.flush();
+            it.second->file_operation_stream_.close();
+            cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
+            it.second->fileOperationMutex_.unlock();
+            delete it.second;
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
@@ -226,13 +227,12 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
         ofstream hashStoreFileManifestStream;
         hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
             ios::out);
-        for (Trie<hashStoreFileMetaDataHandler*>::iterator it = objectFileMetaDataTrie_.begin();
-             it != objectFileMetaDataTrie_.end(); it++) {
-            hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at((*it)->target_file_id_) << endl;
-            hashStoreFileManifestStream << (*it)->target_file_id_ << endl;
-            hashStoreFileManifestStream << (*it)->current_prefix_used_bit_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_count_ << endl;
-            hashStoreFileManifestStream << (*it)->total_object_bytes_ << endl;
+        for (auto it : objectFileMetaDataTrie_) {
+            hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << endl;
+            hashStoreFileManifestStream << it.second->target_file_id_ << endl;
+            hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_count_ << endl;
+            hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
@@ -280,7 +280,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
 uint64_t HashStoreFileManager::getHashStoreFileHandlerStatusByPrefix(const string prefixStr)
 {
     for (auto prefixLength = maxTrieBitNumber_; prefixLength >= initialTrieBitNumber_; prefixLength--) {
-        if (objectFileMetaDataTrie_.exist(prefixStr.substr(0, prefixLength)) == true) {
+        if (objectFileMetaDataTrie_.find(prefixStr.substr(0, prefixLength)) != objectFileMetaDataTrie_.end()) {
             return prefixLength;
         }
     }
@@ -303,8 +303,7 @@ bool HashStoreFileManager::generateHashBasedPrefix(const string rawStr, string& 
 
 bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
-    Trie<hashStoreFileMetaDataHandler*>::iterator it = objectFileMetaDataTrie_.find(prefixStr.substr(0, prefixUsageLength));
-    fileHandlerPtr = (*it);
+    fileHandlerPtr = objectFileMetaDataTrie_.at(prefixStr.substr(0, prefixUsageLength));
     return true;
 }
 
@@ -335,7 +334,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
-    objectFileMetaDataTrie_.insert(prefixStr.substr(0, initialTrieBitNumber_), currentFileHandlerPtr);
+    objectFileMetaDataTrie_.insert(make_pair(prefixStr.substr(0, initialTrieBitNumber_), currentFileHandlerPtr));
     hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHandlerPtr->target_file_id_, prefixStr.substr(0, initialTrieBitNumber_)));
     fileHandlerPtr = currentFileHandlerPtr;
     return true;
@@ -489,7 +488,6 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentProcessLocationIndex += sizeof(currentFileHeader);
                 // add file header
                 for (auto keyIt : gcResultMap) {
-                    keyIt.first;
                     for (auto valueIt : keyIt.second) {
                         newObjectNumber++;
                         hashStoreRecordHeader currentObjectRecordHeader;

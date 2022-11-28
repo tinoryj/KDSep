@@ -20,7 +20,7 @@ vector<string> stringSplit(string str, string token)
     return result;
 };
 
-bool FieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList, string* finalValue)
+bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList, string* finalValue)
 {
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
     for (auto q : operandList) {
@@ -42,9 +42,9 @@ bool FieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList
     return true;
 }
 
-string FieldUpdateMergeOperator::kClassName()
+string DeltaKVFieldUpdateMergeOperator::kClassName()
 {
-    return "FieldUpdateMergeOperator";
+    return "DeltaKVFieldUpdateMergeOperator";
 }
 
 } // namespace DELTAKV_NAMESPACE

@@ -3,6 +3,7 @@
 #include "interface/mergeOperation.hpp"
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/murmurHash.hpp"
+#include "utils/timer.hpp"
 
 using namespace DELTAKV_NAMESPACE;
 
@@ -185,7 +186,7 @@ int main()
     if (options_.enable_deltaStore == false) {
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
-    options_.deltaKV_merge_operation_ptr.reset(new FieldUpdateMergeOperator);
+    options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
@@ -208,7 +209,9 @@ int main()
     string merge1 = "1,value5";
     string merge2 = "2,value6";
 
+    Timer newTimer;
     vector<bool> testResultBoolVec;
+    newTimer.startTimer();
     // put
     bool statusPut1 = testPut(db_, key1, value1);
     testResultBoolVec.push_back(statusPut1);
@@ -237,6 +240,7 @@ int main()
     bool statusGet4 = testGet(db_, key2, tempReadStr4);
     testResultBoolVec.push_back(statusGet4);
     bool finalStatus = true;
+    newTimer.stopTimer("Running");
     for (int i = 0; i < testResultBoolVec.size(); i++) {
         finalStatus = finalStatus && testResultBoolVec[i];
     }

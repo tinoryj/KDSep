@@ -15,7 +15,7 @@ public:
     virtual string kClassName() = 0;
 };
 
-class FieldUpdateMergeOperator : public DeltaKVMergeOperator {
+class DeltaKVFieldUpdateMergeOperator : public DeltaKVMergeOperator {
 public:
     bool Merge(string rawValue, vector<string> operandList, string* finalValue);
     string kClassName();

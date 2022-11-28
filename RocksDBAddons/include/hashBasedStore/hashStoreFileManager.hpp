@@ -4,7 +4,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-#include "utils/trie.hpp"
+// #include "utils/trie.hpp"
 #include <bits/stdc++.h>
 
 namespace DELTAKV_NAMESPACE {
@@ -37,7 +37,9 @@ private:
     uint64_t globalGCTriggerSize_;
     std::string workingDir_;
     // file metadata management
-    Trie<hashStoreFileMetaDataHandler*>
+    // Trie<hashStoreFileMetaDataHandler*>
+    //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.
+    std::unordered_map<string, hashStoreFileMetaDataHandler*>
         objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     std::unordered_map<uint64_t, string>
         hashStoreFileIDToPrefixMap_; // hashStore file id -> prefix;

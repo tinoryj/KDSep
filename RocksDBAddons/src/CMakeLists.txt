@@ -42,6 +42,7 @@ SET (CMAKE_RANLIB                   "/usr/bin/llvm-ranlib")
 add_library(DeltaKV STATIC 
       utils/murmurHash.cpp
       utils/lruCache.cpp
+      utils/timer.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

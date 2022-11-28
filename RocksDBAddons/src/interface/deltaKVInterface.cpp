@@ -88,7 +88,7 @@ DeltaKV::DeltaKV(DeltaKVOptions& options, const string& name)
     }
     if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
         IndexStoreInterfaceObjPtr_ = new IndexStoreInterface(&options, name, pointerToRawRocksDB_);
-        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add deltaStore success" << RESET << endl;
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add valueLog success" << RESET << endl;
     }
 }
 
@@ -152,7 +152,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     }
     if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
         IndexStoreInterfaceObjPtr_ = new IndexStoreInterface(&options, name, pointerToRawRocksDB_);
-        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add deltaStore success" << RESET << endl;
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add valveLog success" << RESET << endl;
     }
     return true;
 }

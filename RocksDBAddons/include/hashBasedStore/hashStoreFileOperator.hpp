@@ -5,7 +5,7 @@
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-#include "utils/trie.hpp"
+// #include "utils/trie.hpp"
 #include <bits/stdc++.h>
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
