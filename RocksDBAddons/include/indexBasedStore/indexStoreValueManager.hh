@@ -11,7 +11,7 @@
 #include "ds/segmentPool.hh"
 #include "ds/keyvalue.hh"
 #include "ds/list.hh"
-#include "define.hh"
+#include "indexBasedStore/define.hh"
 #include "indexStoreDevice.hh"
 #include "segmentGroupManager.hh"
 //#include "keyManager.hh"
@@ -140,7 +140,7 @@ private:
     int getNextPoolIndex(int current);
     void decrementPoolIndex(int &current);
 
-    void flushCentralizedReservedPoolVLog(int poolIndex = 0);
+    void flushCentralizedReservedPoolVLog(int poolIndex = 0, offset_t* logOffsetPtr = nullptr);
     void flushVLogCentralizedReservedPool();
 
     std::pair<offset_t, len_t> flushSegmentToWriteFront(Segment &segment, bool isGC = false);

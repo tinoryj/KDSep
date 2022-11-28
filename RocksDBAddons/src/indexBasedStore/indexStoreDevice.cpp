@@ -231,6 +231,7 @@ FILE* indexStoreDevice::accessFileFd(segment_id_t segmentId) {
         std::string fname (_diskInfo.at(diskId).diskPath);
         fname.append("/c");
         fname.append(std::to_string(segmentId));
+        debug_info("fname %s\n", fname.c_str());
         fd = fopen(fname.c_str(), "r+b");
         if (fd == 0) {
             // create if file not exists

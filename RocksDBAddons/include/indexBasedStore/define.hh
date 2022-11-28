@@ -11,7 +11,7 @@
 #include <stdint.h>          // [u]intXX_t
 #include <unistd.h>
 #include <boost/thread/shared_mutex.hpp>
-#include "enum.hh"
+#include "indexBasedStore/enum.hh"
 
 // diskManager
 //#define DISK_DIRECT_IO  

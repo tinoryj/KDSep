@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 #include "../util/hash.hh"
-#include "../define.hh"
+#include "indexBasedStore/define.hh"
 #include "../indexStoreConfig.hh"
 
 #define LSM_MASK (0x80000000)

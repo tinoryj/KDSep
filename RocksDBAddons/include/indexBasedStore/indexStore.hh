@@ -3,7 +3,7 @@
 
 #include <atomic>
 #include <vector>
-#include "define.hh"
+#include "indexBasedStore/define.hh"
 #include "interface/deltaKVOptions.hpp"
 #include "indexStoreDevice.hh"
 //#include "keyManager.hh"

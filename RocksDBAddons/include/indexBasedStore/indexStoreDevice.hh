@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <atomic>
 #include "threadpool/threadpool.hpp"
-#include "define.hh"
-#include "enum.hh"
+#include "indexBasedStore/define.hh"
+#include "indexBasedStore/enum.hh"
 #include "ds/bitmap.hh"
 #include "ds/diskinfo.hh"
 

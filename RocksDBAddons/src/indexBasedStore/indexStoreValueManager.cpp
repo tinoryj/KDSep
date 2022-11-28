@@ -186,6 +186,8 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
         debug_info("DELETE: [%.*s]\n", KEY_SIZE, keyStr);
     }
 
+    debug_info("PUT: [%.*s]\n", KEY_SIZE, keyStr);
+
     // avoid GC
     _GCLock.lock();
     volatile int &poolIndex = _centralizedReservedPoolIndex.inUsed;
@@ -212,6 +214,7 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
     // check if in-place update is possible
     bool inPlaceUpdate = false;
     bool inPool = false;
+    int segment_start = 0;
     len_t oldValueSize = INVALID_LEN;
 
     std::unordered_map<unsigned char*, segment_len_t, hashKey, equalKey>::iterator keyIt = _centralizedReservedPool[poolIndex].keysInPool.find(key);
@@ -277,22 +280,26 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
         debug_info("Inplace update segment %lu len %lu\n", convertedLoc.segmentId, valueSize);
 
     } else {
+        debug_info("Appenddata: [%.*s] pool size %lu pool offset %lu value size %lu\n", KEY_SIZE, keyStr, 
+            Segment::getSize(pool), poolOffset, valueSize);
         // append if new / cannot fit in-place
         Segment::appendData(pool, keyStr, KEY_SIZE);
         Segment::appendData(pool, &valueSize, sizeof(len_t));
         if (valueSize > 0) { 
             Segment::appendData(pool, valueStr, valueSize); 
             // TODO now we treat each value as a segment. Will change that later
-            Segment::setFull(pool); 
+            //Segment::setWriteFront(pool, Segment::getSize(pool)); 
+            //Segment::setShouldFlush(pool); 
         }
 
-        debug_info("append update to segment %lu len %lu\n", convertedLoc.segmentId, valueSize);
+        debug_info("append update to segment %lu len %lu is full %d canfit %d\n", convertedLoc.segmentId, valueSize, 
+            Segment::isFull(pool), Segment::canFit(pool, 1));
         // increment the total update size counter for the segment
-        _centralizedReservedPool[poolIndex].segmentsInPool[convertedLoc.segmentId].first += Segment::getSize(pool); //RECORD_SIZE;
+        _centralizedReservedPool[poolIndex].segmentsInPool[convertedLoc.segmentId].first += RECORD_SIZE;
         // add the offset (pointer) for the segment
         _centralizedReservedPool[poolIndex].segmentsInPool[convertedLoc.segmentId].second.insert(poolOffset);
         // mark the present of group in pool
-        _centralizedReservedPool[poolIndex].groupsInPool[groupId].insert(Segment::getSize(pool)); //(RECORD_SIZE);
+        _centralizedReservedPool[poolIndex].groupsInPool[groupId].insert(RECORD_SIZE);
     }
 
     // add the updated key offset
@@ -300,6 +307,7 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
     _centralizedReservedPool[poolIndex].keysInPool.insert(keyOffset);
 
     if (groupId != LSM_GROUP && !vlog) _segmentGroupManager->releaseGroupLock(groupId);
+    offset_t logOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || ConfigManager::getInstance().getUpdateKVBufferSize() <= 0) {
@@ -307,7 +315,8 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
+            debug_info("flush vlog %d\n", poolIndex);
+            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &logOffset), StatsType::POOL_FLUSH);
         } else {
             STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
@@ -315,6 +324,7 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
         _GCLock.unlock();
     }
 
+    valueLoc.offset = logOffset;
     valueLoc.segmentId = oldValueLoc.segmentId;
     valueLoc.length = valueSize + (groupId != LSM_GROUP? sizeof(len_t) : 0);
 
@@ -383,11 +393,11 @@ bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation
 #else
         valueSize = readValueLoc.length;
 #endif //NDEBUG
-        assert(valueSize == readValueLoc.length);
+        assert(valueSize == readValueLoc.length - sizeof(len_t));
         offLen = {sizeof(len_t) + KEY_SIZE, valueSize};
         assert(memcmp(valueStr, keyStr, KEY_SIZE) == 0);
         memmove(valueStr, valueStr + KEY_SIZE + sizeof(len_t), valueSize);
-        //printf("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
+        debug_info("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
         ret = true;
     } else {
         // read data
@@ -662,6 +672,7 @@ bool indexStoreValueManager::outOfReservedSpaceForObject(offset_t flushFront, le
 
 // caller should lock _centralizedReservedPool before-hand
 void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool isUpdate, int poolIndex, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey> *oldLocations) {
+    debug_info("gropu id %lu poolIndex %d oldlocations %d\n", *reportGroupId, poolIndex, (int)oldLocations->size()); 
 
     const int flushingPoolIndex = poolIndex;
     std::lock_guard<std::mutex> (_centralizedReservedPool[poolIndex].lock);
@@ -1064,14 +1075,19 @@ void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGro
 #undef RESET_SEGMENT_BUFFER
 }
 
-void indexStoreValueManager::flushCentralizedReservedPoolVLog (int poolIndex) {
+void indexStoreValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* logOffsetPtr) {
     // directly write the pool out
     _centralizedReservedPool[poolIndex].lock.lock();
+    debug_info("flush vlog, pool %d\n", poolIndex);
 
     Segment &pool = _centralizedReservedPool[poolIndex].pool;
     len_t writeLength = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET;
     std::tie(logOffset, writeLength) = flushSegmentToWriteFront(pool, false);
+    debug_info("flush vlog, logOffset %lu writeLength %lu\n", logOffset, writeLength);
+    if (logOffsetPtr) {
+      *logOffsetPtr = logOffset;
+    }
     // nonthing to flush
     if (writeLength == 0) {
         _centralizedReservedPool[poolIndex].lock.unlock();
@@ -1089,6 +1105,7 @@ void indexStoreValueManager::flushCentralizedReservedPoolVLog (int poolIndex) {
         for (auto kv : c.second.second) {
             off_len_t offLen (kv + KEY_SIZE, sizeof(len_t));
             Segment::readData(pool, &vs, offLen);
+            debug_info("vs = %lu\n", vs);
             keys.push_back((char*)Segment::getData(pool) + kv);
             valueLoc.offset = (logOffset + kv) % capacity;
             valueLoc.length = vs;
@@ -1121,6 +1138,7 @@ std::pair<offset_t, len_t> indexStoreValueManager::flushSegmentToWriteFront(Segm
         return std::pair<offset_t, len_t> (INVALID_OFFSET, writeLength);
 
     offset_t logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength, isGC);
+    debug_info("logOffset %lu\n", logOffset);
 
 //    if (logOffset == INVALID_OFFSET) {
 //        assert(isGC == false);

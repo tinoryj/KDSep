@@ -115,6 +115,8 @@ bool DeltaKV::Put(const string& key, const string& value)
         if (value.size() >= IndexStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
             externalIndexInfo currentExternalIndexInfo;
             bool status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo);
+            debug_info("currentExternalIndexInfo %u %u %u\n", currentExternalIndexInfo.externalFileID_, 
+                currentExternalIndexInfo.externalFileOffset_, currentExternalIndexInfo.externalContentSize_);
             if (status == true) {
                 char writeInternalValueBuffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
                 internalValueType currentInternalValueType;
@@ -200,6 +202,13 @@ bool DeltaKV::Get(const string& key, string* value)
             if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
                 // get value from value store first
                 string externalRawValue;
+
+                externalIndexInfo currentExternalIndexInfo;
+                memcpy(&currentExternalIndexInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo)); 
+                debug_info("currentExternalIndexInfo %u %u %u\n", currentExternalIndexInfo.externalFileID_, 
+                    currentExternalIndexInfo.externalFileOffset_, currentExternalIndexInfo.externalContentSize_);
+                IndexStoreInterfaceObjPtr_->get(key, currentExternalIndexInfo, &externalRawValue); 
+
                 if (tempInternalValueHeader.mergeFlag_ == true) {
                     // get deltas from delta store
                     vector<pair<bool, string>>* deltaInfoVec;

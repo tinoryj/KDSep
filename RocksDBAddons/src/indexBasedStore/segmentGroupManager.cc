@@ -34,7 +34,7 @@ SegmentGroupManager::SegmentGroupManager() {
     _bitmap.group = new BitMap(_MaxSegment);
     _writeFront.segment = 0;
 
-    std::string value = 0; // _keyManager->getMeta(LogTailString, strlen(LogTailString));
+    std::string value = "0"; // _keyManager->getMeta(LogTailString, strlen(LogTailString));
     _vlog.writeFront = value.empty()? 0 : stoul(value);
 
 //    if (_keyManager)
@@ -44,7 +44,7 @@ SegmentGroupManager::SegmentGroupManager() {
     _maxSpaceToRelease = new MaxHeap<len_t>(_MaxSegment+1);
     _minWriteBackRatio = new MinHeap<double>(_MaxSegment+1);
 
-    restoreMetaFromDB();
+//    restoreMetaFromDB();
 }
 
 SegmentGroupManager::~SegmentGroupManager() {
@@ -531,12 +531,12 @@ len_t SegmentGroupManager::getLogGCOffset() {
 }
 
 len_t SegmentGroupManager::getLogValidBytes() {
-    std::string value = 0; // _keyManager->getMeta(LogValidByteString, strlen(LogValidByteString));
+    std::string value = "0"; // _keyManager->getMeta(LogValidByteString, strlen(LogValidByteString));
     return value.empty()? 0 : stoul(value);
 }
 
 len_t SegmentGroupManager::getLogWrittenBytes() {
-    std::string value = 0; // _keyManager->getMeta(LogWrittenByteString, strlen(LogWrittenByteString));
+    std::string value = "0"; // _keyManager->getMeta(LogWrittenByteString, strlen(LogWrittenByteString));
     return value.empty()? 0 : stoul(value);
 }
 

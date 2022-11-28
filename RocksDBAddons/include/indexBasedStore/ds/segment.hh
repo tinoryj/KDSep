@@ -3,8 +3,8 @@
 
 #include <vector>
 #include <mutex>
-#include "../util/debug.hh"
-#include "../define.hh"
+#include "indexBasedStore/util/debug.hh"
+#include "indexBasedStore/define.hh"
 #include "../indexStoreConfig.hh"
 #include "list.hh"
 

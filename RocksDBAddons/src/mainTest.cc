@@ -103,6 +103,7 @@ int main()
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
     }
+//    options_.enable_valueStore = true;
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     options_.rocksdbRawOptions_.max_background_jobs = 8;
@@ -141,11 +142,11 @@ int main()
     if (!db_.Put(key, value)) {
         cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
     } else {
-        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct" << RESET << endl;
+        cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct (" << key << ", " << value << ")" << RESET << endl;
         if (!db_.Get(key, &valueTemp)) {
             cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
         } else {
-            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct" << RESET << endl;
+            cerr << GREEN << "[INFO]:[Addons]-[MainTest] Get function test correct, value (" << valueTemp << ")" << RESET << endl;
             if (!db_.Merge(key, merge)) {
                 cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not merge KV pairs to DB" << RESET << endl;
             } else {

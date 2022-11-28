@@ -2,7 +2,7 @@
 #define __DEBUG_HH__
 
 #include <string>
-#include "../define.hh"
+#include "indexBasedStore/define.hh"
 
 // for color
 #define RESET       "\033[0m"

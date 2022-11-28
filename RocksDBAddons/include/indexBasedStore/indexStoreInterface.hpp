@@ -13,7 +13,7 @@ public:
     uint64_t getExtractSizeThreshold();
     bool put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr);
     bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr);
-    bool get(string keyStr, externalIndexInfo storageInfo, string* valueStrPtr);
+    bool get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr);
     bool multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();
 
@@ -23,6 +23,7 @@ private:
     DeltaKVOptions* internalOptionsPtr_;
     rocksdb::DB* pointerToRawRocksDBForGC_;
 
+    indexStoreDevice* devices_;
     KvServer* kvServer_;
 };
 

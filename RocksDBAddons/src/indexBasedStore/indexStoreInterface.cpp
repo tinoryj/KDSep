@@ -4,16 +4,25 @@ namespace DELTAKV_NAMESPACE {
 
 IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string workingDir, rocksdb::DB* pointerToRawRocksDB)
 {
+    
     internalOptionsPtr_ = options;
     workingDir_ = workingDir;
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
     extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
 
-    kvServer_ = new KvServer();
+    ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
+
+    DiskInfo disk1(0, "./data_dir", 1 * 1024 * 1024 * 1024);
+    std::vector<DiskInfo> disks;
+    disks.push_back(disk1);
+    devices_ = new indexStoreDevice(disks);
+
+    kvServer_ = new KvServer(devices_);
 }
 
 IndexStoreInterface::~IndexStoreInterface()
 {
+    delete devices_;
     delete kvServer_;
 }
 
@@ -38,14 +47,16 @@ bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valu
     return true;
 }
 
-bool IndexStoreInterface::get(string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
+bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
 {
     char* key = new char[keyStr.length() + 2];
     char* value = nullptr;
     len_t valueSize = 0;
 
+    debug_info("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
     strcpy(key, keyStr.c_str());
     kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo);
+    *valueStrPtr = std::string(value, valueSize);
     return true;
 }
 bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)

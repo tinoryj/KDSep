@@ -4,7 +4,7 @@
 #include <mutex>
 #include <vector>
 
-#include "../define.hh"
+#include "indexBasedStore/define.hh"
 
 using namespace std;
 

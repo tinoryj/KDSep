@@ -11,7 +11,7 @@ KvServer::KvServer() : KvServer(0) {
 }
 
 KvServer::KvServer(indexStoreDevice *deviceManager) {
-    cerr << GREEN << "[INFO]:[Addons]-[KvServer]-[Construct] " << RESET << endl;
+//    ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
     // devices
     if (deviceManager) {
         _deviceManager = deviceManager;
@@ -56,6 +56,17 @@ bool KvServer::checkKeySize(len_t &keySize) {
 bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& indexInfo) {
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
+    char* ckey = new char[KEY_SIZE+1];
+    char* cvalue = new char[valueSize];
+
+    memset(ckey, ' ', KEY_SIZE);
+    memcpy(ckey, key, keySize);
+    keySize = KEY_SIZE;
+    ckey[KEY_SIZE] = '\0';
+    memcpy(cvalue, value, valueSize);
+    cvalue[valueSize] = '\0';
+
+    debug_info("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey, (int)valueSize, cvalue);
 
     oldValueLoc.value.clear();
     // only support fixed key size
@@ -81,7 +92,7 @@ retry_update:
         oldValueLoc.segmentId = LSM_SEGMENT;
     } else {
         // find the deterministic location
-        oldValueLoc.segmentId = HashFunc::hash(key, KEY_SIZE) % ConfigManager::getInstance().getNumMainSegment();
+        oldValueLoc.segmentId = HashFunc::hash(ckey, KEY_SIZE) % ConfigManager::getInstance().getNumMainSegment();
         // always allocate the group if not exists
         group_id_t groupId = INVALID_GROUP;
         _segmentGroupManager->getNewMainSegment(groupId, oldValueLoc.segmentId, /* needsLock */ false);
@@ -89,13 +100,9 @@ retry_update:
     bool inLSM = oldValueLoc.segmentId == LSM_SEGMENT;
     StatsRecorder::getInstance()->timeProcess(StatsType::UPDATE_KEY_LOOKUP, keyLookupStartTime);
     // update the value of the key, get the new location of value
-    char* ckey = new char[keySize];
-    char* cvalue = new char[valueSize];
-    memcpy(ckey, key, keySize);
-    memcpy(cvalue, value, valueSize);
     STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
 
-    debug_info("Update key %x%x to segment id=%lu,ofs=%lu,len=%lu\n", key[0], key[KEY_SIZE-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
+    debug_info("Update key %x%x to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[KEY_SIZE-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
         // best effort retry
@@ -113,6 +120,7 @@ retry_update:
     indexInfo.externalFileID_ = 0;
     indexInfo.externalFileOffset_ = curValueLoc.offset;
     indexInfo.externalContentSize_ = curValueLoc.length;
+    debug_info("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
     delete[] cvalue;
     return ret;
@@ -133,15 +141,20 @@ retry_update:
 
 bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfoVec, bool timed) {
     bool ret = false;
+    char* ckey = new char[KEY_SIZE+1];
+
+    memset(ckey, ' ', KEY_SIZE);
+    memcpy(ckey, key, keySize);
+    keySize = KEY_SIZE;
+    ckey[KEY_SIZE] = '\0';
+
+    debug_info("GET key %.*s\n", (int)keySize, key);
 
     if (checkKeySize(keySize) == false)
         return ret;
 
     struct timeval startTime;
     gettimeofday(&startTime, 0);
-
-    char* ckey = new char[keySize];
-    memcpy(ckey, key, keySize);
 
     // get value using the location
     ret = (_valueManager->getValueFromBuffer(ckey, value, valueSize));

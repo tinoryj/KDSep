@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-#include "../define.hh"
+#include "indexBasedStore/define.hh"
 #include "../indexStoreConfig.hh"
 
 namespace DELTAKV_NAMESPACE {
