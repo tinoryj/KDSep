@@ -12,13 +12,13 @@
 
 namespace DELTAKV_NAMESPACE {
 
-class indexStoreDevice {
+class DeviceManager {
 public:
 
-    indexStoreDevice () {
+    DeviceManager () {
     }
-    indexStoreDevice (std::vector<DiskInfo> disks);
-    ~indexStoreDevice();
+    DeviceManager (std::vector<DiskInfo> disks, bool isSlave = false);
+    ~DeviceManager();
 
     // mapping between segment and disks
     disk_id_t getDiskBySegmentId(segment_id_t segmentId);

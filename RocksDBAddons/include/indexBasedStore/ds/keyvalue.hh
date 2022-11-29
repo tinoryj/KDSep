@@ -2,9 +2,10 @@
 #define __KEYVALUE_HH__
 
 #include <stdlib.h>
-#include "../util/hash.hh"
+#include "common/dataStructure.hpp"
+#include "indexBasedStore/util/hash.hh"
 #include "indexBasedStore/define.hh"
-#include "../indexStoreConfig.hh"
+#include "indexBasedStore/indexStoreConfig.hh"
 
 #define LSM_MASK (0x80000000)
 
@@ -80,6 +81,55 @@ public:
         return str;
     }
 
+    std::string serializeIndexUpdate() {
+        bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
+        bool vlog = ConfigManager::getInstance().enabledVLogMode();
+        len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
+        len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
+        segment_id_t numMainSegment = ConfigManager::getInstance().getNumMainSegment();
+        char str[sizeof(internalValueType) + sizeof(externalIndexInfo) + 1];
+        internalValueType valueType;
+        externalIndexInfo indexInfo;
+        valueType.mergeFlag_ = valueType.valueSeparatedFlag_ = true;
+
+        // write length
+        len_t flength = this->length;
+        if (this->segmentId == LSM_SEGMENT) {
+            flength |= LSM_MASK;
+        }
+        // write segment id (if kv-separation is enabled)
+        offset_t foffset = this->offset;
+        if (!disableKvSep && !vlog) {
+            if (this->segmentId == LSM_SEGMENT) {
+                foffset = INVALID_OFFSET;
+            } else if (this->segmentId < numMainSegment) {
+                foffset = this->segmentId * mainSegmentSize + this->offset;
+            } else {
+                foffset = mainSegmentSize * numMainSegment + (this->segmentId - numMainSegment) * logSegmentSize + this->offset;
+            }
+            //str.append((char*) &this->segmentId, sizeof(this->segmentId));
+        } else if (!vlog) {
+            this->segmentId = LSM_SEGMENT;
+        }
+        // write value or offset
+
+        valueType.rawValueSize_ = flength;
+        indexInfo.externalFileID_ = 0;
+        indexInfo.externalFileOffset_ = foffset; 
+        indexInfo.externalContentSize_ = flength;
+
+        memcpy(str, &valueType, sizeof(internalValueType));
+        memcpy(str + sizeof(internalValueType), &indexInfo, sizeof(externalIndexInfo));
+
+//        str.append((char*) &flength, sizeof(this->length));
+//        if (this->segmentId == LSM_SEGMENT) {
+//            str.append(value);
+//        } else {
+//            str.append((char*) &foffset, sizeof(this->offset));
+//        }
+        return std::string(str, sizeof(internalValueType) + sizeof(externalIndexInfo));
+    }
+
     bool deserialize (std::string str) {
         bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
         bool vlog = ConfigManager::getInstance().enabledVLogMode();
@@ -90,8 +140,18 @@ public:
 
         const char *cstr = str.c_str();
         size_t offset = 0;
+
+        externalIndexInfo indexInfo;
+        if (str.length() < sizeof(internalValueType) + sizeof(externalIndexInfo)) {
+            return false;
+        }
+        memcpy(&indexInfo, cstr + sizeof(internalValueType), sizeof(externalIndexInfo));
+        
         // read length
-        memcpy(&this->length, cstr + offset, sizeof(this->length));
+//        memcpy(&this->length, cstr + offset, sizeof(this->length));
+        this->length = indexInfo.externalContentSize_;
+        this->offset = indexInfo.externalFileOffset_;
+
         offset += sizeof(this->length);
         if (this->length & LSM_MASK) {
             this->segmentId = LSM_SEGMENT;
@@ -110,7 +170,7 @@ public:
         if (this->segmentId == LSM_SEGMENT) {
             value.assign(cstr + offset, this->length);
         } else {
-            memcpy(&this->offset, cstr + offset, sizeof(this->offset));
+//            memcpy(&this->offset, cstr + offset, sizeof(this->offset));
             if (!vlog) {
                 if (this->offset < numMainSegment * mainSegmentSize) {
                     this->segmentId = this->offset / mainSegmentSize;

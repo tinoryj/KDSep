@@ -66,9 +66,11 @@ static inline void* buf_calloc (size_t s, unsigned int unit) {
 #define MAX_CP_NUM  (128)
 
 // all typedef go here
+typedef uint8_t                                       UC;
 typedef int64_t                                       LL;
 typedef uint64_t                                      ULL;
 typedef int32_t                                       disk_id_t;
+typedef UC                                            key_len_t;
 typedef ULL                                           offset_t;
 typedef ULL                                           len_t;
 typedef ULL                                           segment_id_t;

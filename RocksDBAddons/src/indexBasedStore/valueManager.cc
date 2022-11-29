@@ -1,4 +1,4 @@
-#include "indexBasedStore/indexStoreValueManager.hh"
+#include "indexBasedStore/valueManager.hh"
 #include "indexBasedStore/util/timer.hh"
 
 #define RECORD_SIZE     ((valueSize == INVALID_LEN? 0 : valueSize) + (LL)sizeof(len_t) + KEY_SIZE)
@@ -9,21 +9,19 @@ namespace DELTAKV_NAMESPACE {
 
 
 // always reserve (at least) one spare for flush of reserved space
-int indexStoreValueManager::spare = 1;
+int ValueManager::spare = 1;
 
-//indexStoreValueManager::indexStoreValueManager(DeviceManager *deviceManager, SegmentGroupManager *segmentGroupManager, KeyManager *keyManager, LogManager *logManager) 
-indexStoreValueManager::indexStoreValueManager(indexStoreDevice *deviceManager, SegmentGroupManager *segmentGroupManager) {
+ValueManager::ValueManager(DeviceManager *deviceManager, SegmentGroupManager *segmentGroupManager, KeyManager *keyManager, LogManager *logManager, bool isSlave) {
     // init the connections to different mods
     _deviceManager = deviceManager;
     _segmentGroupManager = segmentGroupManager;
-//    _keyManager = keyManager;
-//    _gcManager = 0;
-//    _logManager = logManager;
+    _keyManager = keyManager;
+    _logManager = logManager;
     _slaveValueManager = 0;
 
     ConfigManager &cm = ConfigManager::getInstance();
 
-    _isSlave = false; // isSlave;
+    _isSlave = isSlave;
 
     if (!_isSlave && cm.useSlave()) {
         std::vector<DiskInfo> disks;
@@ -37,19 +35,16 @@ indexStoreValueManager::indexStoreValueManager(indexStoreDevice *deviceManager, 
                 disks.at(i).skipOffset = cm.getMainSegmentSize() * cm.getNumMainSegment() + cm.getLogSegmentSize() * cm.getNumLogSegment();
             }
         }
-//        _slave.dm = new indexStoreDevice(disks, /* isSlave = */ true);
-        _slave.dm = new indexStoreDevice(disks);
-//        _slave.cgm = new SegmentGroupManager(/* isSlave = */ true, _keyManager);
-        _slave.cgm = new SegmentGroupManager();
-//        _slaveValueManager = new ValueManager(_slave.dm, _slave.cgm, keyManager, 0, /* isSlave = */ true);
-        _slaveValueManager = new indexStoreValueManager(_slave.dm, _slave.cgm);
-//        _slave.gcm = new GCManager(keyManager, _slaveValueManager, _slave.dm, _slave.cgm, /* isSlave = */ true);
-//        _slaveValueManager->setGCManager(_slave.gcm);
+        _slave.dm = new DeviceManager(disks, /* isSlave = */ true);
+        _slave.cgm = new SegmentGroupManager(/* isSlave = */ true, _keyManager);
+        _slaveValueManager = new ValueManager(_slave.dm, _slave.cgm, keyManager, 0, /* isSlave = */ true);
+        _slave.gcm = new GCManager(keyManager, _slaveValueManager, _slave.dm, _slave.cgm, /* isSlave = */ true);
+        _slaveValueManager->setGCManager(_slave.gcm);
         //printf("dm %p cgm %p svm %p\n", _slave.dm, _slave.cgm, _slaveValueManager);
     } else {
         _slave.dm = 0;
         _slave.cgm = 0;
- //       _slave.gcm = 0;
+        _slave.gcm = 0;
     }
     _slave.writtenBytes = _segmentGroupManager->getLogWrittenBytes();
     _slave.validBytes = _segmentGroupManager->getLogValidBytes();
@@ -136,7 +131,7 @@ indexStoreValueManager::indexStoreValueManager(indexStoreDevice *deviceManager, 
 
 }
 
-indexStoreValueManager::~indexStoreValueManager() {
+ValueManager::~ValueManager() {
     // flush and release segments
     //forceSync(true, true);
 
@@ -171,12 +166,12 @@ indexStoreValueManager::~indexStoreValueManager() {
     Segment::free(_readBuffer);
 
     delete _slaveValueManager;
-//    delete _slave.gcm;
+    delete _slave.gcm;
     delete _slave.cgm;
     delete _slave.dm;
 }
 
-ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness) {
+ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness) {
     ValueLocation valueLoc;
 
     segment_id_t segmentId = oldValueLoc.segmentId;
@@ -332,7 +327,7 @@ ValueLocation indexStoreValueManager::putValue (char *keyStr, len_t keySize, cha
     return valueLoc;
 }
 
-bool indexStoreValueManager::getValueFromBuffer (const char *keyStr, char *&valueStr, len_t &valueSize) {
+bool ValueManager::getValueFromBuffer (const char *keyStr, char *&valueStr, len_t &valueSize) {
 
     unsigned char *key = (unsigned char*) keyStr;
 
@@ -364,7 +359,7 @@ bool indexStoreValueManager::getValueFromBuffer (const char *keyStr, char *&valu
     return false;
 }
 
-bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation readValueLoc, char *&valueStr, len_t &valueSize) {
+bool ValueManager::getValueFromDisk (const char *keyStr, ValueLocation readValueLoc, char *&valueStr, len_t &valueSize) {
 
     ConfigManager &cm = ConfigManager::getInstance();
     bool vlog = _isSlave || cm.enabledVLogMode();
@@ -393,7 +388,7 @@ bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation
 #else
         valueSize = readValueLoc.length;
 #endif //NDEBUG
-        assert(valueSize == readValueLoc.length - sizeof(len_t));
+        assert(valueSize == readValueLoc.length);
         offLen = {sizeof(len_t) + KEY_SIZE, valueSize};
         assert(memcmp(valueStr, keyStr, KEY_SIZE) == 0);
         memmove(valueStr, valueStr + KEY_SIZE + sizeof(len_t), valueSize);
@@ -421,11 +416,11 @@ bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation
 }
 
 // caller should lock the centralized reserved pool
-//bool indexStoreValueManager::prepareGCGroupInCentralizedPool(group_id_t groupId, bool needsLock) {
+//bool ValueManager::prepareGCGroupInCentralizedPool(group_id_t groupId, bool needsLock) {
 //    return setGroupReservedBufferCP(groupId, needsLock, true, groupId);
 //}
 
-//bool indexStoreValueManager::setGroupReservedBufferCP (segment_id_t mainSegmentId, bool needsLock, bool isGC, segment_id_t logSegmentId, bool groupMetaOutDated, std::unordered_map<std::pair<segment_id_t,segment_id_t>, len_t, hashCidPair> *invalidBytes, int poolIndex) {
+//bool ValueManager::setGroupReservedBufferCP (segment_id_t mainSegmentId, bool needsLock, bool isGC, segment_id_t logSegmentId, bool groupMetaOutDated, std::unordered_map<std::pair<segment_id_t,segment_id_t>, len_t, hashCidPair> *invalidBytes, int poolIndex) {
 //    SegmentBuffer *cb = 0;
 //    segment_id_t segmentId = 0;
 //    bool done = false;
@@ -561,11 +556,11 @@ bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation
 //    return done;
 //}
 
-//bool indexStoreValueManager::cleanupGCGroupInCentralizedPool(group_id_t groupId, bool isGCDone, bool needsLockPool) {
+//bool ValueManager::cleanupGCGroupInCentralizedPool(group_id_t groupId, bool isGCDone, bool needsLockPool) {
 //    return releaseGroupReservedBufferCP(groupId, needsLockPool, /* isGC = */ true, isGCDone);
 //}
 
-//bool indexStoreValueManager::releaseGroupReservedBufferCP(group_id_t groupId, bool needsLockPool, bool isGC, bool isGCDone, int poolIndex) {
+//bool ValueManager::releaseGroupReservedBufferCP(group_id_t groupId, bool needsLockPool, bool isGC, bool isGCDone, int poolIndex) {
 //    // release the updates in the reserved pool
 //    if (!isGCDone) {
 //        return false;
@@ -611,7 +606,7 @@ bool indexStoreValueManager::getValueFromDisk (const char *keyStr, ValueLocation
 //    return true;
 //}
 
-bool indexStoreValueManager::outOfReservedSpace(offset_t flushFront, group_id_t groupId, int poolIndex) {
+bool ValueManager::outOfReservedSpace(offset_t flushFront, group_id_t groupId, int poolIndex) {
     len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
     len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
     segment_id_t numReserved = ConfigManager::getInstance().getNumPipelinedBuffer() - 1;
@@ -651,7 +646,7 @@ bool indexStoreValueManager::outOfReservedSpace(offset_t flushFront, group_id_t 
     return oors;
 }
 
-bool indexStoreValueManager::outOfReservedSpaceForObject(offset_t flushFront, len_t objectSize) {
+bool ValueManager::outOfReservedSpaceForObject(offset_t flushFront, len_t objectSize) {
     ConfigManager &cm = ConfigManager::getInstance();
     len_t mainSegmentSize = cm.getMainSegmentSize();
     segment_id_t numReserved = cm.getNumPipelinedBuffer() - 1;
@@ -671,7 +666,7 @@ bool indexStoreValueManager::outOfReservedSpaceForObject(offset_t flushFront, le
 }
 
 // caller should lock _centralizedReservedPool before-hand
-void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool isUpdate, int poolIndex, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey> *oldLocations) {
+void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool isUpdate, int poolIndex, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey> *oldLocations) {
     debug_info("gropu id %lu poolIndex %d oldlocations %d\n", *reportGroupId, poolIndex, (int)oldLocations->size()); 
 
     const int flushingPoolIndex = poolIndex;
@@ -728,7 +723,7 @@ void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGro
             waitIO += 1; \
             _iothreads.schedule( \
                     std::bind( \
-                        &indexStoreDevice::writePartialSegmentMt, \
+                        &DeviceManager::writePartialSegmentMt, \
                         _deviceManager, \
                         Segment::getId(segment), \
                         Segment::getFlushFront(segment) + inSegmentOffset, \
@@ -832,7 +827,7 @@ void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGro
 
                 // gc for some space
                 do {
-//                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
+                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
                     // check if the update now fits into the free space
                     flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
                     isReservedOverflow = !isGCLogOnlyBuffer && outOfReservedSpaceForObject(flushFront, RECORD_SIZE);
@@ -907,7 +902,7 @@ void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGro
                     waitIO += 1;
                     _iothreads.schedule(
                             std::bind(
-                                &indexStoreDevice::writePartialSegmentMt,
+                                &DeviceManager::writePartialSegmentMt,
                                 _deviceManager,
                                 logSegmentId,
                                 logSegmentFront,
@@ -1075,7 +1070,7 @@ void indexStoreValueManager::flushCentralizedReservedPool (group_id_t *reportGro
 #undef RESET_SEGMENT_BUFFER
 }
 
-void indexStoreValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* logOffsetPtr) {
+void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* logOffsetPtr) {
     // directly write the pool out
     _centralizedReservedPool[poolIndex].lock.lock();
     debug_info("flush vlog, pool %d\n", poolIndex);
@@ -1128,11 +1123,12 @@ void indexStoreValueManager::flushCentralizedReservedPoolVLog (int poolIndex, of
     _centralizedReservedPool[poolIndex].lock.unlock();
 }
 
-std::pair<offset_t, len_t> indexStoreValueManager::flushSegmentToWriteFront(Segment &segment, bool isGC) {
+std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment &segment, bool isGC) {
     assert(_isSlave || ConfigManager::getInstance().enabledVLogMode());
 
     segment_len_t flushFront = Segment::getFlushFront(segment);
     len_t writeLength = Segment::getWriteFront(segment) - flushFront;
+    debug_info("writeFront %lu flushFront %lu\n", writeLength + flushFront, flushFront);
 
     if (writeLength == 0)
         return std::pair<offset_t, len_t> (INVALID_OFFSET, writeLength);
@@ -1140,12 +1136,12 @@ std::pair<offset_t, len_t> indexStoreValueManager::flushSegmentToWriteFront(Segm
     offset_t logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength, isGC);
     debug_info("logOffset %lu\n", logOffset);
 
-//    if (logOffset == INVALID_OFFSET) {
-//        assert(isGC == false);
-//        //printSlaveStats();
-//        _gcManager->gcVLog();
-//        logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength);
-//    }
+    if (logOffset == INVALID_OFFSET) {
+        assert(isGC == false);
+        //printSlaveStats();
+        _gcManager->gcVLog();
+        logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength);
+    }
 
     assert(logOffset != INVALID_OFFSET);
     len_t ret = 0;
@@ -1163,16 +1159,16 @@ std::pair<offset_t, len_t> indexStoreValueManager::flushSegmentToWriteFront(Segm
     return std::pair<offset_t, len_t> (logOffset, writeLength);
 }
 
-int indexStoreValueManager::getNextPoolIndex(int current) {
+int ValueManager::getNextPoolIndex(int current) {
     return (current + 1) % ConfigManager::getInstance().getNumPipelinedBuffer();
 }
 
-void indexStoreValueManager::decrementPoolIndex(int &current) {
+void ValueManager::decrementPoolIndex(int &current) {
     int numPipelinedBuffers = ConfigManager::getInstance().getNumPipelinedBuffer();
     current = (current + numPipelinedBuffers - 1) % numPipelinedBuffers;
 }
 
-void indexStoreValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
+void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
     int nextPoolIndex = getNextPoolIndex(_centralizedReservedPoolIndex.inUsed);
     // wait until next available buffer is available after flush
     // (assume multiple core is available)
@@ -1190,8 +1186,8 @@ void indexStoreValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
     pthread_cond_signal(&_needBgFlush);
 }
 
-void* indexStoreValueManager::flushCentralizedReservedPoolBgWorker(void *arg) {
-    indexStoreValueManager *instance = (indexStoreValueManager *) arg;
+void* ValueManager::flushCentralizedReservedPoolBgWorker(void *arg) {
+    ValueManager *instance = (ValueManager *) arg;
     // loop until valueManager is destoryed
     //fprintf(stderr, "Bg flush thread starts now, hello\n");
     while (instance->_started) {
@@ -1221,7 +1217,7 @@ void* indexStoreValueManager::flushCentralizedReservedPoolBgWorker(void *arg) {
     return (void *) 0;
 }
 
-offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
+offset_t ValueManager::getLastSegmentFront(offset_t flushFront) {
     segment_len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
     segment_len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
     if (flushFront <= mainSegmentSize) {
@@ -1237,7 +1233,7 @@ offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
     return 0;
 }
 
-//void indexStoreValueManager::logMetaPersist(std::set<segment_id_t> &modifiedSegments, std::set<group_id_t> &modifiedGroups) {
+//void ValueManager::logMetaPersist(std::set<segment_id_t> &modifiedSegments, std::set<group_id_t> &modifiedGroups) {
 //    // segments
 //    for (segment_id_t cid : modifiedSegments) {
 //        _segmentGroupManager->writeSegmentMeta(cid);
@@ -1248,7 +1244,7 @@ offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
 //    }
 //}
 
-//void indexStoreValueManager::restoreFromUpdateLog() {
+//void ValueManager::restoreFromUpdateLog() {
 //    std::vector<std::string> keys;
 //    std::vector<ValueLocation> values;
 //    std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > groups;
@@ -1289,7 +1285,7 @@ offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
 //    }
 //}
 //
-//void indexStoreValueManager::restoreFromGCLog() {
+//void ValueManager::restoreFromGCLog() {
 //    std::vector<std::string> keys;
 //    std::vector<ValueLocation> values;
 //    std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > groups;
@@ -1345,7 +1341,7 @@ offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
 //            waitIO += 1;
 //            _iothreads.schedule(
 //                    std::bind(
-//                        &indexStoreDevice::writePartialSegmentMt,
+//                        &DeviceManager::writePartialSegmentMt,
 //                        _deviceManager,
 //                        Segment::getId(segment.second),
 //                        Segment::getFlushFront(segment.second),
@@ -1376,7 +1372,7 @@ offset_t indexStoreValueManager::getLastSegmentFront(offset_t flushFront) {
 //    }
 //}
 
-bool indexStoreValueManager::forceSync() {
+bool ValueManager::forceSync() {
     std::lock_guard<std::mutex> gcLock (_GCLock);
     if (ConfigManager::getInstance().enabledVLogMode() || _isSlave) {
         STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(), POOL_FLUSH);
@@ -1386,24 +1382,24 @@ bool indexStoreValueManager::forceSync() {
     return true;
 }
 
-void indexStoreValueManager::printSlaveStats(FILE *out) {
-//    if (_isSlave) {
-//        fprintf(out,
-//                "(This) Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
-//                , ConfigManager::getInstance().getColdStorageCapacity()
-//                , _slave.writtenBytes
-//                , _slave.validBytes
-//               );
-//        _gcManager->printStats(out);
-//    } else if (ConfigManager::getInstance().useSlave() && _slaveValueManager && _slave.gcm) {
-//        fprintf(out,
-//                "Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
-//                , ConfigManager::getInstance().getColdStorageCapacity()
-//                , _slaveValueManager->_slave.writtenBytes
-//                , _slaveValueManager->_slave.validBytes
-//               );
-//        _slave.gcm->printStats(out);
-//    }
+void ValueManager::printSlaveStats(FILE *out) {
+    if (_isSlave) {
+        fprintf(out,
+                "(This) Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
+                , ConfigManager::getInstance().getColdStorageCapacity()
+                , _slave.writtenBytes
+                , _slave.validBytes
+               );
+        _gcManager->printStats(out);
+    } else if (ConfigManager::getInstance().useSlave() && _slaveValueManager && _slave.gcm) {
+        fprintf(out,
+                "Slave capacity: %lu; In-use: %lu; Valid: %lu\n"
+                , ConfigManager::getInstance().getColdStorageCapacity()
+                , _slaveValueManager->_slave.writtenBytes
+                , _slaveValueManager->_slave.validBytes
+               );
+        _slave.gcm->printStats(out);
+    }
 }
 
 }

@@ -2,47 +2,45 @@
 #include "indexBasedStore/util/debug.hh"
 #include "indexBasedStore/util/timer.hh"
 #include "indexBasedStore/indexStore.hh"
-//#include "leveldbKeyManager.hh"
+#include "indexBasedStore/rocksdbKeyManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
-KvServer::KvServer() : KvServer(0) {
+KvServer::KvServer() : KvServer(0, 0) {
+    debug_error("No device and no LSM-tree%s\n", "");
 }
 
-KvServer::KvServer(indexStoreDevice *deviceManager) {
-//    ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
+KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksDBForGC) {
     // devices
     if (deviceManager) {
         _deviceManager = deviceManager;
     } else {
-        _deviceManager = new indexStoreDevice();
+        _deviceManager = new DeviceManager();
     }
     _freeDeviceManager = (deviceManager == 0);
     // metadata log
-//    _logManager = new LogManager(deviceManager);
+    _logManager = new LogManager(deviceManager);
     // keys and values
-//    _keyManager = new LevelDBKeyManager(ConfigManager::getInstance().getLSMTreeDir().c_str());
+    _keyManager = new RocksDBKeyManager(pointerToRawRocksDBForGC);
     // segments and groups
-//    _segmentGroupManager = new SegmentGroupManager(/* isSlave = */ false, _keyManager);
-    _segmentGroupManager = new SegmentGroupManager();
+    _segmentGroupManager = new SegmentGroupManager(/* isSlave = */ false, _keyManager);
     // values
-//    _valueManager = new ValueManager(_deviceManager, _segmentGroupManager, _keyManager, _logManager);
-    _valueManager = new indexStoreValueManager(_deviceManager, _segmentGroupManager);
+    _valueManager = new ValueManager(_deviceManager, _segmentGroupManager, _keyManager, _logManager);
     // gc
-//    _gcManager = new GCManager(_keyManager, _valueManager, _deviceManager, _segmentGroupManager);
+    _gcManager = new GCManager(_keyManager, _valueManager, _deviceManager, _segmentGroupManager);
     
-//    _valueManager->setGCManager(_gcManager);
+    _valueManager->setGCManager(_gcManager);
 
     _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
 KvServer::~KvServer() {
     delete _valueManager;
-//    delete _keyManager;
-//    delete _gcManager;
+    delete _keyManager;
+    delete _gcManager;
     delete _segmentGroupManager;
-//    delete _logManager;
+    delete _logManager;
     if (_freeDeviceManager)
         delete _deviceManager;
 }
@@ -119,7 +117,7 @@ retry_update:
     }
     indexInfo.externalFileID_ = 0;
     indexInfo.externalFileOffset_ = curValueLoc.offset;
-    indexInfo.externalContentSize_ = curValueLoc.length;
+    indexInfo.externalContentSize_ = curValueLoc.length - sizeof(len_t);
     debug_info("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
     delete[] cvalue;
@@ -168,6 +166,8 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     readValueLoc.segmentId = 0;
     readValueLoc.offset = storageInfoVec.externalFileOffset_;
     readValueLoc.length = storageInfoVec.externalContentSize_;
+
+    debug_info("offset %lu length %lu\n", readValueLoc.offset, readValueLoc.length);
 
     // get the value's location
 //    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
@@ -289,8 +289,10 @@ bool KvServer::flushBuffer() {
 }
 
 size_t KvServer::gc(bool all) {
-    return 0;
-//    return (all? _gcManager->gcAll() : _gcManager->gcGreedy());
+    if (ConfigManager::getInstance().enabledVLogMode()) {
+        return _gcManager->gcVLog();
+    }
+    return (all? _gcManager->gcAll() : _gcManager->gcGreedy());
 }
 
 void KvServer::printStorageUsage(FILE *out) {
@@ -302,15 +304,15 @@ void KvServer::printGroups(FILE *out) {
 }
 
 void KvServer::printBufferUsage(FILE *out) {
-    //_valueManager->printUsage(out);
+//    _valueManager->printUsage(out);
 }
 
 void KvServer::printKeyCacheUsage(FILE *out) {
-//    _keyManager->printCacheUsage(out);
+    _keyManager->printCacheUsage(out);
 }
 
 void KvServer::printKeyStats(FILE *out) {
-//    _keyManager->printStats(out);
+    _keyManager->printStats(out);
 }
 
 void KvServer::printValueSlaveStats(FILE *out) {
@@ -318,7 +320,7 @@ void KvServer::printValueSlaveStats(FILE *out) {
 }
 
 void KvServer::printGCStats(FILE *out) {
-//    _gcManager->printStats(out);
+    _gcManager->printStats(out);
 }
 
 }

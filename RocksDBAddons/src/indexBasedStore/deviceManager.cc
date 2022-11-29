@@ -4,15 +4,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include "indexBasedStore/util/debug.hh"
-#include "indexBasedStore/indexStoreDevice.hh"
+#include "indexBasedStore/deviceManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
 
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
-//indexStoreDevice::indexStoreDevice(const vector<DiskInfo> v_diskInfo, bool isSlave) 
-indexStoreDevice::indexStoreDevice(const vector<DiskInfo> v_diskInfo) { 
+DeviceManager::DeviceManager(const vector<DiskInfo> v_diskInfo, bool isSlave) { 
 
     std::set<disk_id_t> diskIdSet;
 
@@ -33,25 +32,25 @@ indexStoreDevice::indexStoreDevice(const vector<DiskInfo> v_diskInfo) {
 
     _diskIdVector.insert(_diskIdVector.begin(), diskIdSet.begin(), diskIdSet.end());
 
-    _isSlave = false; // isSlave;
+    _isSlave = isSlave;
 
 #ifdef DISKLBA_OUT
     fp = fopen("disklba.out", "w");
 #endif /* DISKLBA_OUT */
 }
 
-indexStoreDevice::~indexStoreDevice() {
+DeviceManager::~DeviceManager() {
     for (auto diskInfo : _diskInfo) {
         delete _diskMutex[diskInfo.first];
     }
 }
 
 #ifdef DIRECT_LBA_SEGMENT_MAPPING
-disk_id_t indexStoreDevice::getDiskBySegmentId(segment_id_t segmentId) {
+disk_id_t DeviceManager::getDiskBySegmentId(segment_id_t segmentId) {
     return (segmentId == INVALID_SEGMENT)? INVALID_DISK : segmentId % _numDisks;
 }
 
-offset_t indexStoreDevice::getOffsetBySegmentId(segment_id_t segmentId) {
+offset_t DeviceManager::getOffsetBySegmentId(segment_id_t segmentId) {
     ConfigManager &cm = ConfigManager::getInstance();
 
     segment_len_t mainSegmentSize = cm.getMainSegmentSize();
@@ -70,7 +69,7 @@ offset_t indexStoreDevice::getOffsetBySegmentId(segment_id_t segmentId) {
     return INVALID_OFFSET;
 }
 
-segment_id_t indexStoreDevice::getSegmentIdByOffset(disk_id_t diskId, offset_t ofs) {
+segment_id_t DeviceManager::getSegmentIdByOffset(disk_id_t diskId, offset_t ofs) {
     assert(_diskInfo.count(diskId) > 0);
 
     ConfigManager &cm = ConfigManager::getInstance();
@@ -93,17 +92,17 @@ segment_id_t indexStoreDevice::getSegmentIdByOffset(disk_id_t diskId, offset_t o
 
 #endif // ifdef DIRECT_LBA_SEGMENT_MAPPING
 
-offset_t indexStoreDevice::writeSegment(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset) {
+offset_t DeviceManager::writeSegment(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset) {
     segment_len_t segmentSize = ConfigManager::getInstance().getSegmentSize(isLogSegment(segmentId));
     assert(startingOffset < segmentSize);
     return accessDataOnDisk(segmentId, startingOffset, segmentSize - startingOffset, buf, true);
 }
 
-bool indexStoreDevice::isLogSegment(segment_id_t segmentId) {
+bool DeviceManager::isLogSegment(segment_id_t segmentId) {
     return segmentId > ConfigManager::getInstance().getNumMainSegment();
 }
 
-len_t indexStoreDevice::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length, bool isWrite) {
+len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length, bool isWrite) {
     // check if disk id is valid
     if (diskId == INVALID_DISK || _diskInfo.count(diskId) < 0) {
         return INVALID_LEN;
@@ -118,6 +117,7 @@ len_t indexStoreDevice::accessDisk(disk_id_t diskId, unsigned char *buf, offset_
         len_t capacity = _isSlave? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
         offset_t runningDiskOffset = diskOffset;
         for (len_t remains = length, len = 0; remains > 0; remains -= len, runningDiskOffset = (runningDiskOffset + len) % capacity) {
+            debug_info("capacity %lu runningDiskOffset %lu remains %lu\n", capacity, runningDiskOffset, remains);
             len = std::min(capacity - runningDiskOffset, remains);
             if (len == 0) {
                 len = remains;
@@ -142,7 +142,7 @@ len_t indexStoreDevice::accessDisk(disk_id_t diskId, unsigned char *buf, offset_
                 }
             }
             if (ret < 0 || (size_t) ret != len) {
-                debug_error("Error on p%s buf=%p to disk %d (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), buf + inOffset, diskId, _diskInfo.at(diskId).fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, len, strerror(errno));
+                debug_error("Error on p%s buf=%p to disk %d (fd=%d) at %lu length %lu (ret %lu): %s\n", (isWrite ? "write" : "read"), buf + inOffset, diskId, _diskInfo.at(diskId).fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, len, ret, strerror(errno));
                 assert(0);
                 exit(-1);
             }
@@ -189,7 +189,7 @@ len_t indexStoreDevice::accessDisk(disk_id_t diskId, unsigned char *buf, offset_
 }
 
 
-offset_t indexStoreDevice::accessDataOnDisk(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t accessLength, unsigned char *buf, bool isWrite) {
+offset_t DeviceManager::accessDataOnDisk(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t accessLength, unsigned char *buf, bool isWrite) {
     disk_id_t diskId = getDiskBySegmentId(segmentId);
 
     assert(_diskInfo.count(diskId));
@@ -222,7 +222,7 @@ offset_t indexStoreDevice::accessDataOnDisk(segment_id_t segmentId, segment_offs
     return ret;
 }
 
-FILE* indexStoreDevice::accessFileFd(segment_id_t segmentId) {
+FILE* DeviceManager::accessFileFd(segment_id_t segmentId) {
     FILE *fd = 0;
     auto existfd = _segmentFiles.fds.find(segmentId);
     if (existfd == _segmentFiles.fds.end()) {
@@ -237,6 +237,7 @@ FILE* indexStoreDevice::accessFileFd(segment_id_t segmentId) {
             // create if file not exists
             fd = fopen(fname.c_str(), "w+b");
         }
+        debug_info("accessFileFd %p %s\n", fd, fname.c_str());
         assert(fd != 0);
         // keep track of its fd
         _segmentFiles.fds[segmentId] = fd;
@@ -246,7 +247,7 @@ FILE* indexStoreDevice::accessFileFd(segment_id_t segmentId) {
     return fd;
 }
 
-len_t indexStoreDevice::accessLogFile(bool isUpdate, unsigned char *buf, len_t logSize, bool isWrite, bool isDelete) {
+len_t DeviceManager::accessLogFile(bool isUpdate, unsigned char *buf, len_t logSize, bool isWrite, bool isDelete) {
 
     std::string fname (_diskInfo.at(0).diskPath);
     fname.append("/log_");
@@ -288,7 +289,7 @@ len_t indexStoreDevice::accessLogFile(bool isUpdate, unsigned char *buf, len_t l
     return writeSize;
 }
 
-len_t indexStoreDevice::accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite) {
+len_t DeviceManager::accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite) {
     ConfigManager &cm = ConfigManager::getInstance();
 
     disk_id_t diskId = getDiskBySegmentId(segmentId);
@@ -309,7 +310,7 @@ len_t indexStoreDevice::accessSegmentFile(segment_id_t segmentId, unsigned char 
     return writeSize;
 }
 
-len_t indexStoreDevice::accessFile(FILE *fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCircular) {
+len_t DeviceManager::accessFile(FILE *fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCircular) {
 
     ConfigManager &cm = ConfigManager::getInstance();
 
@@ -357,7 +358,7 @@ len_t indexStoreDevice::accessFile(FILE *fd, unsigned char *buf, segment_offset_
     return accessLength;
 }
 
-unsigned char *indexStoreDevice::readMmap(segment_id_t segmentId, segment_offset_t offset, segment_len_t length, unsigned char *buf) {
+unsigned char *DeviceManager::readMmap(segment_id_t segmentId, segment_offset_t offset, segment_len_t length, unsigned char *buf) {
     ConfigManager &cm = ConfigManager::getInstance();
     bool useFS = cm.segmentAsFile();
     if (!useFS || cm.segmentAsSeparateFile()) return 0;
@@ -377,7 +378,7 @@ unsigned char *indexStoreDevice::readMmap(segment_id_t segmentId, segment_offset
     return target + (foffset % pageSize);
 }
 
-bool indexStoreDevice::readUmmap(segment_id_t segmentId, segment_offset_t offset, segment_len_t length, unsigned char *buf) {
+bool DeviceManager::readUmmap(segment_id_t segmentId, segment_offset_t offset, segment_len_t length, unsigned char *buf) {
     ConfigManager &cm = ConfigManager::getInstance();
     bool useFS = cm.segmentAsFile();
     if (!useFS || cm.segmentAsSeparateFile()) return false;
@@ -389,7 +390,7 @@ bool indexStoreDevice::readUmmap(segment_id_t segmentId, segment_offset_t offset
     return (munmap(buf - (foffset % pageSize), length + (foffset % pageSize)) == 0);
 }
 
-bool indexStoreDevice::readAhead(segment_id_t segmentId, segment_offset_t offset, segment_len_t length) {
+bool DeviceManager::readAhead(segment_id_t segmentId, segment_offset_t offset, segment_len_t length) {
     // Todo support vlog readahead
     if (_isSlave) return false;
     if (ConfigManager::getInstance().enabledVLogMode()) {
@@ -421,23 +422,23 @@ bool indexStoreDevice::readAhead(segment_id_t segmentId, segment_offset_t offset
     return posix_fadvise(fd, foffset, length, POSIX_FADV_RANDOM | POSIX_FADV_WILLNEED) == 0;
 }
 
-void indexStoreDevice::writePartialSegmentMt(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, offset_t &ret, std::atomic_int &count) {
+void DeviceManager::writePartialSegmentMt(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, offset_t &ret, std::atomic_int &count) {
     ret = writePartialSegment(segmentId, startingOffset, length, buf);
     count--;
 }
 
-offset_t indexStoreDevice::writePartialSegment(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf) {
+offset_t DeviceManager::writePartialSegment(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf) {
     return accessDataOnDisk(segmentId, startingOffset, length, buf, true);
 }
 
-bool indexStoreDevice::readSegment(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset) {
+bool DeviceManager::readSegment(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset) {
     segment_len_t segmentSize = ConfigManager::getInstance().getSegmentSize(isLogSegment(segmentId));
     assert(startingOffset < segmentSize);
 
     return readPartialSegment(segmentId, startingOffset, segmentSize - startingOffset, buf);
 }
 
-len_t indexStoreDevice::writeDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length) {
+len_t DeviceManager::writeDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length) {
     if (ConfigManager::getInstance().segmentAsFile() && ConfigManager::getInstance().segmentAsSeparateFile()) {
         return accessSegmentFile(diskId, buf, diskOffset, length, /* isWrite = */ true);
     } else {
@@ -445,58 +446,58 @@ len_t indexStoreDevice::writeDisk(disk_id_t diskId, unsigned char *buf, offset_t
     }
 }
 
-offset_t indexStoreDevice::writeUpdateLog(unsigned char *buf, len_t logSize) {
+offset_t DeviceManager::writeUpdateLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ true, buf, logSize, /* isWrite = */ true);
 }
 
-offset_t indexStoreDevice::writeGCLog(unsigned char *buf, len_t logSize) {
+offset_t DeviceManager::writeGCLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ false, buf, logSize, /* isWrite = */ true);
 }
 
-bool indexStoreDevice::readUpdateLog(unsigned char *buf, len_t logSize) {
+bool DeviceManager::readUpdateLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ true, buf, logSize, /* isWrite = */ false) == logSize;
 }
 
-bool indexStoreDevice::readGCLog(unsigned char *buf, len_t logSize) {
+bool DeviceManager::readGCLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ false, buf, logSize, /* isWrite = */ false) == logSize;
 }
 
-len_t indexStoreDevice::getUpdateLogSize() {
+len_t DeviceManager::getUpdateLogSize() {
     return accessLogFile(/* isUpdate = */ true, /* buf = */ 0, /* logSize = */ 0, /* isWrite = */ false);
 }
 
-len_t indexStoreDevice::getGCLogSize() {
+len_t DeviceManager::getGCLogSize() {
     return accessLogFile(/* isUpdate = */ false, /* buf = */ 0, /* logSize = */ 0, /* isWrite = */ false);
 }
 
-bool indexStoreDevice::removeUpdateLog() {
+bool DeviceManager::removeUpdateLog() {
     return accessLogFile(/* isUpdate = */ true, 0, 0, /* isWrite = */ false, /* isDelete = */ true);
 }
 
-bool indexStoreDevice::removeGCLog() {
+bool DeviceManager::removeGCLog() {
     return accessLogFile(/* isUpdate = */ false, 0, 0, /* isWrite = */ false, /* isDelete = */ true);
 }
 
-void indexStoreDevice::readSegmentMt(segment_id_t segmentId, unsigned char *buf, std::atomic_int &count, segment_offset_t startingOffset) {
+void DeviceManager::readSegmentMt(segment_id_t segmentId, unsigned char *buf, std::atomic_int &count, segment_offset_t startingOffset) {
     readSegment(segmentId, buf, startingOffset);
     count--;
 }
 
-bool indexStoreDevice::readPartialSegment(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf) {
+bool DeviceManager::readPartialSegment(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf) {
     return accessDataOnDisk(segmentId, startingOffset, length, buf, false) != INVALID_OFFSET;
 }
 
-void indexStoreDevice::readPartialSegmentMt(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, std::atomic_int &count) {
+void DeviceManager::readPartialSegmentMt(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, std::atomic_int &count) {
     readPartialSegment(segmentId, startingOffset, length, buf);
     count--;
 }
 
-void indexStoreDevice::readPartialSegmentMtD(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, uint8_t &done) {
+void DeviceManager::readPartialSegmentMtD(segment_id_t segmentId, segment_offset_t startingOffset, segment_len_t length, unsigned char *buf, uint8_t &done) {
     readPartialSegment(segmentId, startingOffset, length, buf);
     done = 1;
 }
 
-len_t indexStoreDevice::readDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length) {
+len_t DeviceManager::readDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length) {
     if (ConfigManager::getInstance().segmentAsFile() && ConfigManager::getInstance().segmentAsSeparateFile()) {
         return accessSegmentFile(diskId, buf, diskOffset, length, /* isWrite = */ false);
     } else {
@@ -504,13 +505,13 @@ len_t indexStoreDevice::readDisk(disk_id_t diskId, unsigned char *buf, offset_t 
     }
 }
 
-void indexStoreDevice::syncDevice(disk_id_t diskId, std::atomic_int &waitSync, bool needsUnlock) {
+void DeviceManager::syncDevice(disk_id_t diskId, std::atomic_int &waitSync, bool needsUnlock) {
     fsync(_diskInfo.at(diskId).fd);
     if (needsUnlock) _diskMutex.at(diskId)->unlock();
     waitSync--;
 }
 
-void indexStoreDevice::syncDevices() {
+void DeviceManager::syncDevices() {
     std::atomic_int waitSync;
     waitSync = 0;
     for (auto &disk: _diskInfo) {
@@ -519,7 +520,7 @@ void indexStoreDevice::syncDevices() {
             disk.second.dirty = false;
             if (_numDisks > 1) {
                 waitSync++;
-                _stp.schedule(std::bind(&indexStoreDevice::syncDevice, this, disk.first, boost::ref(waitSync), true));
+                _stp.schedule(std::bind(&DeviceManager::syncDevice, this, disk.first, boost::ref(waitSync), true));
             } else {
                 fsync(disk.second.fd);
                 _diskMutex.at(disk.first)->unlock();
@@ -529,11 +530,11 @@ void indexStoreDevice::syncDevices() {
     while (_numDisks > 1 && waitSync > 0);
 }
 
-size_t indexStoreDevice::getDiskNum() {
+size_t DeviceManager::getDiskNum() {
     return _diskInfo.size();
 }
 
-std::vector<DiskInfo> indexStoreDevice::getDisks(bool alive) {
+std::vector<DiskInfo> DeviceManager::getDisks(bool alive) {
     std::vector<DiskInfo> disks;
     for (auto &disk: _diskIdVector) {
         if (_diskInfo.at(disk).alive == alive) {
@@ -543,7 +544,7 @@ std::vector<DiskInfo> indexStoreDevice::getDisks(bool alive) {
     return disks;
 }
 
-size_t indexStoreDevice::setDisksStatus(std::vector<disk_id_t> &diskIds, bool status) {
+size_t DeviceManager::setDisksStatus(std::vector<disk_id_t> &diskIds, bool status) {
     size_t ret = 0;
     for (auto id : diskIds) {
         if (_diskInfo.count(id) <= 0)

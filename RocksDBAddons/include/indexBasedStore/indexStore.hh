@@ -5,11 +5,11 @@
 #include <vector>
 #include "indexBasedStore/define.hh"
 #include "interface/deltaKVOptions.hpp"
-#include "indexStoreDevice.hh"
-//#include "keyManager.hh"
-#include "indexStoreValueManager.hh"
+#include "deviceManager.hh"
+#include "keyManager.hh"
+#include "valueManager.hh"
 #include "segmentGroupManager.hh"
-//#include "logManager.hh"
+#include "logManager.hh"
 
 /**
  * KvServer -- Interface for applications
@@ -20,7 +20,7 @@ namespace DELTAKV_NAMESPACE {
 class KvServer {
 public:
     KvServer();
-    KvServer(indexStoreDevice *deviceManager);
+    KvServer(DeviceManager *deviceManager, rocksdb::DB* lsm);
     ~KvServer();
 
     bool putValue (const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& storageInfoVec);
@@ -40,11 +40,11 @@ public:
     void printGCStats(FILE *out = stdout);
 
 private:
-//    KeyManager *_keyManager;
-    indexStoreValueManager *_valueManager;
-    indexStoreDevice *_deviceManager;
-//    LogManager *_logManager;
-//    GCManager *_gcManager;
+    KeyManager *_keyManager;
+    ValueManager *_valueManager;
+    DeviceManager *_deviceManager;
+    LogManager *_logManager;
+    GCManager *_gcManager;
     SegmentGroupManager *_segmentGroupManager;
 
     boost::threadpool::pool _scanthreads;

@@ -10,17 +10,20 @@
 #include "ds/keyvalue.hh"
 
 namespace DELTAKV_NAMESPACE {
-
 class SegmentGroupManager;
-//class GCManager;
-//#include "gcManager.hh"
-//#include "keyManager.hh"
+class GCManager;
+}
+#include "gcManager.hh"
+#include "keyManager.hh"
+
+namespace DELTAKV_NAMESPACE {
+
 
 class SegmentGroupManager {
-//    friend class GCManager;
+    friend class GCManager;
 
 public:
-    SegmentGroupManager(); //(bool isSlave = false, KeyManager *keyManager = 0);
+    SegmentGroupManager(bool isSlave = false, KeyManager *keyManager = 0);
     ~SegmentGroupManager();
 
     // group create
@@ -142,7 +145,7 @@ private:
         offset_t gcFront;
     } _vlog;
 
-//    KeyManager *_keyManager;
+    KeyManager *_keyManager;
 
     struct {
         std::unordered_map<segment_id_t, std::pair<group_id_t, bool> > segment;  // segmentId -> (groupId, locked)

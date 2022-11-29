@@ -21,14 +21,13 @@ const char* SegmentGroupManager::LogWrittenByteString = "LOG_WRITE_BYT3";
             epos = metadata.length() + 1; \
     } while (0)
 
-//SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager *keyManager) 
-SegmentGroupManager::SegmentGroupManager() { 
+SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager *keyManager) { 
     _MaxSegment = ConfigManager::getInstance().getNumSegment();
     _freeLogSegment = ConfigManager::getInstance().getNumLogSegment();
     _freeMainSegment = ConfigManager::getInstance().getNumMainSegment();
 
-    _isSlave = false; // isSlave;
-//    _keyManager = keyManager;
+    _isSlave = isSlave;
+    _keyManager = keyManager;
 
     _bitmap.segment = new BitMap(_MaxSegment);
     _bitmap.group = new BitMap(_MaxSegment);

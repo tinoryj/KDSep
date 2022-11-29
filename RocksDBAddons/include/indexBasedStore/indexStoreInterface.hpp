@@ -23,7 +23,7 @@ private:
     DeltaKVOptions* internalOptionsPtr_;
     rocksdb::DB* pointerToRawRocksDBForGC_;
 
-    indexStoreDevice* devices_;
+    DeviceManager* devices_;
     KvServer* kvServer_;
 };
 

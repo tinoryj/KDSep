@@ -15,9 +15,9 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
     DiskInfo disk1(0, "./data_dir", 1 * 1024 * 1024 * 1024);
     std::vector<DiskInfo> disks;
     disks.push_back(disk1);
-    devices_ = new indexStoreDevice(disks);
+    devices_ = new DeviceManager(disks);
 
-    kvServer_ = new KvServer(devices_);
+    kvServer_ = new KvServer(devices_, pointerToRawRocksDBForGC_);
 }
 
 IndexStoreInterface::~IndexStoreInterface()
@@ -69,7 +69,7 @@ bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalInde
 
 bool IndexStoreInterface::forcedManualGarbageCollection()
 {
-    printf("forcedManualGarbageCollection()\n");
+    kvServer_->gc(false);
     return true;
 }
 

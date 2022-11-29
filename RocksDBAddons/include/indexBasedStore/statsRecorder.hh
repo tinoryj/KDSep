@@ -35,6 +35,8 @@ enum StatsType {
     UPDATE_KEY_WRITE_CACHE,
     UPDATE_KEY_WRITE_SHADOW,
     UPDATE_VALUE,
+    /* Merge */
+    MERGE_INDEX_UPDATE,
     /* Read */
     GET,
     GET_KEY_LOOKUP,

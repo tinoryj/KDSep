@@ -103,7 +103,7 @@ int main()
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
     }
-//    options_.enable_valueStore = true;
+    options_.enable_valueStore = true;
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     options_.rocksdbRawOptions_.max_background_jobs = 8;

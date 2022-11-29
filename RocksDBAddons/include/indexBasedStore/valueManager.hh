@@ -12,21 +12,23 @@
 #include "ds/keyvalue.hh"
 #include "ds/list.hh"
 #include "indexBasedStore/define.hh"
-#include "indexStoreDevice.hh"
+#include "deviceManager.hh"
 #include "segmentGroupManager.hh"
-//#include "keyManager.hh"
-//#include "logManager.hh"
-//class GCManager;
-//#include "gcManager.hh"
+#include "keyManager.hh"
+#include "logManager.hh"
+
+namespace DELTAKV_NAMESPACE {
+class GCManager;
+}
+#include "gcManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 
-class indexStoreValueManager {
-//    friend class GCManager;
+class ValueManager {
+    friend class GCManager;
 public:
-//    indexStoreValueManager(DeviceManager *deviceManager, KeyManager *keyManager, LogManager *logManager = 0);
-    indexStoreValueManager(indexStoreDevice *deviceManager, SegmentGroupManager *segmentGroupManager);
-    ~indexStoreValueManager();
+    ValueManager(DeviceManager *deviceManager, SegmentGroupManager *segmentGroupManager, KeyManager *keyManager, LogManager *logManager = 0, bool isSlave = false);
+    ~ValueManager();
 
     bool getValueFromBuffer (const char *keyStr, char *&valueStr, len_t &valueSize);
     bool getValueFromDisk (const char *keyStr, ValueLocation valueLoc, char *&valueStr, len_t &valueSize);
@@ -55,9 +57,9 @@ public:
 
     void printSlaveStats(FILE *out = stdout);
 
-//    bool setGCManager(GCManager *gcManager) {
-//        return ((_gcManager = gcManager) != 0);
-//    }
+    bool setGCManager(GCManager *gcManager) {
+        return ((_gcManager = gcManager) != 0);
+    }
 
     static int spare; // level of spare group buffer for flushing reserved space
 
@@ -65,17 +67,17 @@ protected:
     std::mutex _GCLock;
 
 private:
-    indexStoreDevice *_deviceManager; // deviceManager
+    DeviceManager *_deviceManager; // deviceManager
     SegmentGroupManager *_segmentGroupManager; // groupMetaDataManager
-//    KeyManager *_keyManager; // keyManager, for flush of centralized buffer (Todo avoid dependency)
-//    GCManager *_gcManager; // gcManager, for GC during flush of centralized buffer (not a good hack ..)
-//    LogManager *_logManager; // logManager, for logging before metadata updates
-    indexStoreValueManager *_slaveValueManager; // slave value manager
+    KeyManager *_keyManager; // keyManager, for flush of centralized buffer (Todo avoid dependency)
+    GCManager *_gcManager; // gcManager, for GC during flush of centralized buffer (not a good hack ..)
+    LogManager *_logManager; // logManager, for logging before metadata updates
+    ValueManager *_slaveValueManager; // slave value manager
 
     struct {
-        indexStoreDevice *dm;
+        DeviceManager *dm;
         SegmentGroupManager *cgm;
-//        GCManager *gcm;
+        GCManager *gcm;
         len_t writtenBytes;
         len_t validBytes;
     } _slave;
