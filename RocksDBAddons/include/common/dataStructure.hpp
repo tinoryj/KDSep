@@ -23,10 +23,10 @@ enum hashStoreFileCreateReason { kNewFile = 0,
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1 };
 
-enum hashStoreFileGCType { kNew = 0,
-    kMayGC = 1,
-    kNoGC = 2,
-    kShouldDelete = 3 };
+enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
+    kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
+    kNoGC = 2, // tried gc by force threshold, but could not done internal gc or split, mark as not gc forever
+    kShouldDelete = 3 }; // gc done, split/merge to new file, this file should be delete
 
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_;
@@ -34,7 +34,8 @@ typedef struct hashStoreFileMetaDataHandler {
     uint64_t total_object_count_;
     uint64_t total_object_bytes_;
     uint64_t temp_not_flushed_data_bytes_;
-    hashStoreFileGCType gc_status_flag_;
+    hashStoreFileGCType gc_result_status_flag_ = kNew;
+    int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
     fstream file_operation_stream_;
     boost::shared_mutex fileOperationMutex_;
 } hashStoreFileMetaDataHandler;

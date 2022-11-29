@@ -98,6 +98,7 @@ DeltaKV::~DeltaKV()
         delete pointerToRawRocksDB_;
     }
     if (HashStoreInterfaceObjPtr_ != nullptr) {
+        HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
         delete HashStoreInterfaceObjPtr_;
         // delete related object pointers
         delete hashStoreFileManagerPtr_;
@@ -334,7 +335,7 @@ bool DeltaKV::Get(const string& key, string* value)
                                 delete deltaValueFromExternalStoreVec;
                                 return false;
                             } else {
-                                cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, externalRawValue = " << externalRawValue << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
+                                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, externalRawValue = " << externalRawValue << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
                                 deltaKVMergeOperatorPtr_->Merge(externalRawValue, finalDeltaOperatorsVec, value);
                                 delete deltaValueFromExternalStoreVec;
                                 return true;
@@ -369,7 +370,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
 
                 if (tempInternalValueHeader.mergeFlag_ == true) {
-                    cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read value with mergeFlag_ == true" << RESET << endl;
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read value with mergeFlag_ == true" << RESET << endl;
                     // get deltas from delta store
                     vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
@@ -395,7 +396,7 @@ bool DeltaKV::Get(const string& key, string* value)
                                 delete deltaValueFromExternalStoreVec;
                                 return false;
                             } else {
-                                cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
+                                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
                                 deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
                                 delete deltaValueFromExternalStoreVec;
                                 return true;
@@ -434,11 +435,11 @@ bool DeltaKV::Get(const string& key, string* value)
                 memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
                 string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
                 if (tempInternalValueHeader.mergeFlag_ == true) {
-                    cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read value with mergeFlag_ == true" << RESET << endl;
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read value with mergeFlag_ == true" << RESET << endl;
                     // get deltas from delta store
                     vector<pair<bool, string>> deltaInfoVec;
                     processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec);
-                    cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read deltaInfoVec from LSM-tree size = " << deltaInfoVec.size() << RESET << endl;
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read deltaInfoVec from LSM-tree size = " << deltaInfoVec.size() << RESET << endl;
                     vector<string>* deltaValueFromExternalStoreVec = new vector<string>;
                     if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
                         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read external deltaStore fault" << RESET << endl;
@@ -460,7 +461,7 @@ bool DeltaKV::Get(const string& key, string* value)
                             delete deltaValueFromExternalStoreVec;
                             return false;
                         } else {
-                            cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
+                            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Start DeltaKV merge operation, internalRawValueStr = " << internalRawValueStr << ", finalDeltaOperatorsVec.size = " << finalDeltaOperatorsVec.size() << RESET << endl;
                             deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
                             delete deltaValueFromExternalStoreVec;
                             return true;
@@ -607,7 +608,7 @@ bool DeltaKV::deleteThreadPool()
 bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec)
 {
     uint64_t internalValueSize = internalValue.size();
-    cerr << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): internalValueSize = " << internalValueSize << ", skipSize = " << skipSize << RESET << endl;
+    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): internalValueSize = " << internalValueSize << ", skipSize = " << skipSize << RESET << endl;
     uint64_t currentProcessLocationIndex = skipSize;
     while (currentProcessLocationIndex != internalValueSize) {
         internalValueType currentInternalValueTypeHeader;

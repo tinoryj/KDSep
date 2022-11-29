@@ -39,12 +39,12 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
     hashStoreFileMetaDataHandler* tempFileHandler;
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start get fileHandler from file manager" << RESET << endl;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
-        cout << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
         return false;
     } else {
         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager success, handler address = " << tempFileHandler << " file id = " << tempFileHandler->target_file_id_ << RESET << endl;
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
-            cout << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
+            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
             return false;
         } else {
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
@@ -105,7 +105,12 @@ bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string
 
 bool HashStoreInterface::forcedManualGarbageCollection()
 {
-    return true;
+    bool forcedGCStatus = hashStoreFileManagerPtr_->forcedManualGCAllFiles();
+    if (forcedGCStatus == true) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 }

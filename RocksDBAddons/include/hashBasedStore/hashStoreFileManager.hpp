@@ -17,9 +17,9 @@ public:
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
     // Manager's metadata management
-    bool RetriveHashStoreFileMetaDataList();
-    bool UpdateHashStoreFileMetaDataList();
-    bool CloseHashStoreFileMetaDataList();
+    bool RetriveHashStoreFileMetaDataList(); // will reopen all existing files
+    bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest
+    bool CloseHashStoreFileMetaDataList(); // will close all opened files
     bool CreateHashStoreFileMetaDataListIfNotExist();
 
     // file operations
@@ -28,6 +28,7 @@ public:
     // GC manager
     void processGCRequestWorker();
     void scheduleMetadataUpdateWorker();
+    bool forcedManualGCAllFiles();
 
 private:
     // settings
@@ -49,7 +50,7 @@ private:
     uint64_t getHashStoreFileHandlerStatusByPrefix(const string prefixStr);
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag);
     uint64_t newFileIDGenerator();
     // recovery and GC
     bool recoveryFromFailuer(unordered_map<string, pair<bool, string>>*& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
