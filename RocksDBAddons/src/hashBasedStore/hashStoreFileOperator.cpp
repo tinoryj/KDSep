@@ -323,6 +323,7 @@ void HashStoreFileOperator::operationWorker()
                 continue;
             } else {
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Unknown operation type = " << currentHandlerPtr->opType_ << RESET << endl;
+                break;
             }
         }
     }

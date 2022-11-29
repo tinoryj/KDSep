@@ -515,7 +515,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new fileHandler" << RESET << endl;
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->current_prefix_used_bit_ = prefixBitNumber;
-    currentFileHandlerPtr->target_file_id_ = newFileIDGenerator();
+    currentFileHandlerPtr->target_file_id_ = generateNewFileID();
     currentFileHandlerPtr->file_ownership_flag_ = 0;
     currentFileHandlerPtr->gc_result_status_flag_ = kNew;
     currentFileHandlerPtr->total_object_bytes_ = 0;
@@ -549,10 +549,13 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     return true;
 }
 
-uint64_t HashStoreFileManager::newFileIDGenerator()
+uint64_t HashStoreFileManager::generateNewFileID()
 {
+    fileIDGeneratorMtx_.lock();
     targetNewFileID_ += 1;
-    return targetNewFileID_;
+    uint64_t tempIDForReturn = targetNewFileID_;
+    fileIDGeneratorMtx_.unlock();
+    return tempIDForReturn;
 }
 
 pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap)
