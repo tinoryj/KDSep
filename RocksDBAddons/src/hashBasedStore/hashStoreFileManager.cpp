@@ -22,8 +22,179 @@ HashStoreFileManager::~HashStoreFileManager()
 }
 
 // Recovery
-bool HashStoreFileManager::recoveryFromFailuer(unordered_map<string, pair<bool, string>>*& targetListForRedo)
+uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap)
 {
+    uint64_t processedTotalObjectNumber = 0;
+    uint64_t currentProcessLocationIndex = 0;
+
+    while (currentProcessLocationIndex != fileSize) {
+        processedTotalObjectNumber++;
+        hashStoreRecordHeader currentObjectRecordHeader;
+        memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
+        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record header done, record is anchor flag = " << currentObjectRecordHeader.is_anchor_ << ", key size = " << currentObjectRecordHeader.key_size_ << ", value size = " << currentObjectRecordHeader.value_size_ << RESET << endl;
+        currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
+        string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+        if (currentObjectRecordHeader.is_anchor_ == true) {
+            if (resultMap.find(currentKeyStr) != resultMap.end()) {
+                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+                string currentValueStr = "";
+                resultMap.at(currentKeyStr).push_back(make_pair(true, currentValueStr));
+                continue;
+            } else {
+                vector<pair<bool, string>> newValuesRelatedToCurrentKeyVec;
+                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+                string currentValueStr = "";
+                newValuesRelatedToCurrentKeyVec.push_back(make_pair(true, currentValueStr));
+                resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+                continue;
+            }
+        } else {
+            if (resultMap.find(currentKeyStr) != resultMap.end()) {
+                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+                string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                resultMap.at(currentKeyStr).push_back(make_pair(true, currentValueStr));
+                currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
+                continue;
+            } else {
+                vector<pair<bool, string>> newValuesRelatedToCurrentKeyVec;
+                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+                string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                newValuesRelatedToCurrentKeyVec.push_back(make_pair(true, currentValueStr));
+                resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+                currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
+                continue;
+            }
+        }
+    }
+    return processedTotalObjectNumber;
+}
+
+bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
+{
+    unordered_map<uint64_t, filesystem::directory_entry> scannedFileList;
+    for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
+        cout << dirEntry << endl;
+        string currentFilePath = dirEntry.path();
+        if (currentFilePath.find(".delta") != string::npos) {
+            currentFilePath = currentFilePath.substr(currentFilePath.find("/") + 1);
+            uint64_t currentFileID = stoull(currentFilePath);
+            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find file name = " << currentFilePath << ", file ID in int = " << currentFileID << RESET << endl;
+            scannedFileList.insert(make_pair(currentFileID, dirEntry));
+        }
+    }
+    for (auto fileIDIt : scannedFileList) {
+        if (hashStoreFileIDToPrefixMap_.find(fileIDIt.first) == hashStoreFileIDToPrefixMap_.end()) {
+            // file not exist in metadata, should scan and update into metadata
+            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID in int = " << fileIDIt.first << " not exist in metadata, try recovery" << RESET << endl;
+            if (fileIDIt.first > targetNewFileID_) {
+                // the file is newly created, should scan
+                fstream tempReadFileStream;
+                string targetOpenFileName = workingDir_ + "/" + to_string(fileIDIt.first) + ".delta";
+                tempReadFileStream.open(targetOpenFileName, ios::in | ios::binary);
+                if (tempReadFileStream.is_open() == false) {
+                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open file for recovery, file path = " << targetOpenFileName << RESET << endl;
+                    return false;
+                } else {
+                    hashStoreFileHeader currentFileHeader;
+                    char readBuffer[sizeof(hashStoreFileHeader)];
+                    tempReadFileStream.read(readBuffer, sizeof(hashStoreFileHeader));
+                    memcpy(&currentFileHeader, readBuffer, sizeof(hashStoreFileHeader));
+                    if (currentFileHeader.file_create_reason_ == kGCFile) {
+                        // GC file with ID > targetNewFileID, should delete
+                        tempReadFileStream.close();
+                        string targetRemoveFileName = workingDir_ + "/" + to_string(fileIDIt.first) + ".delta";
+                        auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
+                        if (removeObsoleteFileStatus == -1) {
+                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveFileName << RESET << endl;
+                            return false;
+                        } else {
+                            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveFileName << RESET << endl;
+                        }
+                    } else if (currentFileHeader.file_create_reason_ == kNewFile) {
+                        // new file with ID > targetNewFileID, should add into metadata
+                        uint64_t targetFileRemainReadSize = fileIDIt.second.file_size() - sizeof(hashStoreFileHeader);
+                        char readContentBuffer[targetFileRemainReadSize];
+                        tempReadFileStream.read(readContentBuffer, targetFileRemainReadSize);
+                        tempReadFileStream.close();
+                        unordered_map<string, vector<pair<bool, string>>> currentFileRecoveryMap;
+                        uint64_t currentFileObjectNumber = deconstructTargetRecoveryContentsFromFile(readContentBuffer, targetFileRemainReadSize, currentFileRecoveryMap);
+                        hashStoreFileMetaDataHandler* currentRecoveryFileHandler = new hashStoreFileMetaDataHandler;
+                        currentRecoveryFileHandler->target_file_id_ = fileIDIt.first;
+                        currentRecoveryFileHandler->current_prefix_used_bit_ = currentFileHeader.current_prefix_used_bit_;
+                        currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
+                        currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
+                        // open current file for further usage
+                        currentRecoveryFileHandler->fileOperationMutex_.lock();
+                        currentRecoveryFileHandler->file_operation_stream_.open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta", ios::in | ios::out | ios::binary);
+                        currentRecoveryFileHandler->fileOperationMutex_.unlock();
+                        // update metadata
+                        string targetRecoveryPrefixStr;
+                        generateHashBasedPrefix(currentFileRecoveryMap.begin()->first, targetRecoveryPrefixStr);
+                        objectFileMetaDataTrie_.insert(make_pair(targetRecoveryPrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_), currentRecoveryFileHandler));
+                        hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt.first, targetRecoveryPrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_)));
+                    } else {
+                        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read file header with unknown create reason, file path = " << targetOpenFileName << RESET << endl;
+                        return false;
+                    }
+                }
+            } else {
+                // the file not in metadata, but ID smaller than committed ID, should delegate
+                string targetRemoveFileName = workingDir_ + "/" + to_string(fileIDIt.first) + ".delta";
+                auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
+                if (removeObsoleteFileStatus == -1) {
+                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveFileName << RESET << endl;
+                    return false;
+                } else {
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveFileName << RESET << endl;
+                }
+            }
+        } else {
+            // file exist in metadata
+            if (objectFileMetaDataTrie_.find(hashStoreFileIDToPrefixMap_.at(fileIDIt.first)) == objectFileMetaDataTrie_.end()) {
+                // metadata not consistent, error retrive metadata
+                cout << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID in int = " << fileIDIt.first << ", prefix = " << hashStoreFileIDToPrefixMap_.at(fileIDIt.first) << " not exist in metadata trie" << RESET << endl;
+                return false;
+            } else {
+                // get current file
+                hashStoreFileMetaDataHandler* currentFileHandlerPtr;
+                currentFileHandlerPtr = objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(fileIDIt.first));
+                if (currentFileHandlerPtr->total_object_bytes_ != fileIDIt.second.file_size()) {
+                    // file size mismatch, should recovery
+                    if (currentFileHandlerPtr->total_object_bytes_ > fileIDIt.second.file_size()) {
+                        // file size in metadata should not larger than file size in file system
+                        cout << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID in int = " << fileIDIt.first << ", prefix = " << hashStoreFileIDToPrefixMap_.at(fileIDIt.first) << " file size in metadata = " << currentFileHandlerPtr->total_object_bytes_ << " larger than file size in file system = " << fileIDIt.second.file_size() << RESET << endl;
+                        return false;
+                    } else {
+                        // start recovery
+                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target file id = " << fileIDIt.first << ", file size (system) = " << fileIDIt.second.file_size() << " != file size (metadata) = " << currentFileHandlerPtr->total_object_bytes_ << ", try recovery" << RESET << endl;
+                        currentFileHandlerPtr->fileOperationMutex_.lock();
+                        currentFileHandlerPtr->file_ownership_flag_ = -1;
+                        // start read
+                        int targetReadSize = fileIDIt.second.file_size() - currentFileHandlerPtr->total_object_bytes_;
+                        char readBuffer[targetReadSize];
+                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for recovery size = " << currentFileHandlerPtr->total_object_bytes_ << ", current file read pointer = " << currentFileHandlerPtr->file_operation_stream_.tellg() << ", current file write pointer = " << currentFileHandlerPtr->file_operation_stream_.tellp() << RESET << endl;
+                        currentFileHandlerPtr->file_operation_stream_.seekg(currentFileHandlerPtr->total_object_bytes_, ios::beg);
+                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for recovery after reset file read pointer = " << currentFileHandlerPtr->file_operation_stream_.tellg() << RESET << endl;
+                        currentFileHandlerPtr->file_operation_stream_.read(readBuffer, targetReadSize);
+                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for recovery after read file read pointer = " << currentFileHandlerPtr->file_operation_stream_.tellg() << RESET << endl;
+                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read file content buffer size for recovery = " << sizeof(readBuffer) << RESET << endl;
+                        currentFileHandlerPtr->file_operation_stream_.seekp(0, ios::end);
+                        // read done, start process
+                        uint64_t recoveredObjectNumber = deconstructTargetRecoveryContentsFromFile(readBuffer, targetReadSize, targetListForRedo);
+                        // update metadata
+                        currentFileHandlerPtr->total_object_count_ += recoveredObjectNumber;
+                        currentFileHandlerPtr->total_object_bytes_ += targetReadSize;
+                        currentFileHandlerPtr->file_ownership_flag_ = 0;
+                        currentFileHandlerPtr->fileOperationMutex_.unlock();
+                    }
+                } else {
+                    // file size match, skip current file
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target file id = " << fileIDIt.first << ", file size (system) = " << fileIDIt.second.file_size() << " = file size (metadata) = " << currentFileHandlerPtr->total_object_bytes_ << RESET << endl;
+                    continue;
+                }
+            }
+        }
+    }
     return true;
 }
 
@@ -51,6 +222,8 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
         workingDir_ + "/hashStoreFileManifest." + currentPointerStr, ios::in);
     string currentLineStr;
     if (hashStoreFileManifestStream.is_open()) {
+        getline(hashStoreFileManifestStream, currentLineStr);
+        targetNewFileID_ = stoull(currentLineStr); // update next file ID from metadata
         while (getline(hashStoreFileManifestStream, currentLineStr)) {
             string prefixHashStr = currentLineStr;
             getline(hashStoreFileManifestStream, currentLineStr);
@@ -68,9 +241,7 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->total_object_bytes_ = currentFileStoredBytes;
             // open current file for further usage
             currentFileHandlerPtr->fileOperationMutex_.lock();
-            currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_), ios::out | ios::binary);
-            currentFileHandlerPtr->file_operation_stream_.close();
-            currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_), ios::in | ios::out | ios::binary);
+            currentFileHandlerPtr->file_operation_stream_.open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta", ios::in | ios::out | ios::binary);
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
             objectFileMetaDataTrie_.insert(make_pair(prefixHashStr, currentFileHandlerPtr));
@@ -98,9 +269,8 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
     }
     hashStoreFileManifestPointerStream.close();
     ofstream hashStoreFileManifestStream;
-    hashStoreFileManifestStream.open(
-        workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
-        ios::out);
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
+    hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
     if (objectFileMetaDataTrie_.size() != 0) {
         for (auto it : objectFileMetaDataTrie_) {
             if (it.second->gc_result_status_flag_ == kShouldDelete) {
@@ -168,9 +338,8 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
     }
     hashStoreFileManifestPointerStream.close();
     ofstream hashStoreFileManifestStream;
-    hashStoreFileManifestStream.open(
-        workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
-        ios::out);
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
+    hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
     if (objectFileMetaDataTrie_.size() != 0) {
         for (auto it : objectFileMetaDataTrie_) {
             if (it.second->gc_result_status_flag_ == kShouldDelete) {
@@ -237,10 +406,12 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list pointer file for create" << RESET << endl;
         return false;
     }
+
+    ofstream hashStoreFileManifestStream;
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
+        ios::out);
+    hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
     if (objectFileMetaDataTrie_.size() != 0) {
-        ofstream hashStoreFileManifestStream;
-        hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt),
-            ios::out);
         for (auto it : objectFileMetaDataTrie_) {
             hashStoreFileManifestStream << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << endl;
             hashStoreFileManifestStream << it.second->target_file_id_ << endl;
@@ -252,11 +423,13 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
         hashStoreFileManifestStream.close();
         return true;
     } else {
+        hashStoreFileManifestStream.flush();
+        hashStoreFileManifestStream.close();
         return true;
     }
 }
 
-// file operations
+// file operations - public
 bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     string prefixStr;
@@ -266,7 +439,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         return false;
     }
     while (true) {
-        uint64_t fileHandlerUsedPrefixLength = getHashStoreFileHandlerStatusByPrefix(prefixStr);
+        uint64_t fileHandlerUsedPrefixLength = getHashStoreFileHandlerStatusAndPrefixLenInUseByPrefix(prefixStr);
         if (fileHandlerUsedPrefixLength == 0 && opType == kGet) {
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get operation meet not stored buckets, key = " << keyStr << RESET << endl;
             return false;
@@ -306,16 +479,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
     }
 }
 
-uint64_t HashStoreFileManager::getHashStoreFileHandlerStatusByPrefix(const string prefixStr)
-{
-    for (auto prefixLength = maxTrieBitNumber_; prefixLength >= initialTrieBitNumber_; prefixLength--) {
-        if (objectFileMetaDataTrie_.find(prefixStr.substr(0, prefixLength)) != objectFileMetaDataTrie_.end()) {
-            return prefixLength;
-        }
-    }
-    return 0;
-}
-
+// file operations - private
 bool HashStoreFileManager::generateHashBasedPrefix(const string rawStr, string& prefixStr)
 {
 
@@ -328,6 +492,16 @@ bool HashStoreFileManager::generateHashBasedPrefix(const string rawStr, string& 
         firstFourByte >>= 1;
     }
     return true;
+}
+
+uint64_t HashStoreFileManager::getHashStoreFileHandlerStatusAndPrefixLenInUseByPrefix(const string prefixStr)
+{
+    for (auto prefixLength = maxTrieBitNumber_; prefixLength >= initialTrieBitNumber_; prefixLength--) {
+        if (objectFileMetaDataTrie_.find(prefixStr.substr(0, prefixLength)) != objectFileMetaDataTrie_.end()) {
+            return prefixLength;
+        }
+    }
+    return 0;
 }
 
 bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr)
@@ -432,6 +606,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
+// threads workers
 void HashStoreFileManager::processGCRequestWorker()
 {
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start processGCRequestWorker thread success" << RESET << endl;

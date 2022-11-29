@@ -23,6 +23,8 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     }
     hashStoreFileManagerPtr_ = hashStoreFileManager;
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
+    unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
+    hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
 }
 
 HashStoreInterface::~HashStoreInterface()
