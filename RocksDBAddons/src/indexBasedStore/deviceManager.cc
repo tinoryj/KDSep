@@ -117,7 +117,6 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t d
         len_t capacity = _isSlave? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
         offset_t runningDiskOffset = diskOffset;
         for (len_t remains = length, len = 0; remains > 0; remains -= len, runningDiskOffset = (runningDiskOffset + len) % capacity) {
-            debug_info("capacity %lu runningDiskOffset %lu remains %lu\n", capacity, runningDiskOffset, remains);
             len = std::min(capacity - runningDiskOffset, remains);
             if (len == 0) {
                 len = remains;
@@ -231,13 +230,11 @@ FILE* DeviceManager::accessFileFd(segment_id_t segmentId) {
         std::string fname (_diskInfo.at(diskId).diskPath);
         fname.append("/c");
         fname.append(std::to_string(segmentId));
-        debug_info("fname %s\n", fname.c_str());
         fd = fopen(fname.c_str(), "r+b");
         if (fd == 0) {
             // create if file not exists
             fd = fopen(fname.c_str(), "w+b");
         }
-        debug_info("accessFileFd %p %s\n", fd, fname.c_str());
         assert(fd != 0);
         // keep track of its fd
         _segmentFiles.fds[segmentId] = fd;

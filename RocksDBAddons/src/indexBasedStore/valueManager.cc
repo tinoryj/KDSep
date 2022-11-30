@@ -1,7 +1,7 @@
 #include "indexBasedStore/valueManager.hh"
 #include "indexBasedStore/util/timer.hh"
 
-#define RECORD_SIZE     ((valueSize == INVALID_LEN? 0 : valueSize) + (LL)sizeof(len_t) + KEY_SIZE)
+#define RECORD_SIZE     ((valueSize == INVALID_LEN? 0 : valueSize) + (LL)sizeof(len_t) + KEY_REC_SIZE)
 #define RECOVERY_MULTI_THREAD_ENCODE
 #define NUM_RESERVED_GC_SEGMENT    (2)
 
@@ -171,17 +171,17 @@ ValueManager::~ValueManager() {
     delete _slave.dm;
 }
 
-ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness) {
+ValueLocation ValueManager::putValue (char *keyStr, key_len_t keySize, char *valueStr, len_t valueSize, const ValueLocation &oldValueLoc, int hotness) {
     ValueLocation valueLoc;
 
     segment_id_t segmentId = oldValueLoc.segmentId;
 
     // debug message for deleting key
     if (valueSize == INVALID_LEN) {
-        debug_info("DELETE: [%.*s]\n", KEY_SIZE, keyStr);
+        debug_info("DELETE: [%.*s]\n", (int)keySize, KEY_OFFSET(keyStr));
     }
 
-    debug_info("PUT: [%.*s]\n", KEY_SIZE, keyStr);
+    debug_info("PUT: [%.*s]\n", (int)keySize, KEY_OFFSET(keyStr));
 
     // avoid GC
     _GCLock.lock();
@@ -221,7 +221,7 @@ ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueSt
 
         // consider in-place update if size is the same (and such update is allowed)
         if (ConfigManager::getInstance().isInPlaceUpdate()) {
-            off_len_t offLen (keyIt->second + KEY_SIZE, sizeof(len_t));
+            off_len_t offLen (keyIt->second + KEY_REC_SIZE, sizeof(len_t));
             Segment::readData(_centralizedReservedPool[poolIndex].pool, &oldValueSize, offLen);
             assert(oldValueSize == INVALID_LEN || oldValueSize > 0);
             if (oldValueSize == INVALID_LEN) {
@@ -270,15 +270,15 @@ ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueSt
     if (inPlaceUpdate) {
         // overwrite the value in-place
         poolOffset = keyIt->second;
-        off_len_t offLen (poolOffset + KEY_SIZE + sizeof(len_t), valueSize);
+        off_len_t offLen (poolOffset + KEY_REC_SIZE + sizeof(len_t), valueSize);
         Segment::overwriteData(pool, valueStr, offLen);
         debug_info("Inplace update segment %lu len %lu\n", convertedLoc.segmentId, valueSize);
 
     } else {
-        debug_info("Appenddata: [%.*s] pool size %lu pool offset %lu value size %lu\n", KEY_SIZE, keyStr, 
+        debug_info("Appenddata: [%.*s] pool size %lu pool offset %lu value size %lu\n", keySize, KEY_OFFSET(keyStr), 
             Segment::getSize(pool), poolOffset, valueSize);
         // append if new / cannot fit in-place
-        Segment::appendData(pool, keyStr, KEY_SIZE);
+        Segment::appendData(pool, keyStr, KEY_REC_SIZE);
         Segment::appendData(pool, &valueSize, sizeof(len_t));
         if (valueSize > 0) { 
             Segment::appendData(pool, valueStr, valueSize); 
@@ -310,7 +310,6 @@ ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueSt
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            debug_info("flush vlog %d\n", poolIndex);
             STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &logOffset), StatsType::POOL_FLUSH);
         } else {
             STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
@@ -327,7 +326,8 @@ ValueLocation ValueManager::putValue (char *keyStr, len_t keySize, char *valueSt
     return valueLoc;
 }
 
-bool ValueManager::getValueFromBuffer (const char *keyStr, char *&valueStr, len_t &valueSize) {
+// here keyStr already become key records
+bool ValueManager::getValueFromBuffer (const char *keyStr, key_len_t keySize, char *&valueStr, len_t &valueSize) {
 
     unsigned char *key = (unsigned char*) keyStr;
 
@@ -338,12 +338,12 @@ bool ValueManager::getValueFromBuffer (const char *keyStr, char *&valueStr, len_
         auto it = _centralizedReservedPool[idx].keysInPool.find(key);
         if (it != _centralizedReservedPool[idx].keysInPool.end()) {
             segment_len_t start = it->second;
-            off_len_t offLen(start + KEY_SIZE, sizeof(len_t));
+            off_len_t offLen(start + KEY_REC_SIZE, sizeof(len_t));
             Segment::readData(_centralizedReservedPool[idx].pool, &valueSize, offLen);
             assert(valueSize > 0 || valueSize == INVALID_LEN);
             if (valueSize > 0) {
                 //printf("Read update buf offset %lu\n", it->second);
-                offLen = {start + KEY_SIZE + sizeof(len_t), valueSize};
+                offLen = {start + KEY_REC_SIZE + sizeof(len_t), valueSize};
                 valueStr = (char*) buf_malloc (valueSize);
                 Segment::readData(_centralizedReservedPool[idx].pool, valueStr, offLen);
             }
@@ -359,7 +359,8 @@ bool ValueManager::getValueFromBuffer (const char *keyStr, char *&valueStr, len_
     return false;
 }
 
-bool ValueManager::getValueFromDisk (const char *keyStr, ValueLocation readValueLoc, char *&valueStr, len_t &valueSize) {
+// here keyStr already become key records
+bool ValueManager::getValueFromDisk (const char *keyStr, key_len_t keySize, ValueLocation readValueLoc, char *&valueStr, len_t &valueSize) {
 
     ConfigManager &cm = ConfigManager::getInstance();
     bool vlog = _isSlave || cm.enabledVLogMode();
@@ -370,44 +371,44 @@ bool ValueManager::getValueFromDisk (const char *keyStr, ValueLocation readValue
 
     if (cm.useSlave() && readValueLoc.segmentId == cm.getNumSegment() && !_isSlave) {
         // access to slave
-        ret = _slaveValueManager->getValueFromBuffer(keyStr, valueStr, valueSize);
+        ret = _slaveValueManager->getValueFromBuffer(keyStr, keySize, valueStr, valueSize);
         if (!ret) {
-            ret = _slaveValueManager->getValueFromDisk(keyStr, readValueLoc, valueStr, valueSize);
+            ret = _slaveValueManager->getValueFromDisk(keyStr, keySize, readValueLoc, valueStr, valueSize);
         }
     } else if (vlog || _isSlave) {
         // vlog / slave mode
-        valueStr = (char*) buf_malloc (KEY_SIZE + sizeof(len_t) + readValueLoc.length);
+        valueStr = (char*) buf_malloc (KEY_REC_SIZE + sizeof(len_t) + readValueLoc.length);
         if (_isSlave && cm.segmentAsFile() && cm.segmentAsSeparateFile()) {
-            _deviceManager->readDisk(cm.getNumSegment(), (unsigned char *) valueStr, readValueLoc.offset, readValueLoc.length + KEY_SIZE + sizeof(len_t));
+            _deviceManager->readDisk(cm.getNumSegment(), (unsigned char *) valueStr, readValueLoc.offset, readValueLoc.length + KEY_REC_SIZE + sizeof(len_t));
         } else {
-            _deviceManager->readDisk(/* diskId = */ 0, (unsigned char *) valueStr, readValueLoc.offset, readValueLoc.length + KEY_SIZE + sizeof(len_t));
+            _deviceManager->readDisk(/* diskId = */ 0, (unsigned char *) valueStr, readValueLoc.offset, readValueLoc.length + KEY_REC_SIZE + sizeof(len_t));
         }
-        off_len_t offLen = {KEY_SIZE, sizeof(len_t)};
+        off_len_t offLen = {KEY_REC_SIZE, sizeof(len_t)};
 #ifndef NDEBUG
-        memcpy(&valueSize, valueStr + KEY_SIZE, sizeof(len_t));
+        memcpy(&valueSize, valueStr + KEY_REC_SIZE, sizeof(len_t));
 #else
         valueSize = readValueLoc.length;
 #endif //NDEBUG
         assert(valueSize == readValueLoc.length);
-        offLen = {sizeof(len_t) + KEY_SIZE, valueSize};
-        assert(memcmp(valueStr, keyStr, KEY_SIZE) == 0);
-        memmove(valueStr, valueStr + KEY_SIZE + sizeof(len_t), valueSize);
+        offLen = {sizeof(len_t) + KEY_REC_SIZE, valueSize};
+        assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);
+        memmove(valueStr, valueStr + KEY_REC_SIZE + sizeof(len_t), valueSize);
         debug_info("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
         ret = true;
     } else {
         // read data
-        valueStr = (char*) buf_malloc (readValueLoc.length + KEY_SIZE);
-        _deviceManager->readPartialSegment(readValueLoc.segmentId, readValueLoc.offset, readValueLoc.length + KEY_SIZE, (unsigned char *)valueStr);
+        valueStr = (char*) buf_malloc (readValueLoc.length + KEY_REC_SIZE);
+        _deviceManager->readPartialSegment(readValueLoc.segmentId, readValueLoc.offset, readValueLoc.length + KEY_REC_SIZE, (unsigned char *)valueStr);
         // check and read value size 
 #ifndef NDEBUG
-        memcpy(&valueSize, valueStr + KEY_SIZE, sizeof(len_t));
+        memcpy(&valueSize, valueStr + KEY_REC_SIZE, sizeof(len_t));
 #else
         valueSize = readValueLoc.length - sizeof(len_t);
 #endif // NDEBUG
-        assert(memcmp(valueStr, keyStr, KEY_SIZE) == 0);
+        assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);
         assert(valueSize + sizeof(len_t) == readValueLoc.length);
         // adjust value position in buffer
-        memmove(valueStr, valueStr + KEY_SIZE + sizeof(len_t), valueSize);
+        memmove(valueStr, valueStr + KEY_REC_SIZE + sizeof(len_t), valueSize);
         //printf("Read disk group %lu segment %lu offset %lu length %lu\n", _segmentGroupManager->getGroupBySegmentId(readValueLoc.segmentId), readValueLoc.segmentId, readValueLoc.offset, readValueLoc.length);
         ret = true;
     }
@@ -633,8 +634,11 @@ bool ValueManager::outOfReservedSpace(offset_t flushFront, group_id_t groupId, i
     // find the remaining log space
     for (auto u : _centralizedReservedPool[poolIndex].segmentsInPool.at(_segmentGroupManager->getGroupMainSegment(groupId)).second) {
         len_t valueSize = 0;
-        off_len_t offLen (u + KEY_SIZE, sizeof(len_t));
-        Segment::readData(_centralizedReservedPool[poolIndex].pool, &valueSize, offLen);
+        key_len_t keySize = 0;
+        off_len_t keyOffLen (u, sizeof(key_len_t));
+        Segment::readData(_centralizedReservedPool[poolIndex].pool, &keySize, keyOffLen);
+        off_len_t valueOffLen (u + KEY_REC_SIZE, sizeof(len_t));
+        Segment::readData(_centralizedReservedPool[poolIndex].pool, &valueSize, valueOffLen);
         if (sum + RECORD_SIZE > logSegmentSpace) {
             oors = true;
             //printf("out of reserved for segment %d\n", cid);
@@ -750,6 +754,7 @@ void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool
 
         groupId = group->first;
         
+        key_len_t keySize = 0;
         len_t valueSize = INVALID_LEN;
 
         bool toLSM = groupId == LSM_GROUP;
@@ -774,7 +779,9 @@ void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool
         ) {
             ValueLocation valueLoc;
             // read back the value size
-            off_len_t offLen (*update + KEY_SIZE, sizeof(len_t));
+            off_len_t keyOffLen (*update, sizeof(key_len_t));
+            Segment::readData(_centralizedReservedPool[flushingPoolIndex].pool, &keySize, keyOffLen);
+            off_len_t offLen (*update + KEY_REC_SIZE, sizeof(len_t));
             Segment::readData(_centralizedReservedPool[flushingPoolIndex].pool, &valueSize, offLen);
             valueLoc.length = valueSize + sizeof(len_t);
             assert(valueSize != INVALID_LEN && (valueSize != 0 || (isGCLogOnlyBuffer && ConfigManager::getInstance().useSlave()) ));
@@ -839,7 +846,7 @@ void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool
             if (toLSM) { // write whole kv pair into LSM-tree
                 valueLoc.segmentId = LSM_SEGMENT;
                 valueLoc.length = valueSize;
-                valueLoc.value.assign((char*) poolData + *update + KEY_SIZE + sizeof(len_t), valueSize);
+                valueLoc.value.assign((char*) poolData + *update + KEY_REC_SIZE + sizeof(len_t), valueSize);
             } else { // write key and location to LSM-tree, values to log
 
                 // write frontier of the segment receiving the updates
@@ -852,13 +859,13 @@ void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool
                 // (3) new log segment
                 if (logSegments.empty() /* no log segments */ &&
                     flushFront < mainSegmentSize /* main segment not sealed */ &&
-                    valueSize + KEY_SIZE + sizeof(len_t) + flushFront <= mainSegmentSize /* all updates fit into the main segment */) {
+                    valueSize + KEY_REC_SIZE + sizeof(len_t) + flushFront <= mainSegmentSize /* all updates fit into the main segment */) {
                     // not yet full log group prompted as main group
                     // main segment is not yet full, and can receive updates
                     logSegmentId = mainSegmentId;
                 } else if (flushFront >= mainSegmentSize /* main segment is sealed */ &&
                         logSegmentFront % logSegmentSize != 0 /* the last log segment is not yet full */ && 
-                        valueSize + KEY_SIZE + sizeof(len_t) + logSegmentFront <= logSegmentSize
+                        valueSize + KEY_REC_SIZE + sizeof(len_t) + logSegmentFront <= logSegmentSize
                         //_centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(_segmentGroupManager->getGroupMainSegment(groupId)).first + logSegmentFront <= logSegmentSize /* all updates fit into the last log segment */
                         ) {
                     //assert(metaToUpdate.count(mainSegmentId) == 0);
@@ -1073,13 +1080,11 @@ void ValueManager::flushCentralizedReservedPool (group_id_t *reportGroupId, bool
 void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* logOffsetPtr) {
     // directly write the pool out
     _centralizedReservedPool[poolIndex].lock.lock();
-    debug_info("flush vlog, pool %d\n", poolIndex);
 
     Segment &pool = _centralizedReservedPool[poolIndex].pool;
     len_t writeLength = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET;
     std::tie(logOffset, writeLength) = flushSegmentToWriteFront(pool, false);
-    debug_info("flush vlog, logOffset %lu writeLength %lu\n", logOffset, writeLength);
     if (logOffsetPtr) {
       *logOffsetPtr = logOffset;
     }
@@ -1092,15 +1097,17 @@ void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* lo
     // update metadata in LSM
     std::vector<char*> keys;
     std::vector<ValueLocation> values;
+    key_len_t keySize = 0;
     len_t vs = INVALID_LEN;
     ValueLocation valueLoc;
     valueLoc.segmentId = _isSlave? cm.getNumSegment() : 0;
     len_t capacity = _isSlave? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
     for (auto c : _centralizedReservedPool[poolIndex].segmentsInPool) {
         for (auto kv : c.second.second) {
-            off_len_t offLen (kv + KEY_SIZE, sizeof(len_t));
+            off_len_t keyOffLen (kv, sizeof(key_len_t));
+            Segment::readData(pool, &keySize, keyOffLen); 
+            off_len_t offLen (kv + KEY_REC_SIZE, sizeof(len_t));
             Segment::readData(pool, &vs, offLen);
-            debug_info("vs = %lu\n", vs);
             keys.push_back((char*)Segment::getData(pool) + kv);
             valueLoc.offset = (logOffset + kv) % capacity;
             valueLoc.length = vs;
@@ -1128,13 +1135,11 @@ std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment &segme
 
     segment_len_t flushFront = Segment::getFlushFront(segment);
     len_t writeLength = Segment::getWriteFront(segment) - flushFront;
-    debug_info("writeFront %lu flushFront %lu\n", writeLength + flushFront, flushFront);
 
     if (writeLength == 0)
         return std::pair<offset_t, len_t> (INVALID_OFFSET, writeLength);
 
     offset_t logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength, isGC);
-    debug_info("logOffset %lu\n", logOffset);
 
     if (logOffset == INVALID_OFFSET) {
         assert(isGC == false);

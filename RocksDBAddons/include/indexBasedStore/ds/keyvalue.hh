@@ -13,13 +13,28 @@ namespace DELTAKV_NAMESPACE {
 
 struct equalKey {
     bool operator() (unsigned char* const &a, unsigned char* const &b) const {
-        return (memcmp(a, b, KEY_SIZE) == 0); 
+        key_len_t keySizeA, keySizeB;
+        memcpy(&keySizeA, a, sizeof(key_len_t));
+        memcpy(&keySizeB, b, sizeof(key_len_t));
+
+        if (keySizeA != keySizeB) {
+            key_len_t keySizeMin = keySizeA > keySizeB ? keySizeB : keySizeA;
+            int ret = memcmp(a, b, keySizeMin);
+            if (ret == 0) {
+                if (keySizeA > keySizeB) return 1;
+                return -1;
+            }
+            return ret; 
+        } 
+        return (memcmp(a, b, keySizeA) == 0); 
     }
 };  
 
 struct hashKey {
     size_t operator() (unsigned char* const &s) const {
-        return HashFunc::hash((char*) s, KEY_SIZE);
+        key_len_t keySize;
+        memcpy(&keySize, s, sizeof(key_len_t));
+        return HashFunc::hash((char*) s + sizeof(key_len_t), (int)keySize);
         //return std::hash<unsigned char>{}(*s);
     }
 };  

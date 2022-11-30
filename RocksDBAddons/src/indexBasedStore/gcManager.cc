@@ -6,6 +6,7 @@
 #include "indexBasedStore/statsRecorder.hh"
 
 #define TAG_MASK  (1000 * 1000)
+#define RECORD_SIZE     ((valueSize == INVALID_LEN? 0 : valueSize) + (LL)sizeof(len_t) + KEY_REC_SIZE)
 
 namespace DELTAKV_NAMESPACE {
 
@@ -137,6 +138,9 @@ size_t GCManager::gcVLog() {
     size_t remains = 0;
     bool ret = false;
     const segment_id_t maxSegment = ConfigManager::getInstance().getNumSegment();
+    key_len_t keySize;
+    len_t valueSize;
+    offset_t keySizeOffset;
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
@@ -147,37 +151,49 @@ size_t GCManager::gcVLog() {
         flushFront = Segment::getFlushFront(_gcSegment.read);
         assert(flushFront != gcSize);
         // read and fit up only the available part of buffer
-        gcFront = _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - flushFront);
+        gcFront = _segmentGroupManager->getLogGCOffset();
         debug_info("gcFront %lu flushFront %lu\n", gcFront, flushFront);
         if (_useMmap) {
             readPool = _deviceManager->readMmap(0, gcFront - flushFront, gcSize, 0);
             Segment::init(_gcSegment.read, 0, readPool, gcSize);
         } else {
-            _deviceManager->readAhead(/* diskId = */ 0, gcFront, gcSize - flushFront);
-            STAT_TIME_PROCESS(_deviceManager->readDisk(/* diskId = */ 0, readPool + flushFront, gcFront, gcSize - flushFront), StatsType::GC_READ);
+            _deviceManager->readAhead(/* diskId = */ 0, gcFront + flushFront, gcSize - flushFront);
+            STAT_TIME_PROCESS(_deviceManager->readDisk(/* diskId = */ 0, readPool + flushFront, gcFront + flushFront, gcSize - flushFront), StatsType::GC_READ);
         }
         // mark the amount of data in buffer
         Segment::setWriteFront(_gcSegment.read, gcSize);
         for (remains = gcSize; remains > 0;) {
             debug_info("remains %lu gcBytes %lu flushFront %lu gcFront %lu\n", remains, gcBytes, flushFront, gcFront);
-            len_t valueSize = INVALID_LEN;
-            offset_t keyOffset = gcSize - remains;
-            off_len_t offLen (keyOffset + KEY_SIZE, sizeof(len_t));
+            valueSize = INVALID_LEN;
+            keySizeOffset = gcSize - remains;
 
-            if (KEY_SIZE + sizeof(len_t) > remains) {
+            // check if we can read the key size
+            if (sizeof(key_len_t) > remains) {
                 break;
             }
+            off_len_t offLen (keySizeOffset, sizeof(key_len_t));
+            Segment::readData(_gcSegment.read, &keySize, offLen);
+            debug_info("keySize %d\n", (int)keySize);
+
+            // check if we can read the value size
+            if (KEY_REC_SIZE + sizeof(len_t) > remains) {
+                break;
+            }
+            offLen.first = keySizeOffset + KEY_REC_SIZE;
+            offLen.second = sizeof(len_t);
             Segment::readData(_gcSegment.read, &valueSize, offLen);
+
             // check if we can read the value. Keep it to the next buffer.
-            if (KEY_SIZE + sizeof(len_t) + valueSize > remains) {
+            if (KEY_REC_SIZE + sizeof(len_t) + valueSize > remains) {
                 break;
             }
-            STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*) readPool + keyOffset), StatsType::GC_KEY_LOOKUP);
-            debug_info("read LSM: key [%.*s] segmentId %lu\n", KEY_SIZE, (char*)readPool + keyOffset, valueLoc.segmentId);
+            STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*) readPool + keySizeOffset), StatsType::GC_KEY_LOOKUP);
+            debug_info("read LSM: key [%.*s] segmentId %lu\n", (int)keySize, KEY_OFFSET((char*)readPool + keySizeOffset), valueLoc.segmentId);
             // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
-            if (valueLoc.segmentId == (_isSlave? maxSegment : 0) && valueLoc.offset == (gcFront - flushFront + keyOffset + capacity) % capacity) {
+            if (valueLoc.segmentId == (_isSlave? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
                 // buffer full, flush before write
-                if (!Segment::canFit(_gcSegment.write, KEY_SIZE + sizeof(len_t) + valueSize)) {
+                debug_info("keep KV object gcBytes %lu \n", gcBytes);
+                if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
                     STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
                     assert(len > 0);
                     // update metadata
@@ -197,25 +213,27 @@ size_t GCManager::gcVLog() {
                 }
                 // mark and copy the key-value pair to tbe buffer
                 offset_t writeKeyOffset = Segment::getWriteFront(_gcSegment.write);
-                Segment::appendData(_gcSegment.write, readPool + keyOffset, KEY_SIZE + sizeof(len_t) + valueSize);
+                Segment::appendData(_gcSegment.write, readPool + keySizeOffset, RECORD_SIZE);
                 keys.push_back((char*) writePool + writeKeyOffset);
                 valueLoc.offset = writeKeyOffset;
                 valueLoc.length = valueSize;
                 values.push_back(valueLoc);
-                _gcWriteBackBytes += KEY_SIZE + sizeof(len_t) + valueSize;
+                _gcWriteBackBytes += RECORD_SIZE;
             } else {
+                debug_info("drop KV object gcBytes %lu \n", gcBytes);
                 // space is reclaimed directly
-                gcBytes += KEY_SIZE + sizeof(len_t) + valueSize;
+                gcBytes += RECORD_SIZE;
                 // cold storage invalid bytes cleared
                 if (_isSlave) {
-                    _valueManager->_slave.writtenBytes -= KEY_SIZE + sizeof(len_t) + valueSize;
+                    _valueManager->_slave.writtenBytes -= RECORD_SIZE;
                 }
             }
             
-            remains -= KEY_SIZE + sizeof(len_t) + valueSize;
+            remains -= RECORD_SIZE;
         }
         if (remains > 0) {
             Segment::setFlushFront(_gcSegment.read, remains);
+            debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read)); 
             if (!_useMmap) {
                 // if some data left without scanning, move them to the front of buffer for next scan 
                 memmove(readPool, readPool + gcSize - remains, remains);
@@ -229,6 +247,7 @@ size_t GCManager::gcVLog() {
         }
 
         gcScanSize += gcSize;
+        _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - remains);
     }
     // final check on remaining data to flush
     if (!keys.empty()) {
@@ -262,6 +281,7 @@ size_t GCManager::gcVLog() {
         gcFront = _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - remains);
     }
     debug_info("gcFront new: %lu\n", gcFront);
+    debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read)); 
 //    if (ConfigManager::getInstance().persistLogMeta()) {
 //        std::string value;
 //        value.append(to_string(gcFront + gcSize - remains));
@@ -446,6 +466,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     //printf("Group %lu gc log = %d\n", groupId, isLogOnly(gcMode));
 
     // put and align all scanned data to a designated buffer (that can always hold all data in a group)
+    key_len_t keySize = 0;
     len_t valueSize = 0;
     const len_t zero = 0;
     len_t recordSize = 0;
@@ -458,53 +479,56 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     std::unordered_map<unsigned char*, offset_t, hashKey, equalKey> oldLocations;
     // put and aligned GCed data into flush buffer
     for (auto &it : keyCount) {
+        // get the key size
+        memcpy(&keySize, it.first, sizeof(key_len_t));
+        
         // get the value size
-        memcpy(&valueSize, it.first + KEY_SIZE, sizeof(len_t));
+        memcpy(&valueSize, it.first + KEY_REC_SIZE, sizeof(len_t));
         bool writeToHotStorage = 
                 !cm.useSlave() /* no cold storage */ ||
                 getHotness(groupId, it.second.first % TAG_MASK) /* is hot key */ ||
-                (cm.getColdStorageCapacity() < _valueManager->_slaveValueManager->_slave.writtenBytes + cm.getVLogGCSize() + KEY_SIZE + sizeof(len_t) + valueSize /* cold storage is full */ && 
+                (cm.getColdStorageCapacity() < _valueManager->_slaveValueManager->_slave.writtenBytes + cm.getVLogGCSize() + RECORD_SIZE /* cold storage is full */ && 
                     valueSize > 0 /* not a tag */);
         // append updates back to a unique buffer
         Segment &pool = _valueManager->_centralizedReservedPool[numPipelinedBuffer].pool;
         // if the buffer is full before flush, flush before putting updates
-        if (!Segment::canFit(pool, KEY_SIZE + sizeof(len_t) + valueSize)) {
+        if (!Segment::canFit(pool, RECORD_SIZE)) {
             _valueManager->flushCentralizedReservedPool(reportGroupId, /* isUpdate */ false, /* poolIndex = */ numPipelinedBuffer);
         }
         std::pair<unsigned char*, segment_len_t> updatePair (Segment::getData(pool) + Segment::getWriteFront(pool), Segment::getWriteFront(pool));
         // put the update into buffer
-        Segment::appendData(pool, it.first, KEY_SIZE);
+        Segment::appendData(pool, it.first, KEY_REC_SIZE);
         if (writeToHotStorage) {
-            Segment::appendData(pool, it.first + KEY_SIZE, sizeof(len_t));
+            Segment::appendData(pool, it.first + KEY_REC_SIZE, sizeof(len_t));
             if (valueSize > 0) { // not a tag
-                Segment::appendData(pool, it.first + KEY_SIZE + sizeof(len_t), valueSize);
+                Segment::appendData(pool, it.first + KEY_REC_SIZE + sizeof(len_t), valueSize);
             } else {
                 assert(0);
             }
             // originally tagged in cold storage, now move back to hot
             if (it.second.first >= TAG_MASK) {
-                _valueManager->_slave.validBytes -= KEY_SIZE + sizeof(len_t) + valueSize;
+                _valueManager->_slave.validBytes -= RECORD_SIZE;
             }
-            recordSize = KEY_SIZE + sizeof(len_t) + valueSize;
+            recordSize = RECORD_SIZE;
         } else { // tag the key existance
             Segment::appendData(pool, &zero, sizeof(len_t));
             ValueLocation oldValueLoc;
             oldValueLoc.segmentId = 0;
             if (valueSize > 0) {
-                _valueManager->_slaveValueManager->putValue((char*) it.first, KEY_SIZE, (char*) it.first + KEY_SIZE + sizeof(len_t), valueSize, oldValueLoc, 1);
-                _valueManager->_slaveValueManager->_slave.writtenBytes += KEY_SIZE + sizeof(len_t) + valueSize;
-                _valueManager->_slaveValueManager->_slave.validBytes += KEY_SIZE + sizeof(len_t) + valueSize;
-                recordSize = (KEY_SIZE + sizeof(len_t)) * 2 + valueSize;
+                _valueManager->_slaveValueManager->putValue((char*) it.first, KEY_REC_SIZE, VALUE_OFFSET((char*) it.first), valueSize, oldValueLoc, 1);
+                _valueManager->_slaveValueManager->_slave.writtenBytes += RECORD_SIZE;
+                _valueManager->_slaveValueManager->_slave.validBytes += RECORD_SIZE;
+                recordSize = (KEY_REC_SIZE + sizeof(len_t)) * 2 + valueSize;
                 coldCount++;
             } else {
-                recordSize = KEY_SIZE + sizeof(len_t);
+                recordSize = KEY_REC_SIZE + sizeof(len_t);
             }
             // update counter of GC write back
         }
         // setup the mapping of updates in buffer
         _valueManager->_centralizedReservedPool[numPipelinedBuffer].keysInPool.insert(updatePair);
-        _valueManager->_centralizedReservedPool[numPipelinedBuffer].groupsInPool[groupId].insert(KEY_SIZE + sizeof(len_t) + valueSize);
-        _valueManager->_centralizedReservedPool[numPipelinedBuffer].segmentsInPool[mainSegmentId].first += KEY_SIZE + sizeof(len_t) + valueSize;
+        _valueManager->_centralizedReservedPool[numPipelinedBuffer].groupsInPool[groupId].insert(RECORD_SIZE);
+        _valueManager->_centralizedReservedPool[numPipelinedBuffer].segmentsInPool[mainSegmentId].first += RECORD_SIZE;
         _valueManager->_centralizedReservedPool[numPipelinedBuffer].segmentsInPool[mainSegmentId].second.insert(updatePair.second);
         // update counter of GC write back
         _gcWriteBackBytes += recordSize;
@@ -593,6 +617,7 @@ size_t GCManager::gcSegment(group_id_t groupId, Segment &segment, std::unordered
 segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_len_t scanned, std::unordered_map<unsigned char *, std::pair<int, ValueLocation>, hashKey, equalKey> &keyCount, bool isRemove, size_t reservedPos, int gcMode, size_t *validBytes) {
 
     std::pair<unsigned char *, std::pair<int, ValueLocation>> kc; 
+    key_len_t keySize = 0;
     len_t valueSize = INVALID_LEN;
     off_len_t offLen;
     segment_len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
@@ -615,7 +640,11 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
     kc.second.second = valueLoc;
 
     // skip the value and value size / deleted keys 
-    offLen.first = scanned + KEY_SIZE;
+    offLen.first = scanned;
+    offLen.second = sizeof(key_len_t);
+    Segment::readData(*segment, &keySize, offLen);
+
+    offLen.first = scanned + KEY_REC_SIZE;
     offLen.second = sizeof(len_t);
     Segment::readData(*segment, &valueSize, offLen);
     kc.second.second.length = valueSize;
@@ -627,7 +656,7 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
         kc.second.first += it->second.first;
         keyCount.erase(it);
     }
-    scanned += KEY_SIZE;
+    scanned += KEY_REC_SIZE;
 
     //debug_info("Scan value of size %lld\n", valueSize);
     if (valueSize == INVALID_LEN) {
@@ -638,12 +667,12 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
     } else if (valueSize > 0) {
         // new key scanned
         if (kc.second.first == 1 && validBytes != 0) {
-            *validBytes += KEY_SIZE + sizeof(len_t) + valueSize;
+            *validBytes += RECORD_SIZE;
         }
         //debug_info("Scanned [%.*s] with size %lld\n", KEY_SIZE, kc.first, valueSize);
     } else if (valueSize == 0) {
         if (validBytes != 0) {
-            *validBytes += KEY_SIZE + sizeof(len_t);
+            *validBytes += KEY_REC_SIZE + sizeof(len_t);
         }
         kc.second.first += TAG_MASK;
     } else {

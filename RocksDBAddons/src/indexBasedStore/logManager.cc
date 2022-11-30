@@ -91,11 +91,15 @@ bool LogManager::setBatchKeyValue(std::vector<char *> &keys, std::vector<ValueLo
     size_t keyTotal = keys.size();
     Segment::appendData(_buffer.dataSegment, &keyTotal, sizeof(size_t));
 
-    len_t recordSize = KEY_SIZE + sizeof(segment_id_t) + sizeof(offset_t) + sizeof(len_t);
+    key_len_t keySize = 0;
+    len_t recordSize = 0;
     for (size_t i = 0; i < keyTotal; i++) {
+        memcpy(&keySize, keys.at(i), sizeof(key_len_t));
         len_t valueLength = values.at(i).value.length();
         if (!isUpdate && valueLength > 0) {
-            recordSize = KEY_SIZE + sizeof(segment_id_t) + sizeof(offset_t) + sizeof(len_t) + valueLength;
+            recordSize = KEY_REC_SIZE + sizeof(segment_id_t) + sizeof(offset_t) + sizeof(len_t) + valueLength;
+        } else {
+            recordSize = KEY_REC_SIZE + sizeof(segment_id_t) + sizeof(offset_t) + sizeof(len_t);
         }
         if (Segment::canFit(_buffer.dataSegment, recordSize) == false) {
             printf("error buf = %p %lu\n", &_buffer.dataSegment, Segment::getSize(_buffer.dataSegment));
@@ -106,7 +110,7 @@ bool LogManager::setBatchKeyValue(std::vector<char *> &keys, std::vector<ValueLo
         std::string loc = values.at(i).serialize();
         size_t locLength = loc.length();
         // key
-        Segment::appendData(_buffer.dataSegment, keys.at(i), KEY_SIZE);
+        Segment::appendData(_buffer.dataSegment, keys.at(i), KEY_REC_SIZE);
         // value location length
         Segment::appendData(_buffer.dataSegment, &locLength, sizeof(locLength));
         // value location
@@ -217,6 +221,7 @@ bool LogManager::readBatchKeyValue(std::vector<std::string> &keys, std::vector<V
     // read the KV pairs
     size_t locLength = 0;
     len_t valueLength = 0;
+    key_len_t keySize = 0;
     
     // total num of kv pairs
     size_t keyTotal = 0;
@@ -232,34 +237,40 @@ bool LogManager::readBatchKeyValue(std::vector<std::string> &keys, std::vector<V
     }
 
     while (scanSize < logSize) {
-        CHECK_REMAINS(KEY_SIZE);
+        // key size
+        CHECK_REMAINS(sizeof(key_len_t));
+        memcpy(&keySize, (char *)bufData + scanSize, sizeof(key_len_t));
+        
         // key
-        keys.push_back(std::string((char*) bufData + scanSize, KEY_SIZE));
+        CHECK_REMAINS(KEY_REC_SIZE);
+        keys.push_back(std::string((char*) bufData + scanSize, KEY_REC_SIZE));
+
         // value location length
         ValueLocation loc;
-        segment_off_len_t offLen (scanSize + KEY_SIZE, sizeof(size_t));
-        CHECK_REMAINS(KEY_SIZE + sizeof(size_t));
+        segment_off_len_t offLen (scanSize + KEY_REC_SIZE, sizeof(size_t));
+        CHECK_REMAINS(KEY_REC_SIZE + sizeof(size_t));
         Segment::readData(_buffer.readSegment, &locLength, offLen);
         assert(locLength > 0);
+
         // value location
-        CHECK_REMAINS(KEY_SIZE + sizeof(size_t) + locLength);
-        std::string valueLocStr ((char*) bufData + scanSize + KEY_SIZE + sizeof(size_t), locLength);
+        CHECK_REMAINS(KEY_REC_SIZE + sizeof(size_t) + locLength);
+        std::string valueLocStr ((char*) bufData + scanSize + KEY_REC_SIZE + sizeof(size_t), locLength);
         loc.deserialize(valueLocStr);
         // value if exist
         if (!isUpdate) {
             // value length
-            CHECK_REMAINS(KEY_SIZE + sizeof(size_t) + locLength + sizeof(len_t));
-            offLen = {scanSize + KEY_SIZE + sizeof(size_t) + locLength, sizeof(len_t)};
+            CHECK_REMAINS(KEY_REC_SIZE + sizeof(size_t) + locLength + sizeof(len_t));
+            offLen = {scanSize + KEY_REC_SIZE + sizeof(size_t) + locLength, sizeof(len_t)};
             Segment::readData(_buffer.readSegment, &valueLength, offLen);
             if (valueLength > 0) {
-                CHECK_REMAINS(KEY_SIZE + sizeof(size_t) + locLength + sizeof(len_t) + valueLength);
-                loc.value = std::string((char*) bufData + scanSize + KEY_SIZE + sizeof(size_t) + locLength + sizeof(len_t), valueLength);
+                CHECK_REMAINS(KEY_REC_SIZE + sizeof(size_t) + locLength + sizeof(len_t) + valueLength);
+                loc.value = std::string((char*) bufData + scanSize + KEY_REC_SIZE + sizeof(size_t) + locLength + sizeof(len_t), valueLength);
             }
             // update scan offset
-            scanSize += KEY_SIZE + sizeof(size_t) + locLength + sizeof(len_t) + valueLength;
+            scanSize += KEY_REC_SIZE + sizeof(size_t) + locLength + sizeof(len_t) + valueLength;
         } else {
             // update scan offset
-            scanSize += KEY_SIZE + sizeof(size_t) + locLength;
+            scanSize += KEY_REC_SIZE + sizeof(size_t) + locLength;
         }
         // mark the scanned values 
         values.push_back(loc);

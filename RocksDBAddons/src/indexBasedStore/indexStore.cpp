@@ -46,9 +46,9 @@ KvServer::~KvServer() {
 }
 
 bool KvServer::checkKeySize(len_t &keySize) {
-    if (keySize != KEY_SIZE)
-        debug_error("Variable key size is not supported, key size must be %d.\n", KEY_SIZE);
-    return (keySize == KEY_SIZE);
+    if (keySize == 0)
+        debug_error("Zero key size is not supported, key size must be larger than %d.\n", 0);
+    return (keySize != 0);
 }
 
 bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& indexInfo) {
@@ -56,13 +56,13 @@ bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t
     putCount++;
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
-    char* ckey = new char[KEY_SIZE+1];
+    char* ckey = new char[KEY_REC_SIZE+1];
     char* cvalue = new char[valueSize];
 
-    memset(ckey, ' ', KEY_SIZE);
-    memcpy(ckey, key, keySize);
-    keySize = KEY_SIZE;
-    ckey[KEY_SIZE] = '\0';
+    memcpy(ckey, &keySize, sizeof(key_len_t));
+    memcpy(ckey + sizeof(key_len_t), key, keySize);
+    ckey[sizeof(key_len_t) + keySize] = '\0';
+
     memcpy(cvalue, value, valueSize);
     cvalue[valueSize] = '\0';
 
@@ -92,7 +92,7 @@ retry_update:
         oldValueLoc.segmentId = LSM_SEGMENT;
     } else {
         // find the deterministic location
-        oldValueLoc.segmentId = HashFunc::hash(ckey, KEY_SIZE) % ConfigManager::getInstance().getNumMainSegment();
+        oldValueLoc.segmentId = HashFunc::hash(KEY_OFFSET(ckey), (key_len_t)keySize) % ConfigManager::getInstance().getNumMainSegment();
         // always allocate the group if not exists
         group_id_t groupId = INVALID_GROUP;
         _segmentGroupManager->getNewMainSegment(groupId, oldValueLoc.segmentId, /* needsLock */ false);
@@ -102,7 +102,7 @@ retry_update:
     // update the value of the key, get the new location of value
     STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
 
-    debug_info("Update key %x%x to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[KEY_SIZE-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
+    debug_info("Update key [%x-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[sizeof(key_len_t)+1], ckey[sizeof(key_len_t)+keySize-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
         // best effort retry
@@ -111,7 +111,7 @@ retry_update:
             goto retry_update;
         }
         // report set failure
-        debug_error("Failed to write value for key %x%x!\n", key[0], key[KEY_SIZE-1]);
+        debug_error("Failed to write value for key %x%x!\n", ckey[0], ckey[sizeof(key_len_t)+keySize-1]);
         assert(0);
         return ret;
     } else {
@@ -147,14 +147,11 @@ retry_update:
 
 bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfoVec, bool timed) {
     bool ret = false;
-    char* ckey = new char[KEY_SIZE+1];
+    char* ckey = new char[KEY_REC_SIZE+1];
 
-    memset(ckey, ' ', KEY_SIZE);
-    memcpy(ckey, key, keySize);
-    keySize = KEY_SIZE;
-    ckey[KEY_SIZE] = '\0';
-
-    debug_info("GET key %.*s\n", (int)keySize, key);
+    memcpy(ckey, &keySize, sizeof(key_len_t));
+    memcpy(KEY_OFFSET(ckey), key, keySize);
+    ckey[sizeof(key_len_t) + keySize] = '\0';
 
     if (checkKeySize(keySize) == false)
         return ret;
@@ -163,7 +160,7 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     gettimeofday(&startTime, 0);
 
     // get value using the location
-    ret = (_valueManager->getValueFromBuffer(ckey, value, valueSize));
+    ret = (_valueManager->getValueFromBuffer(ckey, keySize, value, valueSize));
 
     if (ret) {
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
@@ -174,8 +171,6 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     readValueLoc.segmentId = 0;
     readValueLoc.offset = storageInfoVec.externalFileOffset_;
     readValueLoc.length = storageInfoVec.externalContentSize_;
-
-    debug_info("offset %lu length %lu\n", readValueLoc.offset, readValueLoc.length);
 
     // get the value's location
 //    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
@@ -194,7 +189,7 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     // not found
     if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
 
-    ret = _valueManager->getValueFromDisk(ckey, readValueLoc, value, valueSize);
+    ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);
     if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 
     delete[] ckey;

@@ -60,7 +60,7 @@ static inline void* buf_calloc (size_t s, unsigned int unit) {
 
 // keyManager (in general)
 //#define KEY_SIZE    (16)
-#define KEY_SIZE    (24)
+//#define KEY_SIZE    (24)
 
 // valueManager
 #define MAX_CP_NUM  (128)
@@ -84,6 +84,9 @@ typedef std::pair<segment_id_t, std::pair<disk_id_t, offset_t> > StripeLocation;
 /* boost shared_mutex, can changed to std::shared_mutex if c++14 available */
 typedef boost::shared_mutex RWMutex;
 
+#define KEY_OFFSET(keySizeOffset) (keySizeOffset + sizeof(key_len_t))
+#define VALUE_OFFSET(keySizeOffset) (keySizeOffset + sizeof(key_len_t) + sizeof(len_t))
+#define KEY_REC_SIZE (keySize + sizeof(key_len_t))
 
 /** DRY_RUN mode w/o disk I/O, or run w/ disk I/O **/
 #ifdef DRY_RUN

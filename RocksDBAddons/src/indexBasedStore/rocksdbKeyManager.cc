@@ -127,15 +127,10 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<Val
     // put the keys into LSM-tree
     Slice kslice, vslice;
     std::string valueString;
+    key_len_t keySize;
     for (int i = 0; i < (int)keys.size(); i++) {
-        int actual_len = KEY_SIZE;
-        for (int j = KEY_SIZE - 1; j >= 0; j--) {
-            if (keys[i][j] != ' ') {
-                actual_len = j+1; 
-                break;
-            }
-        }
-        kslice = rocksdb::Slice(keys.at(i), actual_len);
+        memcpy(&keySize, keys.at(i), sizeof(key_len_t));
+        kslice = rocksdb::Slice(KEY_OFFSET(keys.at(i)), (int)keySize);
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
         debug_info("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length); 
@@ -163,16 +158,11 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<std::string> &keys, std::vect
     // put the keys into LSM-tree
     Slice kslice, vslice;
     std::string valueString;
+    key_len_t keySize;
     for (int i = 0; i < (int)keys.size(); i++) {
-        kslice = rocksdb::Slice(keys.at(i)); 
-        int actual_len = KEY_SIZE;
-        for (int j = KEY_SIZE - 1; j >= 0; j--) {
-            if (keys[i][j] != ' ') {
-                actual_len = j+1; 
-                break;
-            }
-        }
-        kslice = rocksdb::Slice(keys.at(i).substr(0, actual_len));
+        memcpy(&keySize, keys.at(i).c_str(), sizeof(key_len_t));
+        assert((int)keySize + sizeof(key_len_t) == keys.at(i).length());
+        kslice = rocksdb::Slice(keys.at(i).substr(sizeof(key_len_t), (int)keySize));
         vslice = rocksdb::Slice(valueLocs.at(i).serializeIndexUpdate());
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
@@ -193,14 +183,9 @@ ValueLocation RocksDBKeyManager::getKey (const char *keyStr, bool checkExist) {
 //    }
     // if not in cache, search in the LSM-tree
     if (valueLoc.segmentId == INVALID_SEGMENT) {
-        int actual_len = KEY_SIZE;
-        for (int i = KEY_SIZE - 1; i >= 0; i--) {
-            if (keyStr[i] != ' ') {
-                actual_len = i+1; 
-                break;
-            }
-        }
-        rocksdb::Slice key (keyStr, actual_len);
+        key_len_t keySize;
+        memcpy(&keySize, keyStr, sizeof(key_len_t));
+        rocksdb::Slice key (KEY_OFFSET(keyStr), (int)keySize);
         rocksdb::Status status;
         STAT_TIME_PROCESS(status = _lsm->Get(rocksdb::ReadOptions(), key, &value), StatsType::KEY_GET_LSM);
         // value location found
@@ -215,12 +200,20 @@ ValueLocation RocksDBKeyManager::getKey (const char *keyStr, bool checkExist) {
 void RocksDBKeyManager::getKeys (char *startingKey, uint32_t n, std::vector<char*> &keys, std::vector<ValueLocation> &locs) {
     // use the iterator to find the range of keys
     rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
-    it->Seek(rocksdb::Slice(startingKey));
     ValueLocation loc;
-    char *key = 0;
+    char *key;
+    key_len_t keySize;
+    int keyRecSize;
+
+    memcpy(&keySize, startingKey, sizeof(key_len_t));
+    it->Seek(rocksdb::Slice(KEY_OFFSET(startingKey), (int)keySize));
+    
+    // NOT SURE
     for (uint32_t i = 0; i < n && it->Valid(); i++, it->Next()) {
-        key = new char[KEY_SIZE];
-        memcpy(key, it->key().ToString().c_str(), KEY_SIZE);
+        key = new char[sizeof(key_len_t) + it->key().ToString().length()];
+        keyRecSize = it->key().ToString().length();
+        memcpy(key, &keyRecSize, sizeof(key_len_t));
+        memcpy(KEY_OFFSET(key), it->key().ToString().c_str(), it->key().ToString().length());
         //printf("FIND (%u of %u) [%0x][%0x][%0x][%0x]\n", i, n, key[0], key[1], key[2], key[3]);
         keys.push_back(key);
         loc.deserialize(it->value().ToString());
