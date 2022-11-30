@@ -1,4 +1,5 @@
 #include "hashBasedStore/hashStoreFileManager.hpp"
+#include <unordered_map>
 
 namespace DELTAKV_NAMESPACE {
 
@@ -69,9 +70,28 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
     return processedTotalObjectNumber;
 }
 
+/*
+ * File ID in metadata
+    - file size > metadata size -> append new obj counter to metadata
+    - file size == metadata size -> skip
+    - file size < metadata size -> error
+ * File ID not in metadata
+    - file ID > next ID:
+        - kNew file -> add file to metadata
+        - kGC file:
+            - previous ID in metadata && prefix bit number equal -> (after single file gc) delete previous file, add current file.
+            - previous ID in metadata && prefix bit number not equal -> (after split or merge):
+                - Buffer all these files with same previous file ID
+                - Delete previous file handler and file, add current files
+            - previous ID not in metadata -> error; single file should not deleted; split/merge file should only be deleted after metadata commit
+    - file ID < next ID:
+        - should be single file after gc or not deleted files after commit- > delete files
+*/
+
 bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
     unordered_map<uint64_t, filesystem::directory_entry> scannedFileList;
+    // scan file list
     for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
         cout << dirEntry << endl;
         string currentFilePath = dirEntry.path();
@@ -82,6 +102,8 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
             scannedFileList.insert(make_pair(currentFileID, dirEntry));
         }
     }
+    unordered_map<uint64_t, vector<pair<uint64_t, filesystem::directory_entry>>> mapForBatchedkGCFiles; // prefix file ID to new file ID and file map
+    // process files
     for (auto fileIDIt : scannedFileList) {
         if (hashStoreFileIDToPrefixMap_.find(fileIDIt.first) == hashStoreFileIDToPrefixMap_.end()) {
             // file not exist in metadata, should scan and update into metadata
@@ -95,13 +117,108 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open file for recovery, file path = " << targetOpenFileName << RESET << endl;
                     return false;
                 } else {
+                    // read file header for check
                     hashStoreFileHeader currentFileHeader;
                     char readBuffer[sizeof(hashStoreFileHeader)];
                     tempReadFileStream.read(readBuffer, sizeof(hashStoreFileHeader));
                     memcpy(&currentFileHeader, readBuffer, sizeof(hashStoreFileHeader));
                     if (currentFileHeader.file_create_reason_ == kGCFile) {
-                        // GC file with ID > targetNewFileID, should delete
+                        // GC file with ID > targetNewFileID
+                        uint64_t targetFileRemainReadSize = fileIDIt.second.file_size() - sizeof(hashStoreFileHeader);
+                        char readContentBuffer[targetFileRemainReadSize];
+                        tempReadFileStream.open(targetOpenFileName, ios::in | ios::binary);
+                        tempReadFileStream.read(readContentBuffer, targetFileRemainReadSize);
                         tempReadFileStream.close();
+                        unordered_map<string, vector<pair<bool, string>>> currentFileRecoveryMap;
+                        uint64_t currentFileObjectNumber = deconstructTargetRecoveryContentsFromFile(readContentBuffer, targetFileRemainReadSize, currentFileRecoveryMap);
+                        if (hashStoreFileIDToPrefixMap_.find(currentFileHeader.previous_file_id_) == hashStoreFileIDToPrefixMap_.end()) {
+                            // previous ID not in metadata -> error;
+                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find kGC file that previous file ID not in metadata, seems error, previous file id = " << currentFileHeader.previous_file_id_ << RESET << endl;
+                            return false;
+                        } else {
+                            // previous ID in metadata -> check prefix bit number;
+                            if (objectFileMetaDataTrie_.find(hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_)) == objectFileMetaDataTrie_.end()) {
+                                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): trie and map mismatch" << RESET << endl;
+                                return false;
+                            } else {
+                                if (objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_))->current_prefix_used_bit_ == currentFileHeader.current_prefix_used_bit_) {
+                                    // prefix bit number match, should delete old file and keep this one
+                                    string currentFilePrefix = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_);
+                                    objectFileMetaDataTrie_.at(currentFilePrefix)->file_operation_stream_.close();
+                                    objectFileMetaDataTrie_.at(currentFilePrefix)->target_file_id_ = fileIDIt.first;
+                                    string targetRemoveFileName = workingDir_ + "/" + to_string(currentFileHeader.previous_file_id_) + ".delta";
+                                    auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
+                                    if (removeObsoleteFileStatus == -1) {
+                                        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveFileName << RESET << endl;
+                                        return false;
+                                    } else {
+                                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveFileName << RESET << endl;
+                                        hashStoreFileIDToPrefixMap_.erase(currentFileHeader.previous_file_id_);
+                                        hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt.first, currentFilePrefix));
+                                        objectFileMetaDataTrie_.at(currentFilePrefix)->total_object_count_ = currentFileObjectNumber;
+                                        objectFileMetaDataTrie_.at(currentFilePrefix)->total_object_bytes_ = fileIDIt.second.file_size();
+                                    }
+                                } else {
+                                    // prefix bit number not match, created by split/merge, should cache for further process
+                                    if (objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_))->current_prefix_used_bit_ > currentFileHeader.current_prefix_used_bit_) {
+                                        // file created by merge, delete old files with current prefix length +1
+                                        string leftFatherFilePrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_); // we store left file as previous file id
+                                        string rightFatherFilePrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_).substr(0, currentFileHeader.current_prefix_used_bit_) + "0";
+                                        uint64_t leftFatherFileID = objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->target_file_id_;
+                                        uint64_t rightFatherFileID = objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->target_file_id_;
+                                        // delete left father
+                                        objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_stream_.close();
+                                        delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr);
+                                        objectFileMetaDataTrie_.erase(leftFatherFilePrefixStr);
+                                        hashStoreFileIDToPrefixMap_.erase(leftFatherFileID);
+                                        string targetRemoveLeftFileName = workingDir_ + "/" + to_string(leftFatherFileID) + ".delta";
+                                        auto removeLeftObsoleteFileStatus = remove(targetRemoveLeftFileName.c_str());
+                                        if (removeLeftObsoleteFileStatus == -1) {
+                                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveLeftFileName << RESET << endl;
+                                            return false;
+                                        } else {
+                                            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveLeftFileName << RESET << endl;
+                                        }
+                                        // delete right father
+                                        objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->file_operation_stream_.close();
+                                        delete objectFileMetaDataTrie_.at(rightFatherFilePrefixStr);
+                                        objectFileMetaDataTrie_.erase(rightFatherFilePrefixStr);
+                                        hashStoreFileIDToPrefixMap_.erase(rightFatherFileID);
+                                        string targetRemoveRightFileName = workingDir_ + "/" + to_string(leftFatherFileID) + ".delta";
+                                        auto removeObsoleteRightFileStatus = remove(targetRemoveRightFileName.c_str());
+                                        if (removeObsoleteRightFileStatus == -1) {
+                                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveRightFileName << RESET << endl;
+                                            return false;
+                                        } else {
+                                            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveRightFileName << RESET << endl;
+                                        }
+                                        // insert new file into metadata
+                                        string currentFilePrefix = leftFatherFilePrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_);
+                                        hashStoreFileMetaDataHandler* currentRecoveryFileHandler = new hashStoreFileMetaDataHandler;
+                                        currentRecoveryFileHandler->target_file_id_ = fileIDIt.first;
+                                        currentRecoveryFileHandler->current_prefix_used_bit_ = currentFileHeader.current_prefix_used_bit_;
+                                        currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
+                                        currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
+                                        // open current file for further usage
+                                        currentRecoveryFileHandler->fileOperationMutex_.lock();
+                                        currentRecoveryFileHandler->file_operation_stream_.open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta", ios::in | ios::out | ios::binary);
+                                        currentRecoveryFileHandler->fileOperationMutex_.unlock();
+                                        // update metadata
+                                        objectFileMetaDataTrie_.insert(make_pair(currentFilePrefix, currentRecoveryFileHandler));
+                                        hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt.first, currentFilePrefix));
+                                    } else {
+                                        // file created by split, cache to find the other one
+                                        if (mapForBatchedkGCFiles.find(currentFileHeader.previous_file_id_) == mapForBatchedkGCFiles.end()) {
+                                            vector<pair<uint64_t, filesystem::directory_entry>> tempVec;
+                                            tempVec.push_back(make_pair(fileIDIt.first, fileIDIt.second));
+                                            mapForBatchedkGCFiles.insert(make_pair(currentFileHeader.previous_file_id_, tempVec));
+                                        } else {
+                                            mapForBatchedkGCFiles.at(currentFileHeader.previous_file_id_).push_back(make_pair(fileIDIt.first, fileIDIt.second));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         string targetRemoveFileName = workingDir_ + "/" + to_string(fileIDIt.first) + ".delta";
                         auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
                         if (removeObsoleteFileStatus == -1) {
@@ -138,7 +255,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                     }
                 }
             } else {
-                // the file not in metadata, but ID smaller than committed ID, should delegate
+                // the file not in metadata, but ID smaller than committed ID, should delete
                 string targetRemoveFileName = workingDir_ + "/" + to_string(fileIDIt.first) + ".delta";
                 auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
                 if (removeObsoleteFileStatus == -1) {
@@ -194,6 +311,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 }
             }
         }
+    }
+    // process not in metadata files created by split old file
+    for (auto splitFileIt : mapForBatchedkGCFiles) {
     }
     return true;
 }
@@ -308,6 +428,11 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             hashStoreFileManifestPointerUpdateStream << currentPointerInt;
             hashStoreFileManifestPointerUpdateStream.flush();
             hashStoreFileManifestPointerUpdateStream.close();
+            string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
+            auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
+            if (removeOldManifestStatus == -1) {
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
+            }
             return true;
         } else {
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
@@ -378,6 +503,11 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             hashStoreFileManifestPointerUpdateStream << currentPointerInt;
             hashStoreFileManifestPointerUpdateStream.flush();
             hashStoreFileManifestPointerUpdateStream.close();
+            string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
+            auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
+            if (removeOldManifestStatus == -1) {
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
+            }
             return true;
         } else {
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
@@ -444,7 +574,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get operation meet not stored buckets, key = " << keyStr << RESET << endl;
             return false;
         } else if (fileHandlerUsedPrefixLength == 0 && opType == kPut) {
-            bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false);
+            bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
             if (!createNewFileHandlerStatus) {
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new bucket for put operation error, key = " << keyStr << RESET << endl;
                 return false;
@@ -510,7 +640,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixSt
     return true;
 }
 
-bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag)
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID)
 {
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new fileHandler" << RESET << endl;
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
@@ -524,8 +654,10 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     hashStoreFileHeader newFileHeader;
     newFileHeader.current_prefix_used_bit_ = prefixBitNumber;
     if (createByGCFlag == true) {
+        newFileHeader.previous_file_id_ = previousFileID;
         newFileHeader.file_create_reason_ = kGCFile;
     } else {
+        newFileHeader.previous_file_id_ = 0xffffffffffffffff;
         newFileHeader.file_create_reason_ = kNewFile;
     }
     newFileHeader.file_id_ = currentFileHandlerPtr->target_file_id_;
@@ -662,7 +794,7 @@ void HashStoreFileManager::processGCRequestWorker()
                             break;
                         } else {
                             hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-                            bool getFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(currentPrefixStr, currentFileHandlerPtr, targetPrefixBitNumber, true);
+                            bool getFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(currentPrefixStr, currentFileHandlerPtr, targetPrefixBitNumber, true, currentHandlerPtr->target_file_id_);
                             if (getFileHandlerStatus == false) {
                                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could get/create new bucket for prefix hash = " << currentPrefixStr << " gc error and skip the file's gc" << RESET << endl;
                                 break;
@@ -695,14 +827,15 @@ void HashStoreFileManager::processGCRequestWorker()
                 }
             } else {
                 cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file id = " << currentHandlerPtr->target_file_id_ << " recliam empty space success, start re-write" << RESET << endl;
-                // reclaimed space success, rewrite current file
+                // reclaimed space success, rewrite current file to new file
                 memset(readWriteBuffer, 0, currentHandlerPtr->total_object_bytes_);
                 uint64_t newObjectNumber = 0;
                 uint64_t currentProcessLocationIndex = 0;
                 hashStoreFileHeader currentFileHeader;
                 currentFileHeader.current_prefix_used_bit_ = currentHandlerPtr->current_prefix_used_bit_;
                 currentFileHeader.file_create_reason_ = kGCFile;
-                currentFileHeader.file_id_ = currentHandlerPtr->target_file_id_;
+                currentFileHeader.file_id_ = generateNewFileID();
+                currentFileHeader.previous_file_id_ = currentHandlerPtr->target_file_id_;
                 memcpy(readWriteBuffer + currentProcessLocationIndex, &currentFileHeader, sizeof(hashStoreFileHeader));
                 currentProcessLocationIndex += sizeof(currentFileHeader);
                 // add file header
@@ -721,8 +854,13 @@ void HashStoreFileManager::processGCRequestWorker()
                         currentProcessLocationIndex += valueIt.size();
                     }
                 }
-                currentHandlerPtr->file_operation_stream_.seekp(0, ios::beg);
-                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target write file content for gc, current file write pointer = " << currentHandlerPtr->file_operation_stream_.tellg() << RESET << endl;
+                currentHandlerPtr->file_operation_stream_.close();
+                string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
+                // create since file not exist
+                currentHandlerPtr->file_operation_stream_.open(targetOpenFileName, ios::out);
+                currentHandlerPtr->file_operation_stream_.close();
+                // write content and update current file stream to new one.
+                currentHandlerPtr->file_operation_stream_.open(targetOpenFileName, ios::in | ios::out | ios::binary);
                 currentHandlerPtr->file_operation_stream_.write(readWriteBuffer, currentProcessLocationIndex);
                 currentHandlerPtr->file_operation_stream_.flush();
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): after write file content for gc, current file pointer = " << currentHandlerPtr->file_operation_stream_.tellg() << ", target write size = " << currentProcessLocationIndex << RESET << endl;

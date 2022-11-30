@@ -62,6 +62,7 @@ typedef struct hashStoreOperationHandler {
 
 typedef struct hashStoreFileHeader {
     uint64_t file_id_;
+    uint64_t previous_file_id_ = 0xffffffffffffffff; // only used for file create reason == kGCFile
     uint64_t current_prefix_used_bit_;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
