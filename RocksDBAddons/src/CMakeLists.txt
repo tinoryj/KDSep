@@ -43,6 +43,7 @@ add_library(DeltaKV STATIC
       utils/murmurHash.cpp
       utils/lruCache.cpp
       utils/timer.cpp
+      utils/fileOperation.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

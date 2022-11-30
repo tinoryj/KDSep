@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boost/thread.hpp"
+#include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -36,7 +37,7 @@ typedef struct hashStoreFileMetaDataHandler {
     uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
-    fstream file_operation_stream_;
+    DELTAKV_NAMESPACE::FileOperation* file_operation_func_ptr_;
     boost::shared_mutex fileOperationMutex_;
 } hashStoreFileMetaDataHandler;
 
