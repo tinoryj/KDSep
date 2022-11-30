@@ -43,6 +43,7 @@ private:
     uint64_t singleFileGCTriggerSize_;
     uint64_t globalGCTriggerSize_;
     std::string workingDir_;
+    fileOperationType fileOperationMethod_ = kFstream;
     // file metadata management
     // Trie<hashStoreFileMetaDataHandler*>
     //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.

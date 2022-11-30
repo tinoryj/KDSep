@@ -95,6 +95,23 @@ bool FileOperation::flush()
     }
 }
 
+bool FileOperation::resetPointer(fileOperationSetPointerOps ops, uint64_t offset)
+{
+    if (operationType_ == kFstream) {
+        if (ops == kBegin) {
+            fileStream_.seekg(offset, ios::beg);
+            fileStream_.seekp(offset, ios::beg);
+        } else {
+            fileStream_.seekg(offset, ios::end);
+            fileStream_.seekp(offset, ios::end);
+        }
+        return true;
+    } else if (operationType_ == kDirectIO) {
+        return false;
+    } else {
+        return false;
+    }
+}
 uint64_t FileOperation::getFileSize()
 {
     if (operationType_ == kFstream) {
@@ -104,6 +121,8 @@ uint64_t FileOperation::getFileSize()
     } else if (operationType_ == kDirectIO) {
         uint64_t fileRealSizeWithoutPadding;
         return fileRealSizeWithoutPadding;
+    } else {
+        return 0;
     }
 }
 

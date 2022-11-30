@@ -210,7 +210,7 @@ bool fstreamTestDIRECT(uint64_t testNumber)
     return true;
 }
 
-int main()
+int main(int argc, char* argv[])
 {
     // fstreamTestFlush(100000);
     // fstreamTestFlushSync(100000);
@@ -269,58 +269,76 @@ int main()
     options_.dumpDataStructureInfo("TempDB/structure.dump");
     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Dump DeltaKV options success" << RESET << endl;
     // operations
-    string key1 = "Key001";
-    string key2 = "Key002";
-    string value1 = "Value1,value2";
-    string value2 = "Value3,value4";
-    string merge1 = "1,value5";
-    string merge2 = "2,value6";
 
     Timer newTimer;
-    vector<bool> testResultBoolVec;
     newTimer.startTimer();
-    // put
-    bool statusPut1 = testPut(db_, key1, value1);
-    testResultBoolVec.push_back(statusPut1);
-    string tempReadStr1;
-    // get raw value
-    bool statusGet1 = testGet(db_, key1, tempReadStr1);
-    testResultBoolVec.push_back(statusGet1);
-    bool statusMerge1 = testMerge(db_, key1, merge1);
-    testResultBoolVec.push_back(statusMerge1);
-    bool statusMerge2 = testMerge(db_, key1, merge2);
-    testResultBoolVec.push_back(statusMerge2);
-    // get merged value
-    string tempReadStr2;
-    bool statusGet2 = testGet(db_, key1, tempReadStr2);
-    testResultBoolVec.push_back(statusGet2);
-    bool statusPut2 = testPut(db_, key1, value2);
-    testResultBoolVec.push_back(statusPut2);
-    // get overwrited value
-    string tempReadStr3;
-    bool statusGet3 = testGet(db_, key1, tempReadStr3);
-    testResultBoolVec.push_back(statusGet3);
-    // new key test
-    bool statusPut3 = testPut(db_, key2, value1);
-    testResultBoolVec.push_back(statusPut3);
-    string tempReadStr4;
-    bool statusGet4 = testGet(db_, key2, tempReadStr4);
-    testResultBoolVec.push_back(statusGet4);
-    bool finalStatus = true;
+    int testNumber = 10;
+    if (argc != 1) {
+        testNumber = stoi(argv[1]);
+    }
+    for (int i = 0; i < testNumber; i++) {
+        string key1 = "Key001" + to_string(i);
+        string key2 = "Key002" + to_string(i);
+        string value1 = "value1,value2";
+        string value1Merged = "value5,value6";
+        string value2 = "value3,value4";
+        string merge1 = "1,value5";
+        string merge2 = "2,value6";
+        vector<bool> testResultBoolVec;
+        // put
+        bool statusPut1 = testPut(db_, key1, value1);
+        testResultBoolVec.push_back(statusPut1);
+        string tempReadStr1;
+        // get raw value
+        bool statusGet1 = testGet(db_, key1, tempReadStr1);
+        testResultBoolVec.push_back(statusGet1);
+        if (tempReadStr1.compare(value1) != 0) {
+            cerr << "Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+            break;
+        }
+        bool statusMerge1 = testMerge(db_, key1, merge1);
+        testResultBoolVec.push_back(statusMerge1);
+        bool statusMerge2 = testMerge(db_, key1, merge2);
+        testResultBoolVec.push_back(statusMerge2);
+        // get merged value
+        string tempReadStr2;
+        bool statusGet2 = testGet(db_, key1, tempReadStr2);
+        testResultBoolVec.push_back(statusGet2);
+        if (tempReadStr2.compare(value1Merged) != 0) {
+            cerr << "Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
+            break;
+        }
+        bool statusPut2 = testPut(db_, key1, value2);
+        testResultBoolVec.push_back(statusPut2);
+        // get overwrited value
+        string tempReadStr3;
+        bool statusGet3 = testGet(db_, key1, tempReadStr3);
+        testResultBoolVec.push_back(statusGet3);
+        if (tempReadStr3.compare(value2) != 0) {
+            cerr << "Error read overwrited value, overwrited value = " << value2 << ", read value = " << tempReadStr3 << endl;
+            break;
+        }
+        bool finalStatus = true;
+
+        for (int i = 0; i < testResultBoolVec.size(); i++) {
+            finalStatus = finalStatus && testResultBoolVec[i];
+        }
+        if (finalStatus != true) {
+            cerr << "Error in test round " << i << endl;
+            break;
+        }
+    }
     newTimer.stopTimer("Running");
-    for (int i = 0; i < testResultBoolVec.size(); i++) {
-        finalStatus = finalStatus && testResultBoolVec[i];
-    }
-    if (finalStatus) {
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
-        murmurHashTest(key1);
-        murmurHashTest(key2);
-        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test correct" << RESET << endl;
-    } else {
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
-        murmurHashTest(key1);
-        murmurHashTest(key2);
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test not correct" << RESET << endl;
-    }
+    // if (finalStatus) {
+    //     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
+    //     murmurHashTest(key1);
+    //     murmurHashTest(key2);
+    //     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test correct" << RESET << endl;
+    // } else {
+    //     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
+    //     murmurHashTest(key1);
+    //     murmurHashTest(key2);
+    //     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test not correct" << RESET << endl;
+    // }
     return 0;
 }

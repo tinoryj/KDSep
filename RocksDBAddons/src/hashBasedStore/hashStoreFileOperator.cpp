@@ -191,14 +191,9 @@ void HashStoreFileOperator::operationWorker()
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         }
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->seekg(0, ios::end);
-                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", current file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << ", current file write pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellp() << RESET << endl;
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->seekg(0, ios::beg);
-                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache enabled) after reset file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << RESET << endl;
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin, 0);
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache enabled) after read file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << RESET << endl;
-                        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read file content buffer size (cache enabled) = " << sizeof(readBuffer) << RESET << endl;
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(0, ios::end);
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd, 0);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
@@ -235,13 +230,10 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     }
-                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", current file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << ", current file write pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellp() << RESET << endl;
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->seekg(0, ios::beg);
-                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) after reset file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << RESET << endl;
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << RESET << endl;
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin, 0);
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) after read file read pointer = " << currentHandlerPtr->file_handler_->file_operation_func_ptr_->tellg() << RESET << endl;
-                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read file content buffer size (cache not enabled) = " << sizeof(readBuffer) << RESET << endl;
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(0, ios::end);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd, 0);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);

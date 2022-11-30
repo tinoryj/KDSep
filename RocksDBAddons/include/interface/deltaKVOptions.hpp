@@ -3,6 +3,7 @@
 #include "common/dataStructure.hpp"
 #include "interface/mergeOperation.hpp"
 #include "rocksdb/options.h"
+#include "utils/fileOperation.hpp"
 #include "utils/loggerColor.hpp"
 #include <bits/stdc++.h>
 
@@ -73,6 +74,7 @@ public:
     uint64_t hashStore_init_prefix_bit_number = 8;
     uint64_t hashStore_max_prefix_bit_number = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
+    fileOperationType fileOperationMethod_ = kFstream;
 
     bool dumpOptions(string dumpPath);
     bool dumpDataStructureInfo(string dumpPath);
