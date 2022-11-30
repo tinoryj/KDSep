@@ -3,14 +3,15 @@
 #include "common/rocksdbHeaders.hpp"
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreGCManager.hpp"
 #include "hashBasedStore/hashStoreInterface.hpp"
 #include "indexBasedStore/indexStoreInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/loggerColor.hpp"
-#include <boost/asio/io_service.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/bind.hpp>
+#include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
 
 using namespace std;
@@ -55,20 +56,18 @@ public:
     bool SingleDelete(const string& key);
 
 private:
-    boost::asio::io_service ioService_;
-    boost::thread_group threadpool_;
+    boost::asio::thread_pool* threadpool_;
     bool launchThreadPool(uint64_t totalThreadNumber);
     bool deleteThreadPool();
     // for separated operations
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>* mergeOperatorsVec); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
     // Storage component for delta store
-    HashStoreInterface* HashStoreInterfaceObjPtr_;
-    HashStoreFileManager* hashStoreFileManagerPtr_;
-    HashStoreFileOperator* hashStoreFileOperatorPtr_;
-    HashStoreGCManager* hashStoreGCManagerPtr_;
+    HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
+    HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;
+    HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     // Storage component for value store
-    IndexStoreInterface* IndexStoreInterfaceObjPtr_;
+    IndexStoreInterface* IndexStoreInterfaceObjPtr_ = nullptr;
 };
 
 } // namespace DELTAKV_NAMESPACE

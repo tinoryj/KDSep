@@ -12,6 +12,7 @@
 #include "core/properties.h"
 #include "interface/deltaKVInterface.hpp"
 #include "interface/deltaKVOptions.hpp"
+#include "interface/mergeOperation.hpp"
 
 namespace ycsbc {
 class DeltaKVDB : public YCSBDB {

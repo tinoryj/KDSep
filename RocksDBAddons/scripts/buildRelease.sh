@@ -31,5 +31,5 @@ else
     echo "Local Test with simple operations <==="
 
     # Clean up TempDB
-    rm -rf TempDB
+    # rm -rf TempDB
 fi
