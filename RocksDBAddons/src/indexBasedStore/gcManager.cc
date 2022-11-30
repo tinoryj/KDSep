@@ -14,7 +14,7 @@ GCManager::GCManager(KeyManager *keyManager, ValueManager *valueManager, DeviceM
     _maxGC = ConfigManager::getInstance().getGreedyGCSize();
     _useMmap = ConfigManager::getInstance().useMmap();
     if ((ConfigManager::getInstance().enabledVLogMode() && !_useMmap)|| isSlave) {
-        Segment::init(_gcSegment.read, INVALID_SEGMENT, ConfigManager::getInstance().getVLogGCSize());
+        Segment::init(_gcSegment.read, INVALID_SEGMENT, ConfigManager::getInstance().getVLogGCSize() * 2);
     }
     Segment::init(_gcSegment.write, INVALID_SEGMENT, ConfigManager::getInstance().getVLogGCSize());
     _isSlave = isSlave;
@@ -140,6 +140,7 @@ size_t GCManager::gcVLog() {
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
+    debug_info("gcVLog, gcBytes %lu, gcSize %lu\n", gcBytes, gcSize); 
     // scan until the designated reclaim size is reached
     while (gcBytes < gcSize) {
         // see if there is anything left over in last scan
@@ -147,6 +148,7 @@ size_t GCManager::gcVLog() {
         assert(flushFront != gcSize);
         // read and fit up only the available part of buffer
         gcFront = _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - flushFront);
+        debug_info("gcFront %lu flushFront %lu\n", gcFront, flushFront);
         if (_useMmap) {
             readPool = _deviceManager->readMmap(0, gcFront - flushFront, gcSize, 0);
             Segment::init(_gcSegment.read, 0, readPool, gcSize);
@@ -157,19 +159,21 @@ size_t GCManager::gcVLog() {
         // mark the amount of data in buffer
         Segment::setWriteFront(_gcSegment.read, gcSize);
         for (remains = gcSize; remains > 0;) {
+            debug_info("remains %lu gcBytes %lu flushFront %lu gcFront %lu\n", remains, gcBytes, flushFront, gcFront);
             len_t valueSize = INVALID_LEN;
             offset_t keyOffset = gcSize - remains;
             off_len_t offLen (keyOffset + KEY_SIZE, sizeof(len_t));
-            // check if we can read the value length
+
             if (KEY_SIZE + sizeof(len_t) > remains) {
                 break;
             }
             Segment::readData(_gcSegment.read, &valueSize, offLen);
-            // check if we can read the value
+            // check if we can read the value. Keep it to the next buffer.
             if (KEY_SIZE + sizeof(len_t) + valueSize > remains) {
                 break;
             }
             STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*) readPool + keyOffset), StatsType::GC_KEY_LOOKUP);
+            debug_info("read LSM: key [%.*s] segmentId %lu\n", KEY_SIZE, (char*)readPool + keyOffset, valueLoc.segmentId);
             // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
             if (valueLoc.segmentId == (_isSlave? maxSegment : 0) && valueLoc.offset == (gcFront - flushFront + keyOffset + capacity) % capacity) {
                 // buffer full, flush before write
@@ -253,10 +257,11 @@ size_t GCManager::gcVLog() {
 
     // check if data read is not scanned or GCed, adjust the gc frontier accordingly
     if (remains > 0) {
-        assert(0);
-        exit(1);
+//        assert(0);
+//        exit(1);
         gcFront = _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - remains);
     }
+    debug_info("gcFront new: %lu\n", gcFront);
 //    if (ConfigManager::getInstance().persistLogMeta()) {
 //        std::string value;
 //        value.append(to_string(gcFront + gcSize - remains));
@@ -652,6 +657,7 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
 
     // skip the key and value 
     scanned += sizeof(len_t) + (valueSize == INVALID_LEN? 0 : valueSize);
+    exit(1);
 
     return scanned;
 }

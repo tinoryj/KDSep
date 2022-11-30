@@ -128,9 +128,17 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<Val
     Slice kslice, vslice;
     std::string valueString;
     for (int i = 0; i < (int)keys.size(); i++) {
-        kslice = rocksdb::Slice(keys.at(i), KEY_SIZE);
+        int actual_len = KEY_SIZE;
+        for (int j = KEY_SIZE - 1; j >= 0; j--) {
+            if (keys[i][j] != ' ') {
+                actual_len = j+1; 
+                break;
+            }
+        }
+        kslice = rocksdb::Slice(keys.at(i), actual_len);
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
+        debug_info("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length); 
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("%s\n", s.ToString().c_str());
@@ -157,6 +165,14 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<std::string> &keys, std::vect
     std::string valueString;
     for (int i = 0; i < (int)keys.size(); i++) {
         kslice = rocksdb::Slice(keys.at(i)); 
+        int actual_len = KEY_SIZE;
+        for (int j = KEY_SIZE - 1; j >= 0; j--) {
+            if (keys[i][j] != ' ') {
+                actual_len = j+1; 
+                break;
+            }
+        }
+        kslice = rocksdb::Slice(keys.at(i).substr(0, actual_len));
         vslice = rocksdb::Slice(valueLocs.at(i).serializeIndexUpdate());
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
@@ -177,7 +193,14 @@ ValueLocation RocksDBKeyManager::getKey (const char *keyStr, bool checkExist) {
 //    }
     // if not in cache, search in the LSM-tree
     if (valueLoc.segmentId == INVALID_SEGMENT) {
-        rocksdb::Slice key (keyStr, KEY_SIZE);
+        int actual_len = KEY_SIZE;
+        for (int i = KEY_SIZE - 1; i >= 0; i--) {
+            if (keyStr[i] != ' ') {
+                actual_len = i+1; 
+                break;
+            }
+        }
+        rocksdb::Slice key (keyStr, actual_len);
         rocksdb::Status status;
         STAT_TIME_PROCESS(status = _lsm->Get(rocksdb::ReadOptions(), key, &value), StatsType::KEY_GET_LSM);
         // value location found

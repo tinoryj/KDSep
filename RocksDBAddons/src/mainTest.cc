@@ -88,6 +88,8 @@ int main()
     // cout << prefixStr << endl;
 
     // DeltaKV test
+    setbuf(stdout, nullptr);
+    setbuf(stderr, nullptr);
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;
@@ -143,6 +145,14 @@ int main()
         cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs to DB" << RESET << endl;
     } else {
         cerr << GREEN << "[INFO]:[Addons]-[MainTest] Put function test correct (" << key << ", " << value << ")" << RESET << endl;
+        for (int i = 0; i < 4000; i++) {
+            char keyStr[200], valueStr[200];
+            sprintf(keyStr, "Key%d", i / 10);
+            sprintf(valueStr, "Value%d,value%d", i, i+10);
+            if (!db_.Put(string(keyStr), string(valueStr))) {
+                cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not put KV pairs " << key << " to DB" << RESET << endl;
+            }
+        }
         if (!db_.Get(key, &valueTemp)) {
             cerr << RED << "[ERROR]:[Addons]-[MainTest] Could not get KV pairs from DB" << RESET << endl;
         } else {

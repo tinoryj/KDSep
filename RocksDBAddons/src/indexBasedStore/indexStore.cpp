@@ -52,6 +52,8 @@ bool KvServer::checkKeySize(len_t &keySize) {
 }
 
 bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& indexInfo) {
+    static int putCount = 0;
+    putCount++;
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
     char* ckey = new char[KEY_SIZE+1];
@@ -121,6 +123,12 @@ retry_update:
     debug_info("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
     delete[] cvalue;
+
+    if (putCount > 1000) {
+        gc(false);
+        putCount = 0;
+    }
+
     return ret;
 }
 

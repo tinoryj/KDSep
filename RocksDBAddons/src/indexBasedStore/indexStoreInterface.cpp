@@ -11,6 +11,8 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
     extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
 
     ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
+    struct timeval tv1;
+    StatsRecorder::getInstance()->openStatistics(tv1);
 
     DiskInfo disk1(0, "./data_dir", 1 * 1024 * 1024 * 1024);
     std::vector<DiskInfo> disks;
