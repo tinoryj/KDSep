@@ -29,11 +29,11 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
     kShouldDelete = 3 }; // gc done, split/merge to new file, this file should be delete
 
 typedef struct hashStoreFileMetaDataHandler {
-    uint64_t target_file_id_;
-    uint64_t current_prefix_used_bit_;
-    uint64_t total_object_count_;
-    uint64_t total_object_bytes_;
-    uint64_t temp_not_flushed_data_bytes_;
+    uint64_t target_file_id_ = 0;
+    uint64_t current_prefix_used_bit_ = 0;
+    uint64_t total_object_count_ = 0;
+    uint64_t total_object_bytes_ = 0;
+    uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
     fstream file_operation_stream_;
@@ -71,4 +71,5 @@ typedef struct hashStoreRecordHeader {
     uint32_t key_size_;
     uint32_t value_size_;
     bool is_anchor_;
+    bool is_gc_done_ = false; // to mark gc job done
 } hashStoreRecordHeader;

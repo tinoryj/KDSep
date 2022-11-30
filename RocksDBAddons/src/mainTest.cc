@@ -148,8 +148,75 @@ bool murmurHashTest(string rawStr)
     return true;
 }
 
+bool fstreamTestFlush(uint64_t testNumber)
+{
+    Timer newTimer;
+    fstream testStream;
+    testStream.open("test.flush", ios::out);
+    testStream.close();
+    testStream.open("test.flush", ios::in | ios::out | ios::binary);
+    char writeBuffer[4096];
+    memset(writeBuffer, 1, 4096);
+    newTimer.startTimer();
+    for (int i = 0; i < testNumber; i++) {
+        testStream.write(writeBuffer, 4096);
+        testStream.flush();
+    }
+    newTimer.stopTimer("Flush");
+    testStream.close();
+    return true;
+}
+
+bool fstreamTestFlushSync(uint64_t testNumber)
+{
+    Timer newTimer;
+    fstream testStream;
+    testStream.open("test.sync", ios::out);
+    testStream.close();
+    testStream.open("test.sync", ios::in | ios::out | ios::binary);
+    char writeBuffer[4096];
+    memset(writeBuffer, 1, 4096);
+    newTimer.startTimer();
+    for (int i = 0; i < testNumber; i++) {
+        testStream.write(writeBuffer, 4096);
+        testStream.flush();
+        testStream.sync();
+    }
+    newTimer.stopTimer("Flush+Sync");
+    testStream.close();
+    return true;
+}
+
+bool fstreamTestDIRECT(uint64_t testNumber)
+{
+    Timer newTimer;
+    char* writeBuffer;
+    auto ret = posix_memalign((void**)&writeBuffer, sysconf(_SC_PAGESIZE), 4096);
+    if (ret) {
+        printf("posix_memalign failed: %d %s\n", errno, strerror(errno));
+        return false;
+    }
+    memset(writeBuffer, 1, 4096);
+    const int fileDesc = open("test.direct", O_CREAT | O_WRONLY | O_DIRECT);
+    if (-1 != fileDesc) {
+        newTimer.startTimer();
+        for (int i = 0; i < testNumber; i++) {
+            write(fileDesc, writeBuffer, 4096);
+        }
+        newTimer.stopTimer("O_DIRECT");
+    }
+    free(writeBuffer);
+    close(fileDesc);
+    return true;
+}
+
 int main()
 {
+    // fstreamTestFlush(100000);
+    // fstreamTestFlushSync(100000);
+    // fstreamTestDIRECT(100000);
+    // return 0;
+
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;

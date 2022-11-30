@@ -8,6 +8,8 @@
 #include <bits/stdc++.h>
 #include <filesystem>
 
+using namespace std;
+
 namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileManager {
@@ -59,7 +61,8 @@ private:
     boost::shared_mutex fileIDGeneratorMtx_;
     // GC
     pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap);
-    uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap);
+    // recovery
+    uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     bool stopMessageQueueFlag_ = false;
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
