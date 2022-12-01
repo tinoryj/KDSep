@@ -4,7 +4,7 @@
 namespace DELTAKV_NAMESPACE {
 
 HashStoreFileManager::HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-    uint64_t objectGlobalGCTriggerSize, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
+    uint64_t objectGlobalGCTriggerSize, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, fileOperationType fileOperationType)
 {
     initialTrieBitNumber_ = initialBitNumber;
     maxTrieBitNumber_ = maxBitNumber;
@@ -12,6 +12,7 @@ HashStoreFileManager::HashStoreFileManager(uint64_t initialBitNumber, uint64_t m
     globalGCTriggerSize_ = objectGlobalGCTriggerSize;
     workingDir_ = workingDirStr;
     notifyGCMQ_ = notifyGCMQ;
+    fileOperationMethod_ = fileOperationType;
     RetriveHashStoreFileMetaDataList();
 }
 
@@ -180,8 +181,8 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                             currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
                             // open current file for further usage
                             currentRecoveryFileHandler->fileOperationMutex_.lock();
-                            currentRecoveryFileHandler->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
-                            currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                            currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
+                            currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                             currentRecoveryFileHandler->fileOperationMutex_.unlock();
                             // update metadata
                             objectFileMetaDataTrie_.insert(make_pair(currentFilePrefix, currentRecoveryFileHandler));
@@ -212,9 +213,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
                                     // open current file for further usage
                                     currentRecoveryFileHandler->fileOperationMutex_.lock();
-                                    currentRecoveryFileHandler->file_operation_func_ptr_->close();
-                                    currentRecoveryFileHandler->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
-                                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                                    currentRecoveryFileHandler->file_operation_func_ptr_->closeFile();
+                                    currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
+                                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                                     currentRecoveryFileHandler->fileOperationMutex_.unlock();
                                     // update metadata
                                     string tempCurrentFilePrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_);
@@ -255,14 +256,14 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     uint64_t leftFatherFileID = objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->target_file_id_;
                                     uint64_t rightFatherFileID = objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->target_file_id_;
                                     // delete left father
-                                    objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_->close();
+                                    objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_->closeFile();
                                     delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_;
                                     delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr);
                                     objectFileMetaDataTrie_.erase(leftFatherFilePrefixStr);
                                     hashStoreFileIDToPrefixMap_.erase(leftFatherFileID);
                                     targetDeleteFileIDVec.push_back(leftFatherFileID);
                                     // delete right father
-                                    objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->file_operation_func_ptr_->close();
+                                    objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->file_operation_func_ptr_->closeFile();
                                     delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_;
                                     delete objectFileMetaDataTrie_.at(rightFatherFilePrefixStr);
                                     objectFileMetaDataTrie_.erase(rightFatherFilePrefixStr);
@@ -278,8 +279,8 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
                                     // open current file for further usage
                                     currentRecoveryFileHandler->fileOperationMutex_.lock();
-                                    currentRecoveryFileHandler->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
-                                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                                    currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
+                                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                                     currentRecoveryFileHandler->fileOperationMutex_.unlock();
                                     // update metadata
                                     objectFileMetaDataTrie_.insert(make_pair(currentFilePrefix, currentRecoveryFileHandler));
@@ -319,8 +320,8 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         currentRecoveryFileHandler->total_object_bytes_ = fileIDIt.second.file_size();
                         // open current file for further usage
                         currentRecoveryFileHandler->fileOperationMutex_.lock();
-                        currentRecoveryFileHandler->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
-                        currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                        currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt.first) + ".delta");
+                        currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                         currentRecoveryFileHandler->fileOperationMutex_.unlock();
                         // update metadata
                         string targetRecoveryPrefixStr;
@@ -361,15 +362,15 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 currentIDInMetadataFileHandlerPtr->fileOperationMutex_.lock();
                 currentIDInMetadataFileHandlerPtr->file_ownership_flag_ = -1; // mark as during gc
                 // start read
-                int targetReadSize = fileIDIt.second.file_size() - currentIDInMetadataFileHandlerPtr->total_object_bytes_;
+                int targetReadSize = fileIDIt.second.file_size();
                 char readBuffer[targetReadSize];
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for recovery size = " << currentIDInMetadataFileHandlerPtr->total_object_bytes_ << RESET << endl;
-                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
-                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->read(readBuffer, targetReadSize);
-                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
+                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->readFile(readBuffer, targetReadSize);
+                currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
                 // read done, start process
                 bool isGCFlushedDoneFlag = false;
-                uint64_t recoveredObjectNumber = deconstructTargetRecoveryContentsFromFile(readBuffer, targetReadSize, targetListForRedo, isGCFlushedDoneFlag);
+                uint64_t recoveredObjectNumber = deconstructTargetRecoveryContentsFromFile(readBuffer + currentIDInMetadataFileHandlerPtr->total_object_bytes_, targetReadSize - currentIDInMetadataFileHandlerPtr->total_object_bytes_, targetListForRedo, isGCFlushedDoneFlag);
                 // update metadata
                 currentIDInMetadataFileHandlerPtr->total_object_count_ += recoveredObjectNumber;
                 currentIDInMetadataFileHandlerPtr->total_object_bytes_ += targetReadSize;
@@ -423,8 +424,8 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                     currentRecoveryFileHandler->total_object_bytes_ = splitFileIt.second[i].second.file_size();
                     // open current file for further usage
                     currentRecoveryFileHandler->fileOperationMutex_.lock();
-                    currentRecoveryFileHandler->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(splitFileIt.second[i].first) + ".delta");
-                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                    currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(splitFileIt.second[i].first) + ".delta");
+                    currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                     currentRecoveryFileHandler->fileOperationMutex_.unlock();
                     // update metadata
                     string targetRecoveryPrefixStr;
@@ -443,7 +444,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         }
                     }
                 }
-                objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first))->file_operation_func_ptr_->close();
+                objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first))->file_operation_func_ptr_->closeFile();
                 delete objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first))->file_operation_func_ptr_;
                 delete objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first));
                 objectFileMetaDataTrie_.erase(hashStoreFileIDToPrefixMap_.at(splitFileIt.first));
@@ -541,8 +542,8 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->total_object_bytes_ = currentFileStoredBytes;
             // open current file for further usage
             currentFileHandlerPtr->fileOperationMutex_.lock();
-            currentFileHandlerPtr->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
-            currentFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd, 0);
+            currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+            currentFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
             objectFileMetaDataTrie_.insert(make_pair(prefixHashStr, currentFileHandlerPtr));
@@ -576,7 +577,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
     if (objectFileMetaDataTrie_.size() != 0) {
         for (auto it : objectFileMetaDataTrie_) {
             if (it.second->gc_result_status_flag_ == kShouldDelete) {
-                it.second->file_operation_func_ptr_->close();
+                it.second->file_operation_func_ptr_->closeFile();
                 targetDeleteFileIDVec.push_back(it.second->target_file_id_);
                 // skip deleted file
                 continue;
@@ -587,7 +588,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             hashStoreFileManifestStream << it.second->total_object_count_ << endl;
             hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
             it.second->fileOperationMutex_.lock();
-            it.second->file_operation_func_ptr_->flush();
+            it.second->file_operation_func_ptr_->flushFile();
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
             it.second->fileOperationMutex_.unlock();
         }
@@ -654,7 +655,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         for (auto it : objectFileMetaDataTrie_) {
             if (it.second->gc_result_status_flag_ == kShouldDelete) {
                 targetDeleteFileIDVec.push_back(it.second->target_file_id_);
-                it.second->file_operation_func_ptr_->close();
+                it.second->file_operation_func_ptr_->closeFile();
                 // skip and delete should deleted files
                 continue;
             }
@@ -664,8 +665,8 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             hashStoreFileManifestStream << it.second->total_object_count_ << endl;
             hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
             it.second->fileOperationMutex_.lock();
-            it.second->file_operation_func_ptr_->flush();
-            it.second->file_operation_func_ptr_->close();
+            it.second->file_operation_func_ptr_->flushFile();
+            it.second->file_operation_func_ptr_->closeFile();
             // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
             it.second->fileOperationMutex_.unlock();
             delete it.second;
@@ -869,10 +870,10 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     // write header to current file
     currentFileHandlerPtr->fileOperationMutex_.lock();
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): in lock, file name = " << workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta" << RESET << endl;
-    currentFileHandlerPtr->file_operation_func_ptr_->create(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
-    currentFileHandlerPtr->file_operation_func_ptr_->close();
-    currentFileHandlerPtr->file_operation_func_ptr_->open(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
-    currentFileHandlerPtr->file_operation_func_ptr_->write(fileHeaderWriteBuffer, sizeof(newFileHeader));
+    currentFileHandlerPtr->file_operation_func_ptr_->createFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+    currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
+    currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+    currentFileHandlerPtr->file_operation_func_ptr_->writeFile(fileHeaderWriteBuffer, sizeof(newFileHeader));
     currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
@@ -880,6 +881,35 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHandlerPtr->target_file_id_, prefixStr.substr(0, prefixBitNumber)));
     fileHandlerPtr = currentFileHandlerPtr;
     return true;
+}
+
+bool HashStoreFileManager::getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(const string keyStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID)
+{
+    string prefixStr;
+    bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
+    if (!genPrefixStatus) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): generate prefix hash for current key error, key = " << keyStr << RESET << endl;
+        return false;
+    }
+    bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, targetPrefixLen, fileHandlerPtr);
+    if (!getFileHandlerStatus) {
+        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, targetPrefixLen, true, previousFileID);
+        if (!createNewFileHandlerStatus) {
+            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new bucket for put operation error, key = " << keyStr << RESET << endl;
+            return false;
+        } else {
+            fileHandlerPtr->file_ownership_flag_ = 1;
+            return true;
+        }
+    } else {
+        // avoid get file handler which is in GC;
+        while (fileHandlerPtr->file_ownership_flag_ == -1) {
+            asm volatile("");
+            // wait if file is using in gc
+        }
+        fileHandlerPtr->file_ownership_flag_ = 1;
+        return true;
+    }
 }
 
 uint64_t HashStoreFileManager::generateNewFileID()
@@ -901,7 +931,6 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     hashStoreFileHeader currentFileHeader;
     memcpy(&currentFileHeader, fileContentBuffer, sizeof(currentFileHeader));
     currentProcessLocationIndex += sizeof(currentFileHeader);
-    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current file header done, file ID = " << currentFileHeader.file_id_ << ", create reason = " << currentFileHeader.file_create_reason_ << ", prefix length used in this file = " << currentFileHeader.current_prefix_used_bit_ << ", target process file size = " << fileSize << RESET << endl;
     while (currentProcessLocationIndex != fileSize) {
         processedKeepObjectNumber++;
         processedTotalObjectNumber++;
@@ -942,6 +971,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             }
         }
     }
+    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current file header done, file ID = " << currentFileHeader.file_id_ << ", create reason = " << currentFileHeader.file_create_reason_ << ", prefix length used in this file = " << currentFileHeader.current_prefix_used_bit_ << ", target process file size = " << fileSize << ", find different key number = " << resultMap.size() << ", total processed object number = " << processedTotalObjectNumber << ", target keep object number = " << processedKeepObjectNumber << RESET << endl;
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
@@ -961,9 +991,9 @@ void HashStoreFileManager::processGCRequestWorker()
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
             currentHandlerPtr->fileOperationMutex_.lock();
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for gc size = " << currentHandlerPtr->total_object_bytes_ << RESET << endl;
-            currentHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin, 0);
-            currentHandlerPtr->file_operation_func_ptr_->read(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
-            currentHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd, 0);
+            currentHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
+            currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
+            currentHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
 
             // process GC contents
             unordered_map<string, vector<string>> gcResultMap;
@@ -995,12 +1025,13 @@ void HashStoreFileManager::processGCRequestWorker()
                             break;
                         } else {
                             hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-                            bool getFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(currentPrefixStr, currentFileHandlerPtr, targetPrefixBitNumber, true, currentHandlerPtr->target_file_id_);
+                            bool getFileHandlerStatus = getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(currentPrefixStr, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_);
                             if (getFileHandlerStatus == false) {
                                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could get/create new bucket for prefix hash = " << currentPrefixStr << " gc error and skip the file's gc" << RESET << endl;
                                 break;
                             } else {
                                 currentFileHandlerPtr->fileOperationMutex_.lock();
+                                currentFileHandlerPtr->file_ownership_flag_ = -1;
                                 for (auto valueIt : keyIt.second) {
                                     hashStoreRecordHeader currentObjectRecordHeader;
                                     currentObjectRecordHeader.is_anchor_ = false;
@@ -1011,7 +1042,7 @@ void HashStoreFileManager::processGCRequestWorker()
                                     memcpy(currentWriteBuffer, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
                                     memcpy(currentWriteBuffer + sizeof(hashStoreRecordHeader), keyIt.first.c_str(), keyIt.first.size());
                                     memcpy(currentWriteBuffer + sizeof(hashStoreRecordHeader) + keyIt.first.size(), valueIt.c_str(), valueIt.size());
-                                    currentFileHandlerPtr->file_operation_func_ptr_->write(currentWriteBuffer, sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
+                                    currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
                                     currentFileHandlerPtr->temp_not_flushed_data_bytes_ += (sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
                                     currentFileHandlerPtr->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
                                     currentFileHandlerPtr->total_object_count_++;
@@ -1024,12 +1055,13 @@ void HashStoreFileManager::processGCRequestWorker()
                                 currentObjectRecordHeader.value_size_ = 0;
                                 char currentWriteBuffer[sizeof(hashStoreRecordHeader)];
                                 memcpy(currentWriteBuffer, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                                currentFileHandlerPtr->file_operation_func_ptr_->write(currentWriteBuffer, sizeof(hashStoreRecordHeader));
+                                currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, sizeof(hashStoreRecordHeader));
                                 currentFileHandlerPtr->total_object_bytes_ += sizeof(hashStoreRecordHeader);
                                 currentFileHandlerPtr->total_object_count_++;
-                                currentFileHandlerPtr->file_operation_func_ptr_->flush();
+                                currentFileHandlerPtr->file_operation_func_ptr_->flushFile();
                                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed new file to filesystem since split gc, the new file ID = " << currentFileHandlerPtr->target_file_id_ << ", corresponding previous file ID = " << currentHandlerPtr->target_file_id_ << RESET << endl;
                                 currentFileHandlerPtr->temp_not_flushed_data_bytes_ = 0;
+                                currentFileHandlerPtr->file_ownership_flag_ = 0;
                                 currentFileHandlerPtr->fileOperationMutex_.unlock();
                             }
                         }
@@ -1074,14 +1106,14 @@ void HashStoreFileManager::processGCRequestWorker()
                         currentProcessLocationIndex += valueIt.size();
                     }
                 }
-                currentHandlerPtr->file_operation_func_ptr_->close();
+                currentHandlerPtr->file_operation_func_ptr_->closeFile();
                 string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
                 // create since file not exist
-                currentHandlerPtr->file_operation_func_ptr_->create(targetOpenFileName);
-                currentHandlerPtr->file_operation_func_ptr_->close();
+                currentHandlerPtr->file_operation_func_ptr_->createFile(targetOpenFileName);
+                currentHandlerPtr->file_operation_func_ptr_->closeFile();
                 // write content and update current file stream to new one.
-                currentHandlerPtr->file_operation_func_ptr_->open(targetOpenFileName);
-                currentHandlerPtr->file_operation_func_ptr_->write(readWriteBuffer, currentProcessLocationIndex);
+                currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
+                currentHandlerPtr->file_operation_func_ptr_->writeFile(readWriteBuffer, currentProcessLocationIndex);
                 // write gc done flag into bucket file
                 hashStoreRecordHeader currentObjectRecordHeader;
                 currentObjectRecordHeader.is_anchor_ = false;
@@ -1090,8 +1122,8 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentObjectRecordHeader.value_size_ = 0;
                 char currentWriteBuffer[sizeof(hashStoreRecordHeader)];
                 memcpy(currentWriteBuffer, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                currentHandlerPtr->file_operation_func_ptr_->write(currentWriteBuffer, sizeof(hashStoreRecordHeader));
-                currentHandlerPtr->file_operation_func_ptr_->flush();
+                currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, sizeof(hashStoreRecordHeader));
+                currentHandlerPtr->file_operation_func_ptr_->flushFile();
                 // update metadata
                 currentHandlerPtr->target_file_id_ = currentFileHeader.file_id_;
                 string originalPrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_);
@@ -1101,7 +1133,7 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentHandlerPtr->total_object_count_ = newObjectNumber + 1;
                 currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
                 currentHandlerPtr->file_ownership_flag_ = 0;
-                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed new file to filesystem since split gc, the new file ID = " << currentFileHeader.file_id_ << ", corresponding previous file ID = " << currentFileHeader.previous_file_id_ << RESET << endl;
+                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed new file to filesystem since single file gc, the new file ID = " << currentFileHeader.file_id_ << ", corresponding previous file ID = " << currentFileHeader.previous_file_id_ << RESET << endl;
                 currentHandlerPtr->fileOperationMutex_.unlock();
                 continue;
             }

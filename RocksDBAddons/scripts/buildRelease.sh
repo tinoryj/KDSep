@@ -18,7 +18,7 @@ fi
 
 cd ./build || exit
 cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(shell grep -c ^processor /proc/cpuinfo 2>/dev/null)
+make -j4 #$(shell grep -c ^processor /proc/cpuinfo 2>/dev/null)
 cd .. || exit
 
 if [ ! -f "bin/test" ]; then
@@ -27,7 +27,7 @@ else
     echo -e "\n"
     ulimit -n 65536
     echo "Local Test with simple operations (Round 1) ===>"
-    bin/test 1000
+    bin/test 1
     echo "Local Test with simple operations (Round 1) <==="
     echo "Local Test with simple operations (Round 2) ===>"
     bin/test 1

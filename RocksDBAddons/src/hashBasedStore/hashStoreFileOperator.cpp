@@ -187,12 +187,12 @@ void HashStoreFileOperator::operationWorker()
                         char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ > 0) {
-                            currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
+                            currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         }
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin, 0);
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin);
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
@@ -226,13 +226,13 @@ void HashStoreFileOperator::operationWorker()
                     char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ > 0) {
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     }
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << RESET << endl;
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin, 0);
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->read(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd, 0);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
@@ -268,9 +268,9 @@ void HashStoreFileOperator::operationWorker()
                     memcpy(writeHeaderBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                     // write content
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->write(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {
@@ -289,9 +289,9 @@ void HashStoreFileOperator::operationWorker()
                     memcpy(writeHeaderBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.value_str_->c_str(), newRecordHeader.value_size_);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                     // write content
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->write(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flush();
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {

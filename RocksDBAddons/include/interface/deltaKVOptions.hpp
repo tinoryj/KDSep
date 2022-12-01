@@ -74,7 +74,7 @@ public:
     uint64_t hashStore_init_prefix_bit_number = 8;
     uint64_t hashStore_max_prefix_bit_number = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
-    fileOperationType fileOperationMethod_ = kFstream;
+    fileOperationType fileOperationMethod_ = kDirectIO;
 
     bool dumpOptions(string dumpPath);
     bool dumpDataStructureInfo(string dumpPath);

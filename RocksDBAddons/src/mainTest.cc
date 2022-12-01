@@ -2,6 +2,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/appendAbleLRUCache.hpp"
+#include "utils/fileOperation.hpp"
 #include "utils/murmurHash.hpp"
 #include "utils/timer.hpp"
 
@@ -210,8 +211,29 @@ bool fstreamTestDIRECT(uint64_t testNumber)
     return true;
 }
 
+bool directIOTest(string path)
+{
+    cout << "Page size = " << sysconf(_SC_PAGE_SIZE) << endl;
+    FileOperation currentFilePtr(kDirectIO);
+    currentFilePtr.createFile(path);
+    currentFilePtr.openFile(path);
+    string writeStr = "test";
+    char writeBuffer[4];
+    memcpy(writeBuffer, writeStr.c_str(), 4);
+    currentFilePtr.writeFile(writeBuffer, 4);
+    cout << "Write content = " << writeBuffer << endl;
+    char readBuffer[4];
+    currentFilePtr.resetPointer(kBegin);
+    currentFilePtr.readFile(readBuffer, 4);
+    string readStr(readBuffer, 4);
+    cout << "Read content = " << readStr << endl;
+    currentFilePtr.closeFile();
+    return true;
+}
 int main(int argc, char* argv[])
 {
+    // string path = "test.log";
+    // directIOTest(path);
     // fstreamTestFlush(100000);
     // fstreamTestFlushSync(100000);
     // fstreamTestDIRECT(100000);
