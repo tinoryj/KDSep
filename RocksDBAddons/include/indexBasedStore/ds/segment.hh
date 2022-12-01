@@ -5,7 +5,7 @@
 #include <mutex>
 #include "indexBasedStore/util/debug.hh"
 #include "indexBasedStore/define.hh"
-#include "../indexStoreConfig.hh"
+#include "../configManager.hh"
 #include "list.hh"
 
 namespace DELTAKV_NAMESPACE {
@@ -126,6 +126,19 @@ public:
         a._writeFront += size;
         return true;
     }
+
+    static inline bool padPage(Segment &a) {
+        segment_len_t pageSize = sysconf(_SC_PAGE_SIZE), padSize;
+        padSize = pageSize - a._writeFront % pageSize;
+        if (!Segment::canFit(a, padSize)) {
+            return false;
+        }
+        if (padSize != pageSize) {
+            memset(a._buf + a._writeFront, 0, padSize);
+        }
+        a._writeFront += padSize;
+        return true;
+    } 
 
     // in-place overwrite data in segment
     template<class T> static inline bool overwriteData(Segment &a, const T *buf, segment_off_len_t offlen) {

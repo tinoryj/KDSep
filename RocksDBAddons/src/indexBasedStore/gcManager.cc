@@ -2,7 +2,7 @@
 #include <unordered_set>
 #include <float.h>
 #include "indexBasedStore/gcManager.hh"
-#include "indexBasedStore/indexStoreConfig.hh"
+#include "indexBasedStore/configManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
 
 #define TAG_MASK  (1000 * 1000)
@@ -123,9 +123,15 @@ size_t GCManager::gcVLog() {
     //_valueManager->_GCLock.lock();
 
     size_t gcBytes = 0, gcScanSize = 0;
+    size_t pageSize = sysconf(_SC_PAGE_SIZE);
     len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
     unsigned char *readPool = _useMmap? 0 : Segment::getData(_gcSegment.read);
     unsigned char *writePool = Segment::getData(_gcSegment.write);
+
+    if (ConfigManager::getInstance().useDirectIO() && gcSize % pageSize) {
+        debug_error("use direct IO but gcSize %lu not aligned; stop\n", gcSize);
+        return 0;
+    }
 
     std::vector<char*> keys;
     std::vector<ValueLocation> values;
@@ -174,6 +180,14 @@ size_t GCManager::gcVLog() {
             off_len_t offLen (keySizeOffset, sizeof(key_len_t));
             Segment::readData(_gcSegment.read, &keySize, offLen);
             debug_info("keySize %d\n", (int)keySize);
+            if (keySize == 0) {
+                debug_info("may use direct I/O. Skip the page gcSize %lu remains %lu\n", gcSize, remains);
+                if (remains % pageSize == 0) {
+                    debug_info("remains aligned; this page has no content (remains %lu)\n", remains);
+                }
+                remains -= pageSize - remains % pageSize;
+                continue;
+            }
 
             // check if we can read the value size
             if (KEY_REC_SIZE + sizeof(len_t) > remains) {

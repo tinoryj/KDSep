@@ -38,6 +38,7 @@ public:
     bool isInPlaceUpdate() const;
     int getNumPipelinedBuffer() const;
     bool usePipelinedBuffer() const;
+    bool useDirectIO() const;
 
     // hotness
     int getHotnessLevel() const;
@@ -118,6 +119,7 @@ private:
         segment_len_t updateKVBufferSize;       // size of buffer for updated key-value pairs
         bool inPlaceUpdate;                       // whether to enable in-place update for updated values of the same size
         int numPipelinedBuffer;                   // no. of pipelined update buffers
+        bool directIO;
     } _buffer;
 
     struct {

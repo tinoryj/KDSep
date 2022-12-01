@@ -34,6 +34,17 @@ DeviceManager::DeviceManager(const vector<DiskInfo> v_diskInfo, bool isSlave) {
 
     _isSlave = isSlave;
 
+    // buffer for direct I/O
+    _pageSize = sysconf(_SC_PAGE_SIZE);
+    if (ConfigManager::getInstance().useDirectIO()) {
+        int ret = posix_memalign(&_buf, _pageSize, _pageSize * 2);
+        assert(ret == 0);
+        _bufsize = _pageSize * 2;
+    } else {
+        _buf = nullptr;
+        _bufsize = 0;
+    }
+
 #ifdef DISKLBA_OUT
     fp = fopen("disklba.out", "w");
 #endif /* DISKLBA_OUT */
@@ -43,7 +54,35 @@ DeviceManager::~DeviceManager() {
     for (auto diskInfo : _diskInfo) {
         delete _diskMutex[diskInfo.first];
     }
+
+    free(_buf);
 }
+
+bool DeviceManager::checkBufferSize(len_t neededSize, offset_t offset) {
+    assert(neededSize != 0);
+
+    if (offset == INVALID_OFFSET) {
+        neededSize = (neededSize + _pageSize - 1) / _pageSize * _pageSize; 
+    } else {
+        offset_t end = offset + neededSize;
+        offset = offset / _pageSize * _pageSize;
+        end = (end + _pageSize - 1) / _pageSize * _pageSize; 
+        neededSize = end - offset; 
+    }
+
+    if (neededSize > _bufsize) {
+        free(_buf);
+        int ret = posix_memalign(&_buf, _pageSize, neededSize);
+        assert(ret == 0);
+        _bufsize = neededSize;
+        debug_info("Enlarge device buffer to %lu\n", neededSize);
+
+        return true;
+    }
+
+    return false;
+}
+
 
 #ifdef DIRECT_LBA_SEGMENT_MAPPING
 disk_id_t DeviceManager::getDiskBySegmentId(segment_id_t segmentId) {
@@ -103,6 +142,7 @@ bool DeviceManager::isLogSegment(segment_id_t segmentId) {
 }
 
 len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length, bool isWrite) {
+    debug_info("accessDisk offset %lu length %lu write %d\n", diskOffset, length, (int)isWrite);
     // check if disk id is valid
     if (diskId == INVALID_DISK || _diskInfo.count(diskId) < 0) {
         return INVALID_LEN;
@@ -110,7 +150,22 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t d
 
     ConfigManager &cm = ConfigManager::getInstance();
     bool useFS = ConfigManager::getInstance().segmentAsFile();
-    FILE *fd = useFS? accessFileFd(0) : 0;
+    int fd = useFS? accessFileFd(0) : 0;
+
+    char* tempBuf = (char*)buf; 
+    offset_t originalDiskOffset = diskOffset;
+    len_t originalLength = length;
+
+    if (_buf) {
+        checkBufferSize(length, diskOffset);
+        memset(_buf, 0, _bufsize); 
+        if (isWrite) {
+            memcpy((char*)_buf + diskOffset % _pageSize, buf, length); 
+        }
+        length = ((diskOffset + length + _pageSize - 1) / _pageSize - diskOffset / _pageSize) * _pageSize;
+        diskOffset = diskOffset - diskOffset % _pageSize;
+        tempBuf = (char*)_buf;
+    }
 
     if (cm.enabledVLogMode() || _isSlave) {
         // get the capacity, allow wrap-around write/read
@@ -126,18 +181,20 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t d
             if (isWrite) {
                 if (useFS) {
                     lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
-                    ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
+//                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
+//                    ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
+                    ret = pwrite(fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset); 
                 } else {
-                    ret = pwrite(_diskInfo.at(diskId).fd, buf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
+                    ret = pwrite(_diskInfo.at(diskId).fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset); 
                 }
             } else {
                 if (useFS) {
                     lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
-                    ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
+//                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
+//                    ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
+                    ret = pread(fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset); 
                 } else {
-                    ret = pread(_diskInfo.at(diskId).fd, buf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
+                    ret = pread(_diskInfo.at(diskId).fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset); 
                 }
             }
             if (ret < 0 || (size_t) ret != len) {
@@ -151,18 +208,20 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t d
         if (isWrite) {
             if (useFS) {
                 lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                fseek(fd, diskOffset, SEEK_SET);
-                ret = fwrite(buf, sizeof(unsigned char), length, fd);
+//                fseek(fd, diskOffset, SEEK_SET);
+//                ret = fwrite(buf, sizeof(unsigned char), length, fd);
+                ret = pwrite(fd, tempBuf, length, diskOffset); 
             } else {
-                ret = pwrite(_diskInfo.at(diskId).fd, buf, length, diskOffset);
+                ret = pwrite(_diskInfo.at(diskId).fd, tempBuf, length, diskOffset);
             }
         } else {
             if (useFS) {
                 lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                fseek(fd, diskOffset, SEEK_SET);
-                ret = fread(buf, sizeof(unsigned char), length, fd);
+//                fseek(fd, diskOffset, SEEK_SET);
+//                ret = fread(buf, sizeof(unsigned char), length, fd);
+                ret = pread(fd, tempBuf, length, diskOffset);
             } else {
-                ret = pread(_diskInfo.at(diskId).fd, buf, length, diskOffset);
+                ret = pread(_diskInfo.at(diskId).fd, tempBuf, length, diskOffset);
             }
         }
         if (ret < 0 || (size_t) ret != length) {
@@ -175,13 +234,20 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char *buf, offset_t d
     // mark disk as dirty if needed, and update stats
     if (isWrite) {
         StatsRecorder::getInstance()->IOBytesWrite(length, diskId);
-        if (useFS) {
-            fflush(fd);
-        } else {
-            _diskInfo.at(diskId).dirty = true;
+        if (!_buf) {
+            if (useFS) {
+    //            fflush(fd);
+            } else {
+                _diskInfo.at(diskId).dirty = true;
+            }
         }
     } else {
         StatsRecorder::getInstance()->IOBytesRead(length, diskId);
+    }
+
+    if (!isWrite && _buf) {
+        // copy back
+        memcpy(buf, (char*)_buf + originalDiskOffset % _pageSize, originalLength);
     }
 
     return length;
@@ -221,8 +287,8 @@ offset_t DeviceManager::accessDataOnDisk(segment_id_t segmentId, segment_offset_
     return ret;
 }
 
-FILE* DeviceManager::accessFileFd(segment_id_t segmentId) {
-    FILE *fd = 0;
+int DeviceManager::accessFileFd(segment_id_t segmentId) {
+    int fd = 0;
     auto existfd = _segmentFiles.fds.find(segmentId);
     if (existfd == _segmentFiles.fds.end()) {
         // open the file
@@ -230,11 +296,16 @@ FILE* DeviceManager::accessFileFd(segment_id_t segmentId) {
         std::string fname (_diskInfo.at(diskId).diskPath);
         fname.append("/c");
         fname.append(std::to_string(segmentId));
-        fd = fopen(fname.c_str(), "r+b");
-        if (fd == 0) {
-            // create if file not exists
-            fd = fopen(fname.c_str(), "w+b");
+        if (ConfigManager::getInstance().useDirectIO()) {
+            fd = open(fname.c_str(), O_RDWR | O_CREAT | O_DIRECT, 0755);
+        } else {
+            fd = open(fname.c_str(), O_RDWR | O_CREAT, 0755);
         }
+//        fd = open(fname.c_str(), "r+b");
+//        if (fd == 0) {
+//            // create if file not exists
+//            fd = fopen(fname.c_str(), "w+b");
+//        }
         assert(fd != 0);
         // keep track of its fd
         _segmentFiles.fds[segmentId] = fd;
@@ -264,7 +335,13 @@ len_t DeviceManager::accessLogFile(bool isUpdate, unsigned char *buf, len_t logS
         return remove(fname.c_str()) == 0;
     }
 
-    FILE *fd = fopen(fname.c_str(), "rb");
+    int fd;
+    if (_buf) {
+        fd = open(fname.c_str(), O_RDWR | O_DIRECT | O_CREAT, 0755);
+    } else {
+        fd = open(fname.c_str(), O_RDWR | O_DIRECT, 0755);
+    }
+
     if (fd != 0 && isWrite) {
         debug_error("Ack and remove log file before next write (size = %lu)!", logSize);
         assert(0);
@@ -275,73 +352,103 @@ len_t DeviceManager::accessLogFile(bool isUpdate, unsigned char *buf, len_t logS
         return 0;
     } else if (isWrite) {
         // create if file not exists
-        fd = fopen(fname.c_str(), "wb");
+//        fd = fopen(fname.c_str(), "wb");
     }
     assert(fd != 0);
 
     len_t writeSize = accessFile(fd, buf, /* startingOffset = */ 0, logSize, isWrite, /* isCircular = */ false);
 
-    fclose(fd);
+//    fclose(fd);
+    close(fd);
 
     return writeSize;
 }
 
-len_t DeviceManager::accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite) {
+len_t DeviceManager::accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t length, bool isWrite) {
     ConfigManager &cm = ConfigManager::getInstance();
 
     disk_id_t diskId = getDiskBySegmentId(segmentId);
     std::string fname (_diskInfo.at(diskId).diskPath);
     fname.append("/c");
     fname.append(std::to_string(segmentId));
-    FILE *fd = fopen(fname.c_str(), "r+b");
-    if (fd == 0) {
-        // create if file not exists
-        fd = fopen(fname.c_str(), "w+b");
+    int fd; //= fopen(fname.c_str(), "r+b");
+//    if (fd == 0) {
+//        // create if file not exists
+//        fd = fopen(fname.c_str(), "w+b");
+//    }
+    if (_buf) {
+        fd = open(fname.c_str(), O_RDWR | O_DIRECT | O_CREAT, 0755);
+    } else {
+        fd = open(fname.c_str(), O_RDWR | O_DIRECT, 0755);
     }
     assert(fd != 0);
 
-    len_t writeSize = accessFile(fd, buf, startingOffset, writeLength, isWrite, /* isCircular = */ cm.enabledVLogMode() || _isSlave);
+    len_t writeSize = accessFile(fd, buf, startingOffset, length, isWrite, /* isCircular = */ cm.enabledVLogMode() || _isSlave);
 
-    fclose(fd);
+//    fclose(fd);
+    close(fd);
 
     return writeSize;
 }
 
-len_t DeviceManager::accessFile(FILE *fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCircular) {
+len_t DeviceManager::accessFile(int fd, unsigned char *buf, segment_offset_t diskOffset, segment_len_t length, bool isWrite, bool isCircular) {
 
     ConfigManager &cm = ConfigManager::getInstance();
 
     len_t accessLength = 0;
+
+    char* tempBuf = (char*)buf;
+    offset_t originalDiskOffset = diskOffset;
+    len_t originalLength = length;
+
+    if (_buf) {
+        if (diskOffset % _pageSize) {
+            debug_error("diskOffset not aligned: %lu\n", diskOffset);
+        }
+        checkBufferSize(length, diskOffset);
+        memset(_buf, 0, _bufsize); 
+        if (isWrite) {
+            memcpy((char*)_buf + diskOffset % _pageSize, buf, length); 
+            length = ((diskOffset + length + _pageSize - 1) / _pageSize - diskOffset / _pageSize) * _pageSize;
+            diskOffset = diskOffset - diskOffset % _pageSize;
+        }
+        tempBuf = (char*)_buf;
+    }
+
     if (isCircular) {
         // get the capacity, allow wrap-around write/read
         len_t capacity = _isSlave? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
-        offset_t runningDiskOffset = startingOffset;
-        for (len_t remains = writeLength, len = 0; remains > 0; remains -= len, runningDiskOffset = (runningDiskOffset + len) % capacity) {
+        offset_t runningDiskOffset = diskOffset;
+        for (len_t remains = length, len = 0; remains > 0; remains -= len, runningDiskOffset = (runningDiskOffset + len) % capacity) {
             len = std::min(capacity - runningDiskOffset, remains);
             if (len == 0) {
                 len = remains;
             }
-            offset_t inOffset = writeLength - remains;
+            offset_t inOffset = length - remains;
             ssize_t ret = 0;
-            fseek(fd, runningDiskOffset, SEEK_SET);
+//            fseek(fd, runningDiskOffset, SEEK_SET);
             if (isWrite) {
-                ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
+                ret = pwrite(fd, tempBuf + inOffset, len, runningDiskOffset);
+//                ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
             } else {
-                ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
+                ret = pread(fd, tempBuf + inOffset, len, runningDiskOffset);
+//                ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
             }
             if (ret < 0 || (size_t) ret != len) {
-                debug_error("Error on f%s buf=%p to file (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), buf + inOffset, fileno(fd), runningDiskOffset, len, strerror(errno));
+                debug_error("Error on f%s buf=%p to file (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), buf + inOffset, fd, runningDiskOffset, len, strerror(errno));
                 assert(0);
                 exit(-1);
             }
             accessLength += ret;
         }
     } else {
-        fseek(fd, startingOffset, SEEK_SET);
+//        fseek(fd, diskOffset, SEEK_SET);
         if (isWrite) {
-            accessLength = fwrite(buf, sizeof(unsigned char), writeLength, fd);
+            accessLength = pwrite(fd, tempBuf, length, diskOffset);
+//            accessLength = fwrite(buf, sizeof(unsigned char), length, fd);
         } else {
-            accessLength = fread(buf, sizeof(unsigned char), writeLength, fd);
+            accessLength = pread(fd, tempBuf, length, diskOffset);
+//            accessLength = fread(buf, sizeof(unsigned char), length, fd);
         }
     }
 
@@ -352,6 +459,11 @@ len_t DeviceManager::accessFile(FILE *fd, unsigned char *buf, segment_offset_t s
         StatsRecorder::getInstance()->IOBytesRead(accessLength, 0);
     }
 
+    if (!isWrite && _buf) {
+        // copy back
+        memcpy(buf, (char*)_buf + originalDiskOffset % _pageSize, originalLength);
+    }
+
     return accessLength;
 }
 
@@ -359,12 +471,11 @@ unsigned char *DeviceManager::readMmap(segment_id_t segmentId, segment_offset_t 
     ConfigManager &cm = ConfigManager::getInstance();
     bool useFS = cm.segmentAsFile();
     if (!useFS || cm.segmentAsSeparateFile()) return 0;
-    int fd = fileno(accessFileFd(0));
+    int fd = accessFileFd(0); //fileno(accessFileFd(0));
 
     offset_t foffset = getOffsetBySegmentId(segmentId) + offset;
-    offset_t pageSize = sysconf(_SC_PAGE_SIZE);
-    offset_t adjfoffset = foffset - (foffset % pageSize);
-    segment_len_t adjlength = length + (foffset % pageSize);
+    offset_t adjfoffset = foffset - (foffset % _pageSize);
+    segment_len_t adjlength = length + (foffset % _pageSize);
 
     unsigned char *target = (unsigned char*) mmap(buf, adjlength, PROT_NONE | PROT_READ, MAP_PRIVATE, fd, adjfoffset);
     //printf("mmap %p (%p) offset %lu (%lu) length %lu (%lu) \n", buf, target, foffset, adjfoffset, length, adjlength);
@@ -372,7 +483,7 @@ unsigned char *DeviceManager::readMmap(segment_id_t segmentId, segment_offset_t 
         debug_error("mmap failed (%s)\n", strerror(errno));
         assert(0);
     }
-    return target + (foffset % pageSize);
+    return target + (foffset % _pageSize);
 }
 
 bool DeviceManager::readUmmap(segment_id_t segmentId, segment_offset_t offset, segment_len_t length, unsigned char *buf) {
@@ -382,9 +493,8 @@ bool DeviceManager::readUmmap(segment_id_t segmentId, segment_offset_t offset, s
     //printf("munmap %p length %lu\n", buf, length);
 
     offset_t foffset = getOffsetBySegmentId(segmentId) + offset;
-    offset_t pageSize = sysconf(_SC_PAGE_SIZE);
 
-    return (munmap(buf - (foffset % pageSize), length + (foffset % pageSize)) == 0);
+    return (munmap(buf - (foffset % _pageSize), length + (foffset % _pageSize)) == 0);
 }
 
 bool DeviceManager::readAhead(segment_id_t segmentId, segment_offset_t offset, segment_len_t length) {
@@ -407,7 +517,7 @@ bool DeviceManager::readAhead(segment_id_t segmentId, segment_offset_t offset, s
             assert(0);
             return false;
         }
-        fd = fileno(accessFileFd(0));
+        fd = accessFileFd(0); // fileno(accessFileFd(0));
     } else {
         fd = _diskInfo.at(diskId).fd;
         if (length <= 0 || diskId == INVALID_DISK || _diskInfo.count(diskId) < 0 || foffset + length > _diskInfo.at(diskId).capacity) {

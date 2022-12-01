@@ -6,7 +6,7 @@
 #include "define.hh"
 #include "ds/segment.hh"
 #include "ds/keyvalue.hh"
-#include "indexStoreConfig.hh"
+#include "configManager.hh"
 #include "deviceManager.hh"
 
 namespace DELTAKV_NAMESPACE {

@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "indexBasedStore/util/debug.hh"
-#include "indexBasedStore/indexStoreConfig.hh"
+#include "indexBasedStore/configManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 

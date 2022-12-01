@@ -20,6 +20,8 @@ public:
     DeviceManager (std::vector<DiskInfo> disks, bool isSlave = false);
     ~DeviceManager();
 
+    bool checkBufferSize(len_t neededSize, offset_t offset = INVALID_OFFSET);
+
     // mapping between segment and disks
     disk_id_t getDiskBySegmentId(segment_id_t segmentId);
     offset_t getOffsetBySegmentId(segment_id_t segmentId);
@@ -80,6 +82,9 @@ private:
     std::mutex _diskStatusMutex;
 
     int _numDisks;                                               // the number of all disks
+    void* _buf;
+    int _bufsize;
+    int _pageSize;
 
     bool _isSlave;
 
@@ -90,7 +95,7 @@ private:
 #endif
 
     struct {
-        std::map<segment_id_t, FILE *> fds;
+        std::map<segment_id_t, int> fds;
     } _segmentFiles;
 
     len_t accessDisk(disk_id_t diskId, unsigned char *buf, offset_t diskOffset, len_t length, bool isWrite);
@@ -98,9 +103,9 @@ private:
 
     len_t accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite);
     len_t accessLogFile(bool isUpdate, unsigned char *buf, len_t logSize, bool isWrite, bool isDelete = false);
-    len_t accessFile(FILE *fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCicular);
+    len_t accessFile(int fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCicular);
 
-    FILE* accessFileFd(segment_id_t segmentId);
+    int accessFileFd(segment_id_t segmentId);
 
     size_t setDisksStatus(std::vector<disk_id_t> &diskIds, bool alive);
 

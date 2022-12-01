@@ -1,5 +1,5 @@
 #include <thread>
-#include "indexBasedStore/indexStoreConfig.hh"
+#include "indexBasedStore/configManager.hh"
 #include "indexBasedStore/util/debug.hh"
 
 namespace DELTAKV_NAMESPACE {
@@ -31,6 +31,7 @@ void ConfigManager::setConfigPath (const char* path) {
     } else if (_buffer.numPipelinedBuffer < 1) {
         _buffer.numPipelinedBuffer = 1;
     }
+    _buffer.directIO = readBool("buffer.directIO");
 
     // hotness
     _hotness.levels = 2;
@@ -227,6 +228,11 @@ int ConfigManager::getNumPipelinedBuffer() const {
 bool ConfigManager::usePipelinedBuffer() const {
     assert (!_pt.empty());
     return _buffer.numPipelinedBuffer > 1;
+}
+
+bool ConfigManager::useDirectIO() const {
+    assert (!_pt.empty());
+    return _buffer.directIO;
 }
 
 int ConfigManager::getHotnessLevel() const {

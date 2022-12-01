@@ -6,7 +6,7 @@
 #include <mutex>
 #include "list.hh"
 #include "segment.hh"
-#include "../indexStoreConfig.hh"
+#include "../configManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 

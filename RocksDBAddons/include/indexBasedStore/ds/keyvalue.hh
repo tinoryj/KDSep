@@ -5,7 +5,7 @@
 #include "common/dataStructure.hpp"
 #include "indexBasedStore/util/hash.hh"
 #include "indexBasedStore/define.hh"
-#include "indexBasedStore/indexStoreConfig.hh"
+#include "indexBasedStore/configManager.hh"
 
 #define LSM_MASK (0x80000000)
 
@@ -39,6 +39,103 @@ struct hashKey {
     }
 };  
 
+/*
+class KeyValueRecord {
+public:
+    KeyValueRecord() {
+        _keySize = _valueSize = 0;
+        _key = _value = nullptr;
+        _paddingSize = 0;
+        _totalSize = 0;
+    }
+
+    bool read(char* recordOffset, len_t maxSize = INVALID_LEN) {
+        if (sizeof(key_len_t) > maxSize) {
+            return false;
+        }
+        memcpy(&_keySize, recordOffset, sizeof(key_len_t));
+
+        if (sizeof(key_len_t) + _keySize > maxSize) {
+            return false;
+        }
+        _key = recordOffset + sizeof(key_len_t);
+
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) > maxSize) {
+            return false;
+        }
+        memcpy(&_valueSize, recordOffset + sizeof(key_len_t) + _keySize); 
+
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) + _valueSize > maxSize) {
+            return false;
+        }
+        _value = recordOffset + sizeof(key_len_t) + _keySize + sizeof(len_t);
+        
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) * 2 + _valueSize > maxSize) {
+            return true;
+        }
+        memcpy(&_paddingSize, recordOffset + sizeof(key_len_t) + _keySize + sizeof(len_t) + _valueSize, sizeof(len_t));
+        return true;
+    }
+
+    bool write(char* recordOffset, len_t maxSize = INVALID_LEN) {
+        if (sizeof(key_len_t) > maxSize) {
+            return false;
+        }
+        memcpy(recordOffset, &_keySize, sizeof(key_len_t));
+        recordOffset += sizeof(key_len_t);
+
+        if (sizeof(key_len_t) + _keySize > maxSize) {
+            return false;
+        }
+        memcpy(recordOffset, _key, );
+        _key = recordOffset + sizeof(key_len_t);
+
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) > maxSize) {
+            return false;
+        }
+        memcpy(&_valueSize, recordOffset + sizeof(key_len_t) + _keySize); 
+
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) + _valueSize > maxSize) {
+            return false;
+        }
+        _value = recordOffset + sizeof(key_len_t) + _keySize + sizeof(len_t);
+        
+        if (sizeof(key_len_t) + _keySize + sizeof(len_t) * 2 + _valueSize > maxSize) {
+            return true;
+        }
+        memcpy(&_paddingSize, recordOffset + sizeof(key_len_t) + _keySize + sizeof(len_t) + _valueSize, sizeof(len_t));
+        return true;
+    }
+
+    char* getKey() {
+        return _key;
+    }
+
+    char* getValue() {
+        return _value;
+    }
+
+    key_len_t getKeySize() {
+        return _keySize;
+    }
+
+    len_t getValueSize() {
+        return _valueSize;
+    }
+
+    len_t getPaddingSize() {
+        return _paddingSize;
+    }
+    
+private:
+    key_len_t _keySize;
+    len_t _valueSize;
+    char* _key;
+    char* _value;
+    len_t _paddingSize;
+    len_t _totalSize;
+}
+*/
 
 class ValueLocation {
 public:

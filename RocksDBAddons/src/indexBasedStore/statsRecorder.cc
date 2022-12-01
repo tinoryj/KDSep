@@ -1,6 +1,6 @@
 #include "indexBasedStore/statsRecorder.hh"
 #include <boost/concept_check.hpp>
-#include "indexBasedStore/indexStoreConfig.hh"
+#include "indexBasedStore/configManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 

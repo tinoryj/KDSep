@@ -52,7 +52,7 @@ add_library(DeltaKV STATIC
       indexBasedStore/gcManager.cc
       indexBasedStore/indexStoreInterface.cpp
       indexBasedStore/indexStore.cpp
-      indexBasedStore/indexStoreConfig.cpp
+      indexBasedStore/configManager.cc
       indexBasedStore/indexStoreInterface.cpp
       indexBasedStore/logManager.cc
       indexBasedStore/rocksdbKeyManager.cc

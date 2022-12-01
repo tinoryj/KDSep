@@ -6,7 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "indexBasedStore/define.hh"
-#include "../indexStoreConfig.hh"
+#include "../configManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 

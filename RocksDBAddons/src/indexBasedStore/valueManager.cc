@@ -302,7 +302,7 @@ ValueLocation ValueManager::putValue (char *keyStr, key_len_t keySize, char *val
     _centralizedReservedPool[poolIndex].keysInPool.insert(keyOffset);
 
     if (groupId != LSM_GROUP && !vlog) _segmentGroupManager->releaseGroupLock(groupId);
-    offset_t logOffset = INVALID_OFFSET;
+    offset_t logOffset = _segmentGroupManager->getLogWriteOffset();
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || ConfigManager::getInstance().getUpdateKVBufferSize() <= 0) {
@@ -310,7 +310,7 @@ ValueLocation ValueManager::putValue (char *keyStr, key_len_t keySize, char *val
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &logOffset), StatsType::POOL_FLUSH);
+            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
         } else {
             STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
@@ -318,7 +318,7 @@ ValueLocation ValueManager::putValue (char *keyStr, key_len_t keySize, char *val
         _GCLock.unlock();
     }
 
-    valueLoc.offset = logOffset;
+    valueLoc.offset = logOffset + poolOffset;
     valueLoc.segmentId = oldValueLoc.segmentId;
     valueLoc.length = valueSize + (groupId != LSM_GROUP? sizeof(len_t) : 0);
 
@@ -1132,6 +1132,12 @@ void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* lo
 
 std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment &segment, bool isGC) {
     assert(_isSlave || ConfigManager::getInstance().enabledVLogMode());
+
+    if (ConfigManager::getInstance().useDirectIO()) {
+        Segment::padPage(segment);
+    }
+
+    debug_info("Segment writeFront %lu flushFront %lu\n", Segment::getWriteFront(segment), Segment::getFlushFront(segment));
 
     segment_len_t flushFront = Segment::getFlushFront(segment);
     len_t writeLength = Segment::getWriteFront(segment) - flushFront;
