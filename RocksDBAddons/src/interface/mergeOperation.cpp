@@ -24,12 +24,10 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
 {
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
     for (auto q : operandList) {
-        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand = " << q << RESET << endl;
         string indexStr = q.substr(0, q.find(","));
         int index = stoi(indexStr);
-        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand current index = " << index << RESET << endl;
         string updateContentStr = q.substr(q.find(",") + 1, q.size());
-        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand current update target content = " << updateContentStr << RESET << endl;
+        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): merge operand = " << q << ", current index = " << index << ", content = " << updateContentStr << RESET << endl;
         rawValueFieldsVec[index - 1].assign(updateContentStr);
     }
 

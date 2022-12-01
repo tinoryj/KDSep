@@ -39,17 +39,17 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
-    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start get fileHandler from file manager" << RESET << endl;
+    // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start get fileHandler from file manager" << RESET << endl;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
         return false;
     } else {
-        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager success, handler address = " << tempFileHandler << " file id = " << tempFileHandler->target_file_id_ << RESET << endl;
+        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager success, handler address = " << tempFileHandler << " file id = " << tempFileHandler->target_file_id_ << RESET << endl;
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
             return false;
         } else {
-            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
+            // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
             return true;
         }
     }

@@ -112,6 +112,10 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
 
 bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
+    if (shouldDoRecoveryFlag_ == false) {
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): DB closed success, do not need recovery" << RESET << endl;
+        return true;
+    }
     unordered_map<uint64_t, filesystem::directory_entry> scannedOnDiskFileList;
     // scan file list
     for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
@@ -496,6 +500,13 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
     if (hashStoreFileManifestPointerStream.is_open()) {
         getline(hashStoreFileManifestPointerStream, currentPointerStr);
         uint64_t currentPointerInt = stoull(currentPointerStr);
+        string closeFlagStr;
+        getline(hashStoreFileManifestPointerStream, closeFlagStr);
+        if (closeFlagStr.size() == 0) {
+            shouldDoRecoveryFlag_ = true;
+        } else {
+            shouldDoRecoveryFlag_ = false;
+        }
         hashStoreFileManifestPointerStream.close();
     } else {
         if (CreateHashStoreFileMetaDataListIfNotExist()) {
@@ -655,7 +666,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             it.second->fileOperationMutex_.lock();
             it.second->file_operation_func_ptr_->flush();
             it.second->file_operation_func_ptr_->close();
-            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
+            // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
             it.second->fileOperationMutex_.unlock();
             delete it.second;
         }
@@ -666,7 +677,9 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         hashStoreFileManifestPointerUpdateStream.open(
             workingDir_ + "/hashStoreFileManifest.pointer", ios::out);
         if (hashStoreFileManifestPointerUpdateStream.is_open()) {
-            hashStoreFileManifestPointerUpdateStream << currentPointerInt;
+            hashStoreFileManifestPointerUpdateStream << currentPointerInt << endl;
+            bool closedSuccessFlag = true;
+            hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
             hashStoreFileManifestPointerUpdateStream.flush();
             hashStoreFileManifestPointerUpdateStream.close();
             string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
@@ -894,7 +907,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
         processedTotalObjectNumber++;
         hashStoreRecordHeader currentObjectRecordHeader;
         memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
-        cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record header done, record is anchor flag = " << currentObjectRecordHeader.is_anchor_ << ", key size = " << currentObjectRecordHeader.key_size_ << ", value size = " << currentObjectRecordHeader.value_size_ << RESET << endl;
+        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record header done, record is anchor flag = " << currentObjectRecordHeader.is_anchor_ << ", key size = " << currentObjectRecordHeader.key_size_ << ", value size = " << currentObjectRecordHeader.value_size_ << RESET << endl;
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
         if (currentObjectRecordHeader.is_anchor_ == true) {

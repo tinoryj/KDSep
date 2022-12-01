@@ -132,11 +132,10 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
         } else {
             string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find content, current key = " << currentKeyStr << RESET << endl;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 resultMap.at(currentKeyStr).push_back(currentValueStr);
-                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): current value = " << currentValueStr << RESET << endl;
+                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find content, current key = " << currentKeyStr << ", current value = " << currentValueStr << RESET << endl;
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             } else {
@@ -144,7 +143,7 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
                 resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
-                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): current value = " << currentValueStr << RESET << endl;
+                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find content, current key = " << currentKeyStr << ", current value = " << currentValueStr << RESET << endl;
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             }

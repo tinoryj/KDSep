@@ -65,6 +65,7 @@ private:
     // recovery
     uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     bool stopMessageQueueFlag_ = false;
+    bool shouldDoRecoveryFlag_ = false;
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
 };

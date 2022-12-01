@@ -27,11 +27,9 @@ else
     echo -e "\n"
     ulimit -n 65536
     echo "Local Test with simple operations (Round 1) ===>"
-    bin/test
+    bin/test 1000
     echo "Local Test with simple operations (Round 1) <==="
     echo "Local Test with simple operations (Round 2) ===>"
-    bin/test
+    bin/test 1
     echo "Local Test with simple operations (Round 2) <==="
-    # Clean up TempDB
-    # rm -rf TempDB
 fi

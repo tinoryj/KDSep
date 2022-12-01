@@ -293,7 +293,7 @@ int main(int argc, char* argv[])
         bool statusGet1 = testGet(db_, key1, tempReadStr1);
         testResultBoolVec.push_back(statusGet1);
         if (tempReadStr1.compare(value1) != 0) {
-            cerr << "Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+            cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
             break;
         }
         bool statusMerge1 = testMerge(db_, key1, merge1);
@@ -305,7 +305,7 @@ int main(int argc, char* argv[])
         bool statusGet2 = testGet(db_, key1, tempReadStr2);
         testResultBoolVec.push_back(statusGet2);
         if (tempReadStr2.compare(value1Merged) != 0) {
-            cerr << "Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
+            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
             break;
         }
         bool statusPut2 = testPut(db_, key1, value2);
@@ -315,7 +315,8 @@ int main(int argc, char* argv[])
         bool statusGet3 = testGet(db_, key1, tempReadStr3);
         testResultBoolVec.push_back(statusGet3);
         if (tempReadStr3.compare(value2) != 0) {
-            cerr << "Error read overwrited value, overwrited value = " << value2 << ", read value = " << tempReadStr3 << endl;
+            cerr << BOLDRED << "[ERROR]: Error read overwrited value, overwrited value = "
+                 << value2 << ", read value = " << tempReadStr3 << endl;
             break;
         }
         bool finalStatus = true;
@@ -324,7 +325,7 @@ int main(int argc, char* argv[])
             finalStatus = finalStatus && testResultBoolVec[i];
         }
         if (finalStatus != true) {
-            cerr << "Error in test round " << i << endl;
+            cerr << BOLDRED << "[ERROR]: Error in test round " << i << endl;
             break;
         }
     }
