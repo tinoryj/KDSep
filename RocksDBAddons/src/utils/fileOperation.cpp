@@ -205,12 +205,12 @@ uint64_t FileOperation::getFileSize()
     if (operationType_ == kFstream) {
         fileStream_.seekg(0, ios::end);
         uint64_t fileSize = fileStream_.tellg();
+        fileStream_.seekg(0, ios::beg);
         return fileSize;
     } else if (operationType_ == kDirectIO) {
-        uint64_t fileRealSizeWithoutPadding;
+        uint64_t fileRealSizeWithoutPadding = 0;
 
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
-        uint64_t readDoneContentSize = 0;
         // align mem
         char* readBuffer;
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
@@ -225,7 +225,6 @@ uint64_t FileOperation::getFileSize()
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): [Get file size] Read return value = " << rReturn << ", err = " << strerror(errno) << ", targetRequestPageNumber = " << targetRequestPageNumber << ", readBuffer size = " << readBufferSize << ", directIOWriteFileSize_ = " << directIOWriteFileSize_ << RESET << endl;
             return false;
         }
-        uint64_t fileRealSizeWithoutPadding = 0;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;
             memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
