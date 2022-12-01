@@ -68,18 +68,25 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
 
 bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<bool> isAnchorVec)
 {
-    vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
+    unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> tempFileHandlerMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr;
         if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kPut, currentFileHandlerPtr) != true) {
             return false;
         } else {
-            tempFileHandlerVec.push_back(currentFileHandlerPtr);
+            if (tempFileHandlerMap.find(currentFileHandlerPtr) != tempFileHandlerMap.end()) {
+                std::get<0>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(keyStrVec[i]);
+                std::get<1>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(valueStrPtrVec[i]);
+                std::get<2>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(isAnchorVec[i]);
+            } else {
+            }
         }
     }
-    if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerVec, keyStrVec, valueStrPtrVec, isAnchorVec) != true) {
+    if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap) != true) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
         return false;
     } else {
+        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
         return true;
     }
 }

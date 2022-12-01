@@ -110,6 +110,18 @@ bool testMerge(DeltaKV& db_, string key, string& value)
     }
 }
 
+bool testBatchedMerge(DeltaKV& db_, string key, string& value)
+{
+    if (!db_.MergeWithWriteBatch(key, value)) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
+        return false;
+    } else {
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
+             << ", value = " << value << " success" << RESET << endl;
+        return true;
+    }
+}
+
 bool LRUCacheTest()
 {
     AppendAbleLRUCache<string, vector<string>*>* keyToValueListCache_ = nullptr;
@@ -322,6 +334,11 @@ int main(int argc, char* argv[])
         testResultBoolVec.push_back(statusMerge1);
         bool statusMerge2 = testMerge(db_, key1, merge2);
         testResultBoolVec.push_back(statusMerge2);
+
+        for (int i = 0; i < 4; i++) {
+            testBatchedMerge(db_, key1, merge1);
+        }
+
         // get merged value
         string tempReadStr2;
         bool statusGet2 = testGet(db_, key1, tempReadStr2);
@@ -341,6 +358,7 @@ int main(int argc, char* argv[])
                  << value2 << ", read value = " << tempReadStr3 << endl;
             break;
         }
+
         bool finalStatus = true;
 
         for (int i = 0; i < testResultBoolVec.size(); i++) {

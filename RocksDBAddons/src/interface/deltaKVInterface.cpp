@@ -66,6 +66,10 @@ DeltaKV::DeltaKV(DeltaKVOptions& options, const string& name)
         cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Open underlying rocksdb success" << RESET << endl;
     }
     // Create objects
+    writeBatchDeque[0] = new deque<tuple<DBOperationType, string, string>>;
+    writeBatchDeque[1] = new deque<tuple<DBOperationType, string, string>>;
+    notifyWriteBatchMQ_ = new messageQueue<deque<tuple<DBOperationType, string, string>>*>;
+    boost::asio::post(*threadpool_, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_);
         cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add deltaStore success" << RESET << endl;
@@ -94,13 +98,15 @@ DeltaKV::DeltaKV(DeltaKVOptions& options, const string& name)
 
 DeltaKV::~DeltaKV()
 {
+    notifyWriteBatchMQ_->done_ = true;
+    bool stopThreadsStatus = false;
     if (pointerToRawRocksDB_ != nullptr) {
         delete pointerToRawRocksDB_;
     }
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
         HashStoreInterfaceObjPtr_->setJobDone();
-        deleteThreadPool();
+        stopThreadsStatus = deleteThreadPool();
         delete HashStoreInterfaceObjPtr_;
         // delete related object pointers
         delete hashStoreFileManagerPtr_;
@@ -110,7 +116,12 @@ DeltaKV::~DeltaKV()
         delete IndexStoreInterfaceObjPtr_;
         // delete related object pointers
     }
-
+    if (stopThreadsStatus == false) {
+        deleteThreadPool();
+    }
+    delete notifyWriteBatchMQ_;
+    delete writeBatchDeque[0];
+    delete writeBatchDeque[1];
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete thread pool and underlying rocksdb success" << RESET << endl;
 }
 
@@ -133,6 +144,10 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Open underlying rocksdb success" << RESET << endl;
     }
     // Create objects
+    writeBatchDeque[0] = new deque<tuple<DBOperationType, string, string>>;
+    writeBatchDeque[1] = new deque<tuple<DBOperationType, string, string>>;
+    notifyWriteBatchMQ_ = new messageQueue<deque<tuple<DBOperationType, string, string>>*>;
+    boost::asio::post(*threadpool_, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_);
         cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): add deltaStore success" << RESET << endl;
@@ -589,6 +604,106 @@ bool DeltaKV::SingleDelete(const string& key)
         return false;
     } else {
         return true;
+    }
+}
+
+bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
+{
+    if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber) {
+        // flush old one
+        notifyWriteBatchMQ_->push(writeBatchDeque[currentWriteBatchDequeInUse]);
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): put batched contents into job worker" << RESET << endl;
+        // insert to another deque
+        if (currentWriteBatchDequeInUse == 1) {
+            currentWriteBatchDequeInUse = 0;
+        } else {
+            currentWriteBatchDequeInUse = 1;
+        }
+        writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kPutOp, key, value));
+        return true;
+    } else {
+        // only insert
+        writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kPutOp, key, value));
+        return true;
+    }
+}
+
+bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
+{
+    if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber) {
+        // flush old one
+        notifyWriteBatchMQ_->push(writeBatchDeque[currentWriteBatchDequeInUse]);
+        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): put batched contents into job worker" << RESET << endl;
+        // insert to another deque
+        if (currentWriteBatchDequeInUse == 1) {
+            currentWriteBatchDequeInUse = 0;
+        } else {
+            currentWriteBatchDequeInUse = 1;
+        }
+        writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kMergeOp, key, value));
+        return true;
+    } else {
+        // only insert
+        writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kMergeOp, key, value));
+        return true;
+    }
+}
+
+void DeltaKV::processBatchedOperationsWorker()
+{
+    cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start batched contents process worker" << RESET << endl;
+    if (notifyWriteBatchMQ_ == nullptr) {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): message queue not initial" << RESET << endl;
+        return;
+    }
+    while (true) {
+        if (notifyWriteBatchMQ_->done_ == true) {
+            break;
+        }
+        deque<tuple<DBOperationType, string, string>>* currentHandler;
+        if (notifyWriteBatchMQ_->pop(currentHandler)) {
+            cout << BOLDRED << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): process batched contents" << RESET << endl;
+            vector<string> keyToValueStoreVec, valueToValueStoreVec, keyToDeltaStoreVec, valueToDeltaStoreVec;
+            vector<bool> isAnchorFlagToDeltaStoreVec;
+            for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
+                if (std::get<0>(*it) == kPutOp) {
+                    keyToValueStoreVec.push_back(std::get<1>(*it));
+                    valueToValueStoreVec.push_back(std::get<2>(*it));
+                    keyToDeltaStoreVec.push_back(std::get<1>(*it));
+                    valueToDeltaStoreVec.push_back(std::get<2>(*it));
+                    isAnchorFlagToDeltaStoreVec.push_back(true);
+                } else if (std::get<0>(*it) == kMergeOp) {
+                    keyToDeltaStoreVec.push_back(std::get<1>(*it));
+                    valueToDeltaStoreVec.push_back(std::get<2>(*it));
+                    isAnchorFlagToDeltaStoreVec.push_back(false);
+                }
+            }
+            // commit to value store
+            // commit to delta store
+            bool putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, isAnchorFlagToDeltaStoreVec);
+            if (putToDeltaStoreStatus == false) {
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write batched objects to underlying DeltaStore fault" << RESET << endl;
+            } else {
+                for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
+                    if (isAnchorFlagToDeltaStoreVec[index] == true) {
+                        // write value;
+                    } else {
+                        char writeInternalValueBuffer[sizeof(internalValueType)];
+                        internalValueType currentInternalValueType;
+                        currentInternalValueType.mergeFlag_ = false;
+                        currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
+                        currentInternalValueType.valueSeparatedFlag_ = true;
+                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                        string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
+                        rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), keyToDeltaStoreVec[index], newWriteValue);
+                        if (!s.ok()) {
+                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
+                        }
+                    }
+                }
+            }
+            currentHandler->clear();
+        }
     }
 }
 

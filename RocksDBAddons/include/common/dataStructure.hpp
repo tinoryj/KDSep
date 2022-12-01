@@ -18,11 +18,15 @@ typedef struct externalIndexInfo {
     uint32_t externalContentSize_;
 } externalIndexInfo;
 
+enum DBOperationType { kPutOp = 0,
+    kMergeOp = 1 };
+
 enum hashStoreFileCreateReason { kNewFile = 0,
     kGCFile = 1 };
 
 enum hashStoreFileOperationType { kPut = 0,
-    kGet = 1 };
+    kGet = 1,
+    kMultiPut = 2 };
 
 enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
@@ -47,6 +51,12 @@ typedef struct hashStoreWriteOperationHandler {
     bool is_anchor = false;
 } hashStoreWriteOperationHandler;
 
+typedef struct hashStoreBaatchedWriteOperationHandler {
+    vector<string>* key_str_vec_ptr_;
+    vector<string>* value_str_vec_ptr_;
+    vector<bool>* is_anchor_vec_ptr_;
+} hashStoreBaatchedWriteOperationHandler;
+
 typedef struct hashStoreReadOperationHandler {
     string* key_str_;
     vector<string>* value_str_vec_;
@@ -56,6 +66,7 @@ typedef struct hashStoreOperationHandler {
     hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
+    hashStoreBaatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
     bool jobDone = false;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };

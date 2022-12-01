@@ -189,11 +189,6 @@ bool FileOperation::resetPointer(fileOperationSetPointerOps ops)
         }
         return true;
     } else if (operationType_ == kDirectIO) {
-        if (ops == kBegin) {
-            lseek(fileDirect_, 0, SEEK_SET);
-        } else {
-            lseek(fileDirect_, 0, SEEK_END);
-        }
         return false;
     } else {
         return false;

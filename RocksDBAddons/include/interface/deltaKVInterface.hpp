@@ -8,6 +8,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/loggerColor.hpp"
+#include "utils/messageQueue.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/bind.hpp>
@@ -48,14 +49,25 @@ public:
     bool Close();
 
     bool Put(const string& key, const string& value);
-    bool Get(const string& key, string* value);
     bool Merge(const string& key, const string& value);
+    bool PutWithWriteBatch(const string& key, const string& value);
+    bool MergeWithWriteBatch(const string& key, const string& value);
+    bool Get(const string& key, string* value);
     vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
     vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
     vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
     bool SingleDelete(const string& key);
 
+    void processBatchedOperationsWorker();
+
 private:
+    // batched write
+    deque<tuple<DBOperationType, string, string>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
+    uint64_t currentWriteBatchDequeInUse = 0;
+    uint64_t maxBatchOperationBeforeCommitNumber = 3;
+    messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
+
+    // thread management
     boost::asio::thread_pool* threadpool_;
     bool launchThreadPool(uint64_t totalThreadNumber);
     bool deleteThreadPool();

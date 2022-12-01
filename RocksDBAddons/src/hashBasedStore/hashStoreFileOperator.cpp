@@ -69,6 +69,45 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(vector<hashStor
     return true;
 }
 
+bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> tempFileHandlerMap)
+{
+    vector<hashStoreOperationHandler*> currentOperationHandlerVec;
+    for (auto fileHandlerIt : tempFileHandlerMap) {
+        hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(fileHandlerIt.first);
+        currentOperationHandler->jobDone = false;
+        currentOperationHandler->batched_write_operation_.key_str_vec_ptr_ = &std::get<0>(tempFileHandlerMap.at(fileHandlerIt.first));
+        currentOperationHandler->batched_write_operation_.value_str_vec_ptr_ = &std::get<1>(tempFileHandlerMap.at(fileHandlerIt.first));
+        currentOperationHandler->batched_write_operation_.is_anchor_vec_ptr_ = &std::get<2>(tempFileHandlerMap.at(fileHandlerIt.first));
+        currentOperationHandler->opType_ = kMultiPut;
+        operationToWorkerMQ_->push(currentOperationHandler);
+        currentOperationHandlerVec.push_back(currentOperationHandler);
+    }
+    while (currentOperationHandlerVec.size() != 0) {
+        for (vector<hashStoreOperationHandler*>::iterator currentIt = currentOperationHandlerVec.begin(); currentIt != currentOperationHandlerVec.end(); currentIt++) {
+            if ((*currentIt)->jobDone == true) {
+                delete (*currentIt);
+                currentOperationHandlerVec.erase(currentIt);
+            }
+        }
+    }
+    return true;
+}
+
+bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, vector<string> keyVec, vector<string> valueVec, vector<bool> isAnchorStatusVec)
+{
+    hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(fileHandler);
+    currentOperationHandler->jobDone = false;
+    currentOperationHandler->batched_write_operation_.key_str_vec_ptr_ = &keyVec;
+    currentOperationHandler->batched_write_operation_.value_str_vec_ptr_ = &valueVec;
+    currentOperationHandler->batched_write_operation_.is_anchor_vec_ptr_ = &isAnchorStatusVec;
+    currentOperationHandler->opType_ = kMultiPut;
+    operationToWorkerMQ_->push(currentOperationHandler);
+    while (!currentOperationHandler->jobDone) {
+        asm volatile("");
+    }
+    return true;
+}
+
 bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec)
 {
     hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(fileHandler);
@@ -323,6 +362,72 @@ void HashStoreFileOperator::operationWorker()
                 }
                 // mark job done
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                currentHandlerPtr->jobDone = true;
+                // insert into GC job queue if exceed the threshold
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
+                    notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                    cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Current file id = " << currentHandlerPtr->file_handler_->target_file_id_ << " exceed GC threshold = " << perFileGCSizeLimit_ << ", current size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", put into GC job queue" << RESET << endl;
+                }
+                continue;
+            } else if (currentHandlerPtr->opType_ == kMultiPut) {
+                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): receive operations, type = kPut, key = " << (*currentHandlerPtr->write_operation_.key_str_) << ", target file ID = " << currentHandlerPtr->file_handler_->target_file_id_ << RESET << endl;
+                // prepare write buffer;
+                uint64_t targetWriteBufferSize = 0;
+                for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
+                    targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size());
+                    if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i) == true) {
+                        continue;
+                    } else {
+                        targetWriteBufferSize += currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).size();
+                    }
+                }
+                char writeContentBuffer[targetWriteBufferSize];
+                uint64_t currentProcessedBufferIndex = 0;
+                for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
+                    hashStoreRecordHeader newRecordHeader;
+                    newRecordHeader.is_anchor_ = currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i);
+                    newRecordHeader.key_size_ = currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size();
+                    newRecordHeader.value_size_ = currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).size();
+                    memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
+                    currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
+                    memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).c_str(), newRecordHeader.key_size_);
+                    currentProcessedBufferIndex += newRecordHeader.key_size_;
+                    if (newRecordHeader.is_anchor_ == true) {
+                        continue;
+                    } else {
+                        memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).c_str(), newRecordHeader.value_size_);
+                        currentProcessedBufferIndex += newRecordHeader.value_size_;
+                    }
+                }
+                currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
+                currentHandlerPtr->file_handler_->file_ownership_flag_ = 1;
+                // write content
+                currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
+                currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
+                if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
+                    cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
+                    currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
+                }
+                // Update metadata
+                currentHandlerPtr->file_handler_->total_object_bytes_ += targetWriteBufferSize;
+                currentHandlerPtr->file_handler_->total_object_count_ += currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size();
+                cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write operations to file metadata updated" << RESET << endl;
+                currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+
+                // insert to cache if need
+                if (keyToValueListCache_ != nullptr) {
+                    for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
+                        targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size());
+                        if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i) == true) {
+                            keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i)).clear();
+                        } else {
+                            keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i)).push_back(currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i));
+                        }
+                    }
+                }
+                // mark job done
                 currentHandlerPtr->jobDone = true;
                 // insert into GC job queue if exceed the threshold
                 if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
