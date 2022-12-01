@@ -70,7 +70,7 @@ public:
     float valueStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
 
     // common options
-    uint64_t deltaKV_thread_number_limit = 8;
+    uint64_t deltaKV_thread_number_limit = 3;
     uint64_t hashStore_init_prefix_bit_number = 8;
     uint64_t hashStore_max_prefix_bit_number = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;

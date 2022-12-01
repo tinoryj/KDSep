@@ -82,7 +82,6 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         return true;
     } else if (operationType_ == kDirectIO) {
         uint64_t targetRequestPageNumber = ceil((double)contentSize / (double)(directIOPageSize_ - sizeof(uint32_t)));
-        cerr << "targetRequestPageNumber = " << targetRequestPageNumber << endl;
         uint64_t writeDoneContentSize = 0;
         // align mem
         char* writeBuffer;
@@ -200,6 +199,7 @@ bool FileOperation::resetPointer(fileOperationSetPointerOps ops)
         return false;
     }
 }
+
 uint64_t FileOperation::getFileSize()
 {
     if (operationType_ == kFstream) {
@@ -223,6 +223,7 @@ uint64_t FileOperation::getFileSize()
         if (rReturn != readBufferSize) {
             free(readBuffer);
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): [Get file size] Read return value = " << rReturn << ", err = " << strerror(errno) << ", targetRequestPageNumber = " << targetRequestPageNumber << ", readBuffer size = " << readBufferSize << ", directIOWriteFileSize_ = " << directIOWriteFileSize_ << RESET << endl;
+            free(readBuffer);
             return false;
         }
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
@@ -230,6 +231,7 @@ uint64_t FileOperation::getFileSize()
             memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
             fileRealSizeWithoutPadding += currentPageContentSize;
         }
+        free(readBuffer);
         return fileRealSizeWithoutPadding;
     } else {
         return 0;

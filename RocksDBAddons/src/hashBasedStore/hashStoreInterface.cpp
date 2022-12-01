@@ -29,6 +29,17 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
 
 HashStoreInterface::~HashStoreInterface()
 {
+    delete notifyGCMQ_;
+}
+
+bool HashStoreInterface::setJobDone()
+{
+    notifyGCMQ_->done_ = true;
+    if (hashStoreFileOperatorPtr_->setJobDone() == true) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 uint64_t HashStoreInterface::getExtractSizeThreshold()

@@ -27,6 +27,7 @@ public:
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
 
     void operationWorker();
+    bool setJobDone();
 
 private:
     uint64_t perFileFlushBufferSizeLimit_;

@@ -18,9 +18,7 @@ HashStoreFileManager::HashStoreFileManager(uint64_t initialBitNumber, uint64_t m
 
 HashStoreFileManager::~HashStoreFileManager()
 {
-    notifyGCMQ_->done_ = true;
     CloseHashStoreFileMetaDataList();
-    delete notifyGCMQ_;
 }
 
 // Recovery

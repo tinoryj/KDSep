@@ -18,8 +18,13 @@ HashStoreFileOperator::~HashStoreFileOperator()
     if (keyToValueListCache_) {
         delete keyToValueListCache_;
     }
-    operationToWorkerMQ_->done_ = true;
     delete operationToWorkerMQ_;
+}
+
+bool HashStoreFileOperator::setJobDone()
+{
+    operationToWorkerMQ_->done_ = true;
+    return true;
 }
 
 // file operations

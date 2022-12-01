@@ -99,6 +99,8 @@ DeltaKV::~DeltaKV()
     }
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
+        HashStoreInterfaceObjPtr_->setJobDone();
+        deleteThreadPool();
         delete HashStoreInterfaceObjPtr_;
         // delete related object pointers
         delete hashStoreFileManagerPtr_;
@@ -108,7 +110,7 @@ DeltaKV::~DeltaKV()
         delete IndexStoreInterfaceObjPtr_;
         // delete related object pointers
     }
-    deleteThreadPool();
+
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete thread pool and underlying rocksdb success" << RESET << endl;
 }
 
