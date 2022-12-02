@@ -3,7 +3,7 @@
 
 #include <map>
 #include <vector>
-#include "define.hh"
+#include "common/indexStorePreDefines.hpp"
 #include "ds/segment.hh"
 #include "ds/keyvalue.hh"
 #include "configManager.hh"

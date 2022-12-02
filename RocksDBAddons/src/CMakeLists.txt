@@ -43,6 +43,7 @@ add_library(DeltaKV STATIC
       utils/murmurHash.cpp
       utils/lruCache.cpp
       utils/timer.cpp
+      utils/debug.cpp
       utils/fileOperation.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
@@ -60,7 +61,6 @@ add_library(DeltaKV STATIC
       indexBasedStore/rocksdbKeyManager.cc
       indexBasedStore/segmentGroupManager.cc
       indexBasedStore/statsRecorder.cc
-      indexBasedStore/util/debug.cpp
       indexBasedStore/valueManager.cc
       interface/deltaKVOptions.cpp
       interface/deltaKVInterface.cpp

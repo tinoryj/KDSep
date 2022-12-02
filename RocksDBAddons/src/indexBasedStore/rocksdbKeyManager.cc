@@ -1,20 +1,22 @@
 #include "indexBasedStore/rocksdbKeyManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
-#include "indexBasedStore/util/debug.hh"
+#include "utils/debug.hpp"
 
 namespace DELTAKV_NAMESPACE {
 
-RocksDBKeyManager::RocksDBKeyManager(rocksdb::DB* lsm) {
-    _lsm = lsm; 
+RocksDBKeyManager::RocksDBKeyManager(rocksdb::DB* lsm)
+{
+    _lsm = lsm;
 }
 
-RocksDBKeyManager::~RocksDBKeyManager() {
-//    if (_cache.lru != 0)
-//        delete _cache.lru;
-//    delete _lsm;
+RocksDBKeyManager::~RocksDBKeyManager()
+{
+    //    if (_cache.lru != 0)
+    //        delete _cache.lru;
+    //    delete _lsm;
 }
 //
-//bool RocksDBKeyManager::writeKey (char *keyStr, ValueLocation valueLoc, int needCache) {
+// bool RocksDBKeyManager::writeKey (char *keyStr, ValueLocation valueLoc, int needCache) {
 //    bool ret = false;
 //
 //    // update cache
@@ -35,7 +37,7 @@ RocksDBKeyManager::~RocksDBKeyManager() {
 //    return ret;
 //}
 //
-//bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs, int needCache) {
+// bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs, int needCache) {
 //    bool ret = true;
 //    assert(keys.size() == valueLocs.size());
 //    if (keys.empty())
@@ -65,7 +67,7 @@ RocksDBKeyManager::~RocksDBKeyManager() {
 //    return ret;
 //}
 //
-//bool RocksDBKeyManager::writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs, int needCache) {
+// bool RocksDBKeyManager::writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs, int needCache) {
 //    bool ret = true;
 //    assert(keys.size() == valueLocs.size());
 //    if (keys.empty())
@@ -96,7 +98,8 @@ RocksDBKeyManager::~RocksDBKeyManager() {
 //}
 //
 
-bool RocksDBKeyManager::writeMeta (const char *keyStr, int keySize, std::string metadata) {
+bool RocksDBKeyManager::writeMeta(const char* keyStr, int keySize, std::string metadata)
+{
     rocksdb::WriteOptions wopt;
     wopt.sync = ConfigManager::getInstance().syncAfterWrite();
 
@@ -106,7 +109,8 @@ bool RocksDBKeyManager::writeMeta (const char *keyStr, int keySize, std::string 
     return true;
 }
 
-std::string RocksDBKeyManager::getMeta (const char *keyStr, int keySize) {
+std::string RocksDBKeyManager::getMeta(const char* keyStr, int keySize)
+{
     std::string value;
 
     _lsm->Get(rocksdb::ReadOptions(), rocksdb::Slice(keyStr, keySize), &value);
@@ -115,13 +119,15 @@ std::string RocksDBKeyManager::getMeta (const char *keyStr, int keySize) {
     return value;
 }
 
-bool RocksDBKeyManager::persistMeta() {
+bool RocksDBKeyManager::persistMeta()
+{
     // Flush the LSM-tree
     _lsm->FlushWAL(true);
     return true;
 }
 
-bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<ValueLocation> valueLocs) {
+bool RocksDBKeyManager::mergeKeyBatch(std::vector<char*> keys, std::vector<ValueLocation> valueLocs)
+{
     bool ret = true;
     assert(keys.size() == valueLocs.size());
     if (keys.empty())
@@ -142,7 +148,7 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<Val
         kslice = rocksdb::Slice(KEY_OFFSET(keys.at(i)), (int)keySize);
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
-        debug_info("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length); 
+        debug_info("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("%s\n", s.ToString().c_str());
@@ -152,7 +158,8 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<Val
     return ret;
 }
 
-bool RocksDBKeyManager::mergeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) {
+bool RocksDBKeyManager::mergeKeyBatch(std::vector<std::string>& keys, std::vector<ValueLocation> valueLocs)
+{
     bool ret = true;
     assert(keys.size() == valueLocs.size());
     if (keys.empty())
@@ -182,19 +189,20 @@ bool RocksDBKeyManager::mergeKeyBatch (std::vector<std::string> &keys, std::vect
     return ret;
 }
 
-ValueLocation RocksDBKeyManager::getKey (const char *keyStr, bool checkExist) {
+ValueLocation RocksDBKeyManager::getKey(const char* keyStr, bool checkExist)
+{
     std::string value;
     ValueLocation valueLoc;
     valueLoc.segmentId = INVALID_SEGMENT;
     // only use cache for checking before SET
-//    if (checkExist && _cache.lru /* cache enabled */) {
-//        STAT_TIME_PROCESS(valueLoc.segmentId = _cache.lru->get((unsigned char*) keyStr), StatsType::KEY_GET_CACHE);
-//    }
+    //    if (checkExist && _cache.lru /* cache enabled */) {
+    //        STAT_TIME_PROCESS(valueLoc.segmentId = _cache.lru->get((unsigned char*) keyStr), StatsType::KEY_GET_CACHE);
+    //    }
     // if not in cache, search in the LSM-tree
     if (valueLoc.segmentId == INVALID_SEGMENT) {
         key_len_t keySize;
         memcpy(&keySize, keyStr, sizeof(key_len_t));
-        rocksdb::Slice key (KEY_OFFSET(keyStr), (int)keySize);
+        rocksdb::Slice key(KEY_OFFSET(keyStr), (int)keySize);
         rocksdb::Status status;
         STAT_TIME_PROCESS(status = _lsm->Get(rocksdb::ReadOptions(), key, &value), StatsType::KEY_GET_LSM);
         // value location found
@@ -206,24 +214,25 @@ ValueLocation RocksDBKeyManager::getKey (const char *keyStr, bool checkExist) {
     return valueLoc;
 }
 
-void RocksDBKeyManager::getKeys (char *startingKey, uint32_t n, std::vector<char*> &keys, std::vector<ValueLocation> &locs) {
+void RocksDBKeyManager::getKeys(char* startingKey, uint32_t n, std::vector<char*>& keys, std::vector<ValueLocation>& locs)
+{
     // use the iterator to find the range of keys
-    rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
+    rocksdb::Iterator* it = _lsm->NewIterator(rocksdb::ReadOptions());
     ValueLocation loc;
-    char *key;
+    char* key;
     key_len_t keySize;
     int keyRecSize;
 
     memcpy(&keySize, startingKey, sizeof(key_len_t));
     it->Seek(rocksdb::Slice(KEY_OFFSET(startingKey), (int)keySize));
-    
+
     // NOT SURE
     for (uint32_t i = 0; i < n && it->Valid(); i++, it->Next()) {
         key = new char[sizeof(key_len_t) + it->key().ToString().length()];
         keyRecSize = it->key().ToString().length();
         memcpy(key, &keyRecSize, sizeof(key_len_t));
         memcpy(KEY_OFFSET(key), it->key().ToString().c_str(), it->key().ToString().length());
-        //printf("FIND (%u of %u) [%0x][%0x][%0x][%0x]\n", i, n, key[0], key[1], key[2], key[3]);
+        // printf("FIND (%u of %u) [%0x][%0x][%0x][%0x]\n", i, n, key[0], key[1], key[2], key[3]);
         keys.push_back(key);
         loc.deserialize(it->value().ToString());
         locs.push_back(loc);
@@ -232,16 +241,16 @@ void RocksDBKeyManager::getKeys (char *startingKey, uint32_t n, std::vector<char
     delete it;
 }
 
-//RocksDBKeyManager::RocksDBKeyIterator *RocksDBKeyManager::getKeyIterator (char *startingKey) {
-//    rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
-//    it->Seek(rocksdb::Slice(startingKey));
+// RocksDBKeyManager::RocksDBKeyIterator *RocksDBKeyManager::getKeyIterator (char *startingKey) {
+//     rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
+//     it->Seek(rocksdb::Slice(startingKey));
 //
-//    RocksDBKeyManager::RocksDBKeyIterator *kit = new RocksDBKeyManager::RocksDBKeyIterator(it);
-//    return kit;
-//}
+//     RocksDBKeyManager::RocksDBKeyIterator *kit = new RocksDBKeyManager::RocksDBKeyIterator(it);
+//     return kit;
+// }
 
-//bool RocksDBKeyManager::deleteKey (char *keyStr) {
-//    // remove the key from cache
+// bool RocksDBKeyManager::deleteKey (char *keyStr) {
+//     // remove the key from cache
 ////    if (_cache.lru) {
 ////        _cache.lru->removeItem((unsigned char*) keyStr);
 ////    }
@@ -254,30 +263,28 @@ void RocksDBKeyManager::getKeys (char *startingKey, uint32_t n, std::vector<char
 //    return _lsm->Delete(wopt, rocksdb::Slice(keyStr, KEY_SIZE)).ok();
 //}
 
-
-void RocksDBKeyManager::printCacheUsage(FILE *out) {
-    fprintf(out, 
-            "Cache Usage (KeyManager):\n"
-    );
-//    if (_cache.lru) {
-//        fprintf(out, 
-//                " LRU\n"
-//        );
-//        _cache.lru->print(out, true);
-//    }
-    fprintf(out, 
-            " Shadow Hash Table\n"
-    );
+void RocksDBKeyManager::printCacheUsage(FILE* out)
+{
+    fprintf(out,
+        "Cache Usage (KeyManager):\n");
+    //    if (_cache.lru) {
+    //        fprintf(out,
+    //                " LRU\n"
+    //        );
+    //        _cache.lru->print(out, true);
+    //    }
+    fprintf(out,
+        " Shadow Hash Table\n");
 }
 
-void RocksDBKeyManager::printStats(FILE *out) {
+void RocksDBKeyManager::printStats(FILE* out)
+{
     std::string stats;
     _lsm->GetProperty("rocksdb.stats", &stats);
     fprintf(out,
-            "LSM (KeyManager):\n"
-            "%s\n"
-            , stats.c_str()
-    );
+        "LSM (KeyManager):\n"
+        "%s\n",
+        stats.c_str());
 }
 
 }

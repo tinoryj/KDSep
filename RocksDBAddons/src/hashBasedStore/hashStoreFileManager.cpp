@@ -128,9 +128,7 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
 bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
     if (shouldDoRecoveryFlag_ == false) {
-
-        cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): DB closed success, do not need recovery" << RESET << endl;
-
+        debug_trace("DB closed success, do not need recovery, flag = %d\n", shouldDoRecoveryFlag_);
         return true;
     }
     vector<uint64_t> scannedOnDiskFileIDList;
@@ -140,9 +138,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
         if (currentFilePath.find(".delta") != string::npos) {
             currentFilePath = currentFilePath.substr(currentFilePath.find("/") + 1);
             uint64_t currentFileID = stoull(currentFilePath);
-
-            cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find file name = " << currentFilePath << ", file ID in int = " << currentFileID << RESET << endl;
-
+            debug_trace("find file name = %s, file ID = %lu\n", currentFilePath.c_str(), currentFileID);
             scannedOnDiskFileIDList.push_back(currentFileID);
         }
     }
@@ -1068,9 +1064,6 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
 // threads workers
 void HashStoreFileManager::processGCRequestWorker()
 {
-
-    cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start processGCRequestWorker thread success" << RESET << endl;
-
     while (true) {
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;

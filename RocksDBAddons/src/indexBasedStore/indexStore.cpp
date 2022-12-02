@@ -1,17 +1,20 @@
-#include <stdlib.h>
-#include "indexBasedStore/util/debug.hh"
-#include "indexBasedStore/util/timer.hh"
 #include "indexBasedStore/indexStore.hh"
 #include "indexBasedStore/rocksdbKeyManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
+#include "utils/debug.hpp"
+#include "utils/timer.hpp"
+#include <stdlib.h>
 
 namespace DELTAKV_NAMESPACE {
 
-KvServer::KvServer() : KvServer(0, 0) {
+KvServer::KvServer()
+    : KvServer(0, 0)
+{
     debug_error("No device and no LSM-tree%s\n", "");
 }
 
-KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksDBForGC) {
+KvServer::KvServer(DeviceManager* deviceManager, rocksdb::DB* pointerToRawRocksDBForGC)
+{
     // devices
     if (deviceManager) {
         _deviceManager = deviceManager;
@@ -29,7 +32,7 @@ KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksD
     _valueManager = new ValueManager(_deviceManager, _segmentGroupManager, _keyManager, _logManager);
     // gc
     _gcManager = new GCManager(_keyManager, _valueManager, _deviceManager, _segmentGroupManager);
-    
+
     _valueManager->setGCManager(_gcManager);
 
     _cache.lru = nullptr;
@@ -37,34 +40,37 @@ KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksD
         _cache.lru = new LruList(ConfigManager::getInstance().valueCacheSize());
     }
 
-    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
+    // _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
-KvServer::~KvServer() {
+KvServer::~KvServer()
+{
     delete _valueManager;
     delete _keyManager;
     delete _gcManager;
     delete _segmentGroupManager;
     delete _logManager;
-    if (_cache.lru) 
+    if (_cache.lru)
         delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
 }
 
-bool KvServer::checkKeySize(len_t &keySize) {
+bool KvServer::checkKeySize(len_t& keySize)
+{
     if (keySize == 0)
         debug_error("Zero key size is not supported, key size must be larger than %d.\n", 0);
     return (keySize != 0);
 }
 
-bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t valueSize, externalIndexInfo& indexInfo) {
+bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& indexInfo)
+{
     static int putCount = 0;
     putCount++;
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
-    char* ckey = new char[KEY_REC_SIZE+1];
-    char* cvalue = new char[valueSize+1];
+    char* ckey = new char[KEY_REC_SIZE + 1];
+    char* cvalue = new char[valueSize + 1];
 
     memcpy(ckey, &keySize, sizeof(key_len_t));
     memcpy(ckey + sizeof(key_len_t), key, keySize);
@@ -113,7 +119,7 @@ retry_update:
     // update the value of the key, get the new location of value
     STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
 
-    debug_info("Update key [%x-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[sizeof(key_len_t)+1], ckey[sizeof(key_len_t)+keySize-1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
+    debug_info("Update key [%x-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
         // best effort retry
@@ -122,11 +128,11 @@ retry_update:
             goto retry_update;
         }
         // report set failure
-        debug_error("Failed to write value for key %x%x!\n", ckey[0], ckey[sizeof(key_len_t)+keySize-1]);
+        debug_error("Failed to write value for key %x%x!\n", ckey[0], ckey[sizeof(key_len_t) + keySize - 1]);
         assert(0);
         return ret;
     } else {
-        ret = (curValueLoc.length == valueSize + (curValueLoc.segmentId == LSM_SEGMENT? 0 : sizeof(len_t)));
+        ret = (curValueLoc.length == valueSize + (curValueLoc.segmentId == LSM_SEGMENT ? 0 : sizeof(len_t)));
     }
     indexInfo.externalFileID_ = 0;
     indexInfo.externalFileOffset_ = curValueLoc.offset;
@@ -135,30 +141,31 @@ retry_update:
     delete[] ckey;
     delete[] cvalue;
 
-//    if (putCount > 1000) {
-//        gc(false);
-//        putCount = 0;
-//    }
+    //    if (putCount > 1000) {
+    //        gc(false);
+    //        putCount = 0;
+    //    }
 
     return ret;
 }
 
-//void KvServer::getValueMt(char *key, len_t keySize, char *&value, len_t &valueSize, ValueLocation valueLoc, uint8_t &ret, std::atomic<size_t> &keysInProcess) {
+// void KvServer::getValueMt(char *key, len_t keySize, char *&value, len_t &valueSize, ValueLocation valueLoc, uint8_t &ret, std::atomic<size_t> &keysInProcess) {
 //
-//    // get value using the location
-//    ret = (_valueManager->getValueFromBuffer(key, value, valueSize));
+//     // get value using the location
+//     ret = (_valueManager->getValueFromBuffer(key, value, valueSize));
 //
-//    // search on disk
-//    if (!ret && !ConfigManager::getInstance().disableKvSeparation() && valueLoc.segmentId != INVALID_SEGMENT) {
-//        ret = _valueManager->getValueFromDisk(key, valueLoc, value, valueSize);
-//    }
+//     // search on disk
+//     if (!ret && !ConfigManager::getInstance().disableKvSeparation() && valueLoc.segmentId != INVALID_SEGMENT) {
+//         ret = _valueManager->getValueFromDisk(key, valueLoc, value, valueSize);
+//     }
 //
-//    keysInProcess--;
-//}
+//     keysInProcess--;
+// }
 
-bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfoVec, bool timed) {
+bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed)
+{
     bool ret = false;
-    char* ckey = new char[KEY_REC_SIZE+1];
+    char* ckey = new char[KEY_REC_SIZE + 1];
 
     memcpy(ckey, &keySize, sizeof(key_len_t));
     memcpy(KEY_OFFSET(ckey), key, keySize);
@@ -179,21 +186,21 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     }
 
     // get the value's location
-//    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
+    //    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
 
     // found for selective key-value separation or disabled key-value separation
-//    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
-//    if ((readValueLoc.segmentId == LSM_SEGMENT || disableKvSep /* no segment id */) && readValueLoc.length != INVALID_LEN) {
-//        // key-value pairs found entirely in LSM
-//        value = new char [readValueLoc.length];
-//        valueSize = readValueLoc.length;
-//        readValueLoc.value.copy(value, valueSize);
-//        if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
-//        return true;
-//    }
-//
-//    // not found
-//    if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
+    //    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
+    //    if ((readValueLoc.segmentId == LSM_SEGMENT || disableKvSep /* no segment id */) && readValueLoc.length != INVALID_LEN) {
+    //        // key-value pairs found entirely in LSM
+    //        value = new char [readValueLoc.length];
+    //        valueSize = readValueLoc.length;
+    //        readValueLoc.value.copy(value, valueSize);
+    //        if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+    //        return true;
+    //    }
+    //
+    //    // not found
+    //    if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
 
     // get value using the LRU cache
     std::string valueStr;
@@ -201,11 +208,11 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
         valueStr = _cache.lru->get((unsigned char*)ckey);
         if (valueStr.size() > 0) {
             valueSize = valueStr.size();
-            value = (char*) buf_malloc(valueSize);
-            memcpy(value, valueStr.c_str(), valueSize); 
+            value = (char*)buf_malloc(valueSize);
+            memcpy(value, valueStr.c_str(), valueSize);
             return ret;
         }
-    } 
+    }
 
     ValueLocation readValueLoc;
     readValueLoc.segmentId = 0;
@@ -213,144 +220,155 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
     readValueLoc.length = storageInfoVec.externalContentSize_;
 
     ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);
-    if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+    if (timed)
+        StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 
     delete[] ckey;
 
     return ret;
 }
 
-//void KvServer::getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize) {
-//    struct timeval startTime;
-//    gettimeofday(&startTime, 0);
+// void KvServer::getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize) {
+//     struct timeval startTime;
+//     gettimeofday(&startTime, 0);
 //
-//    std::vector<uint8_t> rets;
-//    std::vector<ValueLocation> locs;
-//    keys.clear();
-//    values.resize(numKeys);
-//    valueSize.resize(numKeys);
-//    rets.resize(numKeys);
-//    locs.resize(numKeys);
+//     std::vector<uint8_t> rets;
+//     std::vector<ValueLocation> locs;
+//     keys.clear();
+//     values.resize(numKeys);
+//     valueSize.resize(numKeys);
+//     rets.resize(numKeys);
+//     locs.resize(numKeys);
 //
-//    // Todo: range scan on LSM-tree to get the keys
-//    //_keyManager->getKeys(startingKey, numKeys, keys, locs);
+//     // Todo: range scan on LSM-tree to get the keys
+//     //_keyManager->getKeys(startingKey, numKeys, keys, locs);
 //
-//    // keep track of the number of keys to process
-//    std::atomic<size_t> keysInProcess;
-//    keysInProcess = 0;
+//     // keep track of the number of keys to process
+//     std::atomic<size_t> keysInProcess;
+//     keysInProcess = 0;
 //
-//    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
-//    KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
-//    char *key = 0;
+//     bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
+//     KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
+//     char *key = 0;
 //
-//    for (uint32_t i = 0; i < numKeys && kit->isValid(); i++, kit->next()) {
-//        // get the key
-//        key = new char [KEY_SIZE];
-//        memcpy(key, kit->key().c_str(), KEY_SIZE);
-//        keys.push_back(key);
+//     for (uint32_t i = 0; i < numKeys && kit->isValid(); i++, kit->next()) {
+//         // get the key
+//         key = new char [KEY_SIZE];
+//         memcpy(key, kit->key().c_str(), KEY_SIZE);
+//         keys.push_back(key);
 //
-//        // lookup the location
-//        locs.at(i).deserialize(kit->value()); 
-//        if ((locs.at(i).segmentId == LSM_SEGMENT || disableKvSep /* no segment id */) && locs.at(i).length != INVALID_LEN) {
-//            // key-value pairs found entirely in LSM
-//            valueSize.at(i) = locs.at(i).length;
-//            values.at(i) = new char [valueSize.at(i)];
-//            locs.at(i).value.copy(values.at(i), valueSize.at(i));
-//        }
+//         // lookup the location
+//         locs.at(i).deserialize(kit->value());
+//         if ((locs.at(i).segmentId == LSM_SEGMENT || disableKvSep /* no segment id */) && locs.at(i).length != INVALID_LEN) {
+//             // key-value pairs found entirely in LSM
+//             valueSize.at(i) = locs.at(i).length;
+//             values.at(i) = new char [valueSize.at(i)];
+//             locs.at(i).value.copy(values.at(i), valueSize.at(i));
+//         }
 //
-//        keysInProcess += 1;
+//         keysInProcess += 1;
 //
-//        if (ConfigManager::getInstance().enabledScanReadAhead() && locs.at(i).segmentId != LSM_SEGMENT && locs.at(i).segmentId != INVALID_SEGMENT) {
-//            _deviceManager->readAhead(locs.at(i).segmentId, locs.at(i).offset, locs.at(i).length + KEY_SIZE + sizeof(len_t));;
-//        }
+//         if (ConfigManager::getInstance().enabledScanReadAhead() && locs.at(i).segmentId != LSM_SEGMENT && locs.at(i).segmentId != INVALID_SEGMENT) {
+//             _deviceManager->readAhead(locs.at(i).segmentId, locs.at(i).offset, locs.at(i).length + KEY_SIZE + sizeof(len_t));;
+//         }
 //
-//        // search into buffer and disk in parallel 
-//        _scanthreads.schedule(
-//                std::bind(
-//                    &KvServer::getValueMt,
-//                    this,
-//                    keys.at(i),
-//                    KEY_SIZE,
-//                    boost::ref(values.at(i)),
-//                    boost::ref(valueSize.at(i)),
-//                    locs.at(i),
-//                    boost::ref(rets.at(i)),
-//                    boost::ref(keysInProcess)
-//                )
-//        );
-//    }
+//         // search into buffer and disk in parallel
+//         _scanthreads.schedule(
+//                 std::bind(
+//                     &KvServer::getValueMt,
+//                     this,
+//                     keys.at(i),
+//                     KEY_SIZE,
+//                     boost::ref(values.at(i)),
+//                     boost::ref(valueSize.at(i)),
+//                     locs.at(i),
+//                     boost::ref(rets.at(i)),
+//                     boost::ref(keysInProcess)
+//                 )
+//         );
+//     }
 //
-//    kit->release();
-//    delete kit;
+//     kit->release();
+//     delete kit;
 //
-//    while (keysInProcess > 0);
+//     while (keysInProcess > 0);
 //
-//    StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
-//}
+//     StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+// }
 
-//bool KvServer::delValue(char *key, len_t keySize) {
-//    int retry = 0;
-//    ValueLocation valueLoc, retValueLoc;
-//    if (checkKeySize(keySize) == false)
-//        return false;
-//    // get the value's location
-//    valueLoc = _keyManager->getKey(key);
-//    if (valueLoc.segmentId == INVALID_SEGMENT) {
-//        debug_warn("Value for key %x%x not found.\n", key[0], key[KEY_SIZE-1]);
-//        return false;
-//    }
-//    while (retValueLoc.segmentId == INVALID_SEGMENT) {
-//        // best effort retry
-//        if (retry++ > ConfigManager::getInstance().getRetryMax())
-//            break;
-//        retValueLoc = _valueManager->putValue(key, keySize, 0, INVALID_LEN, valueLoc, 1);
-//    }
-//    // always delete the key first ..
-//    _keyManager->deleteKey(key);
-//    return (retValueLoc.segmentId != INVALID_SEGMENT);
-//}
+// bool KvServer::delValue(char *key, len_t keySize) {
+//     int retry = 0;
+//     ValueLocation valueLoc, retValueLoc;
+//     if (checkKeySize(keySize) == false)
+//         return false;
+//     // get the value's location
+//     valueLoc = _keyManager->getKey(key);
+//     if (valueLoc.segmentId == INVALID_SEGMENT) {
+//         debug_warn("Value for key %x%x not found.\n", key[0], key[KEY_SIZE-1]);
+//         return false;
+//     }
+//     while (retValueLoc.segmentId == INVALID_SEGMENT) {
+//         // best effort retry
+//         if (retry++ > ConfigManager::getInstance().getRetryMax())
+//             break;
+//         retValueLoc = _valueManager->putValue(key, keySize, 0, INVALID_LEN, valueLoc, 1);
+//     }
+//     // always delete the key first ..
+//     _keyManager->deleteKey(key);
+//     return (retValueLoc.segmentId != INVALID_SEGMENT);
+// }
 
-bool KvServer::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+bool KvServer::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues)
+{
     _valueManager->restoreVLog(keyValues);
     return true;
 }
 
-bool KvServer::flushBuffer() {
+bool KvServer::flushBuffer()
+{
     return _valueManager->forceSync();
 }
 
-size_t KvServer::gc(bool all) {
+size_t KvServer::gc(bool all)
+{
     if (ConfigManager::getInstance().enabledVLogMode()) {
         return _gcManager->gcVLog();
     }
-    return (all? _gcManager->gcAll() : _gcManager->gcGreedy());
+    return (all ? _gcManager->gcAll() : _gcManager->gcGreedy());
 }
 
-void KvServer::printStorageUsage(FILE *out) {
+void KvServer::printStorageUsage(FILE* out)
+{
     _segmentGroupManager->printUsage(out);
 }
 
-void KvServer::printGroups(FILE *out) {
+void KvServer::printGroups(FILE* out)
+{
     _segmentGroupManager->printGroups(out);
 }
 
-void KvServer::printBufferUsage(FILE *out) {
-//    _valueManager->printUsage(out);
+void KvServer::printBufferUsage(FILE* out)
+{
+    //    _valueManager->printUsage(out);
 }
 
-void KvServer::printKeyCacheUsage(FILE *out) {
+void KvServer::printKeyCacheUsage(FILE* out)
+{
     _keyManager->printCacheUsage(out);
 }
 
-void KvServer::printKeyStats(FILE *out) {
+void KvServer::printKeyStats(FILE* out)
+{
     _keyManager->printStats(out);
 }
 
-void KvServer::printValueSlaveStats(FILE *out) {
+void KvServer::printValueSlaveStats(FILE* out)
+{
     _valueManager->printSlaveStats(out);
 }
 
-void KvServer::printGCStats(FILE *out) {
+void KvServer::printGCStats(FILE* out)
+{
     _gcManager->printStats(out);
 }
 

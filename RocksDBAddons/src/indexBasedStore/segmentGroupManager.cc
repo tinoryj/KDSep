@@ -1,8 +1,8 @@
-#include <float.h>
 #include "indexBasedStore/segmentGroupManager.hh"
 #include "indexBasedStore/configManager.hh"
-#include "indexBasedStore/util/debug.hh"
 #include "indexBasedStore/statsRecorder.hh"
+#include "utils/debug.hpp"
+#include <float.h>
 
 namespace DELTAKV_NAMESPACE {
 
@@ -14,14 +14,16 @@ const char* SegmentGroupManager::ListSeparator = ";";
 const char* SegmentGroupManager::LogValidByteString = "LOG_VAL1D_BYT3";
 const char* SegmentGroupManager::LogWrittenByteString = "LOG_WRITE_BYT3";
 
-#define NEXT_SUB_STR() do { \
-        spos = metadata.find_first_of(ListSeparator, spos); \
-        epos = metadata.find_first_of(ListSeparator, spos+1); \
-        if (epos == std::string::npos) \
-            epos = metadata.length() + 1; \
+#define NEXT_SUB_STR()                                          \
+    do {                                                        \
+        spos = metadata.find_first_of(ListSeparator, spos);     \
+        epos = metadata.find_first_of(ListSeparator, spos + 1); \
+        if (epos == std::string::npos)                          \
+            epos = metadata.length() + 1;                       \
     } while (0)
 
-SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager *keyManager) { 
+SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager* keyManager)
+{
     _MaxSegment = ConfigManager::getInstance().getNumSegment();
     _freeLogSegment = ConfigManager::getInstance().getNumLogSegment();
     _freeMainSegment = ConfigManager::getInstance().getNumMainSegment();
@@ -34,36 +36,40 @@ SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager *keyManager) {
     _writeFront.segment = 0;
 
     std::string value = _keyManager->getMeta(LogTailString, strlen(LogTailString));
-    _vlog.writeFront = value.empty()? 0 : stoul(value);
+    _vlog.writeFront = value.empty() ? 0 : stoul(value);
 
     if (_keyManager)
         value = _keyManager->getMeta(LogHeadString, strlen(LogHeadString));
-    _vlog.gcFront = value.empty()? 0 : stoul(value);
+    _vlog.gcFront = value.empty() ? 0 : stoul(value);
 
-    _maxSpaceToRelease = new MaxHeap<len_t>(_MaxSegment+1);
-    _minWriteBackRatio = new MinHeap<double>(_MaxSegment+1);
+    _maxSpaceToRelease = new MaxHeap<len_t>(_MaxSegment + 1);
+    _minWriteBackRatio = new MinHeap<double>(_MaxSegment + 1);
 
-//    restoreMetaFromDB();
+    //    restoreMetaFromDB();
 }
 
-SegmentGroupManager::~SegmentGroupManager() {
+SegmentGroupManager::~SegmentGroupManager()
+{
     delete _bitmap.group;
     delete _bitmap.segment;
     delete _maxSpaceToRelease;
     delete _minWriteBackRatio;
 }
 
-bool SegmentGroupManager::getNewMainSegment(group_id_t &groupId, segment_id_t &segmentId, bool needsLock) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+bool SegmentGroupManager::getNewMainSegment(group_id_t& groupId, segment_id_t& segmentId, bool needsLock)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
     return getNewSegment(groupId, segmentId, false, needsLock);
 }
 
-bool SegmentGroupManager::getNewLogSegment(group_id_t &groupId, segment_id_t &segmentId, bool needsLock) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+bool SegmentGroupManager::getNewLogSegment(group_id_t& groupId, segment_id_t& segmentId, bool needsLock)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
     return getNewSegment(groupId, segmentId, true, needsLock);
 }
 
-bool SegmentGroupManager::getNewSegment(group_id_t &groupId, segment_id_t &segmentId, bool isLog, bool needsLock) {
+bool SegmentGroupManager::getNewSegment(group_id_t& groupId, segment_id_t& segmentId, bool isLog, bool needsLock)
+{
     segment_len_t numMainSegment = ConfigManager::getInstance().getNumMainSegment();
     bool fixedSegmentId = segmentId != INVALID_SEGMENT;
     if (fixedSegmentId && _metaMap.segment.count(segmentId) > 0) {
@@ -75,13 +81,13 @@ bool SegmentGroupManager::getNewSegment(group_id_t &groupId, segment_id_t &segme
     } else {
         int retry = 0;
         do {
-            retry ++;
+            retry++;
             if (!fixedSegmentId) {
-                segmentId = _bitmap.segment->getFirstZeroAndFlip((isLog? numMainSegment : 0));
+                segmentId = _bitmap.segment->getFirstZeroAndFlip((isLog ? numMainSegment : 0));
             } else {
                 _bitmap.segment->setBit(segmentId);
             }
-            //printf("Found free segment %lu for group %lu isLog=%d \n", segmentId, groupId, isLog);
+            // printf("Found free segment %lu for group %lu isLog=%d \n", segmentId, groupId, isLog);
             if ((isLog && !isLogSegment(segmentId)) || (!isLog && isLogSegment(segmentId))) {
                 // cannot allocate a segment in designated area
                 if (segmentId != INVALID_SEGMENT)
@@ -111,7 +117,7 @@ bool SegmentGroupManager::getNewSegment(group_id_t &groupId, segment_id_t &segme
                 if (needsLock && _metaMap.group.at(groupId).second == false) {
                     _metaMap.group.at(groupId).second = needsLock;
                 }
-                _metaMap.segment[segmentId] = std::pair<group_id_t, bool> (groupId, false);
+                _metaMap.segment[segmentId] = std::pair<group_id_t, bool>(groupId, false);
             }
         } while (retry < ConfigManager::getInstance().getRetryMax() && segmentId == INVALID_SEGMENT);
     }
@@ -121,7 +127,8 @@ bool SegmentGroupManager::getNewSegment(group_id_t &groupId, segment_id_t &segme
     return segmentId != INVALID_SEGMENT && groupId != INVALID_GROUP;
 }
 
-bool SegmentGroupManager::freeGroup(group_id_t groupId, bool releaseLock) {
+bool SegmentGroupManager::freeGroup(group_id_t groupId, bool releaseLock)
+{
     std::lock_guard<std::mutex> lock(_metaMap.lock);
     if (groupId == INVALID_GROUP || _metaMap.group.count(groupId) <= 0 || (!releaseLock && _metaMap.segment.at(groupId).second)) {
         return false;
@@ -131,7 +138,8 @@ bool SegmentGroupManager::freeGroup(group_id_t groupId, bool releaseLock) {
     return true;
 }
 
-bool SegmentGroupManager::freeSegment(segment_id_t segmentId, bool releaseLock) {
+bool SegmentGroupManager::freeSegment(segment_id_t segmentId, bool releaseLock)
+{
     std::lock_guard<std::mutex> lock(_metaMap.lock);
     if (segmentId == INVALID_SEGMENT || _metaMap.segment.count(segmentId) <= 0 || (!releaseLock && _metaMap.segment.at(segmentId).second)) {
         // not exist or locked
@@ -150,7 +158,8 @@ bool SegmentGroupManager::freeSegment(segment_id_t segmentId, bool releaseLock) 
     return true;
 }
 
-bool SegmentGroupManager::setSegmentFlushFront(segment_id_t segmentId, segment_len_t flushFront) {
+bool SegmentGroupManager::setSegmentFlushFront(segment_id_t segmentId, segment_len_t flushFront)
+{
     segment_len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
     segment_len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
     if ((isLogSegment(segmentId) && flushFront > logSegmentSize) || (!isLogSegment(segmentId) && flushFront > mainSegmentSize)) {
@@ -160,8 +169,9 @@ bool SegmentGroupManager::setSegmentFlushFront(segment_id_t segmentId, segment_l
     return true;
 }
 
-segment_len_t SegmentGroupManager::getSegmentFlushFront(segment_id_t segmentId) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+segment_len_t SegmentGroupManager::getSegmentFlushFront(segment_id_t segmentId)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
     if (_metaMap.segmentFront.count(segmentId)) {
         return _metaMap.segmentFront.at(segmentId);
     } else {
@@ -169,64 +179,76 @@ segment_len_t SegmentGroupManager::getSegmentFlushFront(segment_id_t segmentId) 
     }
 }
 
-group_id_t SegmentGroupManager::getGroupBySegmentId(segment_id_t segmentId) {
-    return (_metaMap.segment.count(segmentId) == 0? INVALID_GROUP : _metaMap.segment.at(segmentId).first);
-    //return getMainSegmentBySegmentId(segmentId);
+group_id_t SegmentGroupManager::getGroupBySegmentId(segment_id_t segmentId)
+{
+    return (_metaMap.segment.count(segmentId) == 0 ? INVALID_GROUP : _metaMap.segment.at(segmentId).first);
+    // return getMainSegmentBySegmentId(segmentId);
 }
 
-segment_id_t SegmentGroupManager::getMainSegmentBySegmentId(segment_id_t segmentId) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+segment_id_t SegmentGroupManager::getMainSegmentBySegmentId(segment_id_t segmentId)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
     return (_metaMap.segment.count(segmentId) == 0 ? INVALID_SEGMENT : _metaMap.group.at(_metaMap.segment.at(segmentId).first).first.segments.at(0));
 }
 
-segment_id_t SegmentGroupManager::getGroupMainSegment(group_id_t groupId) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+segment_id_t SegmentGroupManager::getGroupMainSegment(group_id_t groupId)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
     return (_metaMap.group.count(groupId) > 0 ? groupId : INVALID_SEGMENT);
 }
 
-bool SegmentGroupManager::accessGroupLock(group_id_t groupId, bool islock) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
-    //debug_info ("group %lu tolock = %d curlock = %d\n", groupId, islock, _metaMap.group.at(groupId).second);
+bool SegmentGroupManager::accessGroupLock(group_id_t groupId, bool islock)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
+    // debug_info ("group %lu tolock = %d curlock = %d\n", groupId, islock, _metaMap.group.at(groupId).second);
     if (_metaMap.group.count(groupId) == 0 || _metaMap.group.at(groupId).second == islock) {
         // not exist, or already in locked / unlocked status
-        debug_warn("Group %s id=%lu, islock=%s\n", _metaMap.group.count(groupId) == 0? "not exist" : "action failed", groupId, islock? "true" : "false");
-        //assert(0);
+        debug_warn("Group %s id=%lu, islock=%s\n", _metaMap.group.count(groupId) == 0 ? "not exist" : "action failed", groupId, islock ? "true" : "false");
+        // assert(0);
         return false;
     } else {
         // exist, not locked / unlocked -> lock / unlock it
-        debug_info("Group %s id=%lu\n", islock? "lock" : "unlock", groupId);
+        debug_info("Group %s id=%lu\n", islock ? "lock" : "unlock", groupId);
         _metaMap.group.at(groupId).second = islock;
         return true;
     }
     return false;
 }
 
-bool SegmentGroupManager::getGroupLock(group_id_t groupId) {
+bool SegmentGroupManager::getGroupLock(group_id_t groupId)
+{
     return accessGroupLock(groupId, true);
 }
 
-bool SegmentGroupManager::releaseGroupLock(group_id_t groupId) {
+bool SegmentGroupManager::releaseGroupLock(group_id_t groupId)
+{
     return accessGroupLock(groupId, false);
 }
 
-offset_t SegmentGroupManager::getGroupFlushFront(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+offset_t SegmentGroupManager::getGroupFlushFront(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         return _metaMap.group.at(groupId).first.flushFront;
     }
     return INVALID_OFFSET;
 }
 
-offset_t SegmentGroupManager::getGroupWriteFront(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+offset_t SegmentGroupManager::getGroupWriteFront(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         return _metaMap.group.at(groupId).first.writeFront;
     }
     return INVALID_OFFSET;
 }
 
-offset_t SegmentGroupManager::setGroupFlushFront(group_id_t groupId, offset_t front, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+offset_t SegmentGroupManager::setGroupFlushFront(group_id_t groupId, offset_t front, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         _metaMap.group.at(groupId).first.flushFront = front;
         return front;
@@ -234,38 +256,48 @@ offset_t SegmentGroupManager::setGroupFlushFront(group_id_t groupId, offset_t fr
     return INVALID_OFFSET;
 }
 
-offset_t SegmentGroupManager::resetGroupFronts(group_id_t groupId, bool needsLock) {
+offset_t SegmentGroupManager::resetGroupFronts(group_id_t groupId, bool needsLock)
+{
     return setGroupWriteFront(groupId, 0, needsLock) + setGroupFlushFront(groupId, 0, needsLock);
 }
 
-offset_t SegmentGroupManager::setGroupWriteFront(group_id_t groupId, offset_t front, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+offset_t SegmentGroupManager::setGroupWriteFront(group_id_t groupId, offset_t front, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         _metaMap.group.at(groupId).first.writeFront = front;
-        if (front != 0) updateGroupWriteBackRatio(groupId);
+        if (front != 0)
+            updateGroupWriteBackRatio(groupId);
         return front;
     }
     return INVALID_OFFSET;
 }
 
-std::vector<segment_id_t> SegmentGroupManager::getGroupSegments(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+std::vector<segment_id_t> SegmentGroupManager::getGroupSegments(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         return _metaMap.group.at(groupId).first.segments;
     }
-    return std::vector<segment_id_t> ();
+    return std::vector<segment_id_t>();
 }
 
-void SegmentGroupManager::resetGroupByteCounts(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+void SegmentGroupManager::resetGroupByteCounts(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         _metaMap.group.at(groupId).first.mainSegmentValidBytes = 0;
         _metaMap.group.at(groupId).first.maxMainSegmentBytes = 0;
     }
 }
 
-len_t SegmentGroupManager::addGroupMainSegmentBytes(group_id_t groupId, len_t diff, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+len_t SegmentGroupManager::addGroupMainSegmentBytes(group_id_t groupId, len_t diff, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         _metaMap.group.at(groupId).first.mainSegmentValidBytes += diff;
         _metaMap.group.at(groupId).first.maxMainSegmentBytes += diff;
@@ -275,8 +307,10 @@ len_t SegmentGroupManager::addGroupMainSegmentBytes(group_id_t groupId, len_t di
     return INVALID_LEN;
 }
 
-len_t SegmentGroupManager::removeGroupMainSegmentBytes(group_id_t groupId, len_t diff, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+len_t SegmentGroupManager::removeGroupMainSegmentBytes(group_id_t groupId, len_t diff, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         _metaMap.group.at(groupId).first.mainSegmentValidBytes -= diff;
         updateGroupWriteBackRatio(groupId);
@@ -285,33 +319,41 @@ len_t SegmentGroupManager::removeGroupMainSegmentBytes(group_id_t groupId, len_t
     return INVALID_LEN;
 }
 
-len_t SegmentGroupManager::getGroupMainSegmentBytes(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+len_t SegmentGroupManager::getGroupMainSegmentBytes(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         return _metaMap.group.at(groupId).first.mainSegmentValidBytes;
     }
     return INVALID_LEN;
 }
 
-len_t SegmentGroupManager::getGroupMainSegmentMaxBytes(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+len_t SegmentGroupManager::getGroupMainSegmentMaxBytes(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
         return _metaMap.group.at(groupId).first.maxMainSegmentBytes;
     }
     return INVALID_LEN;
 }
 
-std::vector<segment_id_t> SegmentGroupManager::getGroupLogSegments(group_id_t groupId, bool needsLock) {
+std::vector<segment_id_t> SegmentGroupManager::getGroupLogSegments(group_id_t groupId, bool needsLock)
+{
     std::vector<segment_id_t> logSegments;
-    if (needsLock) getGroupLock(groupId);
+    if (needsLock)
+        getGroupLock(groupId);
     if (_metaMap.group.count(groupId) > 0) {
-        logSegments.insert(logSegments.begin(), _metaMap.group.at(groupId).first.segments.begin()+1, _metaMap.group.at(groupId).first.segments.end());
+        logSegments.insert(logSegments.begin(), _metaMap.group.at(groupId).first.segments.begin() + 1, _metaMap.group.at(groupId).first.segments.end());
     }
     return logSegments;
 }
 
-void SegmentGroupManager::releaseGroupLogSegments(group_id_t groupId, bool needsLock) {
-    if (needsLock) getGroupLock(groupId);
+void SegmentGroupManager::releaseGroupLogSegments(group_id_t groupId, bool needsLock)
+{
+    if (needsLock)
+        getGroupLock(groupId);
     // release all segment, except main segment
     while (_metaMap.group.count(groupId) > 0 && _metaMap.group.at(groupId).first.segments.size() > 1) {
         segment_id_t lcid = _metaMap.group.at(groupId).first.segments.back();
@@ -327,8 +369,9 @@ void SegmentGroupManager::releaseGroupLogSegments(group_id_t groupId, bool needs
     addGroupMainSegmentBytes(groupId, maxMainSegmentBytes);
 }
 
-bool SegmentGroupManager::setGroupSegments(group_id_t groupId, std::vector<segment_id_t> segments) {
-    std::lock_guard<std::mutex> lk (_metaMap.lock);
+bool SegmentGroupManager::setGroupSegments(group_id_t groupId, std::vector<segment_id_t> segments)
+{
+    std::lock_guard<std::mutex> lk(_metaMap.lock);
 
     std::vector<segment_id_t> oldSegments = _metaMap.group[groupId].first.segments;
     for (auto c : oldSegments) {
@@ -356,8 +399,9 @@ bool SegmentGroupManager::setGroupSegments(group_id_t groupId, std::vector<segme
     return true;
 }
 
-len_t SegmentGroupManager::changeBytes(group_id_t groupId, len_t bytes, int type) {
-    //while(!getGroupLock(groupId));
+len_t SegmentGroupManager::changeBytes(group_id_t groupId, len_t bytes, int type)
+{
+    // while(!getGroupLock(groupId));
 
     len_t oldValue = _maxSpaceToRelease->getValue(groupId);
     // offset the old value in heap for stripes manually GC
@@ -366,39 +410,42 @@ len_t SegmentGroupManager::changeBytes(group_id_t groupId, len_t bytes, int type
         bytes -= oldValue;
     }
     switch (type) {
-        case 2:
-            break;
-        case 1:
-            // record the amount of used space (freeable) from reserved area of segments / reserved segments
-            STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
-            updateGroupWriteBackRatio(groupId);
-            break;
-        case 0:
-            // record the amount of freeable space from data area of segments
-            STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
-            updateGroupWriteBackRatio(groupId);
-            break;
-        default:
-            assert(0);
-            break;
+    case 2:
+        break;
+    case 1:
+        // record the amount of used space (freeable) from reserved area of segments / reserved segments
+        STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
+        updateGroupWriteBackRatio(groupId);
+        break;
+    case 0:
+        // record the amount of freeable space from data area of segments
+        STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
+        updateGroupWriteBackRatio(groupId);
+        break;
+    default:
+        assert(0);
+        break;
     }
 
-    //releaseGroupLock(groupId);
+    // releaseGroupLock(groupId);
 
     return oldValue + bytes;
 }
 
-len_t SegmentGroupManager::releaseData(group_id_t groupId, len_t bytes) {
+len_t SegmentGroupManager::releaseData(group_id_t groupId, len_t bytes)
+{
     StatsRecorder::getInstance()->totalProcess(StatsType::UPDATE_TO_MAIN, bytes);
     return changeBytes(groupId, bytes, 0);
 }
 
-len_t SegmentGroupManager::useReserved(group_id_t groupId, len_t bytes) {
+len_t SegmentGroupManager::useReserved(group_id_t groupId, len_t bytes)
+{
     StatsRecorder::getInstance()->totalProcess(StatsType::UPDATE_TO_LOG, bytes);
     return changeBytes(groupId, bytes, 1);
 }
 
-double SegmentGroupManager::getGroupWriteBackRatio(group_id_t groupId, int type, bool isGC) {
+double SegmentGroupManager::getGroupWriteBackRatio(group_id_t groupId, int type, bool isGC)
+{
     len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
     len_t flushFront = getGroupFlushFront(groupId, false);
     len_t validBytes = 0;
@@ -406,17 +453,17 @@ double SegmentGroupManager::getGroupWriteBackRatio(group_id_t groupId, int type,
     // (write back)/(reclaim)
     if (type == 0) {
         // all
-        //validBytes = getGroupMainSegmentMaxBytes(groupId);
-        //invalidBytes = (flushFront == INVALID_LEN || flushFront < validBytes)? 0 : flushFront - validBytes;
+        // validBytes = getGroupMainSegmentMaxBytes(groupId);
+        // invalidBytes = (flushFront == INVALID_LEN || flushFront < validBytes)? 0 : flushFront - validBytes;
         validBytes = mainSegmentSize;
-        invalidBytes = (flushFront > validBytes? flushFront - validBytes : 0);
+        invalidBytes = (flushFront > validBytes ? flushFront - validBytes : 0);
     } else if (type == 1) {
-        //validBytes = getGroupMainSegmentMaxBytes(groupId) - getGroupMainSegmentBytes(groupId);
+        // validBytes = getGroupMainSegmentMaxBytes(groupId) - getGroupMainSegmentBytes(groupId);
         validBytes = flushFront - mainSegmentSize;
         // log only
-        //if (flushFront != INVALID_LEN && flushFront > mainSegmentSize + validBytes) { // has log space, and some are invalid
+        // if (flushFront != INVALID_LEN && flushFront > mainSegmentSize + validBytes) { // has log space, and some are invalid
         if (flushFront != INVALID_LEN && flushFront > 1.5 * mainSegmentSize) { // has log space, and some are invalid
-            //invalidBytes = flushFront - mainSegmentSize - validBytes;
+            // invalidBytes = flushFront - mainSegmentSize - validBytes;
             invalidBytes = flushFront - 1.5 * mainSegmentSize;
         } else {
             validBytes = ULONG_MAX;
@@ -426,7 +473,7 @@ double SegmentGroupManager::getGroupWriteBackRatio(group_id_t groupId, int type,
         // unknown scheme
         return DBL_MAX;
     }
-    //if (isGC) printf("group %lu type %d valid = %lu invalid = %lu FF = %lu\n", groupId, type, validBytes, invalidBytes, flushFront);
+    // if (isGC) printf("group %lu type %d valid = %lu invalid = %lu FF = %lu\n", groupId, type, validBytes, invalidBytes, flushFront);
     if (invalidBytes != 0 && validBytes > 0) {
         return validBytes * 1.0 / invalidBytes;
     } else {
@@ -434,7 +481,8 @@ double SegmentGroupManager::getGroupWriteBackRatio(group_id_t groupId, int type,
     }
 }
 
-void SegmentGroupManager::updateGroupWriteBackRatio(group_id_t groupId) {
+void SegmentGroupManager::updateGroupWriteBackRatio(group_id_t groupId)
+{
     struct timeval startTime;
     gettimeofday(&startTime, 0);
     if (_groupInHeap.count(groupId) <= 0) {
@@ -448,22 +496,24 @@ void SegmentGroupManager::updateGroupWriteBackRatio(group_id_t groupId) {
     // if all zero, then set it to max to avoid GC as far as possible
     if (ratio <= 0) {
         ratio = DBL_MAX;
-    //} else {
-    //    if (all != DBL_MAX && logOnly != DBL_MAX)
-    //        printf("group %lu write back ratio a=%.3lf l=%.3lf r=%.3lf\n", groupId, all, logOnly, ratio);
+        //} else {
+        //    if (all != DBL_MAX && logOnly != DBL_MAX)
+        //        printf("group %lu write back ratio a=%.3lf l=%.3lf r=%.3lf\n", groupId, all, logOnly, ratio);
     }
     _minWriteBackRatio->update(groupId, 0, ratio, /* newValue = */ true);
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_RATIO_UPDATE, startTime);
 }
 
-bool SegmentGroupManager::convertRefMainSegment(ValueLocation &valueLoc, bool needsLock) {
+bool SegmentGroupManager::convertRefMainSegment(ValueLocation& valueLoc, bool needsLock)
+{
     _metaMap.lock.lock();
     bool ret = false;
     group_id_t groupId = _metaMap.segment.at(valueLoc.segmentId).first;
     if (needsLock) {
         _metaMap.lock.unlock();
         ret = getGroupLock(groupId);
-        if (!ret) return false;
+        if (!ret)
+            return false;
         _metaMap.lock.lock();
     }
 
@@ -480,15 +530,18 @@ bool SegmentGroupManager::convertRefMainSegment(ValueLocation &valueLoc, bool ne
     return true;
 }
 
-len_t SegmentGroupManager::getAndIncrementVLogWriteOffset(len_t diff, bool isGC) {
+len_t SegmentGroupManager::getAndIncrementVLogWriteOffset(len_t diff, bool isGC)
+{
     return getAndIncrementVLogOffset(diff, 0 /* write offset */, isGC);
 }
 
-len_t SegmentGroupManager::getAndIncrementVLogGCOffset(len_t diff) {
+len_t SegmentGroupManager::getAndIncrementVLogGCOffset(len_t diff)
+{
     return getAndIncrementVLogOffset(diff, 1 /* gc offset */);
 }
 
-len_t SegmentGroupManager::getAndIncrementVLogOffset(len_t diff, int type, bool isGC) {
+len_t SegmentGroupManager::getAndIncrementVLogOffset(len_t diff, int type, bool isGC)
+{
     len_t startingOffset = INVALID_LEN;
     len_t capacity = _isSlave ? ConfigManager::getInstance().getColdStorageCapacity() : ConfigManager::getInstance().getSystemEffectiveCapacity();
     len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
@@ -503,198 +556,190 @@ len_t SegmentGroupManager::getAndIncrementVLogOffset(len_t diff, int type, bool 
         assert(diff < capacity);
 
         len_t incOffset = (_vlog.writeFront + diff) % capacity;
-        len_t gcFront = (_vlog.gcFront - (isGC? 0 : gcSize) + capacity) % capacity;
+        len_t gcFront = (_vlog.gcFront - (isGC ? 0 : gcSize) + capacity) % capacity;
         if (
-                (_vlog.writeFront >= gcFront && (incOffset > _vlog.writeFront || (_isSlave && incOffset <= gcFront) || (!_isSlave && incOffset < gcFront))) ||
-                (_vlog.writeFront < gcFront && (incOffset > _vlog.writeFront && ((_isSlave && incOffset <= gcFront) || (!_isSlave && incOffset < gcFront))))
-        ) {
+            (_vlog.writeFront >= gcFront && (incOffset > _vlog.writeFront || (_isSlave && incOffset <= gcFront) || (!_isSlave && incOffset < gcFront))) || (_vlog.writeFront < gcFront && (incOffset > _vlog.writeFront && ((_isSlave && incOffset <= gcFront) || (!_isSlave && incOffset < gcFront))))) {
             startingOffset = _vlog.writeFront;
             _vlog.writeFront = incOffset;
         }
-        //printf("return %lu WF push to %lu\n", startingOffset, _vlog.writeFront);
+        // printf("return %lu WF push to %lu\n", startingOffset, _vlog.writeFront);
     } else { // gc
         startingOffset = _vlog.gcFront;
         _vlog.gcFront = (_vlog.gcFront + diff) % capacity;
-        //printf("GC return %lu and increment to %lu, wf %lu\n", startingOffset, _vlog.gcFront, _vlog.writeFront);
+        // printf("GC return %lu and increment to %lu, wf %lu\n", startingOffset, _vlog.gcFront, _vlog.writeFront);
     }
     _metaMap.lock.unlock();
     return startingOffset;
 }
 
-len_t SegmentGroupManager::getLogWriteOffset() {
+len_t SegmentGroupManager::getLogWriteOffset()
+{
     return _vlog.writeFront;
 }
 
-len_t SegmentGroupManager::getLogGCOffset() {
+len_t SegmentGroupManager::getLogGCOffset()
+{
     return _vlog.gcFront;
 }
 
-len_t SegmentGroupManager::getLogValidBytes() {
+len_t SegmentGroupManager::getLogValidBytes()
+{
     std::string value = "0"; // _keyManager->getMeta(LogValidByteString, strlen(LogValidByteString));
-    return value.empty()? 0 : stoul(value);
+    return value.empty() ? 0 : stoul(value);
 }
 
-len_t SegmentGroupManager::getLogWrittenBytes() {
+len_t SegmentGroupManager::getLogWrittenBytes()
+{
     std::string value = "0"; // _keyManager->getMeta(LogWrittenByteString, strlen(LogWrittenByteString));
-    return value.empty()? 0 : stoul(value);
+    return value.empty() ? 0 : stoul(value);
 }
 
-void SegmentGroupManager::printUsage(FILE *out) {
+void SegmentGroupManager::printUsage(FILE* out)
+{
     segment_id_t numMainSegment = ConfigManager::getInstance().getNumMainSegment();
     segment_id_t numLogSegment = ConfigManager::getInstance().getNumLogSegment();
     if (ConfigManager::getInstance().enabledVLogMode()) {
-        fprintf(out, 
-                "Log Usage:\n"
-                " Head: %lu; Tail %lu\n"
-                , _vlog.gcFront
-                , _vlog.writeFront
-               );
+        fprintf(out,
+            "Log Usage:\n"
+            " Head: %lu; Tail %lu\n",
+            _vlog.gcFront, _vlog.writeFront);
     } else {
-        fprintf(out, 
-                "Storage Usage:\n"
-                "  Total: %lu; In use: %lu (%3.2f%%)\n"
-                "  Main: %lu; In use: %lu (%3.2f%%)\n"
-                "  Log: %lu; In use: %lu (%3.2f%%)\n"
-                , _MaxSegment
-                , _metaMap.segment.size()
-                , double(_metaMap.segment.size()) / _MaxSegment * 100
-                , numMainSegment
-                , numMainSegment - _freeMainSegment
-                , (1 - double(_freeMainSegment) / numMainSegment) * 100
-                , numLogSegment
-                , numLogSegment - _freeLogSegment
-                , (1 - double(_freeLogSegment) / numLogSegment) * 100
-                );
+        fprintf(out,
+            "Storage Usage:\n"
+            "  Total: %lu; In use: %lu (%3.2f%%)\n"
+            "  Main: %lu; In use: %lu (%3.2f%%)\n"
+            "  Log: %lu; In use: %lu (%3.2f%%)\n",
+            _MaxSegment, _metaMap.segment.size(), double(_metaMap.segment.size()) / _MaxSegment * 100, numMainSegment, numMainSegment - _freeMainSegment, (1 - double(_freeMainSegment) / numMainSegment) * 100, numLogSegment, numLogSegment - _freeLogSegment, (1 - double(_freeLogSegment) / numLogSegment) * 100);
     }
 }
 
-void SegmentGroupManager::printGroups(FILE *out) {
+void SegmentGroupManager::printGroups(FILE* out)
+{
     for (auto g : _metaMap.group) {
         fprintf(out,
-                "Group=%lu, write=%lu flush=%lu segments=%lu validBytes=%lu(%lu) locked=%s\n"
-                , g.first
-                , g.second.first.writeFront
-                , g.second.first.flushFront
-                , g.second.first.segments.size()
-                , g.second.first.maxMainSegmentBytes
-                , g.second.first.mainSegmentValidBytes
-                , g.second.second? "true" : "false"
-        );
+            "Group=%lu, write=%lu flush=%lu segments=%lu validBytes=%lu(%lu) locked=%s\n", g.first, g.second.first.writeFront, g.second.first.flushFront, g.second.first.segments.size(), g.second.first.maxMainSegmentBytes, g.second.first.mainSegmentValidBytes, g.second.second ? "true" : "false");
     }
 }
 
-double SegmentGroupManager::getCurrentUsage() {
+double SegmentGroupManager::getCurrentUsage()
+{
     return double(_metaMap.segment.size()) / _MaxSegment * 100;
 }
 
-segment_id_t SegmentGroupManager::getNumFreeLogSegments() {
+segment_id_t SegmentGroupManager::getNumFreeLogSegments()
+{
     return getNumFreeSegments(2);
 }
 
-segment_id_t SegmentGroupManager::getNumFreeMainSegments() {
+segment_id_t SegmentGroupManager::getNumFreeMainSegments()
+{
     return getNumFreeSegments(1);
 }
 
-segment_id_t SegmentGroupManager::getNumFreeSegments() {
+segment_id_t SegmentGroupManager::getNumFreeSegments()
+{
     return getNumFreeSegments(0);
 }
 
-segment_id_t SegmentGroupManager::getNumFreeSegments(int type) {
+segment_id_t SegmentGroupManager::getNumFreeSegments(int type)
+{
     switch (type) {
-        case 1: // MAIN
-            return _freeMainSegment;
-        case 2: // LOG
-            if (_freeLogSegment > ConfigManager::getInstance().getNumLogSegment()) {
-                debug_error("Invalid number of free log segments %lu\n", _freeLogSegment);
-            }
-            return _freeLogSegment;
-        case 0: // ALL
-        default:
-            return _MaxSegment - _metaMap.segment.size();
+    case 1: // MAIN
+        return _freeMainSegment;
+    case 2: // LOG
+        if (_freeLogSegment > ConfigManager::getInstance().getNumLogSegment()) {
+            debug_error("Invalid number of free log segments %lu\n", _freeLogSegment);
+        }
+        return _freeLogSegment;
+    case 0: // ALL
+    default:
+        return _MaxSegment - _metaMap.segment.size();
     }
     return 0;
 }
 
-bool SegmentGroupManager::isLogSegment(segment_id_t segmentId) {
+bool SegmentGroupManager::isLogSegment(segment_id_t segmentId)
+{
     segment_len_t numMainSegment = ConfigManager::getInstance().getNumMainSegment();
     return segmentId >= numMainSegment;
 }
 
-//bool SegmentGroupManager::restoreMetaFromDB() {
-//    std::lock_guard<std::mutex> lk (_metaMap.lock);
+// bool SegmentGroupManager::restoreMetaFromDB() {
+//     std::lock_guard<std::mutex> lk (_metaMap.lock);
 //
-//    bool restored = false;
-//    if (_keyManager == 0)
-//        return restored;
+//     bool restored = false;
+//     if (_keyManager == 0)
+//         return restored;
 //
-//    std::set<segment_id_t> segments;
+//     std::set<segment_id_t> segments;
 //
-//    // group metadata
-//    for (group_id_t gid = 0; gid < ConfigManager::getInstance().getNumMainSegment(); gid++) {
-//        std::string key = getGroupKey(gid);
-//        std::string metadata = _keyManager->getMeta(key.c_str(), key.length());
-//        //printf("group %lu meta %s\n", gid, metadata.c_str());
-//        if (!metadata.empty()) {
-//            // find the start of the segment list
-//            size_t spos = 0, epos = 0, cpos = 0;
-//            epos = metadata.find_first_of(ListSeparator, 0);
-//            offset_t writeFront = std::stoul(metadata.substr(/* start = */ spos, /* length = */ epos - spos));
-//            spos = epos;
-//            // list of segments
-//            GroupMetaData groupMeta;
-//            groupMeta.mainSegmentValidBytes = 0;
-//            groupMeta.maxMainSegmentBytes = 0;
-//            while (spos < metadata.length()) {
-//                NEXT_SUB_STR();
-//                //printf("%s s: %lu e : %lu\n", metadata.substr(spos + 1, epos - (spos + 1)).c_str(), spos, epos);
-//                segment_id_t segmentId = std::stoul(metadata.substr(spos + 1, epos - (spos + 1)));
-//                groupMeta.segments.push_back(segmentId);
-//                groupMeta.position[segmentId] = cpos;
-//                _bitmap.segment->setBit(segmentId);
-//                _metaMap.segment[segmentId] = std::pair<group_id_t, bool> (gid, false);
-//                if (segmentId < ConfigManager::getInstance().getNumMainSegment()) {
-//                    _freeMainSegment--;
-//                } else {
-//                    _freeLogSegment--;
-//                }
-//                segments.insert(segmentId);
-//                // end becomes the front
-//                spos = epos;
-//                cpos++;
-//            }
-//            groupMeta.writeFront = writeFront;
-//            groupMeta.flushFront = writeFront;
-//            _metaMap.group[gid] = std::pair<GroupMetaData, bool>(groupMeta, false);
-//            // heap for GC
-//            useReserved(gid, writeFront);
-//        }
-//        _bitmap.group->setBit(gid);
-//    }
+//     // group metadata
+//     for (group_id_t gid = 0; gid < ConfigManager::getInstance().getNumMainSegment(); gid++) {
+//         std::string key = getGroupKey(gid);
+//         std::string metadata = _keyManager->getMeta(key.c_str(), key.length());
+//         //printf("group %lu meta %s\n", gid, metadata.c_str());
+//         if (!metadata.empty()) {
+//             // find the start of the segment list
+//             size_t spos = 0, epos = 0, cpos = 0;
+//             epos = metadata.find_first_of(ListSeparator, 0);
+//             offset_t writeFront = std::stoul(metadata.substr(/* start = */ spos, /* length = */ epos - spos));
+//             spos = epos;
+//             // list of segments
+//             GroupMetaData groupMeta;
+//             groupMeta.mainSegmentValidBytes = 0;
+//             groupMeta.maxMainSegmentBytes = 0;
+//             while (spos < metadata.length()) {
+//                 NEXT_SUB_STR();
+//                 //printf("%s s: %lu e : %lu\n", metadata.substr(spos + 1, epos - (spos + 1)).c_str(), spos, epos);
+//                 segment_id_t segmentId = std::stoul(metadata.substr(spos + 1, epos - (spos + 1)));
+//                 groupMeta.segments.push_back(segmentId);
+//                 groupMeta.position[segmentId] = cpos;
+//                 _bitmap.segment->setBit(segmentId);
+//                 _metaMap.segment[segmentId] = std::pair<group_id_t, bool> (gid, false);
+//                 if (segmentId < ConfigManager::getInstance().getNumMainSegment()) {
+//                     _freeMainSegment--;
+//                 } else {
+//                     _freeLogSegment--;
+//                 }
+//                 segments.insert(segmentId);
+//                 // end becomes the front
+//                 spos = epos;
+//                 cpos++;
+//             }
+//             groupMeta.writeFront = writeFront;
+//             groupMeta.flushFront = writeFront;
+//             _metaMap.group[gid] = std::pair<GroupMetaData, bool>(groupMeta, false);
+//             // heap for GC
+//             useReserved(gid, writeFront);
+//         }
+//         _bitmap.group->setBit(gid);
+//     }
 //
-//    // segment metadata
-//    for (auto cid : segments) {
-//        std::string key = getSegmentKey(cid);
-//        std::string metadata = _keyManager->getMeta(key.c_str(), key.length());
-//        //printf("c %lu meta %s\n", cid, metadata.c_str());
-//        if (!metadata.empty()) {
-//            _metaMap.segmentFront[cid] = std::stoul(metadata);
-//        }
-//    }
+//     // segment metadata
+//     for (auto cid : segments) {
+//         std::string key = getSegmentKey(cid);
+//         std::string metadata = _keyManager->getMeta(key.c_str(), key.length());
+//         //printf("c %lu meta %s\n", cid, metadata.c_str());
+//         if (!metadata.empty()) {
+//             _metaMap.segmentFront[cid] = std::stoul(metadata);
+//         }
+//     }
 //
 //
-//    return restored;
-//}
+//     return restored;
+// }
 
-std::string SegmentGroupManager::getGroupKey(group_id_t groupId) {
+std::string SegmentGroupManager::getGroupKey(group_id_t groupId)
+{
     std::string key;
     key.append(GroupPrefix);
     key.append(to_string(groupId));
 
     return key;
-
 }
 
-std::string SegmentGroupManager::getSegmentKey(segment_id_t segmentId) {
+std::string SegmentGroupManager::getSegmentKey(segment_id_t segmentId)
+{
     std::string key;
     key.append(SegmentPrefix);
     key.append(to_string(segmentId));
@@ -702,41 +747,44 @@ std::string SegmentGroupManager::getSegmentKey(segment_id_t segmentId) {
     return key;
 }
 
-std::string SegmentGroupManager::generateSegmentValue(offset_t writeFront) {
+std::string SegmentGroupManager::generateSegmentValue(offset_t writeFront)
+{
     return std::string(to_string(writeFront));
 }
 
-std::string SegmentGroupManager::generateGroupValue(offset_t writeFront, std::vector<segment_id_t> segments) {
-    std::string value (to_string(writeFront));
-    for (segment_id_t &cid : segments) {
+std::string SegmentGroupManager::generateGroupValue(offset_t writeFront, std::vector<segment_id_t> segments)
+{
+    std::string value(to_string(writeFront));
+    for (segment_id_t& cid : segments) {
         value.append(ListSeparator);
         value.append(to_string(cid));
     }
     return value;
 }
 
-//bool SegmentGroupManager::writeGroupMeta(group_id_t groupId) {
-//    std::string key = getGroupKey(groupId);
-//    return _keyManager->writeMeta(
-//            key.c_str(),
-//            key.length(),
-//            generateGroupValue(
-//                    getGroupWriteFront(groupId, /* needsLock = */ false),
-//                    getGroupSegments(groupId, /* needsLock = */ false)
-//            )
-//    );
-//}
+// bool SegmentGroupManager::writeGroupMeta(group_id_t groupId) {
+//     std::string key = getGroupKey(groupId);
+//     return _keyManager->writeMeta(
+//             key.c_str(),
+//             key.length(),
+//             generateGroupValue(
+//                     getGroupWriteFront(groupId, /* needsLock = */ false),
+//                     getGroupSegments(groupId, /* needsLock = */ false)
+//             )
+//     );
+// }
 //
-//bool SegmentGroupManager::writeSegmentMeta(segment_id_t segmentId) {
-//    std::string key = getSegmentKey(segmentId);
-//    return _keyManager->writeMeta(
-//            key.c_str(),
-//            key.length(),
-//            generateSegmentValue(getSegmentFlushFront(segmentId))
-//    );
-//}
+// bool SegmentGroupManager::writeSegmentMeta(segment_id_t segmentId) {
+//     std::string key = getSegmentKey(segmentId);
+//     return _keyManager->writeMeta(
+//             key.c_str(),
+//             key.length(),
+//             generateSegmentValue(getSegmentFlushFront(segmentId))
+//     );
+// }
 
-bool SegmentGroupManager::readGroupMeta(const std::string &metadata, offset_t &writeFront, std::vector<segment_id_t> &segments) {
+bool SegmentGroupManager::readGroupMeta(const std::string& metadata, offset_t& writeFront, std::vector<segment_id_t>& segments)
+{
     size_t spos = 0, epos = 0;
 
     epos = metadata.find_first_of(ListSeparator, 0);
@@ -758,4 +806,3 @@ bool SegmentGroupManager::readGroupMeta(const std::string &metadata, offset_t &w
 }
 
 #undef NEXT_SUB_STR
-

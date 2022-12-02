@@ -1,14 +1,14 @@
-#ifndef HASH_HH
-#define HASH_HH
+#pragma once
 
 namespace DELTAKV_NAMESPACE {
 
 class HashFunc {
 public:
-    static unsigned int hash (const char* data, unsigned int n) {
+    static unsigned int hash(const char* data, unsigned int n)
+    {
         unsigned int hash = 388650013;
         unsigned int scale = 388650179;
-        unsigned int hardener  = 1176845762;
+        unsigned int hardener = 1176845762;
         while (n) {
             hash *= scale;
             hash += *data++;
@@ -17,10 +17,11 @@ public:
         return hash ^ hardener;
     }
 
-    static unsigned int hash (const char* data1, unsigned int n1, const char* data2, unsigned int n2) {
+    static unsigned int hash(const char* data1, unsigned int n1, const char* data2, unsigned int n2)
+    {
         unsigned int hash = 388650013;
         unsigned int scale = 388650179;
-        unsigned int hardener  = 1176845762;
+        unsigned int hardener = 1176845762;
         unsigned int n = n1 + n2;
         while (n) {
             hash *= scale;
@@ -33,10 +34,11 @@ public:
         return hash ^ hardener;
     }
 
-    static unsigned int hash (const char* data1, unsigned int n1, const char* data2, unsigned int n2, const char* data3, unsigned int n3) {
+    static unsigned int hash(const char* data1, unsigned int n1, const char* data2, unsigned int n2, const char* data3, unsigned int n3)
+    {
         unsigned int hash = 388650013;
         unsigned int scale = 388650179;
-        unsigned int hardener  = 1176845762;
+        unsigned int hardener = 1176845762;
         unsigned int n = n1 + n2 + n3;
         while (n) {
             hash *= scale;
@@ -52,17 +54,15 @@ public:
     }
 };
 
-template<class K, class V, class KV>
+template <class K, class V, class KV>
 class HashTable {
 public:
     HashTable() {};
     virtual ~HashTable() {};
-    virtual bool addKey (KV kv) = 0;
-    virtual V getValue (K key, len_t keySize, len_t &valueSize) = 0;
-    virtual V removeKey (K key, len_t keySize, len_t &valueSize) = 0;
+    virtual bool addKey(KV kv) = 0;
+    virtual V getValue(K key, len_t keySize, len_t& valueSize) = 0;
+    virtual V removeKey(K key, len_t keySize, len_t& valueSize) = 0;
     virtual void listKeys() = 0;
 };
 
 }
-
-#endif

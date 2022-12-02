@@ -6,6 +6,7 @@
 
 using namespace std;
 
+namespace DELTAKV_NAMESPACE {
 typedef struct internalValueType {
     bool mergeFlag_; // true if the value request merge.
     bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree
@@ -41,7 +42,7 @@ typedef struct hashStoreFileMetaDataHandler {
     uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
-    DELTAKV_NAMESPACE::FileOperation* file_operation_func_ptr_;
+    FileOperation* file_operation_func_ptr_;
     boost::shared_mutex fileOperationMutex_;
 } hashStoreFileMetaDataHandler;
 
@@ -85,3 +86,56 @@ typedef struct hashStoreRecordHeader {
     bool is_anchor_;
     bool is_gc_done_ = false; // to mark gc job done
 } hashStoreRecordHeader;
+
+// following enums are used for indexStore only
+enum CodingScheme {
+    RAID0,
+    REPLICATION,
+    RAID5,
+    RDP,
+    EVENODD,
+    CAUCHY,
+    DEFAULT
+};
+
+enum DataType {
+    KEY,
+    VALUE,
+    META
+};
+
+enum DiskType {
+    DATA,
+    LOG,
+    MIXED
+};
+
+enum RequestType {
+    READ = 0x00,
+    WRITE = 0x01,
+    FLUSH = 0x10,
+    COMMIT = 0x20,
+    WIRTE_KEY = 0x03,
+    READ_VALUE = 0x04,
+    WIRTE_VALUE = 0x05,
+};
+
+enum class DebugLevel : int {
+    NONE,
+    ERROR,
+    WARN,
+    INFO,
+    TRACE,
+    ANY
+};
+
+enum DBType {
+    LEVEL = 0x00,
+};
+
+enum GCMode {
+    ALL, // 0
+    LOG_ONLY, // 1
+};
+
+}

@@ -3,7 +3,7 @@
 
 #include <string>
 #include <unordered_map>
-#include "../define.hh"
+#include "common/indexStorePreDefines.hpp"
 #include "keyvalue.hh"
 
 extern "C" {

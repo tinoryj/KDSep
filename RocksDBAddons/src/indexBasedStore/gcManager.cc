@@ -1,20 +1,24 @@
-#include <vector>
-#include <unordered_set>
-#include <float.h>
 #include "indexBasedStore/gcManager.hh"
 #include "indexBasedStore/configManager.hh"
 #include "indexBasedStore/statsRecorder.hh"
+#include <float.h>
+#include <unordered_set>
+#include <vector>
 
-#define TAG_MASK  (1000 * 1000)
-#define RECORD_SIZE     ((valueSize == INVALID_LEN? 0 : valueSize) + (LL)sizeof(len_t) + KEY_REC_SIZE)
+#define TAG_MASK (1000 * 1000)
+#define RECORD_SIZE ((valueSize == INVALID_LEN ? 0 : valueSize) + (LL)sizeof(len_t) + KEY_REC_SIZE)
 
 namespace DELTAKV_NAMESPACE {
 
-GCManager::GCManager(KeyManager *keyManager, ValueManager *valueManager, DeviceManager *deviceManager, SegmentGroupManager *segmentGroupManager, bool isSlave):
-        _keyManager(keyManager), _valueManager(valueManager), _deviceManager(deviceManager), _segmentGroupManager(segmentGroupManager) {
+GCManager::GCManager(KeyManager* keyManager, ValueManager* valueManager, DeviceManager* deviceManager, SegmentGroupManager* segmentGroupManager, bool isSlave)
+    : _keyManager(keyManager)
+    , _valueManager(valueManager)
+    , _deviceManager(deviceManager)
+    , _segmentGroupManager(segmentGroupManager)
+{
     _maxGC = ConfigManager::getInstance().getGreedyGCSize();
     _useMmap = ConfigManager::getInstance().useMmap();
-    if ((ConfigManager::getInstance().enabledVLogMode() && !_useMmap)|| isSlave) {
+    if ((ConfigManager::getInstance().enabledVLogMode() && !_useMmap) || isSlave) {
         Segment::init(_gcSegment.read, INVALID_SEGMENT, ConfigManager::getInstance().getVLogGCSize() * 2);
     }
     Segment::init(_gcSegment.write, INVALID_SEGMENT, ConfigManager::getInstance().getVLogGCSize());
@@ -24,15 +28,17 @@ GCManager::GCManager(KeyManager *keyManager, ValueManager *valueManager, DeviceM
     _gcCount.scanSize = 0;
     _gcWriteBackBytes = 0;
 
-    _gcReadthreads.size_controller().resize(ConfigManager::getInstance().getNumGCReadThread());
+    // _gcReadthreads.size_controller().resize(ConfigManager::getInstance().getNumGCReadThread());
 }
 
-GCManager::~GCManager() {
-    // for debug and measurement 
+GCManager::~GCManager()
+{
+    // for debug and measurement
     printStats();
 }
 
-void GCManager::printStats(FILE *out) {
+void GCManager::printStats(FILE* out)
+{
     fprintf(out, "_gcBytes writeBack = %lu scan = %lu\n", _gcWriteBackBytes, _gcCount.scanSize);
     fprintf(out, "Mode counts (total ops = %lu groups = %lu):\n", _gcCount.ops, _gcCount.groups);
     for (auto it : _modeCount) {
@@ -40,42 +46,43 @@ void GCManager::printStats(FILE *out) {
     }
 }
 
-size_t GCManager::gcGreedy(bool needsGCLock, bool needsLockCentralizedReservedPool, group_id_t *reportGroupId) {
+size_t GCManager::gcGreedy(bool needsGCLock, bool needsLockCentralizedReservedPool, group_id_t* reportGroupId)
+{
     size_t gcBytes = 0;
-    std::vector<std::pair<group_id_t, len_t> > gcGroups;
+    std::vector<std::pair<group_id_t, len_t>> gcGroups;
     std::pair<group_id_t, len_t> gcGroup;
     group_id_t gcGroupId;
     len_t bytes = 0;
     double ratio = DBL_MAX;
     assert(false);
     std::unordered_set<group_id_t> gcGroupIds;
-    if (needsGCLock) _valueManager->_GCLock.lock();
+    if (needsGCLock)
+        _valueManager->_GCLock.lock();
     GCMode defaultGCMode = ConfigManager::getInstance().getGCMode();
     //_segmentGroupManager->_maxSpaceToRelease->print(stdout);
     //_segmentGroupManager->_minWriteBackSize->print();
     // get the group with most free data space, and reserved space/segments to release
     for (int i = 0; i < _maxGC; i++) {
-        switch(defaultGCMode) {
-            case LOG_ONLY:
-                tie(gcGroupId, ratio) = _segmentGroupManager->_minWriteBackRatio->getMin();
-                //printf("Selected group %lu ratio %lf\n", gcGroupId, ratio);
-                break;
-            case ALL:
-            default:
-                tie(gcGroupId, bytes) = _segmentGroupManager->_maxSpaceToRelease->getMax();
-                //printf("Select group %lu with bytes %lu\n", gcGroupId, bytes);
-                break;
+        switch (defaultGCMode) {
+        case LOG_ONLY:
+            tie(gcGroupId, ratio) = _segmentGroupManager->_minWriteBackRatio->getMin();
+            // printf("Selected group %lu ratio %lf\n", gcGroupId, ratio);
+            break;
+        case ALL:
+        default:
+            tie(gcGroupId, bytes) = _segmentGroupManager->_maxSpaceToRelease->getMax();
+            // printf("Select group %lu with bytes %lu\n", gcGroupId, bytes);
+            break;
         }
         if (gcGroupId == INVALID_GROUP) {
             break;
         }
         // skip if the group does not exist, or is yet sealed, or nothing to reclaim from group
-        if (_segmentGroupManager->_groupInHeap.count(gcGroupId) <= 0 ||
-                (defaultGCMode == LOG_ONLY && ratio == DBL_MAX)) {
+        if (_segmentGroupManager->_groupInHeap.count(gcGroupId) <= 0 || (defaultGCMode == LOG_ONLY && ratio == DBL_MAX)) {
             i--;
             continue;
         }
-        //printf("GC group %lu with value %lu (ratio = %lf)\n", gcGroupId, bytes, ratio);
+        // printf("GC group %lu with value %lu (ratio = %lf)\n", gcGroupId, bytes, ratio);
         assert(gcGroupIds.count(gcGroupId) == 0);
         if (gcGroupIds.count(gcGroupId) == 0) {
             gcGroup.first = gcGroupId;
@@ -91,7 +98,7 @@ size_t GCManager::gcGreedy(bool needsGCLock, bool needsLockCentralizedReservedPo
     // perform GC on the groups one by one
     for (unsigned long i = 0; i < gcGroups.size(); i++) {
         gcGroup = gcGroups[i];
-        //printf("GC group %lu\n", gcGroup.first);
+        // printf("GC group %lu\n", gcGroup.first);
         gcBytes += gcOneGroup(gcGroup.first, gcMode, needsLockCentralizedReservedPool, gcGroup.second, reportGroupId);
         _gcCount.groups++;
         if (reportGroupId != 0 && *reportGroupId == gcGroup.first) {
@@ -102,14 +109,16 @@ size_t GCManager::gcGreedy(bool needsGCLock, bool needsLockCentralizedReservedPo
         }
     }
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_TOTAL, gcStartTime);
-    //printf("END of GC group %lu\n", gcGroups.size());
-    // Todo Remove the groups from both heaps
-    if (needsGCLock) _valueManager->_GCLock.unlock();
+    // printf("END of GC group %lu\n", gcGroups.size());
+    //  Todo Remove the groups from both heaps
+    if (needsGCLock)
+        _valueManager->_GCLock.unlock();
     _gcCount.ops++;
     return gcBytes;
 }
 
-size_t GCManager::gcAll() {
+size_t GCManager::gcAll()
+{
     int oldMaxGC = _maxGC;
     _maxGC = ConfigManager::getInstance().getNumMainSegment();
     size_t gcBytes = gcGreedy();
@@ -117,7 +126,8 @@ size_t GCManager::gcAll() {
     return gcBytes;
 }
 
-size_t GCManager::gcVLog() {
+size_t GCManager::gcVLog()
+{
 
     _gcCount.ops++;
     //_valueManager->_GCLock.lock();
@@ -125,8 +135,8 @@ size_t GCManager::gcVLog() {
     size_t gcBytes = 0, gcScanSize = 0;
     size_t pageSize = sysconf(_SC_PAGE_SIZE);
     len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
-    unsigned char *readPool = _useMmap? 0 : Segment::getData(_gcSegment.read);
-    unsigned char *writePool = Segment::getData(_gcSegment.write);
+    unsigned char* readPool = _useMmap ? 0 : Segment::getData(_gcSegment.read);
+    unsigned char* writePool = Segment::getData(_gcSegment.write);
 
     if (ConfigManager::getInstance().useDirectIO() && gcSize % pageSize) {
         debug_error("use direct IO but gcSize %lu not aligned; stop\n", gcSize);
@@ -141,7 +151,7 @@ size_t GCManager::gcVLog() {
     len_t capacity = ConfigManager::getInstance().getSystemEffectiveCapacity();
     len_t len = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET, gcFront = INVALID_OFFSET, flushFront = 0;
-    offset_t zeroOffset = gcFront;  // Fill zero content to avoid recording the length.
+    offset_t zeroOffset = gcFront; // Fill zero content to avoid recording the length.
     len_t zeroLen = 0;
 
     size_t remains = 0;
@@ -155,7 +165,7 @@ size_t GCManager::gcVLog() {
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
-    debug_info("gcVLog, gcBytes %lu, gcSize %lu\n", gcBytes, gcSize); 
+    debug_info("gcVLog, gcBytes %lu, gcSize %lu\n", gcBytes, gcSize);
     // scan until the designated reclaim size is reached
     while (gcBytes < gcSize) {
         // see if there is anything left over in last scan
@@ -167,7 +177,7 @@ size_t GCManager::gcVLog() {
             zeroOffset = gcFront;
         }
 
-//        debug_info("lastFillZeroOffset %lu gcFront %lu flushFront %lu\n", lastFillZeroOffset, gcFront, flushFront);
+        //        debug_info("lastFillZeroOffset %lu gcFront %lu flushFront %lu\n", lastFillZeroOffset, gcFront, flushFront);
         if (_useMmap) {
             readPool = _deviceManager->readMmap(0, gcFront - flushFront, gcSize, 0);
             Segment::init(_gcSegment.read, 0, readPool, gcSize);
@@ -186,7 +196,7 @@ size_t GCManager::gcVLog() {
             if (sizeof(key_len_t) > remains) {
                 break;
             }
-            off_len_t offLen (keySizeOffset, sizeof(key_len_t));
+            off_len_t offLen(keySizeOffset, sizeof(key_len_t));
             Segment::readData(_gcSegment.read, &keySize, offLen);
             debug_info("keySize %d\n", (int)keySize);
             if (keySize == 0) {
@@ -210,10 +220,10 @@ size_t GCManager::gcVLog() {
             if (KEY_REC_SIZE + sizeof(len_t) + valueSize > remains) {
                 break;
             }
-            STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*) readPool + keySizeOffset), StatsType::GC_KEY_LOOKUP);
+            STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*)readPool + keySizeOffset), StatsType::GC_KEY_LOOKUP);
             debug_info("read LSM: key [%.*s] segmentId %lu\n", (int)keySize, KEY_OFFSET((char*)readPool + keySizeOffset), valueLoc.segmentId);
             // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
-            if (valueLoc.segmentId == (_isSlave? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
+            if (valueLoc.segmentId == (_isSlave ? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
                 // buffer full, flush before write
                 debug_info("keep KV object gcBytes %lu \n", gcBytes);
                 if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
@@ -221,7 +231,7 @@ size_t GCManager::gcVLog() {
                     STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
                     assert(len > 0);
                     // update metadata
-                    for (auto &v : values) {
+                    for (auto& v : values) {
                         v.offset = (v.offset + logOffset) % capacity;
                     }
                     STAT_TIME_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
@@ -234,12 +244,11 @@ size_t GCManager::gcVLog() {
                     keys.clear();
                     values.clear();
                     Segment::resetFronts(_gcSegment.write);
-
                 }
                 // mark and copy the key-value pair to tbe buffer
                 offset_t writeKeyOffset = Segment::getWriteFront(_gcSegment.write);
                 Segment::appendData(_gcSegment.write, readPool + keySizeOffset, RECORD_SIZE);
-                keys.push_back((char*) writePool + writeKeyOffset);
+                keys.push_back((char*)writePool + writeKeyOffset);
                 valueLoc.offset = writeKeyOffset;
                 valueLoc.length = valueSize;
                 values.push_back(valueLoc);
@@ -253,18 +262,18 @@ size_t GCManager::gcVLog() {
                     _valueManager->_slave.writtenBytes -= RECORD_SIZE;
                 }
             }
-            
+
             remains -= RECORD_SIZE;
         }
         if (remains > 0) {
             Segment::setFlushFront(_gcSegment.read, remains);
-            debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read)); 
+            debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read));
             if (!_useMmap) {
-                // if some data left without scanning, move them to the front of buffer for next scan 
+                // if some data left without scanning, move them to the front of buffer for next scan
                 memmove(readPool, readPool + gcSize - remains, remains);
             }
         } else {
-            // reset buffer 
+            // reset buffer
             Segment::resetFronts(_gcSegment.read);
         }
         if (_useMmap) {
@@ -276,9 +285,9 @@ size_t GCManager::gcVLog() {
     }
     // final check on remaining data to flush
     if (!keys.empty()) {
-        
+
         STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC */ true), StatsType::GC_FLUSH);
-        for (auto &v : values) {
+        for (auto& v : values) {
             v.offset = (v.offset + logOffset) % capacity;
         }
         // update metadata of flushed data
@@ -296,7 +305,7 @@ size_t GCManager::gcVLog() {
             _keyManager->persistMeta();
         }
     }
-    //printf("gcBytes %lu\n", gcBytes);
+    // printf("gcBytes %lu\n", gcBytes);
     StatsRecorder::getInstance()->totalProcess(StatsType::GC_SCAN_BYTES, gcScanSize);
     StatsRecorder::getInstance()->totalProcess(StatsType::GC_WRITE_BYTES, gcScanSize - gcBytes);
     // reset write buffer
@@ -304,17 +313,17 @@ size_t GCManager::gcVLog() {
 
     // check if data read is not scanned or GCed, adjust the gc frontier accordingly
     if (remains > 0) {
-//        assert(0);
-//        exit(1);
+        //        assert(0);
+        //        exit(1);
         gcFront = _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - remains);
     }
     debug_info("gcFront new: %lu\n", gcFront);
-    debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read)); 
-//    if (ConfigManager::getInstance().persistLogMeta()) {
-//        std::string value;
-//        value.append(to_string(gcFront + gcSize - remains));
-//        _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), value);
-//    }
+    debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read));
+    //    if (ConfigManager::getInstance().persistLogMeta()) {
+    //        std::string value;
+    //        value.append(to_string(gcFront + gcSize - remains));
+    //        _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), value);
+    //    }
     // reset read buffer
     Segment::resetFronts(_gcSegment.read);
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_TOTAL, gcStartTime);
@@ -333,9 +342,10 @@ size_t GCManager::gcGroup(group_id_t groupId, bool needsLockCentralizedReservedP
 }
 */
 
-size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needsLockCentralizedReservedPool, len_t originBytes, group_id_t* reportGroupId) {
+size_t GCManager::gcOneGroup(group_id_t groupId, GCMode& finalGCMode, bool needsLockCentralizedReservedPool, len_t originBytes, group_id_t* reportGroupId)
+{
 
-    ConfigManager &cm = ConfigManager::getInstance();
+    ConfigManager& cm = ConfigManager::getInstance();
     _segmentGroupManager->_groupInHeap.erase(groupId);
     int freeLogSegments = 0;
 
@@ -357,14 +367,14 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     }
 
     bool useMmap = cm.useMmap();
-    //printf("GC group %lu with mode %d reportGroupId = %lu (ob=%lu)\n", groupId, gcMode, (reportGroupId? *reportGroupId : 0), originBytes);
+    // printf("GC group %lu with mode %d reportGroupId = %lu (ob=%lu)\n", groupId, gcMode, (reportGroupId? *reportGroupId : 0), originBytes);
     size_t gcBytes = 0;
     size_t bytesScanned = 0, bytesWritten = 0, validBytes = 0;
     bool dataInBuffer = false;
     // scan the all data segments
     std::vector<Segment> all;
     // storing the keys to write after GC
-    unordered_map<unsigned char *, std::pair<int, ValueLocation>, hashKey, equalKey> keyCount;
+    unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey> keyCount;
     // main and reserved groups
     segment_id_t cid = mainSegmentId;
     unsigned int mx = 0, mn = UINT_MAX;
@@ -377,7 +387,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     for (size_t gcount = 0, cur = 0; gcount < 1 + logSegments.size(); gcount++) {
 
         Segment segment;
-        // determine the next segment to read 
+        // determine the next segment to read
         if (gcount > 0) {
             cid = logSegments.at(gcount - 1);
         }
@@ -389,19 +399,19 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
         }
 
         // temp segment to hold kv-pairs
-        len_t csize = (gcount == 0)? mainSegmentSize : logSegmentSize;
+        len_t csize = (gcount == 0) ? mainSegmentSize : logSegmentSize;
         if (useMmap) {
-            unsigned char *data = _deviceManager->readMmap(cid, 0, csize, 0);
+            unsigned char* data = _deviceManager->readMmap(cid, 0, csize, 0);
             Segment::init(segment, cid, data, csize);
         } else {
             Segment::init(segment, cid, csize, false);
         }
         // mark the amount of data exists in segment
         Segment::setFlushFront(segment, _segmentGroupManager->getSegmentFlushFront(cid));
-        //printf("Scan group %lu [L=%d] segment %lu FlushFront %lu\n", groupId, gcount > 0, cid, _segmentGroupManager->getSegmentFlushFront(cid));
-            
+        // printf("Scan group %lu [L=%d] segment %lu FlushFront %lu\n", groupId, gcount > 0, cid, _segmentGroupManager->getSegmentFlushFront(cid));
+
         // read from disk, and buffer whichever appropriate (1) data + reserved from disk, or (2) data from disk, reserved from buffer
-        //unsigned char *segmentData = Segment::getData(segment);
+        // unsigned char *segmentData = Segment::getData(segment);
         // copy if segment data in buf, else read from disk
         // a group may be flushed while GC is in process (?)
         // read segments from disk
@@ -410,22 +420,11 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
 
         if (!useMmap) {
             _deviceManager->readAhead(cid, 0, Segment::getFlushFront(segment));
-            _gcReadthreads.schedule(
-                    std::bind(
-                        &DeviceManager::readPartialSegmentMtD,
-                        _deviceManager,
-                        cid,
-                        0,
-                        Segment::getFlushFront(segment),
-                        Segment::getData(segment),
-                        boost::ref(read.at(cur))
-                    )
-            );
+            boost::asio::post(*_gcReadthreads, boost::bind(&DeviceManager::readPartialSegmentMtD, _deviceManager, cid, 0, Segment::getFlushFront(segment), Segment::getData(segment), boost::ref(read.at(cur))));
             cur++;
         }
         //_valueManager->_deviceManager->readPartialSegment(cid, 0, Segment::getFlushFront(segment), segmentData);
-        //Segment::dumpSegment(segment, true);
-
+        // Segment::dumpSegment(segment, true);
     }
 
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_READ, readStartTime);
@@ -440,11 +439,12 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
         Segment segment = all.at(cur);
         // wait until the segment is read from disk
         gettimeofday(&readStartTime, 0);
-        while(read.at(cur) == false && useMmap == false);
+        while (read.at(cur) == false && useMmap == false)
+            ;
         StatsRecorder::getInstance()->timeProcess(StatsType::GC_READ, readStartTime);
         cur++;
-            
-        size_t scanLength = dataInBuffer? Segment::getWriteFront(segment) : Segment::getFlushFront(segment);
+
+        size_t scanLength = dataInBuffer ? Segment::getWriteFront(segment) : Segment::getFlushFront(segment);
 
         bytesScanned += gcSegment(groupId, segment, keyCount, scanLength, /* isRemove = */ false, /* reservedPos = */ gcount, gcMode, &validBytes);
 
@@ -458,11 +458,9 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     if (_valueManager->_segmentReservedByGroup.count(groupId) > 0) {
         // prepare the segments
         Segment cs;
-        len_t lastFlushFront = _valueManager->getLastSegmentFront(_segmentGroupManager->getGroupFlushFront(groupId, false)) % logSegmentSize; 
+        len_t lastFlushFront = _valueManager->getLastSegmentFront(_segmentGroupManager->getGroupFlushFront(groupId, false)) % logSegmentSize;
         assert(
-                (lastFlushFront <= mainSegmentSize && logSegments.empty()) ||
-                (lastFlushFront <= logSegmentSize && !logSegments.empty())
-              );
+            (lastFlushFront <= mainSegmentSize && logSegments.empty()) || (lastFlushFront <= logSegmentSize && !logSegments.empty()));
         if (logSegments.empty()) {
             // no log segment before hand
             lastFlushFront = 0;
@@ -470,8 +468,8 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
         Segment::dup(cs, _valueManager->_segmentReservedInBuf.at(mainSegmentId).segment);
         // clean leading bytes
         Segment::clean(cs, 0, lastFlushFront, false);
-        //printf("gc in memory updates for segment %lu lastFlushFront %lu flushFront %lu writeFront %lu\n", mainSegmentId, lastFlushFront, Segment::getFlushFront(cs), Segment::getWriteFront(cs));
-        // avoid any trailing bytes
+        // printf("gc in memory updates for segment %lu lastFlushFront %lu flushFront %lu writeFront %lu\n", mainSegmentId, lastFlushFront, Segment::getFlushFront(cs), Segment::getWriteFront(cs));
+        //  avoid any trailing bytes
         bytesScanned += gcSegment(groupId, cs, keyCount, Segment::getWriteFront(cs), false, logSegments.size() + 1, gcMode, &validBytes);
         all.push_back(cs);
         lastNoMap = true;
@@ -491,7 +489,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
         _segmentGroupManager->resetGroupFronts(groupId, /* needsLock = */ false);
     }
 
-    //printf("Group %lu gc log = %d\n", groupId, isLogOnly(gcMode));
+    // printf("Group %lu gc log = %d\n", groupId, isLogOnly(gcMode));
 
     // put and align all scanned data to a designated buffer (that can always hold all data in a group)
     key_len_t keySize = 0;
@@ -506,24 +504,20 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     int numPipelinedBuffer = cm.getNumPipelinedBuffer();
     std::unordered_map<unsigned char*, offset_t, hashKey, equalKey> oldLocations;
     // put and aligned GCed data into flush buffer
-    for (auto &it : keyCount) {
+    for (auto& it : keyCount) {
         // get the key size
         memcpy(&keySize, it.first, sizeof(key_len_t));
-        
+
         // get the value size
         memcpy(&valueSize, it.first + KEY_REC_SIZE, sizeof(len_t));
-        bool writeToHotStorage = 
-                !cm.useSlave() /* no cold storage */ ||
-                getHotness(groupId, it.second.first % TAG_MASK) /* is hot key */ ||
-                (cm.getColdStorageCapacity() < _valueManager->_slaveValueManager->_slave.writtenBytes + cm.getVLogGCSize() + RECORD_SIZE /* cold storage is full */ && 
-                    valueSize > 0 /* not a tag */);
+        bool writeToHotStorage = !cm.useSlave() /* no cold storage */ || getHotness(groupId, it.second.first % TAG_MASK) /* is hot key */ || (cm.getColdStorageCapacity() < _valueManager->_slaveValueManager->_slave.writtenBytes + cm.getVLogGCSize() + RECORD_SIZE /* cold storage is full */ && valueSize > 0 /* not a tag */);
         // append updates back to a unique buffer
-        Segment &pool = _valueManager->_centralizedReservedPool[numPipelinedBuffer].pool;
+        Segment& pool = _valueManager->_centralizedReservedPool[numPipelinedBuffer].pool;
         // if the buffer is full before flush, flush before putting updates
         if (!Segment::canFit(pool, RECORD_SIZE)) {
             _valueManager->flushCentralizedReservedPool(reportGroupId, /* isUpdate */ false, /* poolIndex = */ numPipelinedBuffer);
         }
-        std::pair<unsigned char*, segment_len_t> updatePair (Segment::getData(pool) + Segment::getWriteFront(pool), Segment::getWriteFront(pool));
+        std::pair<unsigned char*, segment_len_t> updatePair(Segment::getData(pool) + Segment::getWriteFront(pool), Segment::getWriteFront(pool));
         // put the update into buffer
         Segment::appendData(pool, it.first, KEY_REC_SIZE);
         if (writeToHotStorage) {
@@ -543,7 +537,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
             ValueLocation oldValueLoc;
             oldValueLoc.segmentId = 0;
             if (valueSize > 0) {
-                _valueManager->_slaveValueManager->putValue((char*) it.first, KEY_REC_SIZE, VALUE_OFFSET((char*) it.first), valueSize, oldValueLoc, 1);
+                _valueManager->_slaveValueManager->putValue((char*)it.first, KEY_REC_SIZE, VALUE_OFFSET((char*)it.first), valueSize, oldValueLoc, 1);
                 _valueManager->_slaveValueManager->_slave.writtenBytes += RECORD_SIZE;
                 _valueManager->_slaveValueManager->_slave.validBytes += RECORD_SIZE;
                 recordSize = (KEY_REC_SIZE + sizeof(len_t)) * 2 + valueSize;
@@ -584,7 +578,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     // free all buffered segments
     size_t ccount = 0;
     for (auto c : all) {
-        ccount ++;
+        ccount++;
         if (useMmap && (ccount != all.size() || !lastNoMap)) {
             _deviceManager->readUmmap(Segment::getId(c), 0, Segment::getFlushFront(c), Segment::getData(c));
         } else {
@@ -597,7 +591,7 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     StatsRecorder::getInstance()->minMaxGCUpdate(mn, mx);
 
     gcBytes = bytesScanned - bytesWritten;
-    //assert(gcBytes > 0);
+    // assert(gcBytes > 0);
 
     // clean up the updates in centralized pool after GC
     if (isLogOnly(gcMode)) {
@@ -607,14 +601,14 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     // mark the group as free
     if (reportGroupId == 0 || *reportGroupId != groupId) {
         _segmentGroupManager->releaseGroupLock(groupId);
-        //printf("Release GC group %lu lock\n", groupId);
+        // printf("Release GC group %lu lock\n", groupId);
     }
 
-    //printf("GC group %lu gc %lu bytesWritten %lu gcMode %d freeLogSegments %d origin %lu\n", groupId, gcBytes, bytesWritten, gcMode, freeLogSegments, originBytes);
-    // record bytes scanned and written back
+    // printf("GC group %lu gc %lu bytesWritten %lu gcMode %d freeLogSegments %d origin %lu\n", groupId, gcBytes, bytesWritten, gcMode, freeLogSegments, originBytes);
+    //  record bytes scanned and written back
     StatsRecorder::getInstance()->totalProcess(StatsType::GC_SCAN_BYTES, bytesScanned);
     StatsRecorder::getInstance()->totalProcess(StatsType::GC_WRITE_BYTES, bytesWritten);
-    //printf("GC group %lu mode %d Scanned %lu Written %lu\n", groupId, gcMode, bytesScanned, bytesWritten);
+    // printf("GC group %lu mode %d Scanned %lu Written %lu\n", groupId, gcMode, bytesScanned, bytesWritten);
     finalGCMode = gcMode;
     if (_modeCount.count(gcMode) == 0) {
         _modeCount[gcMode] = 0;
@@ -624,7 +618,8 @@ size_t GCManager::gcOneGroup(group_id_t groupId, GCMode &finalGCMode, bool needs
     return gcBytes;
 }
 
-size_t GCManager::gcSegment(group_id_t groupId, Segment &segment, std::unordered_map<unsigned char *, std::pair<int, ValueLocation>, hashKey, equalKey> &keyCount, len_t total, bool isRemove, size_t reservedPos, int gcMode, size_t *validBytes) {
+size_t GCManager::gcSegment(group_id_t groupId, Segment& segment, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, len_t total, bool isRemove, size_t reservedPos, int gcMode, size_t* validBytes)
+{
     len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
     len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
 
@@ -634,17 +629,18 @@ size_t GCManager::gcSegment(group_id_t groupId, Segment &segment, std::unordered
     if (total == INVALID_LEN)
         total = reservedPos > 0 ? logSegmentSize : mainSegmentSize;
 
-    //debug_info("Scan bytes from segment %d total %lld\n", Segment::getId(segment), total);
-    while (bytesScanned < (size_t) total) {
+    // debug_info("Scan bytes from segment %d total %lld\n", Segment::getId(segment), total);
+    while (bytesScanned < (size_t)total) {
         bytesScanned = gcKvPair(groupId, &segment, bytesScanned, keyCount, isRemove, reservedPos, gcMode, validBytes);
     }
 
     return bytesScanned;
 }
 
-segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_len_t scanned, std::unordered_map<unsigned char *, std::pair<int, ValueLocation>, hashKey, equalKey> &keyCount, bool isRemove, size_t reservedPos, int gcMode, size_t *validBytes) {
+segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment* segment, segment_len_t scanned, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, bool isRemove, size_t reservedPos, int gcMode, size_t* validBytes)
+{
 
-    std::pair<unsigned char *, std::pair<int, ValueLocation>> kc; 
+    std::pair<unsigned char*, std::pair<int, ValueLocation>> kc;
     key_len_t keySize = 0;
     len_t valueSize = INVALID_LEN;
     off_len_t offLen;
@@ -660,14 +656,14 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
         return ++scanned;
     }
 
-    //printf("Scan key (%d)[%x] at %lu v[0] = %x\n", KEY_SIZE, kc.first[0], scanned, kc.first[sizeof(len_t)+KEY_SIZE]);
+    // printf("Scan key (%d)[%x] at %lu v[0] = %x\n", KEY_SIZE, kc.first[0], scanned, kc.first[sizeof(len_t)+KEY_SIZE]);
     kc.second.first = 1;
     ValueLocation valueLoc;
     valueLoc.segmentId = Segment::getId(*segment);
-    valueLoc.offset = scanned + (reservedPos > 0? mainSegmentSize + (reservedPos - 1) * logSegmentSize : 0);
+    valueLoc.offset = scanned + (reservedPos > 0 ? mainSegmentSize + (reservedPos - 1) * logSegmentSize : 0);
     kc.second.second = valueLoc;
 
-    // skip the value and value size / deleted keys 
+    // skip the value and value size / deleted keys
     offLen.first = scanned;
     offLen.second = sizeof(key_len_t);
     Segment::readData(*segment, &keySize, offLen);
@@ -686,18 +682,18 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
     }
     scanned += KEY_REC_SIZE;
 
-    //debug_info("Scan value of size %lld\n", valueSize);
+    // debug_info("Scan value of size %lld\n", valueSize);
     if (valueSize == INVALID_LEN) {
         // key deleted
         kc.second.first = -1;
-        //debug_info("Scan deleted key [%.*s]\n", KEY_SIZE, kc.first);
-    // Todo temp workaround for filtering invalid values
+        // debug_info("Scan deleted key [%.*s]\n", KEY_SIZE, kc.first);
+        // Todo temp workaround for filtering invalid values
     } else if (valueSize > 0) {
         // new key scanned
         if (kc.second.first == 1 && validBytes != 0) {
             *validBytes += RECORD_SIZE;
         }
-        //debug_info("Scanned [%.*s] with size %lld\n", KEY_SIZE, kc.first, valueSize);
+        // debug_info("Scanned [%.*s] with size %lld\n", KEY_SIZE, kc.first, valueSize);
     } else if (valueSize == 0) {
         if (validBytes != 0) {
             *validBytes += KEY_REC_SIZE + sizeof(len_t);
@@ -712,21 +708,23 @@ segment_len_t GCManager::gcKvPair(group_id_t groupId, Segment *segment, segment_
     // add/update in the key count map
     keyCount.insert(kc);
 
-    // skip the key and value 
-    scanned += sizeof(len_t) + (valueSize == INVALID_LEN? 0 : valueSize);
+    // skip the key and value
+    scanned += sizeof(len_t) + (valueSize == INVALID_LEN ? 0 : valueSize);
     exit(1);
 
     return scanned;
 }
 
-inline int GCManager::getHotness(group_id_t groupId, int updateCount) {
-    return (updateCount > 1)? ConfigManager::getInstance().getHotnessLevel() / 2 : 0;
+inline int GCManager::getHotness(group_id_t groupId, int updateCount)
+{
+    return (updateCount > 1) ? ConfigManager::getInstance().getHotnessLevel() / 2 : 0;
 }
 
-GCMode GCManager::getGCMode(group_id_t groupId, len_t reservedBytes) {
+GCMode GCManager::getGCMode(group_id_t groupId, len_t reservedBytes)
+{
     GCMode gcMode = ConfigManager::getInstance().getGCMode();
     // check if the triggering condition(s) matches,
-    // swtich to all if 
+    // swtich to all if
     // (1) log reclaim is less than reclaim min threshold
     // (2) write back ratio is smaller for all
     double ratioAll = _segmentGroupManager->getGroupWriteBackRatio(groupId, /* type = */ 0, /* isGC = */ true);

@@ -9,7 +9,7 @@
 #include <vector>
 
 //#include <hdr_histogram.h>
-#include "indexBasedStore/define.hh"
+#include "common/indexStorePreDefines.hpp"
 
 #define S2US (1000 * 1000)
 #define MAX_DISK (2)

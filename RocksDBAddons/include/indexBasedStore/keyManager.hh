@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <assert.h>
-#include "define.hh"
+#include "common/indexStorePreDefines.hpp"
 #include "ds/keyvalue.hh"
 
 namespace DELTAKV_NAMESPACE {
