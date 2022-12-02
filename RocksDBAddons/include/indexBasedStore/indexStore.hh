@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include "indexBasedStore/define.hh"
+#include "indexBasedStore/ds/lru.hh"
 #include "interface/deltaKVOptions.hpp"
 #include "deviceManager.hh"
 #include "keyManager.hh"
@@ -49,6 +50,10 @@ private:
     SegmentGroupManager *_segmentGroupManager;
 
     boost::threadpool::pool _scanthreads;
+
+    struct {
+        LruList* lru;
+    } _cache;
 
     bool _freeDeviceManager; 
     bool checkKeySize(len_t &keySize);

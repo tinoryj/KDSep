@@ -32,6 +32,11 @@ KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksD
     
     _valueManager->setGCManager(_gcManager);
 
+    _cache.lru = nullptr;
+    if (ConfigManager::getInstance().valueCacheSize() > 0) {
+        _cache.lru = new LruList(ConfigManager::getInstance().valueCacheSize());
+    }
+
     _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
@@ -41,6 +46,8 @@ KvServer::~KvServer() {
     delete _gcManager;
     delete _segmentGroupManager;
     delete _logManager;
+    if (_cache.lru) 
+        delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
 }
@@ -57,7 +64,7 @@ bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
     char* ckey = new char[KEY_REC_SIZE+1];
-    char* cvalue = new char[valueSize];
+    char* cvalue = new char[valueSize+1];
 
     memcpy(ckey, &keySize, sizeof(key_len_t));
     memcpy(ckey + sizeof(key_len_t), key, keySize);
@@ -67,6 +74,10 @@ bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t
     cvalue[valueSize] = '\0';
 
     debug_info("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey, (int)valueSize, cvalue);
+
+    if (_cache.lru && _cache.lru->get((unsigned char*)ckey).size() > 0) {
+        _cache.lru->update((unsigned char*)ckey, (unsigned char*)cvalue, valueSize);
+    }
 
     oldValueLoc.value.clear();
     // only support fixed key size
@@ -167,11 +178,6 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
         return ret;
     }
 
-    ValueLocation readValueLoc;
-    readValueLoc.segmentId = 0;
-    readValueLoc.offset = storageInfoVec.externalFileOffset_;
-    readValueLoc.length = storageInfoVec.externalContentSize_;
-
     // get the value's location
 //    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
 
@@ -185,9 +191,26 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
 //        if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 //        return true;
 //    }
+//
+//    // not found
+//    if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
 
-    // not found
-    if (readValueLoc.segmentId == INVALID_SEGMENT) return false;
+    // get value using the LRU cache
+    std::string valueStr;
+    if (_cache.lru) {
+        valueStr = _cache.lru->get((unsigned char*)ckey);
+        if (valueStr.size() > 0) {
+            valueSize = valueStr.size();
+            value = (char*) buf_malloc(valueSize);
+            memcpy(value, valueStr.c_str(), valueSize); 
+            return ret;
+        }
+    } 
+
+    ValueLocation readValueLoc;
+    readValueLoc.segmentId = 0;
+    readValueLoc.offset = storageInfoVec.externalFileOffset_;
+    readValueLoc.length = storageInfoVec.externalContentSize_;
 
     ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);
     if (timed) StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);

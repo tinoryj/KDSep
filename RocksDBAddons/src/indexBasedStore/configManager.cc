@@ -32,6 +32,7 @@ void ConfigManager::setConfigPath (const char* path) {
         _buffer.numPipelinedBuffer = 1;
     }
     _buffer.directIO = readBool("buffer.directIO");
+    _buffer.valueCacheSize = readULL("buffer.valueCacheSize");
 
     // hotness
     _hotness.levels = 2;
@@ -235,6 +236,11 @@ bool ConfigManager::useDirectIO() const {
     return _buffer.directIO;
 }
 
+len_t ConfigManager::valueCacheSize() const {
+    assert (!_pt.empty());
+    return _buffer.valueCacheSize;
+}
+
 int ConfigManager::getHotnessLevel() const {
     assert (!_pt.empty());
     return _hotness.levels;
@@ -403,9 +409,13 @@ void ConfigManager::printConfig() const {
         " Update buffer size          : %lu\n"
         "  - Pipe depth               : %d\n"
         " In-place update             : %s\n"
+        " Direct I/O                  : %s\n"
+        " Value cache size            : %lu\n"
         , getUpdateKVBufferSize()
         , getNumPipelinedBuffer()
         , isInPlaceUpdate()? "true" : "false"
+        , useDirectIO() ? "true" : "false"
+        , valueCacheSize()
     );
     printf(
         "------- Hotness -----\n"

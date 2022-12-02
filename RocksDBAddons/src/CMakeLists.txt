@@ -49,6 +49,7 @@ add_library(DeltaKV STATIC
       indexBasedStore/deviceManager.cc
       indexBasedStore/ds/bitmap.cc
       indexBasedStore/ds/segmentPool.cc
+      indexBasedStore/ds/lru.cc
       indexBasedStore/gcManager.cc
       indexBasedStore/indexStoreInterface.cpp
       indexBasedStore/indexStore.cpp

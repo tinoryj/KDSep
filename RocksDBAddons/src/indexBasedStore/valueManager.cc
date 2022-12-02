@@ -1362,6 +1362,8 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
         }
     }
 
+    debug_info("restore finished: number of key values = %lu\n", keyValues.size());
+
 }
 
 //void ValueManager::restoreFromUpdateLog() {

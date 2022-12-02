@@ -39,6 +39,7 @@ public:
     int getNumPipelinedBuffer() const;
     bool usePipelinedBuffer() const;
     bool useDirectIO() const;
+    len_t valueCacheSize() const;
 
     // hotness
     int getHotnessLevel() const;
@@ -120,6 +121,7 @@ private:
         bool inPlaceUpdate;                       // whether to enable in-place update for updated values of the same size
         int numPipelinedBuffer;                   // no. of pipelined update buffers
         bool directIO;
+        len_t valueCacheSize;
     } _buffer;
 
     struct {
