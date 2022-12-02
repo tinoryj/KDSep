@@ -46,6 +46,7 @@ bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valu
     for (int i = 0; i < (int)keyStrVec.size(); i++) {
         put(keyStrVec[i], valueStrPtrVec[i], storageInfoVecPtr[i]);
     }
+    kvServer_->flushBuffer();
     return true;
 }
 
@@ -72,6 +73,11 @@ bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalInde
 bool IndexStoreInterface::forcedManualGarbageCollection()
 {
     kvServer_->gc(false);
+    return true;
+}
+
+bool IndexStoreInterface::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+    kvServer_->restoreVLog(keyValues);
     return true;
 }
 

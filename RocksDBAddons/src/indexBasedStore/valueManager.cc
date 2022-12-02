@@ -1350,6 +1350,7 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
 
         if (start != end) {
             start += readSize;
+            _segmentGroupManager->getAndIncrementVLogWriteOffset(readSize);
             continue;
         }
 
@@ -1361,42 +1362,6 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
         }
     }
 
-
-    // update log
-
-//    if (_logManager->readBatchUpdateKeyValue(keys, values, groups)) {
-//        // update kv locations
-//        _keyManager->writeKeyBatch(keys, values);
-//        // update group metadata
-//        for (auto g : groups) {
-//            //printf("Log group %lu front b4 %lu aft %lu\n", g.first, _segmentGroupManager->getGroupWriteFront(g.first, /* needsLock = */ false), g.second.first);
-//            // in-memory
-//            _segmentGroupManager->setGroupWriteFront(g.first, g.second.first, /* needsLock = */ false);
-//            _segmentGroupManager->setGroupFlushFront(g.first, g.second.first, /* needsLock = */ false);
-//            _segmentGroupManager->setGroupSegments(g.first, g.second.second);
-//            // LSM-tree
-//            _segmentGroupManager->writeGroupMeta(g.first);
-//        }
-//        // update segment metadata
-//        for (size_t i = 0; i < keys.size(); i++) {
-//            segment_id_t cid = values.at(i).segmentId;
-//            if (cid == LSM_SEGMENT) {
-//                assert(0);
-//                continue;
-//            }
-//            offset_t writeFront = values.at(i).offset + values.at(i).length + KEY_SIZE;
-//            if (segments.count(cid) == 0 || segments.at(cid) < writeFront) {
-//                segments[cid] = writeFront;
-//            }
-//        }
-//        for (auto c : segments) {
-//            //printf("Log segment %lu front %lu\n", c.first, c.second);
-//            _segmentGroupManager->setSegmentFlushFront(c.first, c.second);
-//            _segmentGroupManager->writeSegmentMeta(c.first);
-//        }
-//        // remove the log file
-//        _logManager->ackBatchUpdateKeyValue();
-//    }
 }
 
 //void ValueManager::restoreFromUpdateLog() {

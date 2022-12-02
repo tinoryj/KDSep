@@ -28,6 +28,7 @@ public:
 //    void getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize);
 //    bool delValue (char *key, len_t keySize);
     
+    bool restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
     bool flushBuffer();
     size_t gc(bool all = false);
 

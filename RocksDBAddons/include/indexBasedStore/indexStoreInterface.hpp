@@ -16,6 +16,7 @@ public:
     bool get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr);
     bool multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();
+    bool restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
 
 private:
     uint64_t extractValueSizeThreshold_ = 0;

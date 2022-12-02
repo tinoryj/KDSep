@@ -287,6 +287,11 @@ bool KvServer::getValue(const char *key, len_t keySize, char *&value, len_t &val
 //    return (retValueLoc.segmentId != INVALID_SEGMENT);
 //}
 
+bool KvServer::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+    _valueManager->restoreVLog(keyValues);
+    return true;
+}
+
 bool KvServer::flushBuffer() {
     return _valueManager->forceSync();
 }
