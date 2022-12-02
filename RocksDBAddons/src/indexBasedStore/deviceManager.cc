@@ -321,7 +321,11 @@ int DeviceManager::accessFileFd(segment_id_t segmentId)
         fname.append("/c");
         fname.append(std::to_string(segmentId));
         if (ConfigManager::getInstance().useDirectIO()) {
-            fd = open(fname.c_str(), O_RDWR | O_CREAT | O_DIRECT, 0755);
+            if (ConfigManager::getInstance().testDirectIOCorrectness()) {
+                fd = open(fname.c_str(), O_RDWR | O_CREAT, 0755);
+            } else {
+                fd = open(fname.c_str(), O_RDWR | O_CREAT | O_DIRECT, 0755);
+            }
         } else {
             fd = open(fname.c_str(), O_RDWR | O_CREAT, 0755);
         }

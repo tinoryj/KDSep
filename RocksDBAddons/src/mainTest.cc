@@ -331,13 +331,13 @@ int main(int argc, char* argv[])
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
     // deltaKV settings
-    options_.enable_deltaStore = true;
+    options_.enable_deltaStore = false;
     options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
     options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
-    options_.enable_batched_operations_ = true;
+    options_.enable_batched_operations_ = false;
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
@@ -399,20 +399,20 @@ int main(int argc, char* argv[])
             break;
         }
 
-        for (int i = 0; i < 4; i++) {
-            string mergeStr = "1,value" + to_string(i);
-            testBatchedMerge(db_, key1, mergeStr);
-        }
-
-        // get merged value
-        string tempReadStrTemp;
-        bool statusGetTemp = testGet(db_, key1, tempReadStrTemp);
-        testResultBoolVec.push_back(statusGetTemp);
-        string resultStr = "value3,value6";
-        if (tempReadStrTemp.compare(resultStr) != 0) {
-            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
-            break;
-        }
+//        for (int i = 0; i < 4; i++) {
+//            string mergeStr = "1,value" + to_string(i);
+//            testBatchedMerge(db_, key1, mergeStr);
+//        }
+//
+//        // get merged value
+//        string tempReadStrTemp;
+//        bool statusGetTemp = testGet(db_, key1, tempReadStrTemp);
+//        testResultBoolVec.push_back(statusGetTemp);
+//        string resultStr = "value3,value6";
+//        if (tempReadStrTemp.compare(resultStr) != 0) {
+//            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
+//            break;
+//        }
 
         bool statusPut2 = testPut(db_, key1, value2);
         testResultBoolVec.push_back(statusPut2);

@@ -39,6 +39,7 @@ public:
     int getNumPipelinedBuffer() const;
     bool usePipelinedBuffer() const;
     bool useDirectIO() const;
+    bool testDirectIOCorrectness() const;
     len_t valueCacheSize() const;
 
     // hotness
@@ -121,6 +122,7 @@ private:
         bool inPlaceUpdate; // whether to enable in-place update for updated values of the same size
         int numPipelinedBuffer; // no. of pipelined update buffers
         bool directIO;
+        bool testDirectIO;
         len_t valueCacheSize;
     } _buffer;
 

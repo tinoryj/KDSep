@@ -34,6 +34,7 @@ void ConfigManager::setConfigPath(const char* path)
         _buffer.numPipelinedBuffer = 1;
     }
     _buffer.directIO = readBool("buffer.directIO");
+    _buffer.testDirectIO = readBool("buffer.testDirectIO");
     _buffer.valueCacheSize = readULL("buffer.valueCacheSize");
 
     // hotness
@@ -272,6 +273,12 @@ bool ConfigManager::useDirectIO() const
 {
     assert(!_pt.empty());
     return _buffer.directIO;
+}
+
+bool ConfigManager::testDirectIOCorrectness() const
+{
+    assert(!_pt.empty());
+    return _buffer.testDirectIO;
 }
 
 len_t ConfigManager::valueCacheSize() const

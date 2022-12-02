@@ -137,6 +137,7 @@ size_t GCManager::gcVLog()
     len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
     unsigned char* readPool = _useMmap ? 0 : Segment::getData(_gcSegment.read);
     unsigned char* writePool = Segment::getData(_gcSegment.write);
+    len_t logTail = _segmentGroupManager->getLogWriteOffset();
 
     if (ConfigManager::getInstance().useDirectIO() && gcSize % pageSize) {
         debug_error("use direct IO but gcSize %lu not aligned; stop\n", gcSize);
@@ -172,10 +173,17 @@ size_t GCManager::gcVLog()
         flushFront = Segment::getFlushFront(_gcSegment.read);
         assert(flushFront != gcSize);
         // read and fit up only the available part of buffer
-        gcFront = _segmentGroupManager->getLogGCOffset();
+        gcFront = _segmentGroupManager->getLogGCOffset(); 
         if (zeroOffset == INVALID_OFFSET) {
             zeroOffset = gcFront;
         }
+
+        if ((gcFront < logTail && logTail - gcFront < gcSize * 2) || 
+           (gcFront > logTail && logTail + gcFront - capacity < gcSize * 2)) {
+            debug_info("GC stop: go through whole log but gcBytes not enough: gcBytes %lu gcSize %lu logHead %lu logTail %lu\n", 
+                gcBytes, gcSize, gcFront, logTail);
+            break;
+        } 
 
         //        debug_info("lastFillZeroOffset %lu gcFront %lu flushFront %lu\n", lastFillZeroOffset, gcFront, flushFront);
         if (_useMmap) {
@@ -188,7 +196,8 @@ size_t GCManager::gcVLog()
         // mark the amount of data in buffer
         Segment::setWriteFront(_gcSegment.read, gcSize);
         for (remains = gcSize; remains > 0;) {
-            debug_info("remains %lu gcBytes %lu flushFront %lu gcFront %lu\n", remains, gcBytes, flushFront, gcFront);
+            debug_info("remains %lu gcBytes %lu flushFront %lu logHead %lu logTail %lu\n", 
+                remains, gcBytes, flushFront, gcFront, logTail);
             valueSize = INVALID_LEN;
             keySizeOffset = gcSize - remains;
 
@@ -198,13 +207,14 @@ size_t GCManager::gcVLog()
             }
             off_len_t offLen(keySizeOffset, sizeof(key_len_t));
             Segment::readData(_gcSegment.read, &keySize, offLen);
-            debug_info("keySize %d\n", (int)keySize);
             if (keySize == 0) {
-                debug_info("may use direct I/O. Skip the page gcSize %lu remains %lu\n", gcSize, remains);
-                if (remains % pageSize == 0) {
-                    debug_info("remains aligned; this page has no content (remains %lu)\n", remains);
+                if ((remains + (pageSize - gcFront % pageSize)) % pageSize == 0) {
+                    debug_error("remains aligned; this page has no content (remains %lu)\n", remains);
+                    assert(0);
+                    exit(-1);
+                    remains -= (flushFront == 0) ? pageSize : flushFront;
                 }
-                remains -= pageSize - remains % pageSize;
+                remains -= std::min(remains % pageSize + (pageSize - gcFront % pageSize), remains);
                 continue;
             }
 
@@ -221,11 +231,10 @@ size_t GCManager::gcVLog()
                 break;
             }
             STAT_TIME_PROCESS(valueLoc = _keyManager->getKey((char*)readPool + keySizeOffset), StatsType::GC_KEY_LOOKUP);
-            debug_info("read LSM: key [%.*s] segmentId %lu\n", (int)keySize, KEY_OFFSET((char*)readPool + keySizeOffset), valueLoc.segmentId);
+            debug_trace("read LSM: key [%.*s] offset %lu\n", (int)keySize, KEY_OFFSET((char*)readPool + keySizeOffset), valueLoc.offset);
             // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
             if (valueLoc.segmentId == (_isSlave ? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
                 // buffer full, flush before write
-                debug_info("keep KV object gcBytes %lu \n", gcBytes);
                 if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
                     // Flush to Vlog
                     STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
@@ -254,7 +263,6 @@ size_t GCManager::gcVLog()
                 values.push_back(valueLoc);
                 _gcWriteBackBytes += RECORD_SIZE;
             } else {
-                debug_info("drop KV object gcBytes %lu \n", gcBytes);
                 // space is reclaimed directly
                 gcBytes += RECORD_SIZE;
                 // cold storage invalid bytes cleared
@@ -319,12 +327,12 @@ size_t GCManager::gcVLog()
     }
     debug_info("gcFront new: %lu\n", gcFront);
     debug_info("read segment flush front %lu\n", Segment::getFlushFront(_gcSegment.read));
-    //    if (ConfigManager::getInstance().persistLogMeta()) {
-    //        std::string value;
-    //        value.append(to_string(gcFront + gcSize - remains));
-    //        _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), value);
-    //    }
-    // reset read buffer
+
+    if (ConfigManager::getInstance().persistLogMeta()) {
+        std::string value;
+        value.append(to_string(gcFront + gcSize - remains));
+        _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), value);
+    }
     Segment::resetFronts(_gcSegment.read);
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_TOTAL, gcStartTime);
 
