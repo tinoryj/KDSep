@@ -21,6 +21,7 @@ public:
     bool get(const string& keyStr, vector<string>*& valueStrVecPtr);
     bool multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();
+    bool setJobDone();
 
 private:
     DeltaKVOptions* internalOptionsPtr_;

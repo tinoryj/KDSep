@@ -8,12 +8,14 @@
 #include <bits/stdc++.h>
 #include <filesystem>
 
+using namespace std;
+
 namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileManager {
 public:
     HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ);
+        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, fileOperationType fileOperationType);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
@@ -25,6 +27,7 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool setOperationNumberThresholdForMetadataUpdata(uint64_t threshold);
 
     // GC manager
     void processGCRequestWorker();
@@ -41,11 +44,14 @@ private:
     uint64_t singleFileGCTriggerSize_;
     uint64_t globalGCTriggerSize_;
     std::string workingDir_;
+    fileOperationType fileOperationMethod_ = kFstream;
+    uint64_t operationCounterForMetadataCommit_ = 0;
+    uint64_t operationNumberForMetadataCommitThreshold_ = 0;
+    boost::shared_mutex operationCounterMtx_;
     // file metadata management
     // Trie<hashStoreFileMetaDataHandler*>
     //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.
-    std::unordered_map<string, hashStoreFileMetaDataHandler*>
-        objectFileMetaDataTrie_; // prefix-hash to object file metadata.
+    std::unordered_map<string, hashStoreFileMetaDataHandler*> objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     std::unordered_map<uint64_t, string>
         hashStoreFileIDToPrefixMap_; // hashStore file id -> prefix;
     uint64_t currentTotalHashStoreFileSize_ = 0;
@@ -54,13 +60,16 @@ private:
     uint64_t getHashStoreFileHandlerStatusAndPrefixLenInUseByPrefix(const string prefixStr);
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag);
+    bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID); // previousFileID only used when createByGCFlag == true
     uint64_t generateNewFileID();
     boost::shared_mutex fileIDGeneratorMtx_;
     // GC
     pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap);
-    uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap);
+    bool getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(const string keyStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID);
+    // recovery
+    uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     bool stopMessageQueueFlag_ = false;
+    bool shouldDoRecoveryFlag_ = false;
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
 };

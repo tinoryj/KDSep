@@ -8,6 +8,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/loggerColor.hpp"
+#include "utils/messageQueue.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/bind.hpp>
@@ -36,7 +37,7 @@ class DeltaKV {
 public:
     rocksdb::DB* pointerToRawRocksDB_;
     // Abstract class ctor
-    DeltaKV() = default;
+    DeltaKV();
     DeltaKV(DeltaKVOptions& options, const string& name);
     // No copying allowed
     DeltaKV(const DeltaKV&) = delete;
@@ -48,14 +49,42 @@ public:
     bool Close();
 
     bool Put(const string& key, const string& value);
-    bool Get(const string& key, string* value);
     bool Merge(const string& key, const string& value);
+    bool PutWithWriteBatch(const string& key, const string& value);
+    bool MergeWithWriteBatch(const string& key, const string& value);
+    bool Get(const string& key, string* value);
     vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
     vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
     vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
     bool SingleDelete(const string& key);
 
+    void processBatchedOperationsWorker();
+
 private:
+    // batched write
+    deque<tuple<DBOperationType, string, string>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
+    unordered_map<string, deque<pair<DBOperationType, string>>> writeBatchMapForSearch_; // key to <operation type, value>
+    uint64_t currentWriteBatchDequeInUse = 0;
+    uint64_t maxBatchOperationBeforeCommitNumber = 3;
+    messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
+    // operations
+    bool PutWithPlainRocksDB(const string& key, const string& value);
+    bool MergeWithPlainRocksDB(const string& key, const string& value);
+    bool GetWithPlainRocksDB(const string& key, string* value);
+    bool PutWithOnlyValueStore(const string& key, const string& value);
+    bool MergeWithOnlyValueStore(const string& key, const string& value);
+    bool GetWithOnlyValueStore(const string& key, string* value);
+    bool PutWithOnlyDeltaStore(const string& key, const string& value);
+    bool MergeWithOnlyDeltaStore(const string& key, const string& value);
+    bool GetWithOnlyDeltaStore(const string& key, string* value);
+    bool PutWithValueAndDeltaStore(const string& key, const string& value);
+    bool MergeWithValueAndDeltaStore(const string& key, const string& value);
+    bool GetWithValueAndDeltaStore(const string& key, string* value);
+    bool isDeltaStoreInUseFlag = false;
+    bool isValueStoreInUseFlag = false;
+    bool isBatchedOperationsWithBuffer_ = false;
+    boost::shared_mutex batchedBufferOperationMtx_;
+    // thread management
     boost::asio::thread_pool* threadpool_;
     bool launchThreadPool(uint64_t totalThreadNumber);
     bool deleteThreadPool();

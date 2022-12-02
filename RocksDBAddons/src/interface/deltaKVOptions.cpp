@@ -7,7 +7,9 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     ofstream dumpOptionsOutStream;
     dumpOptionsOutStream.open(dumpPath, ios::out);
     if (!dumpOptionsOutStream.is_open()) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
+
         return false;
     }
     dumpOptionsOutStream << "Common options:" << endl;
@@ -18,7 +20,6 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     if (enable_deltaStore == true) {
         dumpOptionsOutStream << "DeltaStore options:" << endl;
         dumpOptionsOutStream << "\tenable_deltaStore = " << enable_deltaStore << endl;
-        dumpOptionsOutStream << "\tenable_deltaStore_fileLvel_cache = " << enable_deltaStore_fileLvel_cache << endl;
         dumpOptionsOutStream << "\tenable_deltaStore_KDLevel_cache = " << enable_deltaStore_KDLevel_cache << endl;
         dumpOptionsOutStream << "\tenable_deltaStore_garbage_collection = " << enable_deltaStore_garbage_collection << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(deltaStore_base_cache_mode) << endl;
@@ -66,7 +67,9 @@ bool DeltaKVOptions::dumpDataStructureInfo(string dumpPath)
     ofstream dumpStructureSizeOutStream;
     dumpStructureSizeOutStream.open(dumpPath, ios::out);
     if (!dumpStructureSizeOutStream.is_open()) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
+
         return false;
     }
     // write content
