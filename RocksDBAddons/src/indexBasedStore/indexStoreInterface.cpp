@@ -4,7 +4,7 @@ namespace DELTAKV_NAMESPACE {
 
 IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string workingDir, rocksdb::DB* pointerToRawRocksDB)
 {
-    
+
     internalOptionsPtr_ = options;
     workingDir_ = workingDir;
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
@@ -14,7 +14,7 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
     struct timeval tv1;
     StatsRecorder::getInstance()->openStatistics(tv1);
 
-    DiskInfo disk1(0, "./data_dir", 1 * 1024 * 1024 * 1024);
+    DiskInfo disk1(0, workingDir.c_str(), 1 * 1024 * 1024 * 1024);
     std::vector<DiskInfo> disks;
     disks.push_back(disk1);
     devices_ = new DeviceManager(disks);
@@ -76,7 +76,8 @@ bool IndexStoreInterface::forcedManualGarbageCollection()
     return true;
 }
 
-bool IndexStoreInterface::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+bool IndexStoreInterface::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues)
+{
     kvServer_->restoreVLog(keyValues);
     return true;
 }

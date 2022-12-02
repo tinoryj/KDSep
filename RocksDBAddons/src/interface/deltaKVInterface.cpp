@@ -282,6 +282,11 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
     string rawValueStr;
     if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
         // get value from value store first
+        externalIndexInfo tempReadExternalStorageInfo;
+        memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+        string tempReadValueStr;
+        IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+        rawValueStr.assign(tempReadValueStr);
     } else {
         char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
         memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
@@ -600,6 +605,11 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
         string rawValueStr;
         if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
             // read value from value store
+            externalIndexInfo tempReadExternalStorageInfo;
+            memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+            string tempReadValueStr;
+            IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+            rawValueStr.assign(tempReadValueStr);
         } else {
             char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
             memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);

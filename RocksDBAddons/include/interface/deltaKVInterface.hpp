@@ -71,15 +71,19 @@ private:
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
     bool GetWithPlainRocksDB(const string& key, string* value);
+
     bool PutWithOnlyValueStore(const string& key, const string& value);
     bool MergeWithOnlyValueStore(const string& key, const string& value);
     bool GetWithOnlyValueStore(const string& key, string* value);
+
     bool PutWithOnlyDeltaStore(const string& key, const string& value);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
     bool GetWithOnlyDeltaStore(const string& key, string* value);
+
     bool PutWithValueAndDeltaStore(const string& key, const string& value);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
     bool GetWithValueAndDeltaStore(const string& key, string* value);
+
     bool isDeltaStoreInUseFlag = false;
     bool isValueStoreInUseFlag = false;
     bool isBatchedOperationsWithBuffer_ = false;
