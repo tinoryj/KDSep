@@ -76,95 +76,55 @@ public:
 
 bool testPut(DeltaKV& db_, string key, string& value)
 {
-
-    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test put operation" << RESET << endl;
-
+    debug_info("Test put operation with key = %s\n", key.c_str());
     if (!db_.Put(key, value)) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not put KV pairs to DB" << RESET << endl;
-
+        debug_error("Could not put KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Put key = " << key
-             << ", value = " << value << " success" << RESET << endl;
-
         return true;
     }
 }
 
 bool testGet(DeltaKV& db_, string key, string& value)
 {
-
-    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test get operation" << RESET << endl;
-
+    debug_info("Test get operation with key = %s\n", key.c_str());
     if (!db_.Get(key, &value)) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "):Could not read KV pairs from DB" << RESET << endl;
-
+        debug_error("Could not get KV pairs from DB for key = %s\n", key.c_str());
         return false;
     } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read key = " << key
-             << ", value = " << value << " success" << RESET << endl;
-
         return true;
     }
 }
 
 bool testMerge(DeltaKV& db_, string key, string& value)
 {
-
-    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test merge operation" << RESET << endl;
-
+    debug_info("Test merge operation with key = %s\n", key.c_str());
     if (!db_.Merge(key, value)) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
-
+        debug_error("Could not merge KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
-             << ", value = " << value << " success" << RESET << endl;
-
         return true;
     }
 }
 
 bool testBatchedPut(DeltaKV& db_, string key, string& value)
 {
-
-    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test batched put operation" << RESET << endl;
-
+    debug_info("Test batched put operation with key = %s\n", key.c_str());
     if (!db_.PutWithWriteBatch(key, value)) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not put KV pairs to DB" << RESET << endl;
-
+        debug_error("Could not put KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Put key = " << key
-             << ", value = " << value << " success" << RESET << endl;
-
         return true;
     }
 }
 
 bool testBatchedMerge(DeltaKV& db_, string key, string& value)
 {
-
-    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test batched merge operation" << RESET << endl;
-
+    debug_info("Test batched merge operation with key = %s\n", key.c_str());
     if (!db_.MergeWithWriteBatch(key, value)) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
-
+        debug_error("Could not merge KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
-             << ", value = " << value << " success" << RESET << endl;
-
         return true;
     }
 }
@@ -298,7 +258,7 @@ int main(int argc, char* argv[])
     // fstreamTestFlushSync(100000);
     // fstreamTestDIRECT(100000);
     // return 0;
-    
+
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;
@@ -314,7 +274,6 @@ int main(int argc, char* argv[])
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
     }
-    options_.enable_valueStore = true;
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     options_.rocksdbRawOptions_.max_background_jobs = 8;
@@ -331,6 +290,7 @@ int main(int argc, char* argv[])
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
     // deltaKV settings
+    // options_.enable_valueStore = true;
     options_.enable_deltaStore = true;
     options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {
@@ -338,27 +298,19 @@ int main(int argc, char* argv[])
     }
     options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
     options_.enable_batched_operations_ = true;
+    options_.fileOperationMethod_ = kFstream;
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
-
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open DeltaKV "
              << dbNameStr << RESET << endl;
-
         exit(0);
-    } else {
-
-        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create DeltaKV success" << RESET << endl;
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");
     options_.dumpDataStructureInfo("TempDB/structure.dump");
-
-    cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Dump DeltaKV options success" << RESET << endl;
-
     // operations
-
     Timer newTimer;
     newTimer.startTimer();
     int testNumber = 10;
@@ -374,69 +326,71 @@ int main(int argc, char* argv[])
         string merge1 = "1,value5";
         string merge2 = "2,value6";
         vector<bool> testResultBoolVec;
-        // put
-        bool statusPut1 = testPut(db_, key1, value1);
-        testResultBoolVec.push_back(statusPut1);
-        string tempReadStr1;
-        // get raw value
-        bool statusGet1 = testGet(db_, key1, tempReadStr1);
-        testResultBoolVec.push_back(statusGet1);
-        if (tempReadStr1.compare(value1) != 0) {
-            cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
-            break;
-        }
-        bool statusMerge1 = testMerge(db_, key1, merge1);
-        testResultBoolVec.push_back(statusMerge1);
-        bool statusMerge2 = testMerge(db_, key1, merge2);
-        testResultBoolVec.push_back(statusMerge2);
+        if (options_.enable_batched_operations_ == true) {
+            // put
+            bool statusPut1 = testBatchedPut(db_, key1, value1);
+            testResultBoolVec.push_back(statusPut1);
+            string tempReadStr1;
+            // get raw value
+            bool statusGet1 = testGet(db_, key1, tempReadStr1);
+            testResultBoolVec.push_back(statusGet1);
+            if (tempReadStr1.compare(value1) != 0) {
+                cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+                break;
+            }
+            for (int i = 0; i < 4; i++) {
+                string mergeStr = "1,value" + to_string(i);
+                testBatchedMerge(db_, key1, mergeStr);
+            }
+            // get merged value
+            string tempReadStrTemp;
+            bool statusGetTemp = testGet(db_, key1, tempReadStrTemp);
+            testResultBoolVec.push_back(statusGetTemp);
+            string resultStr = "value3,value2";
+            if (tempReadStrTemp.compare(resultStr) != 0) {
+                cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
+                break;
+            }
+        } else {
+            // put
+            bool statusPut1 = testPut(db_, key1, value1);
+            testResultBoolVec.push_back(statusPut1);
+            string tempReadStr1;
+            // get raw value
+            bool statusGet1 = testGet(db_, key1, tempReadStr1);
+            testResultBoolVec.push_back(statusGet1);
+            if (tempReadStr1.compare(value1) != 0) {
+                cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+                break;
+            }
+            bool statusMerge1 = testMerge(db_, key1, merge1);
+            testResultBoolVec.push_back(statusMerge1);
+            bool statusMerge2 = testMerge(db_, key1, merge2);
+            testResultBoolVec.push_back(statusMerge2);
 
-        // get merged value
-        string tempReadStr2;
-        bool statusGet2 = testGet(db_, key1, tempReadStr2);
-        testResultBoolVec.push_back(statusGet2);
-        if (tempReadStr2.compare(value1Merged) != 0) {
-            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
-            break;
-        }
+            // get merged value
+            string tempReadStr2;
+            bool statusGet2 = testGet(db_, key1, tempReadStr2);
+            testResultBoolVec.push_back(statusGet2);
+            if (tempReadStr2.compare(value1Merged) != 0) {
+                cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
+                break;
+            }
 
-        for (int i = 0; i < 4; i++) {
-            string mergeStr = "1,value" + to_string(i);
-            testBatchedMerge(db_, key1, mergeStr);
-        }
-
-        // get merged value
-        string tempReadStrTemp;
-        bool statusGetTemp = testGet(db_, key1, tempReadStrTemp);
-        testResultBoolVec.push_back(statusGetTemp);
-        string resultStr = "value3,value6";
-        if (tempReadStrTemp.compare(resultStr) != 0) {
-            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
-            break;
-        }
-
-        bool statusPut2 = testPut(db_, key1, value2);
-        testResultBoolVec.push_back(statusPut2);
-        // get overwrited value
-        string tempReadStr3;
-        bool statusGet3 = testGet(db_, key1, tempReadStr3);
-        testResultBoolVec.push_back(statusGet3);
-        if (tempReadStr3.compare(value2) != 0) {
-            cerr << BOLDRED << "[ERROR]: Error read overwrited value, overwrited value = "
-                 << value2 << ", read value = " << tempReadStr3 << endl;
-            break;
-        }
-
-        bool finalStatus = true;
-
-        for (int i = 0; i < testResultBoolVec.size(); i++) {
-            finalStatus = finalStatus && testResultBoolVec[i];
-        }
-        if (finalStatus != true) {
-            cerr << BOLDRED << "[ERROR]: Error in test round " << i << endl;
-            break;
+            bool statusPut2 = testPut(db_, key1, value2);
+            testResultBoolVec.push_back(statusPut2);
+            // get overwrited value
+            string tempReadStr3;
+            bool statusGet3 = testGet(db_, key1, tempReadStr3);
+            testResultBoolVec.push_back(statusGet3);
+            if (tempReadStr3.compare(value2) != 0) {
+                cerr << BOLDRED << "[ERROR]: Error read overwrited value, overwrited value = "
+                     << value2 << ", read value = " << tempReadStr3 << endl;
+                break;
+            }
         }
     }
-    newTimer.stopTimer("Running");
+    newTimer.stopTimer("Running DB operations time = ");
     db_.Close();
     return 0;
 }

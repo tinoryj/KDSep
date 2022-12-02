@@ -152,7 +152,6 @@ offset_t BitMap::getFirstZerosAndFlip(offset_t writeFront, offset_t len)
             } else {
                 reachEnd = true;
                 for (offset_t j = head; j < i + head; j++) {
-                    // std::cerr << "Clear LBA " << j << std::endl;
                     clearBitInternal(j);
                 }
                 writeFront = 0;
@@ -161,7 +160,6 @@ offset_t BitMap::getFirstZerosAndFlip(offset_t writeFront, offset_t len)
         } else {
             debug_error("Cannot alloc continuous blocks of len %lu, start %lu, last %lu, i %lu", len, head, ret, i);
             for (offset_t j = head; j < i + head; j++) {
-                // std::cerr << "Clear LBA " << j << std::endl;
                 clearBitInternal(j);
             }
             writeFront = ret;

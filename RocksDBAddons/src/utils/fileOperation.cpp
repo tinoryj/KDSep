@@ -26,14 +26,9 @@ bool FileOperation::createFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_CREAT, 0644);
         if (fileDirect_ == -1) {
-
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (create) = " << fileDirect_ << ", err = " << strerror(errno) << RESET << endl;
-
             return false;
         } else {
-
-            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (create) = " << fileDirect_ << RESET << endl;
-
             return true;
         }
     } else {
@@ -53,15 +48,10 @@ bool FileOperation::openFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_RDWR | O_DIRECT, 0644);
         if (fileDirect_ == -1) {
-
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (open) = " << fileDirect_ << ", err = " << strerror(errno) << RESET << endl;
-
             return false;
         } else {
             directIOWriteFileSize_ = getFilePhysicalSize(path);
-
-            cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (open) = " << fileDirect_ << RESET << endl;
-
             return true;
         }
     } else {
