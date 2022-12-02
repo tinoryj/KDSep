@@ -37,7 +37,7 @@ KvServer::KvServer(DeviceManager *deviceManager, rocksdb::DB* pointerToRawRocksD
         _cache.lru = new LruList(ConfigManager::getInstance().valueCacheSize());
     }
 
-    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
+//    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
 KvServer::~KvServer() {

@@ -55,7 +55,7 @@ public:
             a._length = size;
         }
 
-        debug_info("Malloc %lu for segment %lu\n", a._length, a._id);
+//        debug_info("Malloc %lu for segment %lu\n", a._length, a._id);
         return (a._buf != 0 && a._id != INVALID_SEGMENT);
     }
 
