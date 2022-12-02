@@ -299,24 +299,26 @@ void HashStoreFileOperator::operationWorker()
                 newRecordHeader.key_size_ = currentHandlerPtr->write_operation_.key_str_->size();
                 newRecordHeader.value_size_ = currentHandlerPtr->write_operation_.value_str_->size();
                 if (newRecordHeader.is_anchor_ == true) {
-                    char writeHeaderBuffer[sizeof(newRecordHeader) + newRecordHeader.key_size_];
-                    memcpy(writeHeaderBuffer, &newRecordHeader, sizeof(newRecordHeader));
-                    memcpy(writeHeaderBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
-                    currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
-                    // write content
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
-                    if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
-                        debug_trace("lushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
-                        currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
-                    } else {
-                        currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
-                        debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
+                    if (currentHandlerPtr->file_handler_->total_object_count_ != 0) {
+                        char writeHeaderBuffer[sizeof(newRecordHeader) + newRecordHeader.key_size_];
+                        memcpy(writeHeaderBuffer, &newRecordHeader, sizeof(newRecordHeader));
+                        memcpy(writeHeaderBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
+                        currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
+                        // write content
+                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
+                            currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
+                            debug_trace("lushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
+                            currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
+                        } else {
+                            currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                            debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
+                        }
+                        // Update metadata
+                        currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        currentHandlerPtr->file_handler_->total_object_count_++;
+                        currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     }
-                    // Update metadata
-                    currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
-                    currentHandlerPtr->file_handler_->total_object_count_++;
-                    currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                 } else {
                     char writeHeaderBuffer[sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_];
                     memcpy(writeHeaderBuffer, &newRecordHeader, sizeof(newRecordHeader));

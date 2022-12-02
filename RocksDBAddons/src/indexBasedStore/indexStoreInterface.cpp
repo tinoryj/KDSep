@@ -10,7 +10,7 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
     extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
 
-    ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
+    ConfigManager::getInstance().setConfigPath("vlog_sample_config.ini");
     struct timeval tv1;
     StatsRecorder::getInstance()->openStatistics(tv1);
 
@@ -56,14 +56,14 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
     char* value = nullptr;
     len_t valueSize = 0;
 
-    debug_info("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
     strcpy(key, keyStr.c_str());
     kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo);
     *valueStrPtr = std::string(value, valueSize);
+    debug_info("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
     if (value) {
         free(value);
     }
-    free(key);
+    delete[] key;
     return true;
 }
 bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)

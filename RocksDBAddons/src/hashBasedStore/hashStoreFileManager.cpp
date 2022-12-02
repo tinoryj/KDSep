@@ -1067,9 +1067,7 @@ void HashStoreFileManager::processGCRequestWorker()
                         string currentPrefixStr;
                         bool generatePrefixStatus = generateHashBasedPrefix(keyIt.first, currentPrefixStr);
                         if (generatePrefixStatus == false) {
-
                             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could generate prefix hash for key = " << keyIt.first << " gc error and skip the file's gc" << RESET << endl;
-
                             break;
                         } else {
                             hashStoreFileMetaDataHandler* currentFileHandlerPtr;

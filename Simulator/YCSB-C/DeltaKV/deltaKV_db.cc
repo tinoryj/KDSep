@@ -44,11 +44,20 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
     }
+    options_.enable_batched_operations_ = false;
+    options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
     if (keyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
+        options_.enable_valueStore = true;
     }
     if (keyDeltaSeparation == true) {
         cerr << "Enabled DeltaLog based KD separation" << endl;
+        // deltaKV settings
+        options_.enable_deltaStore = true;
+        options_.enable_deltaStore_KDLevel_cache = true;
+        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;
+        options_.deltaStore_single_file_maximum_size = 1 * 1024;
+        options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
     }
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
@@ -77,10 +86,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
-    // deltaKV settings
-    options_.enable_deltaStore = true;
-    options_.enable_deltaStore_KDLevel_cache = true;
-    options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
 
     cerr << "Start create DeltaKVDB instance" << endl;
 
@@ -163,5 +168,6 @@ void DeltaKVDB::printStats() {
 
 DeltaKVDB::~DeltaKVDB() {
     outputStream_.close();
+    db_.Close();
 }
 }  // namespace ycsbc

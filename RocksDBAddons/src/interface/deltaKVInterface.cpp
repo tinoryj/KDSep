@@ -7,7 +7,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     std::string* new_value, Logger* logger) const
 {
     // request merge operation when the value is found
-    debug_trace("Full merge value = %s\n", existing_value->data());
+    debug_trace("Full merge value size = %lu, content = %s\n", existing_value->size(), existing_value->data());
     string filteredOperandStr;
     string newValueIndexStr;
     bool findUpdatedValueIndex = false;
@@ -127,15 +127,15 @@ bool DeltaKV::Close()
         HashStoreInterfaceObjPtr_->setJobDone();
     }
     deleteThreadPool();
-    if (IndexStoreInterfaceObjPtr_ != nullptr) {
-        delete IndexStoreInterfaceObjPtr_;
-        // delete related object pointers
-    }
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         delete HashStoreInterfaceObjPtr_;
         // delete related object pointers
         delete hashStoreFileManagerPtr_;
         delete hashStoreFileOperatorPtr_;
+    }
+    if (IndexStoreInterfaceObjPtr_ != nullptr) {
+        delete IndexStoreInterfaceObjPtr_;
+        // delete related object pointers
     }
     if (pointerToRawRocksDB_ != nullptr) {
         delete pointerToRawRocksDB_;

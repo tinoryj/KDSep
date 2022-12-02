@@ -27,8 +27,8 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
         string indexStr = q.substr(0, q.find(","));
         int index = stoi(indexStr);
         string updateContentStr = q.substr(q.find(",") + 1, q.size());
-        debug_trace("merge operand = %s, current index =  %d, content = %s\n", q.c_str(), index, updateContentStr.c_str());
-        rawValueFieldsVec[index - 1].assign(updateContentStr);
+        debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
+        rawValueFieldsVec[index].assign(updateContentStr);
     }
 
     string temp;

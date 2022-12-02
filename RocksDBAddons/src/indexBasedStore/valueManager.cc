@@ -100,28 +100,28 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
 
     // thread for background flush
     _started = true;
-    pthread_mutex_init(&_centralizedReservedPoolIndex.queueLock, 0);
-    int ret = 0;
-    pthread_attr_t attr;
-    ret = pthread_attr_init(&attr);
-    if (ret != 0) {
-        debug_error("failed to init bg flush thread attr (%d)\n", ret);
-        assert(0);
-        exit(-1);
-    }
-    ret = pthread_cond_init(&_needBgFlush, 0);
-    ret = pthread_cond_init(&_centralizedReservedPoolIndex.flushedBuffer, 0);
-    if (ret != 0) {
-        debug_error("failed to init bg flush cond (%d)\n", ret);
-        assert(0);
-        exit(-1);
-    }
-    ret = pthread_create(&_bgflushThread, &attr, &flushCentralizedReservedPoolBgWorker, (void*)this);
-    if (ret != 0) {
-        debug_error("failed to init bg flush thread (%d)\n", ret);
-        assert(0);
-        exit(-1);
-    }
+    // pthread_mutex_init(&_centralizedReservedPoolIndex.queueLock, 0);
+    // int ret = 0;
+    // pthread_attr_t attr;
+    // ret = pthread_attr_init(&attr);
+    // if (ret != 0) {
+    //     debug_error("failed to init bg flush thread attr (%d)\n", ret);
+    //     assert(0);
+    //     exit(-1);
+    // }
+    // ret = pthread_cond_init(&_needBgFlush, 0);
+    // ret = pthread_cond_init(&_centralizedReservedPoolIndex.flushedBuffer, 0);
+    // if (ret != 0) {
+    //     debug_error("failed to init bg flush cond (%d)\n", ret);
+    //     assert(0);
+    //     exit(-1);
+    // }
+    // ret = pthread_create(&_bgflushThread, &attr, &flushCentralizedReservedPoolBgWorker, (void*)this);
+    // if (ret != 0) {
+    //     debug_error("failed to init bg flush thread (%d)\n", ret);
+    //     assert(0);
+    //     exit(-1);
+    // }
 
     // restore from any log after failure
     if (_logManager) {
@@ -142,8 +142,8 @@ ValueManager::~ValueManager()
 
     // allow the bg thread to finish its job first
     _started = false;
-    pthread_cond_signal(&_needBgFlush);
-    pthread_join(_bgflushThread, 0);
+    // pthread_cond_signal(&_needBgFlush);
+    // pthread_join(_bgflushThread, 0);
 
     ConfigManager& cm = ConfigManager::getInstance();
 

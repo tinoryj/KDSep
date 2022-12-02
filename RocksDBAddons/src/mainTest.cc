@@ -291,6 +291,7 @@ int main(int argc, char* argv[])
 
     // deltaKV settings
     options_.enable_deltaStore = true;
+    options_.enable_valueStore = true;
     options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
@@ -322,8 +323,8 @@ int main(int argc, char* argv[])
         string value1 = "value1,value2";
         string value1Merged = "value5,value6";
         string value2 = "value3,value4";
-        string merge1 = "1,value5";
-        string merge2 = "2,value6";
+        string merge1 = "0,value5";
+        string merge2 = "1,value6";
         vector<bool> testResultBoolVec;
         if (options_.enable_batched_operations_ == true) {
             // put

@@ -19,12 +19,14 @@ public:
         _length = INVALID_LEN;
         _writeFront = 0;
         _flushFront = 0;
+        _free = false;
     }
 
     ~Segment()
     {
-        if (_buf) {
+        if (_buf && _free) {
             ::free(_buf);
+            _buf = 0;
         }
     }
 
@@ -47,6 +49,7 @@ public:
             } else {
                 a._buf = (unsigned char*)buf_malloc(size);
             }
+            a._free = true;
         } else if (needsSetZero) {
             // reuse and set zero
             memset(a._buf, 0, size);
@@ -58,7 +61,7 @@ public:
             a._length = size;
         }
 
-//        debug_info("Malloc %lu for segment %lu\n", a._length, a._id);
+        //        debug_info("Malloc %lu for segment %lu\n", a._length, a._id);
         return (a._buf != 0 && a._id != INVALID_SEGMENT);
     }
 
@@ -79,6 +82,7 @@ public:
         a._id = id;
         a._buf = buf;
         a._length = size;
+        a._free = false;
         resetFronts(a);
         debug_info("Set length=%lu buffer=%p for segment %lu\n", a._length, a._buf, a._id);
         return true;
@@ -254,7 +258,9 @@ public:
     // release the segment and resource in it
     static void free(Segment& a)
     {
-        ::free(a._buf);
+        if (!a._buf) {
+            ::free(a._buf);
+        }
         a._buf = 0;
         reset(a);
     }
@@ -314,6 +320,7 @@ private:
     segment_len_t _length; // segment size
     segment_len_t _writeFront; // write frontier
     segment_len_t _flushFront; // flush frontier
+    bool _free;
     unsigned char* _buf; // data _buffer
 };
 
