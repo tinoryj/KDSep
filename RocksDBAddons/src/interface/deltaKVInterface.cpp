@@ -7,7 +7,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     std::string* new_value, Logger* logger) const
 {
     // request merge operation when the value is found
-    cerr << "Full merge value = " << existing_value << endl;
+    debug_trace("Full merge value = %s\n", existing_value->data());
     string filteredOperandStr;
     string newValueIndexStr;
     bool findUpdatedValueIndex = false;

@@ -277,7 +277,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     targetDeleteFileIDVec.push_back(leftFatherFileID);
                                     // delete right father
                                     objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->file_operation_func_ptr_->closeFile();
-                                    delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_;
+                                    delete objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->file_operation_func_ptr_;
                                     delete objectFileMetaDataTrie_.at(rightFatherFilePrefixStr);
                                     objectFileMetaDataTrie_.erase(rightFatherFilePrefixStr);
                                     hashStoreFileIDToPrefixMap_.erase(rightFatherFileID);
@@ -669,9 +669,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         hashStoreFileManifestPointerStream >> currentPointerInt;
         currentPointerInt++;
     } else {
-
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
-
         return false;
     }
     hashStoreFileManifestPointerStream.close();
@@ -696,7 +694,6 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             it.second->file_operation_func_ptr_->flushFile();
             it.second->file_operation_func_ptr_->closeFile();
             it.second->fileOperationMutex_.unlock();
-            delete it.second;
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
@@ -732,9 +729,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             }
             return true;
         } else {
-
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
-
             for (auto it : objectFileMetaDataTrie_) {
                 delete it.second->file_operation_func_ptr_;
                 delete it.second;

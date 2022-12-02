@@ -296,8 +296,8 @@ int main(int argc, char* argv[])
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
     options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
-    options_.enable_batched_operations_ = true;
-    options_.fileOperationMethod_ = kFstream;
+    options_.enable_batched_operations_ = false;
+    options_.fileOperationMethod_ = kDirectIO;
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
@@ -389,7 +389,7 @@ int main(int argc, char* argv[])
             }
         }
     }
-    newTimer.stopTimer("Running DB operations time = ");
+    newTimer.stopTimer("Running DB operations time");
     db_.Close();
     return 0;
 }
