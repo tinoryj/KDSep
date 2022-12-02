@@ -296,6 +296,8 @@ bool LogManager::getLogHeadTail(offset_t &gcFront, offset_t &writeFront) {
     std::lock_guard<std::mutex> lk (_buffer.lock);
 
     len_t logSize = _deviceManager->getUpdateLogSize();
+    gcFront = 0;
+    writeFront = 0;
 
     // no log available
     if (logSize == 0) return false;
@@ -308,8 +310,6 @@ bool LogManager::getLogHeadTail(offset_t &gcFront, offset_t &writeFront) {
     _deviceManager->readUpdateLog(bufData, logSize);
 
     // check the magic at the end of gc consistency log 
-    gcFront = 0;
-    writeFront = 0;
     memcpy(&gcFront, bufData + logSize - sizeof(offset_t) * 2, sizeof(offset_t));
     memcpy(&writeFront, bufData + logSize - sizeof(offset_t), sizeof(offset_t));
 

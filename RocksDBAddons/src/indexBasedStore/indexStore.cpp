@@ -73,7 +73,7 @@ bool KvServer::putValue(const char *key, len_t keySize, const char *value, len_t
     memcpy(cvalue, value, valueSize);
     cvalue[valueSize] = '\0';
 
-    debug_info("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey, (int)valueSize, cvalue);
+    debug_info("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey + sizeof(key_len_t), (int)valueSize, cvalue);
 
     if (_cache.lru && _cache.lru->get((unsigned char*)ckey).size() > 0) {
         _cache.lru->update((unsigned char*)ckey, (unsigned char*)cvalue, valueSize);
