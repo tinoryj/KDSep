@@ -28,7 +28,7 @@ DeviceManager::DeviceManager(const vector<DiskInfo> v_diskInfo, bool isSlave) {
     _numDisks = v_diskInfo.size();
 
     int numThread = ConfigManager::getInstance().getNumIOThread();
-    _stp.size_controller().resize(numThread);
+//    _stp.size_controller().resize(numThread);
 
     _diskIdVector.insert(_diskIdVector.begin(), diskIdSet.begin(), diskIdSet.end());
 

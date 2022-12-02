@@ -60,6 +60,10 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
     strcpy(key, keyStr.c_str());
     kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo);
     *valueStrPtr = std::string(value, valueSize);
+    if (value) {
+        free(value);
+    }
+    free(key);
     return true;
 }
 bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)

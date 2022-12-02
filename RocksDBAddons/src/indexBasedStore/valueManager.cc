@@ -95,8 +95,8 @@ ValueManager::ValueManager(DeviceManager *deviceManager, SegmentGroupManager *se
     Segment::init(_readBuffer, INVALID_SEGMENT, cm.getMainSegmentSize());
 
     // thread pool for I/Os
-    _iothreads.size_controller().resize(cm.getNumIOThread());
-    _flushthreads.size_controller().resize(cm.getNumParallelFlush());
+//    _iothreads.size_controller().resize(cm.getNumIOThread());
+//    _flushthreads.size_controller().resize(cm.getNumParallelFlush());
 
     // thread for background flush
     _started = true;
@@ -1319,6 +1319,10 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
                 if (remains % pageSize == 0) {
                     debug_info("remains aligned; this page has no content (remains %lu)\n", remains);
                 }
+
+                if (remains % pageSize == 0) {
+                    break;
+                } 
                 remains -= remains % pageSize;
                 continue;
             }

@@ -20,6 +20,12 @@ public:
         _flushFront = 0;
     }
 
+    ~Segment() {
+        if (_buf) {
+            ::free(_buf);
+        }
+    }
+
     // init a segment with buffer (re-)allocated
     static bool init(Segment &a, segment_id_t _id, segment_len_t size, bool needsSetZero = true) {
         assert(size > 0);
