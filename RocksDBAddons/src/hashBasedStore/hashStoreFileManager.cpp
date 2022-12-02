@@ -1003,12 +1003,11 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* currentHandlerPtr;
         if (notifyGCMQ_->pop(currentHandlerPtr)) {
-            debug_info("new file request for GC, file id = %lu\n", currentHandlerPtr->target_file_id_);
-
-            currentHandlerPtr->file_ownership_flag_ = -1;
+            debug_info("new file request for GC, file id = %lu, existing size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_);
             // read contents
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
             currentHandlerPtr->fileOperationMutex_.lock();
+            currentHandlerPtr->file_ownership_flag_ = -1;
             debug_trace("target read file content for gc size = %lu\n", currentHandlerPtr->total_object_bytes_);
             currentHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
             currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
