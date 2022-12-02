@@ -32,7 +32,6 @@ public:
 
     // deltaStore options
     bool enable_deltaStore = false;
-    bool enable_deltaStore_fileLvel_cache = false;
     bool enable_deltaStore_KDLevel_cache = false;
     bool enable_deltaStore_garbage_collection = false;
     contentCacheMode deltaStore_base_cache_mode = contentCacheMode::kLRUCache;
@@ -45,6 +44,7 @@ public:
     uint64_t deltaStore_total_storage_maximum_size = 1024 * 1024 * deltaStore_single_file_maximum_size;
     uint64_t deltaStore_thread_number_limit = 3;
     uint64_t deltaStore_file_flush_buffer_size_limit_ = 4096;
+    uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 2;
     float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_start_total_storage_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;
@@ -75,7 +75,9 @@ public:
     uint64_t hashStore_max_prefix_bit_number = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
     fileOperationType fileOperationMethod_ = kDirectIO;
+    bool enable_batched_operations_ = false;
 
+    // dump options
     bool dumpOptions(string dumpPath);
     bool dumpDataStructureInfo(string dumpPath);
 };

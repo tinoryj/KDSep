@@ -76,48 +76,95 @@ public:
 
 bool testPut(DeltaKV& db_, string key, string& value)
 {
+
+    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test put operation" << RESET << endl;
+
     if (!db_.Put(key, value)) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not put KV pairs to DB" << RESET << endl;
+
         return false;
     } else {
+
         cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Put key = " << key
              << ", value = " << value << " success" << RESET << endl;
+
         return true;
     }
 }
 
 bool testGet(DeltaKV& db_, string key, string& value)
 {
+
+    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test get operation" << RESET << endl;
+
     if (!db_.Get(key, &value)) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "):Could not read KV pairs from DB" << RESET << endl;
+
         return false;
     } else {
+
         cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read key = " << key
              << ", value = " << value << " success" << RESET << endl;
+
         return true;
     }
 }
 
 bool testMerge(DeltaKV& db_, string key, string& value)
 {
+
+    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test merge operation" << RESET << endl;
+
     if (!db_.Merge(key, value)) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
+
         return false;
     } else {
+
         cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
              << ", value = " << value << " success" << RESET << endl;
+
+        return true;
+    }
+}
+
+bool testBatchedPut(DeltaKV& db_, string key, string& value)
+{
+
+    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test batched put operation" << RESET << endl;
+
+    if (!db_.PutWithWriteBatch(key, value)) {
+
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not put KV pairs to DB" << RESET << endl;
+
+        return false;
+    } else {
+
+        cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Put key = " << key
+             << ", value = " << value << " success" << RESET << endl;
+
         return true;
     }
 }
 
 bool testBatchedMerge(DeltaKV& db_, string key, string& value)
 {
+
+    cout << CYAN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Test batched merge operation" << RESET << endl;
+
     if (!db_.MergeWithWriteBatch(key, value)) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Could not merge KV pairs to DB" << RESET << endl;
+
         return false;
     } else {
+
         cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge key = " << key
              << ", value = " << value << " success" << RESET << endl;
+
         return true;
     }
 }
@@ -242,6 +289,7 @@ bool directIOTest(string path)
     currentFilePtr.closeFile();
     return true;
 }
+
 int main(int argc, char* argv[])
 {
     // string path = "test.log";
@@ -288,20 +336,26 @@ int main(int argc, char* argv[])
         options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
     options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
+    options_.enable_batched_operations_ = true;
 
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open DeltaKV "
              << dbNameStr << RESET << endl;
+
         exit(0);
     } else {
+
         cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create DeltaKV success" << RESET << endl;
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");
     options_.dumpDataStructureInfo("TempDB/structure.dump");
+
     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Dump DeltaKV options success" << RESET << endl;
+
     // operations
 
     Timer newTimer;
@@ -335,10 +389,6 @@ int main(int argc, char* argv[])
         bool statusMerge2 = testMerge(db_, key1, merge2);
         testResultBoolVec.push_back(statusMerge2);
 
-        for (int i = 0; i < 4; i++) {
-            testBatchedMerge(db_, key1, merge1);
-        }
-
         // get merged value
         string tempReadStr2;
         bool statusGet2 = testGet(db_, key1, tempReadStr2);
@@ -347,6 +397,22 @@ int main(int argc, char* argv[])
             cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
             break;
         }
+
+        for (int i = 0; i < 4; i++) {
+            string mergeStr = "1,value" + to_string(i);
+            testBatchedMerge(db_, key1, mergeStr);
+        }
+
+        // get merged value
+        string tempReadStrTemp;
+        bool statusGetTemp = testGet(db_, key1, tempReadStrTemp);
+        testResultBoolVec.push_back(statusGetTemp);
+        string resultStr = "value3,value6";
+        if (tempReadStrTemp.compare(resultStr) != 0) {
+            cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
+            break;
+        }
+
         bool statusPut2 = testPut(db_, key1, value2);
         testResultBoolVec.push_back(statusPut2);
         // get overwrited value
@@ -370,16 +436,6 @@ int main(int argc, char* argv[])
         }
     }
     newTimer.stopTimer("Running");
-    // if (finalStatus) {
-    //     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
-    //     murmurHashTest(key1);
-    //     murmurHashTest(key2);
-    //     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test correct" << RESET << endl;
-    // } else {
-    //     cout << YELLOW << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): MurmurHash of Keys used in this test:" << RESET << endl;
-    //     murmurHashTest(key1);
-    //     murmurHashTest(key2);
-    //     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Function test not correct" << RESET << endl;
-    // }
+    db_.Close();
     return 0;
 }

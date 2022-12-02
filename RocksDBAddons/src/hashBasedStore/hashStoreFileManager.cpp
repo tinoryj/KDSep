@@ -21,6 +21,16 @@ HashStoreFileManager::~HashStoreFileManager()
     CloseHashStoreFileMetaDataList();
 }
 
+bool HashStoreFileManager::setOperationNumberThresholdForMetadataUpdata(uint64_t threshold)
+{
+    operationNumberForMetadataCommitThreshold_ = threshold;
+    if (operationNumberForMetadataCommitThreshold_ != threshold) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 // Recovery
 /*
 fileContentBuffer start after file header
@@ -39,7 +49,9 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
         if (currentObjectRecordHeader.is_anchor_ == true) {
             // is anchor, skip value only
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record is anchor, key = " << currentKeyStr << RESET << endl;
+
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
                 string currentValueStr = "";
@@ -55,13 +67,17 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
             }
         } else if (currentObjectRecordHeader.is_gc_done_ == true) {
             // is gc mark, skip key and value
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record is gc flushed flag" << RESET << endl;
+
             isGCFlushDone = true;
             continue;
         } else {
             // is content, keep key and value
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record is anchor, key = " << currentKeyStr << RESET << endl;
+
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
                 string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
@@ -112,7 +128,9 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
 bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
     if (shouldDoRecoveryFlag_ == false) {
+
         cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): DB closed success, do not need recovery" << RESET << endl;
+
         return true;
     }
     vector<uint64_t> scannedOnDiskFileIDList;
@@ -122,7 +140,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
         if (currentFilePath.find(".delta") != string::npos) {
             currentFilePath = currentFilePath.substr(currentFilePath.find("/") + 1);
             uint64_t currentFileID = stoull(currentFilePath);
+
             cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find file name = " << currentFilePath << ", file ID in int = " << currentFileID << RESET << endl;
+
             scannedOnDiskFileIDList.push_back(currentFileID);
         }
     }
@@ -134,19 +154,25 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
     for (auto fileIDIt : scannedOnDiskFileIDList) {
         if (hashStoreFileIDToPrefixMap_.find(fileIDIt) == hashStoreFileIDToPrefixMap_.end()) {
             // file not exist in metadata, should scan and update into metadata
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID in int = " << fileIDIt << " not exist in metadata, try recovery" << RESET << endl;
+
             if (fileIDIt >= targetNewFileID_) {
                 // the file is newly created, should scan
                 FileOperation tempReadFileStream(fileOperationMethod_);
                 string targetOpenFileName = workingDir_ + "/" + to_string(fileIDIt) + ".delta";
                 bool openCurrentFileStatus = tempReadFileStream.openFile(targetOpenFileName);
                 if (openCurrentFileStatus == false) {
+
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open file for recovery, file path = " << targetOpenFileName << RESET << endl;
+
                     return false;
                 } else {
                     // read file header for check
                     uint64_t targetFileSize = tempReadFileStream.getFileSize();
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file size = " << targetFileSize << RESET << endl;
+
                     uint64_t targetFileRemainReadSize = targetFileSize - sizeof(hashStoreFileHeader);
                     char readContentBuffer[targetFileSize];
                     tempReadFileStream.readFile(readContentBuffer, targetFileSize);
@@ -163,7 +189,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         // judge previous file ID
                         if (hashStoreFileIDToPrefixMap_.find(currentFileHeader.previous_file_id_) == hashStoreFileIDToPrefixMap_.end() && isGCFlushedDoneFlag == false) {
                             // previous ID not in metadata && gc file is not correctly flushed;
+
                             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find kGC file that previous file ID not in metadata, seems error, previous file id = " << currentFileHeader.previous_file_id_ << RESET << endl;
+
                             return false;
                         } else if (hashStoreFileIDToPrefixMap_.find(currentFileHeader.previous_file_id_) == hashStoreFileIDToPrefixMap_.end() && isGCFlushedDoneFlag == true) {
                             // gc flushed done, kGC file should add
@@ -331,7 +359,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                             }
                         }
                     } else {
+
                         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read file header with unknown create reason, file path = " << targetOpenFileName << RESET << endl;
+
                         return false;
                     }
                 }
@@ -341,23 +371,31 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
             }
         } else {
             // file exist in metadata
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID in int = " << fileIDIt << " exist in metadata, try skip or partial recovery" << RESET << endl;
+
             // get metadata file
             hashStoreFileMetaDataHandler* currentIDInMetadataFileHandlerPtr;
             currentIDInMetadataFileHandlerPtr = objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(fileIDIt));
             uint64_t onDiskFileSize = currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->getFileSize();
             if (currentIDInMetadataFileHandlerPtr->total_object_bytes_ > onDiskFileSize) {
                 // metadata size > filesystem size, error
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file ID = " << fileIDIt << ", file size in metadata = " << currentIDInMetadataFileHandlerPtr->total_object_bytes_ << " larger than file size in file system = " << onDiskFileSize << RESET << endl;
+
             } else if (currentIDInMetadataFileHandlerPtr->total_object_bytes_ < onDiskFileSize) {
                 // file may append, should recovery
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target file id = " << fileIDIt << ", file size (system) = " << onDiskFileSize << " != file size (metadata) = " << currentIDInMetadataFileHandlerPtr->total_object_bytes_ << ", try recovery" << RESET << endl;
+
                 currentIDInMetadataFileHandlerPtr->fileOperationMutex_.lock();
                 currentIDInMetadataFileHandlerPtr->file_ownership_flag_ = -1; // mark as during gc
                 // start read
                 int targetReadSize = onDiskFileSize;
                 char readBuffer[targetReadSize];
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for recovery size = " << currentIDInMetadataFileHandlerPtr->total_object_bytes_ << RESET << endl;
+
                 currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
                 currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->readFile(readBuffer, targetReadSize);
                 currentIDInMetadataFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
@@ -373,7 +411,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
 
             } else {
                 // file size match, skip current file
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target file id = " << fileIDIt << ", file size (system) = " << onDiskFileSize << " = file size (metadata) = " << currentIDInMetadataFileHandlerPtr->total_object_bytes_ << RESET << endl;
+
                 continue;
             }
         }
@@ -381,7 +421,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
     // process not in metadata files created by split old file
     for (auto splitFileIt : mapForBatchedkGCFiles) {
         if (splitFileIt.second.size() != 2) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get file created by split gc number error, current file number = " << splitFileIt.second.size() << RESET << endl;
+
             return false;
         } else {
             // check split status;
@@ -464,10 +506,14 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
         string targetRemoveFileName = workingDir_ + "/" + to_string(targetFileID) + ".delta";
         auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
         if (removeObsoleteFileStatus == -1) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveFileName << RESET << endl;
+
             return false;
         } else {
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): delete the obsolete delta file, file path = " << targetRemoveFileName << RESET << endl;
+
             continue;
         }
     }
@@ -506,7 +552,9 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
         if (CreateHashStoreFileMetaDataListIfNotExist()) {
             return true;
         } else {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create hashStore file metadata list error" << RESET << endl;
+
             return false;
         }
     }
@@ -543,7 +591,9 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             hashStoreFileIDToPrefixMap_.insert(make_pair(hashStoreFileID, prefixHashStr));
         }
     } else {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list (manifest)" << RESET << endl;
+
         return false;
     }
     return true;
@@ -559,7 +609,9 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         hashStoreFileManifestPointerStream >> currentPointerInt;
         currentPointerInt++;
     } else {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+
         return false;
     }
     hashStoreFileManifestPointerStream.close();
@@ -582,7 +634,9 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
             it.second->fileOperationMutex_.lock();
             it.second->file_operation_func_ptr_->flushFile();
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
+
             it.second->fileOperationMutex_.unlock();
         }
         hashStoreFileManifestStream.flush();
@@ -599,6 +653,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             if (filesystem::exists(targetRemoveFileName) != false) {
                 auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
                 if (removeOldManifestStatus == -1) {
+
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
                 }
             }
@@ -606,12 +661,15 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
                 string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
                 auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
                 if (removeOldBucketStatus == -1) {
+
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
                 }
             }
             return true;
         } else {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+
             return false;
         }
     } else {
@@ -619,6 +677,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
             }
         }
@@ -636,7 +695,9 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         hashStoreFileManifestPointerStream >> currentPointerInt;
         currentPointerInt++;
     } else {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+
         return false;
     }
     hashStoreFileManifestPointerStream.close();
@@ -660,7 +721,9 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             it.second->fileOperationMutex_.lock();
             it.second->file_operation_func_ptr_->flushFile();
             it.second->file_operation_func_ptr_->closeFile();
+            //
             // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flush and closed file id = " << it.second->target_file_id_ << ", file correspond prefix = " << hashStoreFileIDToPrefixMap_.at(it.second->target_file_id_) << RESET << endl;
+            //
             it.second->fileOperationMutex_.unlock();
             delete it.second;
         }
@@ -680,6 +743,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             if (filesystem::exists(targetRemoveFileName) != false) {
                 auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
                 if (removeOldManifestStatus == -1) {
+
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
                 }
             }
@@ -687,6 +751,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
                 string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
                 auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
                 if (removeOldBucketStatus == -1) {
+
                     cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
                 }
             }
@@ -696,7 +761,9 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             }
             return true;
         } else {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+
             for (auto it : objectFileMetaDataTrie_) {
                 delete it.second->file_operation_func_ptr_;
                 delete it.second;
@@ -708,6 +775,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
             }
         }
@@ -729,7 +797,9 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
         hashStoreFileManifestPointerStream << currentPointerInt;
         hashStoreFileManifestPointerStream.close();
     } else {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list pointer file for create" << RESET << endl;
+
         return false;
     }
 
@@ -758,21 +828,32 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
 // file operations - public
 bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
+    if (opType == kPut || opType == kMultiPut) {
+        operationCounterMtx_.lock();
+        operationCounterForMetadataCommit_++;
+        operationCounterMtx_.unlock();
+    }
     string prefixStr;
     bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
     if (!genPrefixStatus) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): generate prefix hash for current key error, key = " << keyStr << RESET << endl;
+
         return false;
     }
     while (true) {
         uint64_t fileHandlerUsedPrefixLength = getHashStoreFileHandlerStatusAndPrefixLenInUseByPrefix(prefixStr);
         if (fileHandlerUsedPrefixLength == 0 && opType == kGet) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get operation meet not stored buckets, key = " << keyStr << RESET << endl;
+
             return false;
         } else if (fileHandlerUsedPrefixLength == 0 && opType == kPut) {
             bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
             if (!createNewFileHandlerStatus) {
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new bucket for put operation error, key = " << keyStr << RESET << endl;
+
                 return false;
             } else {
                 fileHandlerPtr->file_ownership_flag_ = 1;
@@ -781,7 +862,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         } else if (fileHandlerUsedPrefixLength >= initialTrieBitNumber_ && fileHandlerUsedPrefixLength <= maxTrieBitNumber_) {
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerUsedPrefixLength, fileHandlerPtr);
             if (!getFileHandlerStatus) {
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get existing bucket file handler for put/get operation error, key = " << keyStr << RESET << endl;
+
                 return false;
             } else {
                 // avoid get file handler which is in GC;
@@ -791,7 +874,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
                 }
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target file handler is marked as should delete, retry" << RESET << endl;
+
                     continue;
                 } else {
                     fileHandlerPtr->file_ownership_flag_ = 1;
@@ -799,7 +884,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
                 }
             }
         } else {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get used prefix hash length in tire error, returned length = " << fileHandlerUsedPrefixLength << RESET << endl;
+
             return false;
         }
     }
@@ -838,7 +925,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixSt
 
 bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID)
 {
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new fileHandler" << RESET << endl;
+
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
     currentFileHandlerPtr->current_prefix_used_bit_ = prefixBitNumber;
@@ -862,7 +951,9 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     memcpy(fileHeaderWriteBuffer, &newFileHeader, sizeof(newFileHeader));
     // write header to current file
     currentFileHandlerPtr->fileOperationMutex_.lock();
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): in lock, file name = " << workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta" << RESET << endl;
+
     currentFileHandlerPtr->file_operation_func_ptr_->createFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
     currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
     currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
@@ -881,14 +972,18 @@ bool HashStoreFileManager::getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(con
     string prefixStr;
     bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
     if (!genPrefixStatus) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): generate prefix hash for current key error, key = " << keyStr << RESET << endl;
+
         return false;
     }
     bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, targetPrefixLen, fileHandlerPtr);
     if (!getFileHandlerStatus) {
         bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, targetPrefixLen, true, previousFileID);
         if (!createNewFileHandlerStatus) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): create new bucket for put operation error, key = " << keyStr << RESET << endl;
+
             return false;
         } else {
             fileHandlerPtr->file_ownership_flag_ = 1;
@@ -929,7 +1024,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
         processedTotalObjectNumber++;
         hashStoreRecordHeader currentObjectRecordHeader;
         memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
-        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record header done, record is anchor flag = " << currentObjectRecordHeader.is_anchor_ << ", key size = " << currentObjectRecordHeader.key_size_ << ", value size = " << currentObjectRecordHeader.value_size_ << RESET << endl;
+        //  cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current record header done, record is anchor flag = " << currentObjectRecordHeader.is_anchor_ << ", key size = " << currentObjectRecordHeader.key_size_ << ", value size = " << currentObjectRecordHeader.value_size_ << RESET << endl;
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
         if (currentObjectRecordHeader.is_anchor_ == true) {
@@ -964,26 +1059,34 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             }
         }
     }
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): deconstruct current file header done, file ID = " << currentFileHeader.file_id_ << ", create reason = " << currentFileHeader.file_create_reason_ << ", prefix length used in this file = " << currentFileHeader.current_prefix_used_bit_ << ", target process file size = " << fileSize << ", find different key number = " << resultMap.size() << ", total processed object number = " << processedTotalObjectNumber << ", target keep object number = " << processedKeepObjectNumber << RESET << endl;
+
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
 // threads workers
 void HashStoreFileManager::processGCRequestWorker()
 {
+
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start processGCRequestWorker thread success" << RESET << endl;
+
     while (true) {
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;
         }
         hashStoreFileMetaDataHandler* currentHandlerPtr;
         if (notifyGCMQ_->pop(currentHandlerPtr)) {
+
             cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): new file request for GC, file id = " << currentHandlerPtr->target_file_id_ << RESET << endl;
+
             currentHandlerPtr->file_ownership_flag_ = -1;
             // read contents
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
             currentHandlerPtr->fileOperationMutex_.lock();
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content for gc size = " << currentHandlerPtr->total_object_bytes_ << RESET << endl;
+
             currentHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
             currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
             currentHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
@@ -992,7 +1095,9 @@ void HashStoreFileManager::processGCRequestWorker()
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
             if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
+
                 cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file id = " << currentHandlerPtr->target_file_id_ << " reclaim empty space fail, try split" << RESET << endl;
+
                 // no space could be reclaimed, may request split
                 if (gcResultMap.size() == 1 && currentHandlerPtr->gc_result_status_flag_ != kMayGC) {
                     // keep tracking until forced gc threshold;
@@ -1014,13 +1119,17 @@ void HashStoreFileManager::processGCRequestWorker()
                         string currentPrefixStr;
                         bool generatePrefixStatus = generateHashBasedPrefix(keyIt.first, currentPrefixStr);
                         if (generatePrefixStatus == false) {
+
                             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could generate prefix hash for key = " << keyIt.first << " gc error and skip the file's gc" << RESET << endl;
+
                             break;
                         } else {
                             hashStoreFileMetaDataHandler* currentFileHandlerPtr;
                             bool getFileHandlerStatus = getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(currentPrefixStr, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_);
                             if (getFileHandlerStatus == false) {
+
                                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could get/create new bucket for prefix hash = " << currentPrefixStr << " gc error and skip the file's gc" << RESET << endl;
+
                                 break;
                             } else {
                                 currentFileHandlerPtr->fileOperationMutex_.lock();
@@ -1056,7 +1165,9 @@ void HashStoreFileManager::processGCRequestWorker()
                                 currentFileHandlerPtr->total_object_bytes_ += sizeof(hashStoreRecordHeader);
                                 currentFileHandlerPtr->total_object_count_++;
                                 currentFileHandlerPtr->file_operation_func_ptr_->flushFile();
+
                                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed new file to filesystem since split gc, the new file ID = " << currentFileHandlerPtr->target_file_id_ << ", corresponding previous file ID = " << currentHandlerPtr->target_file_id_ << RESET << endl;
+
                                 currentFileHandlerPtr->temp_not_flushed_data_bytes_ = 0;
                                 currentFileHandlerPtr->file_ownership_flag_ = 0;
                                 currentFileHandlerPtr->fileOperationMutex_.unlock();
@@ -1075,7 +1186,9 @@ void HashStoreFileManager::processGCRequestWorker()
                     continue;
                 }
             } else {
+
                 cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): file id = " << currentHandlerPtr->target_file_id_ << " reclaim empty space success, start re-write" << RESET << endl;
+
                 // reclaimed space success, rewrite current file to new file
                 currentHandlerPtr->file_operation_func_ptr_->closeFile();
                 uint64_t targetFileSize = 0;
@@ -1118,7 +1231,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentObjectRecordHeader.key_size_ = 0;
                 currentObjectRecordHeader.value_size_ = 0;
                 memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): processed buffer size = " << currentProcessLocationIndex << ", total target write size = " << targetFileSize << RESET << endl;
+
                 string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
                 // create since file not exist
                 currentHandlerPtr->file_operation_func_ptr_->createFile(targetOpenFileName);
@@ -1127,7 +1242,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
                 currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
                 currentHandlerPtr->file_operation_func_ptr_->flushFile();
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write new file done" << RESET << endl;
+
                 // update metadata
                 currentHandlerPtr->target_file_id_ = currentFileHeader.file_id_;
                 currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
@@ -1135,30 +1252,46 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
                 currentHandlerPtr->file_ownership_flag_ = 0;
                 currentHandlerPtr->fileOperationMutex_.unlock();
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Update metadata done" << RESET << endl;
+
                 // remove old file
                 string originalPrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_);
                 hashStoreFileIDToPrefixMap_.erase(currentFileHeader.previous_file_id_);
                 hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHeader.file_id_, originalPrefixStr));
 
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed new file to filesystem since single file gc, the new file ID = " << currentFileHeader.file_id_ << ", corresponding previous file ID = " << currentFileHeader.previous_file_id_ << RESET << endl;
+
                 continue;
             }
         }
     }
+
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): stop processGCRequestWorker thread success" << RESET << endl;
+
     return;
 }
 
 void HashStoreFileManager::scheduleMetadataUpdateWorker()
 {
-    // cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start scheduleMetadataUpdateWorker thread success" << RESET << endl;
+
+    cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start scheduleMetadataUpdateWorker thread success" << RESET << endl;
+
     while (true) {
-        if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
+        if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
+            if (UpdateHashStoreFileMetaDataList() != true) {
+                cout << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): commit metadata for " << operationCounterForMetadataCommit_ << " operations error" << RESET << endl;
+            } else {
+                cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): commit metadata for " << operationCounterForMetadataCommit_ << " operations success" << RESET << endl;
+                operationCounterForMetadataCommit_ = 0;
+            }
+        }
+        if (notifyGCMQ_->done_ == true) {
             break;
         }
     }
-    // cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): stop scheduleMetadataUpdateWorker thread success" << RESET << endl;
+    cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): stop scheduleMetadataUpdateWorker thread success" << RESET << endl;
+
     return;
 }
 
@@ -1173,5 +1306,4 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
     }
     return true;
 }
-
 }

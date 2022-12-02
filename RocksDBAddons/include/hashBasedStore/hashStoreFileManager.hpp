@@ -15,7 +15,7 @@ namespace DELTAKV_NAMESPACE {
 class HashStoreFileManager {
 public:
     HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ,fileOperationType fileOperationType);
+        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, fileOperationType fileOperationType);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
@@ -27,6 +27,7 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool setOperationNumberThresholdForMetadataUpdata(uint64_t threshold);
 
     // GC manager
     void processGCRequestWorker();
@@ -44,11 +45,13 @@ private:
     uint64_t globalGCTriggerSize_;
     std::string workingDir_;
     fileOperationType fileOperationMethod_ = kFstream;
+    uint64_t operationCounterForMetadataCommit_ = 0;
+    uint64_t operationNumberForMetadataCommitThreshold_ = 0;
+    boost::shared_mutex operationCounterMtx_;
     // file metadata management
     // Trie<hashStoreFileMetaDataHandler*>
     //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.
-    std::unordered_map<string, hashStoreFileMetaDataHandler*>
-        objectFileMetaDataTrie_; // prefix-hash to object file metadata.
+    std::unordered_map<string, hashStoreFileMetaDataHandler*> objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     std::unordered_map<uint64_t, string>
         hashStoreFileIDToPrefixMap_; // hashStore file id -> prefix;
     uint64_t currentTotalHashStoreFileSize_ = 0;

@@ -40,7 +40,9 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     while (!currentHandler->jobDone) {
         asm volatile("");
     }
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get write operation success flag" << RESET << endl;
+
     delete currentHandler;
     return true;
 }
@@ -120,7 +122,9 @@ bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHa
         asm volatile("");
     }
     delete currentHandler;
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get read operation success flag" << RESET << endl;
+
     return true;
 }
 
@@ -163,7 +167,9 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
         if (currentObjectRecordHeader.is_anchor_ == true) {
             string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find anchor, current key = " << currentKeyStr << RESET << endl;
+
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 resultMap.at(currentKeyStr).clear();
                 continue;
@@ -171,7 +177,9 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
                 continue;
             }
         } else if (currentObjectRecordHeader.is_gc_done_ == true) {
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find gc done flag" << RESET << endl;
+
             continue;
         } else {
             string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
@@ -179,7 +187,9 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 resultMap.at(currentKeyStr).push_back(currentValueStr);
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find content, current key = " << currentKeyStr << ", current value = " << currentValueStr << RESET << endl;
+
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             } else {
@@ -187,7 +197,9 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
                 resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): find content, current key = " << currentKeyStr << ", current value = " << currentValueStr << RESET << endl;
+
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             }
@@ -198,9 +210,13 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
 
 void HashStoreFileOperator::operationWorker()
 {
+
     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start receive operations" << RESET << endl;
+
     if (operationToWorkerMQ_ == nullptr) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): message queue not initial" << RESET << endl;
+
         return;
     }
     while (true) {
@@ -210,24 +226,35 @@ void HashStoreFileOperator::operationWorker()
         hashStoreOperationHandler* currentHandlerPtr;
         if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
             if (currentHandlerPtr->opType_ == kGet) {
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): receive operations, type = kGet"
                      << ", key = " << (*currentHandlerPtr->read_operation_.key_str_) << ", target file ID = " << currentHandlerPtr->file_handler_->target_file_id_ << RESET << endl;
+
                 // // try extract from cache first
                 if (keyToValueListCache_) {
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): try read operations from cache" << RESET << endl;
+
                     if (keyToValueListCache_->existsInCache(*currentHandlerPtr->read_operation_.key_str_)) {
                         vector<string> tempResultVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_);
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read operations from cache, cache hit, hit vec size = " << tempResultVec.size() << RESET << endl;
+
                         for (auto it : tempResultVec) {
+
                             cout << BLUE << "\thit vec item = " << it << RESET << endl;
                         }
                         currentHandlerPtr->read_operation_.value_str_vec_->assign(tempResultVec.begin(), tempResultVec.end());
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read operations from cache, cache hit, assigned vec size = " << currentHandlerPtr->read_operation_.value_str_vec_->size() << RESET << endl;
+
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
                         continue;
                     } else {
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read operations from cache, cache miss" << RESET << endl;
+
                         char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ > 0) {
@@ -241,13 +268,17 @@ void HashStoreFileOperator::operationWorker()
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                         if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
+
                             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
+
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
                         } else {
                             if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
+
                                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket done, but could not found values for key = " << (*currentHandlerPtr->read_operation_.key_str_) << RESET << endl;
+
                                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                                 currentHandlerPtr->jobDone = true;
                                 continue;
@@ -265,7 +296,9 @@ void HashStoreFileOperator::operationWorker()
                         }
                     }
                 } else {
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): direct read operations from file" << RESET << endl;
+
                     // no cache, only read content
                     char readBuffer[currentHandlerPtr->file_handler_->total_object_bytes_];
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
@@ -273,7 +306,9 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     }
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): target read file content (cache not enabled) size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << RESET << endl;
+
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin);
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd);
@@ -281,18 +316,24 @@ void HashStoreFileOperator::operationWorker()
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                     if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
+
                         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
+
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
                         continue;
                     } else {
                         if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
+
                             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket done, but could not found values for key = " << (*currentHandlerPtr->read_operation_.key_str_) << RESET << endl;
+
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
                         } else {
+
                             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get current key related values success, key = " << *currentHandlerPtr->read_operation_.key_str_ << ", value number = " << currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).size() << RESET << endl;
+
                             currentHandlerPtr->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).begin(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).end());
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
@@ -301,7 +342,9 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
             } else if (currentHandlerPtr->opType_ == kPut) {
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): receive operations, type = kPut, key = " << (*currentHandlerPtr->write_operation_.key_str_) << ", target file ID = " << currentHandlerPtr->file_handler_->target_file_id_ << RESET << endl;
+
                 hashStoreRecordHeader newRecordHeader;
                 newRecordHeader.is_anchor_ = currentHandlerPtr->write_operation_.is_anchor;
                 newRecordHeader.key_size_ = currentHandlerPtr->write_operation_.key_str_->size();
@@ -315,16 +358,21 @@ void HashStoreFileOperator::operationWorker()
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
+
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): buffered not flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", buffered size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << ", current header size = " << sizeof(newRecordHeader) << ", current key size = " << newRecordHeader.key_size_ << RESET << endl;
                     }
                     // Update metadata
                     currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
                     currentHandlerPtr->file_handler_->total_object_count_++;
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write operations to file metadata updated" << RESET << endl;
+
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                 } else {
                     char writeHeaderBuffer[sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_];
@@ -336,16 +384,21 @@ void HashStoreFileOperator::operationWorker()
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
+
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+
                         cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): buffered not flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", buffered size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << ", current header size = " << sizeof(newRecordHeader) << ", current key size = " << newRecordHeader.key_size_ << ", current value size = " << newRecordHeader.value_size_ << RESET << endl;
                     }
                     // Update metadata
                     currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                     currentHandlerPtr->file_handler_->total_object_count_++;
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write operations to file metadata updated" << RESET << endl;
+
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                 }
 
@@ -366,11 +419,14 @@ void HashStoreFileOperator::operationWorker()
                 // insert into GC job queue if exceed the threshold
                 if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
                     notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+
                     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Current file id = " << currentHandlerPtr->file_handler_->target_file_id_ << " exceed GC threshold = " << perFileGCSizeLimit_ << ", current size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", put into GC job queue" << RESET << endl;
                 }
                 continue;
             } else if (currentHandlerPtr->opType_ == kMultiPut) {
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): receive operations, type = kPut, key = " << (*currentHandlerPtr->write_operation_.key_str_) << ", target file ID = " << currentHandlerPtr->file_handler_->target_file_id_ << RESET << endl;
+
                 // prepare write buffer;
                 uint64_t targetWriteBufferSize = 0;
                 for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
@@ -406,13 +462,17 @@ void HashStoreFileOperator::operationWorker()
                 currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
                 if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
+
                     cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): flushed file id = " << currentHandlerPtr->file_handler_->target_file_id_ << ", flushed size = " << currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ << RESET << endl;
+
                     currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                 }
                 // Update metadata
                 currentHandlerPtr->file_handler_->total_object_bytes_ += targetWriteBufferSize;
                 currentHandlerPtr->file_handler_->total_object_count_ += currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size();
+
                 cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write operations to file metadata updated" << RESET << endl;
+
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
 
@@ -432,16 +492,21 @@ void HashStoreFileOperator::operationWorker()
                 // insert into GC job queue if exceed the threshold
                 if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
                     notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+
                     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Current file id = " << currentHandlerPtr->file_handler_->target_file_id_ << " exceed GC threshold = " << perFileGCSizeLimit_ << ", current size = " << currentHandlerPtr->file_handler_->total_object_bytes_ << ", put into GC job queue" << RESET << endl;
                 }
                 continue;
             } else {
+
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Unknown operation type = " << currentHandlerPtr->opType_ << RESET << endl;
+
                 break;
             }
         }
     }
+
     cout << GREEN << "[INFO]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): stop operation worker thread success" << RESET << endl;
+
     return;
 }
 

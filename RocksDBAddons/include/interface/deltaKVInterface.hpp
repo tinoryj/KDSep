@@ -37,7 +37,7 @@ class DeltaKV {
 public:
     rocksdb::DB* pointerToRawRocksDB_;
     // Abstract class ctor
-    DeltaKV() = default;
+    DeltaKV();
     DeltaKV(DeltaKVOptions& options, const string& name);
     // No copying allowed
     DeltaKV(const DeltaKV&) = delete;
@@ -63,10 +63,27 @@ public:
 private:
     // batched write
     deque<tuple<DBOperationType, string, string>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
+    unordered_map<string, deque<pair<DBOperationType, string>>> writeBatchMapForSearch_; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber = 3;
     messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
-
+    // operations
+    bool PutWithPlainRocksDB(const string& key, const string& value);
+    bool MergeWithPlainRocksDB(const string& key, const string& value);
+    bool GetWithPlainRocksDB(const string& key, string* value);
+    bool PutWithOnlyValueStore(const string& key, const string& value);
+    bool MergeWithOnlyValueStore(const string& key, const string& value);
+    bool GetWithOnlyValueStore(const string& key, string* value);
+    bool PutWithOnlyDeltaStore(const string& key, const string& value);
+    bool MergeWithOnlyDeltaStore(const string& key, const string& value);
+    bool GetWithOnlyDeltaStore(const string& key, string* value);
+    bool PutWithValueAndDeltaStore(const string& key, const string& value);
+    bool MergeWithValueAndDeltaStore(const string& key, const string& value);
+    bool GetWithValueAndDeltaStore(const string& key, string* value);
+    bool isDeltaStoreInUseFlag = false;
+    bool isValueStoreInUseFlag = false;
+    bool isBatchedOperationsWithBuffer_ = false;
+    boost::shared_mutex batchedBufferOperationMtx_;
     // thread management
     boost::asio::thread_pool* threadpool_;
     bool launchThreadPool(uint64_t totalThreadNumber);

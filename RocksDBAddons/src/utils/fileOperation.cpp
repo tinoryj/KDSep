@@ -26,10 +26,14 @@ bool FileOperation::createFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_CREAT, 0644);
         if (fileDirect_ == -1) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (create) = " << fileDirect_ << ", err = " << strerror(errno) << RESET << endl;
+
             return false;
         } else {
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (create) = " << fileDirect_ << RESET << endl;
+
             return true;
         }
     } else {
@@ -49,11 +53,15 @@ bool FileOperation::openFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_RDWR | O_DIRECT, 0644);
         if (fileDirect_ == -1) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (open) = " << fileDirect_ << ", err = " << strerror(errno) << RESET << endl;
+
             return false;
         } else {
             directIOWriteFileSize_ = getFilePhysicalSize(path);
+
             cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): File descriptor (open) = " << fileDirect_ << RESET << endl;
+
             return true;
         }
     } else {
@@ -110,7 +118,9 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         if (wReturn != writeBufferSize) {
             free(writeBuffer);
             directIOWriteFileSize_ += wReturn;
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write return value = " << wReturn << ", err = " << strerror(errno) << RESET << endl;
+
             return false;
         } else {
             free(writeBuffer);
@@ -142,7 +152,9 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read return value = " << rReturn << ", err = " << strerror(errno) << ", targetRequestPageNumber = " << targetRequestPageNumber << ", readBuffer size = " << readBufferSize << ", directIOWriteFileSize_ = " << directIOWriteFileSize_ << RESET << endl;
+
             return false;
         }
         uint64_t currentReadDoneSize = 0;
@@ -154,7 +166,9 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): currentReadDoneSize = " << currentReadDoneSize << ", request contentSize = " << contentSize << RESET << endl;
+
             return false;
         } else {
             free(readBuffer);
@@ -217,7 +231,9 @@ uint64_t FileOperation::getFileSize()
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): [Get file size] Read return value = " << rReturn << ", err = " << strerror(errno) << ", targetRequestPageNumber = " << targetRequestPageNumber << ", readBuffer size = " << readBufferSize << ", directIOWriteFileSize_ = " << directIOWriteFileSize_ << RESET << endl;
+
             free(readBuffer);
             return false;
         }

@@ -16,15 +16,18 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileManager = new HashStoreFileManager(internalOptionsPtr_->hashStore_init_prefix_bit_number, internalOptionsPtr_->hashStore_max_prefix_bit_number, singleFileGCThreshold, totalHashStoreFileGCThreshold, workingDirStr, notifyGCMQ_, options->fileOperationMethod_);
     hashStoreFileOperator = new HashStoreFileOperator(options, notifyGCMQ_);
     if (!hashStoreFileManager) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create HashStoreFileManager error" << RESET << endl;
     }
     if (!hashStoreFileOperator) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create HashStoreFileOperator error" << RESET << endl;
     }
     hashStoreFileManagerPtr_ = hashStoreFileManager;
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
+    hashStoreFileManagerPtr_->setOperationNumberThresholdForMetadataUpdata(options->deltaStore_operationNumberForMetadataCommitThreshold_);
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -50,17 +53,21 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
-    // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start get fileHandler from file manager" << RESET << endl;
+    //  cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): start get fileHandler from file manager" << RESET << endl;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
+
         return false;
     } else {
-        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager success, handler address = " << tempFileHandler << " file id = " << tempFileHandler->target_file_id_ << RESET << endl;
+        //  cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager success, handler address = " << tempFileHandler << " file id = " << tempFileHandler->target_file_id_ << RESET << endl;
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
+
             cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
+
             return false;
         } else {
-            // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
+            //  cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
             return true;
         }
     }
@@ -83,10 +90,12 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
         }
     }
     if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap) != true) {
+
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
+
         return false;
     } else {
-        // cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
+        //  cout << BLUE << "[DEBUG-LOG]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog success" << RESET << endl;
         return true;
     }
 }
