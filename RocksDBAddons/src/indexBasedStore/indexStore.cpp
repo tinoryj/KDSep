@@ -124,10 +124,10 @@ retry_update:
     delete[] ckey;
     delete[] cvalue;
 
-    if (putCount > 1000) {
-        gc(false);
-        putCount = 0;
-    }
+//    if (putCount > 1000) {
+//        gc(false);
+//        putCount = 0;
+//    }
 
     return ret;
 }

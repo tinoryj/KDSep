@@ -18,9 +18,11 @@ public:
 
     bool setBatchUpdateKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
     bool setBatchGCKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
+    bool setLogHeadTail(offset_t gcFront, offset_t flushFront);
 
     bool readBatchUpdateKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
     bool readBatchGCKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool removeIfCorrupted = true);
+    bool getLogHeadTail(offset_t &gcFront, offset_t &flushFront);
 
     bool ackBatchUpdateKeyValue();
     bool ackBatchGCKeyValue();
@@ -44,6 +46,8 @@ private:
     } _buffer;
 
     bool _enabled;
+
+    FILE* logLengthFd;
 
     bool setBatchKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool isUpdate);
     bool readBatchKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool isUpdate, bool removeIfCorrupted = true);

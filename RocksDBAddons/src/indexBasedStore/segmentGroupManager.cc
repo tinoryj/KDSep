@@ -33,11 +33,11 @@ SegmentGroupManager::SegmentGroupManager(bool isSlave, KeyManager *keyManager) {
     _bitmap.group = new BitMap(_MaxSegment);
     _writeFront.segment = 0;
 
-    std::string value = "0"; // _keyManager->getMeta(LogTailString, strlen(LogTailString));
+    std::string value = _keyManager->getMeta(LogTailString, strlen(LogTailString));
     _vlog.writeFront = value.empty()? 0 : stoul(value);
 
-//    if (_keyManager)
-//        value = _keyManager->getMeta(LogHeadString, strlen(LogHeadString));
+    if (_keyManager)
+        value = _keyManager->getMeta(LogHeadString, strlen(LogHeadString));
     _vlog.gcFront = value.empty()? 0 : stoul(value);
 
     _maxSpaceToRelease = new MaxHeap<len_t>(_MaxSegment+1);

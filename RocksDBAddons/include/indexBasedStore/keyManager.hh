@@ -44,8 +44,9 @@ public:
     virtual bool mergeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) = 0;
     virtual ValueLocation getKey (const char *keyStr, bool checkExist = false) = 0;
 
-//    virtual bool writeMeta (const char *keyStr, int keySize, std::string metadata) = 0;
-//    virtual std::string getMeta (const char *keyStr, int keySize) = 0;
+    virtual bool writeMeta (const char *keyStr, int keySize, std::string metadata) = 0;
+    virtual std::string getMeta (const char *keyStr, int keySize) = 0;
+    virtual bool persistMeta () = 0;
 
 //    virtual KeyManager::KeyIterator *getKeyIterator (char *keyStr) = 0;
 

@@ -141,12 +141,17 @@ size_t GCManager::gcVLog() {
     len_t capacity = ConfigManager::getInstance().getSystemEffectiveCapacity();
     len_t len = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET, gcFront = INVALID_OFFSET, flushFront = 0;
+    offset_t zeroOffset = gcFront;  // Fill zero content to avoid recording the length.
+    len_t zeroLen = 0;
+
     size_t remains = 0;
     bool ret = false;
     const segment_id_t maxSegment = ConfigManager::getInstance().getNumSegment();
     key_len_t keySize;
     len_t valueSize;
     offset_t keySizeOffset;
+
+    _keyManager->persistMeta();
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
@@ -158,7 +163,11 @@ size_t GCManager::gcVLog() {
         assert(flushFront != gcSize);
         // read and fit up only the available part of buffer
         gcFront = _segmentGroupManager->getLogGCOffset();
-        debug_info("gcFront %lu flushFront %lu\n", gcFront, flushFront);
+        if (zeroOffset == INVALID_OFFSET) {
+            zeroOffset = gcFront;
+        }
+
+//        debug_info("lastFillZeroOffset %lu gcFront %lu flushFront %lu\n", lastFillZeroOffset, gcFront, flushFront);
         if (_useMmap) {
             readPool = _deviceManager->readMmap(0, gcFront - flushFront, gcSize, 0);
             Segment::init(_gcSegment.read, 0, readPool, gcSize);
@@ -208,6 +217,7 @@ size_t GCManager::gcVLog() {
                 // buffer full, flush before write
                 debug_info("keep KV object gcBytes %lu \n", gcBytes);
                 if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
+                    // Flush to Vlog
                     STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
                     assert(len > 0);
                     // update metadata
@@ -224,6 +234,7 @@ size_t GCManager::gcVLog() {
                     keys.clear();
                     values.clear();
                     Segment::resetFronts(_gcSegment.write);
+
                 }
                 // mark and copy the key-value pair to tbe buffer
                 offset_t writeKeyOffset = Segment::getWriteFront(_gcSegment.write);
@@ -265,7 +276,8 @@ size_t GCManager::gcVLog() {
     }
     // final check on remaining data to flush
     if (!keys.empty()) {
-        STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
+        
+        STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC */ true), StatsType::GC_FLUSH);
         for (auto &v : values) {
             v.offset = (v.offset + logOffset) % capacity;
         }
@@ -276,11 +288,13 @@ size_t GCManager::gcVLog() {
             assert(0);
             exit(-1);
         }
-//        if (ConfigManager::getInstance().persistLogMeta()) {
-//            std::string value;
-//            value.append(to_string(logOffset + len));
-//            _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), value);
-//        }
+
+        if (ConfigManager::getInstance().persistLogMeta()) {
+            std::string value;
+            value.append(to_string(logOffset + len));
+            _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), value);
+            _keyManager->persistMeta();
+        }
     }
     //printf("gcBytes %lu\n", gcBytes);
     StatsRecorder::getInstance()->totalProcess(StatsType::GC_SCAN_BYTES, gcScanSize);

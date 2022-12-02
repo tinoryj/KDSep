@@ -24,7 +24,6 @@ LogManager::LogManager(DeviceManager *deviceManager) {
             exit(-1);
         }   
     }
-
 }
 
 LogManager::~LogManager() {
@@ -129,6 +128,13 @@ bool LogManager::setBatchKeyValue(std::vector<char *> &keys, std::vector<ValueLo
     Segment::appendData(_buffer.dataSegment, LOG_MAGIC, strlen(LOG_MAGIC));
 
     return true;
+}
+
+bool LogManager::setLogHeadTail(offset_t gcFront, offset_t flushFront) {
+    unsigned char buf[sizeof(offset_t) * 2];
+    memcpy(buf, &gcFront, sizeof(offset_t));
+    memcpy(buf + sizeof(offset_t), &flushFront, sizeof(offset_t));
+    return _deviceManager->writeLogHeadTail(buf, sizeof(offset_t) * 2) > 0;
 }
 
 bool LogManager::readBatchUpdateKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups) {
@@ -279,6 +285,33 @@ bool LogManager::readBatchKeyValue(std::vector<std::string> &keys, std::vector<V
     assert(keyTotal == values.size() && keyTotal == keys.size());
 
 #undef CHECK_REMAINS
+
+    // free the buffer
+    Segment::free(_buffer.readSegment);
+
+    return true;
+}
+
+bool LogManager::getLogHeadTail(offset_t &gcFront, offset_t &writeFront) {
+    std::lock_guard<std::mutex> lk (_buffer.lock);
+
+    len_t logSize = _deviceManager->getUpdateLogSize();
+
+    // no log available
+    if (logSize == 0) return false;
+
+    // create a tmp buffer to read key values
+    Segment::init(_buffer.readSegment, INVALID_SEGMENT, logSize, /* needsSetZero = */ false);
+
+    unsigned char *bufData = Segment::getData(_buffer.readSegment);
+
+    _deviceManager->readUpdateLog(bufData, logSize);
+
+    // check the magic at the end of gc consistency log 
+    gcFront = 0;
+    writeFront = 0;
+    memcpy(&gcFront, bufData + logSize - sizeof(offset_t) * 2, sizeof(offset_t));
+    memcpy(&writeFront, bufData + logSize - sizeof(offset_t), sizeof(offset_t));
 
     // free the buffer
     Segment::free(_buffer.readSegment);

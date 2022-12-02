@@ -108,6 +108,20 @@ offset_t DeviceManager::getOffsetBySegmentId(segment_id_t segmentId) {
     return INVALID_OFFSET;
 }
 
+//len_t DeviceManager::getDiskSize(disk_id_t diskId) {
+//    if (buf == 0 && !isDelete) { // check log size
+//        struct stat logStat;
+//        std::string fname (_diskInfo.at(diskId).diskPath);
+//        fname.append("/c");
+//        fname.append(std::to_string(segmentId));
+//        if (stat(fname.c_str(), &logStat) != 0) {
+//            debug_warn("%s log file not found\n", isUpdate? "Update" : "GC");
+//            return 0;
+//        }
+//        return logStat.st_size;
+//    }
+//}
+
 segment_id_t DeviceManager::getSegmentIdByOffset(disk_id_t diskId, offset_t ofs) {
     assert(_diskInfo.count(diskId) > 0);
 
@@ -335,28 +349,26 @@ len_t DeviceManager::accessLogFile(bool isUpdate, unsigned char *buf, len_t logS
         return remove(fname.c_str()) == 0;
     }
 
-    int fd;
-    if (_buf) {
-        fd = open(fname.c_str(), O_RDWR | O_DIRECT | O_CREAT, 0755);
-    } else {
-        fd = open(fname.c_str(), O_RDWR | O_DIRECT, 0755);
-    }
+    int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0755);
 
-    if (fd != 0 && isWrite) {
-        debug_error("Ack and remove log file before next write (size = %lu)!", logSize);
-        assert(0);
-        return 0;
-    } else if (fd == 0 && !isWrite) {
-        debug_error("Log file not found for read (isUpdate = %d)!", isUpdate);
-        assert(0);
-        return 0;
-    } else if (isWrite) {
-        // create if file not exists
-//        fd = fopen(fname.c_str(), "wb");
+    if (!ConfigManager::getInstance().enabledVLogMode()) {
+        if (fd != 0 && isWrite) {
+            debug_error("Ack and remove log file before next write (size = %lu)!", logSize);
+            assert(0);
+            return 0;
+        } else if (fd == 0 && !isWrite) {
+            debug_error("Log file not found for read (isUpdate = %d)!", isUpdate);
+            assert(0);
+            return 0;
+        } else if (isWrite) {
+            debug_error("Log file requires writes but open failed (fname = %s)", fname.c_str());
+            // create if file not exists
+    //        fd = fopen(fname.c_str(), "wb");
+        }
     }
     assert(fd != 0);
 
-    len_t writeSize = accessFile(fd, buf, /* startingOffset = */ 0, logSize, isWrite, /* isCircular = */ false);
+    len_t writeSize = accessFile(fd, buf, /* startingOffset = */ 0, logSize, isWrite, /* isCircular = */ false, /* isLog */ true);
 
 //    fclose(fd);
     close(fd);
@@ -391,7 +403,7 @@ len_t DeviceManager::accessSegmentFile(segment_id_t segmentId, unsigned char *bu
     return writeSize;
 }
 
-len_t DeviceManager::accessFile(int fd, unsigned char *buf, segment_offset_t diskOffset, segment_len_t length, bool isWrite, bool isCircular) {
+len_t DeviceManager::accessFile(int fd, unsigned char *buf, segment_offset_t diskOffset, segment_len_t length, bool isWrite, bool isCircular, bool isLog) {
 
     ConfigManager &cm = ConfigManager::getInstance();
 
@@ -401,7 +413,7 @@ len_t DeviceManager::accessFile(int fd, unsigned char *buf, segment_offset_t dis
     offset_t originalDiskOffset = diskOffset;
     len_t originalLength = length;
 
-    if (_buf) {
+    if (_buf && !isLog) {
         if (diskOffset % _pageSize) {
             debug_error("diskOffset not aligned: %lu\n", diskOffset);
         }
@@ -459,7 +471,7 @@ len_t DeviceManager::accessFile(int fd, unsigned char *buf, segment_offset_t dis
         StatsRecorder::getInstance()->IOBytesRead(accessLength, 0);
     }
 
-    if (!isWrite && _buf) {
+    if (!isWrite && _buf && !isLog) {
         // copy back
         memcpy(buf, (char*)_buf + originalDiskOffset % _pageSize, originalLength);
     }
@@ -561,12 +573,21 @@ offset_t DeviceManager::writeGCLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ false, buf, logSize, /* isWrite = */ true);
 }
 
+// For vLog, not the write journal and GC journal in HashKV
+offset_t DeviceManager::writeLogHeadTail(unsigned char *buf, len_t logSize) {
+    return accessLogFile(/* isUpdate = */ true, buf, logSize, /* isWrite = */ true);
+}
+
 bool DeviceManager::readUpdateLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ true, buf, logSize, /* isWrite = */ false) == logSize;
 }
 
 bool DeviceManager::readGCLog(unsigned char *buf, len_t logSize) {
     return accessLogFile(/* isUpdate = */ false, buf, logSize, /* isWrite = */ false) == logSize;
+}
+
+bool DeviceManager::readLogHeadTail(unsigned char* buf, len_t logSize) {
+    return accessLogFile(/* isUpdate = */ true, buf, logSize, /* isWrite */ false) == logSize; 
 }
 
 len_t DeviceManager::getUpdateLogSize() {

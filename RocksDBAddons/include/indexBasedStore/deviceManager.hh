@@ -35,6 +35,8 @@ public:
 
     offset_t writeUpdateLog(unsigned char *buf, len_t logSize);
     offset_t writeGCLog(unsigned char *buf, len_t logSize);
+    offset_t writeLogHeadTail(unsigned char *buf, len_t logSize);
+    bool readLogHeadTail(unsigned char *buf, len_t logSize);
 
     bool removeUpdateLog();
     bool removeGCLog();
@@ -103,7 +105,7 @@ private:
 
     len_t accessSegmentFile(segment_id_t segmentId, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite);
     len_t accessLogFile(bool isUpdate, unsigned char *buf, len_t logSize, bool isWrite, bool isDelete = false);
-    len_t accessFile(int fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCicular);
+    len_t accessFile(int fd, unsigned char *buf, segment_offset_t startingOffset, segment_len_t writeLength, bool isWrite, bool isCicular, bool isLog = false);
 
     int accessFileFd(segment_id_t segmentId);
 

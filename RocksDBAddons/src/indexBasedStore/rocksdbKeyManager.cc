@@ -95,22 +95,31 @@ RocksDBKeyManager::~RocksDBKeyManager() {
 //    return ret;
 //}
 //
-//bool RocksDBKeyManager::writeMeta (const char *keyStr, int keySize, std::string metadata) {
-//    rocksdb::WriteOptions wopt;
-//    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
-//    //printf("META %.*s %s\n", keySize, keyStr, metadata.c_str());
-//
-//    return _lsm->Put(wopt, rocksdb::Slice(keyStr, keySize), rocksdb::Slice(metadata)).ok();
-//    return true;
-//}
-//
-//std::string RocksDBKeyManager::getMeta (const char *keyStr, int keySize) {
-//    std::string value;
-//
-//    _lsm->Get(rocksdb::ReadOptions(), rocksdb::Slice(keyStr, keySize), &value);
-//
-//    return value;
-//}
+
+bool RocksDBKeyManager::writeMeta (const char *keyStr, int keySize, std::string metadata) {
+    rocksdb::WriteOptions wopt;
+    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
+
+    debug_info("write META %.*s %s\n", keySize, keyStr, metadata.c_str());
+
+    return _lsm->Put(wopt, rocksdb::Slice(keyStr, keySize), rocksdb::Slice(metadata)).ok();
+    return true;
+}
+
+std::string RocksDBKeyManager::getMeta (const char *keyStr, int keySize) {
+    std::string value;
+
+    _lsm->Get(rocksdb::ReadOptions(), rocksdb::Slice(keyStr, keySize), &value);
+    debug_info("get META %.*s %s\n", keySize, keyStr, value.c_str());
+
+    return value;
+}
+
+bool RocksDBKeyManager::persistMeta() {
+    // Flush the LSM-tree
+    _lsm->FlushWAL(true);
+    return true;
+}
 
 bool RocksDBKeyManager::mergeKeyBatch (std::vector<char* > keys, std::vector<ValueLocation> valueLocs) {
     bool ret = true;

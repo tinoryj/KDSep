@@ -124,10 +124,15 @@ ValueManager::ValueManager(DeviceManager *deviceManager, SegmentGroupManager *se
     }
 
     // restore from any log after failure
-//    if (_logManager) {
-//        restoreFromUpdateLog();
-//        restoreFromGCLog();
-//    }
+    if (_logManager) {
+        if (ConfigManager::getInstance().enabledVLogMode()) {
+            std::map<std::string, externalIndexInfo> keyValues;
+            restoreVLog(keyValues);
+        } else {
+//            restoreFromUpdateLog();
+//            restoreFromGCLog();
+        }
+    }
 
 }
 
@@ -1085,6 +1090,7 @@ void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* lo
     len_t writeLength = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET;
     std::tie(logOffset, writeLength) = flushSegmentToWriteFront(pool, false);
+
     if (logOffsetPtr) {
       *logOffsetPtr = logOffset;
     }
@@ -1115,12 +1121,17 @@ void ValueManager::flushCentralizedReservedPoolVLog (int poolIndex, offset_t* lo
             //printf("Flush update to key %x%x at offset %lu value %x of length %lu\n", kv.first[0], kv.first[KEY_SIZE-1], valueLoc.offset, kv.first[KEY_SIZE + sizeof(len_t)], vs);
         }
     }
+
 //    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
-//    if (ConfigManager::getInstance().persistLogMeta()) {
+    // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
+    if (ConfigManager::getInstance().persistLogMeta()) {
+        _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
 //        _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset + writeLength));
 //        _keyManager->writeMeta(SegmentGroupManager::LogValidByteString, strlen(SegmentGroupManager::LogValidByteString), to_string(_slave.validBytes));
 //        _keyManager->writeMeta(SegmentGroupManager::LogWrittenByteString, strlen(SegmentGroupManager::LogWrittenByteString), to_string(_slave.writtenBytes));
-//    }
+    }
+
+
     // clean up the pool
     _centralizedReservedPool[poolIndex].groupsInPool.clear();
     _centralizedReservedPool[poolIndex].segmentsInPool.clear();
@@ -1166,6 +1177,8 @@ std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment &segme
         debug_error("Failed to write updates at offset %lu of length %lu\n", logOffset, writeLength);
         assert(0);
     }
+
+    _logManager->setLogHeadTail(_segmentGroupManager->getLogGCOffset(), logOffset + writeLength);
 
     return std::pair<offset_t, len_t> (logOffset, writeLength);
 }
@@ -1254,6 +1267,137 @@ offset_t ValueManager::getLastSegmentFront(offset_t flushFront) {
 //        _segmentGroupManager->writeGroupMeta(gid);
 //    }
 //}
+
+void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+    offset_t gcFront, flushFront, keySizeOffset;
+    offset_t lsmGc = 0, lsmWrite = 0;
+    key_len_t keySize;
+    len_t valueSize, remains;
+    len_t pageSize = sysconf(_SC_PAGE_SIZE);
+    len_t capacity = ConfigManager::getInstance().getSystemEffectiveCapacity();
+    len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
+
+    _logManager->getLogHeadTail(gcFront, flushFront);
+    debug_info("gcFront %lu flushFront %lu\n", gcFront, flushFront);
+
+    lsmGc = _segmentGroupManager->getLogGCOffset();
+    lsmWrite = _segmentGroupManager->getLogWriteOffset();
+
+    // TODO consider more situations?
+    keyValues.clear();
+
+    Segment readPool, writePool;
+    Segment::init(readPool, INVALID_SEGMENT, gcSize);
+
+
+    offset_t start = lsmWrite, end = flushFront;
+
+    if (lsmWrite > flushFront) { // Wrapped
+        end = capacity;
+    }
+    
+    while (start != end) {
+        len_t readSize = std::min(gcSize, end - start);
+        _deviceManager->readAhead(/* diskId = */ 0, start, readSize);
+        _deviceManager->readDisk(/* diskId = */ 0, Segment::getData(readPool), start, readSize);
+
+        for (remains = readSize; remains > 0; ) {
+            debug_info("remains %lu readSize %lu start %lu end %lu\n", remains, readSize, start, end);
+            valueSize = INVALID_LEN;
+            keySizeOffset = readSize - remains;
+
+            if (sizeof(key_len_t) > remains) {
+                break;
+            }
+            off_len_t offLen (keySizeOffset, sizeof(key_len_t));
+            Segment::readData(readPool, &keySize, offLen);
+
+            debug_info("keySize %d\n", (int)keySize);
+
+            if (keySize == 0) {
+                debug_info("may use direct I/O. Skip the page gcSize %lu remains %lu\n", gcSize, remains);
+                if (remains % pageSize == 0) {
+                    debug_info("remains aligned; this page has no content (remains %lu)\n", remains);
+                }
+                remains -= remains % pageSize;
+                continue;
+            }
+
+            if (KEY_REC_SIZE + sizeof(len_t) > remains) {
+                break;
+            }
+
+            offLen.first = keySizeOffset + KEY_REC_SIZE;
+            offLen.second = sizeof(len_t);
+            Segment::readData(readPool, &valueSize, offLen);
+
+            if (KEY_REC_SIZE + sizeof(len_t) + valueSize > remains) {
+                break;
+            }
+
+            std::string key(KEY_OFFSET((char*)Segment::getData(readPool) + keySizeOffset), (int)keySize);
+            externalIndexInfo indexInfo;
+            indexInfo.externalFileID_ = 0;
+            indexInfo.externalFileOffset_ = start + keySizeOffset;
+            indexInfo.externalContentSize_ = valueSize;
+            
+            keyValues[key] = indexInfo;
+
+            debug_info("read key %s info (%u %u %u)\n", key.c_str(), indexInfo.externalFileID_, indexInfo.externalFileOffset_, indexInfo.externalContentSize_);
+
+            remains -= RECORD_SIZE;
+        }
+
+        if (start != end) {
+            start += readSize;
+            continue;
+        }
+
+        if (end != flushFront) {  // Wrapped
+            start = 0;
+            end = flushFront;
+        } else {
+            break;
+        }
+    }
+
+
+    // update log
+
+//    if (_logManager->readBatchUpdateKeyValue(keys, values, groups)) {
+//        // update kv locations
+//        _keyManager->writeKeyBatch(keys, values);
+//        // update group metadata
+//        for (auto g : groups) {
+//            //printf("Log group %lu front b4 %lu aft %lu\n", g.first, _segmentGroupManager->getGroupWriteFront(g.first, /* needsLock = */ false), g.second.first);
+//            // in-memory
+//            _segmentGroupManager->setGroupWriteFront(g.first, g.second.first, /* needsLock = */ false);
+//            _segmentGroupManager->setGroupFlushFront(g.first, g.second.first, /* needsLock = */ false);
+//            _segmentGroupManager->setGroupSegments(g.first, g.second.second);
+//            // LSM-tree
+//            _segmentGroupManager->writeGroupMeta(g.first);
+//        }
+//        // update segment metadata
+//        for (size_t i = 0; i < keys.size(); i++) {
+//            segment_id_t cid = values.at(i).segmentId;
+//            if (cid == LSM_SEGMENT) {
+//                assert(0);
+//                continue;
+//            }
+//            offset_t writeFront = values.at(i).offset + values.at(i).length + KEY_SIZE;
+//            if (segments.count(cid) == 0 || segments.at(cid) < writeFront) {
+//                segments[cid] = writeFront;
+//            }
+//        }
+//        for (auto c : segments) {
+//            //printf("Log segment %lu front %lu\n", c.first, c.second);
+//            _segmentGroupManager->setSegmentFlushFront(c.first, c.second);
+//            _segmentGroupManager->writeSegmentMeta(c.first);
+//        }
+//        // remove the log file
+//        _logManager->ackBatchUpdateKeyValue();
+//    }
+}
 
 //void ValueManager::restoreFromUpdateLog() {
 //    std::vector<std::string> keys;

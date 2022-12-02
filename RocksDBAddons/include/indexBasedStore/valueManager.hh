@@ -150,7 +150,8 @@ private:
     offset_t getLastSegmentFront(offset_t flushFront);
 
 //    void logMetaPersist(std::set<segment_id_t> &modifiedSegments, std::set<group_id_t> &modifiedGroups);
-//
+
+    void restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
 //    void restoreFromUpdateLog();
 //    void restoreFromGCLog();
 

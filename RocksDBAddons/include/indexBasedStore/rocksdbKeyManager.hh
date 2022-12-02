@@ -68,8 +68,9 @@ public:
     bool mergeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs);
     bool mergeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs);
 //
-//    bool writeMeta (const char *keyStr, int keySize, std::string metadata);
-//    std::string getMeta (const char *keyStr, int keySize);
+    bool writeMeta (const char *keyStr, int keySize, std::string metadata);
+    std::string getMeta (const char *keyStr, int keySize);
+    bool persistMeta ();
 
     ValueLocation getKey (const char *keyStr, bool checkExist = false);
 //    RocksDBKeyManager::RocksDBKeyIterator *getKeyIterator (char *keyStr);
