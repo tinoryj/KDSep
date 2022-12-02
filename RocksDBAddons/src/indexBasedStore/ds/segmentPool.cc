@@ -11,7 +11,7 @@ SegmentPool::SegmentPool(int size, int type) {
 }
 
 SegmentPool::~SegmentPool() {
-    for (auto rec : _segments.all) {
+    for (auto& rec : _segments.all) {
         Segment::free(rec.segment);
         delete rec.lock;
     }

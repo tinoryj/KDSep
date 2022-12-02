@@ -258,7 +258,7 @@ public:
     // release the segment and resource in it
     static void free(Segment& a)
     {
-        if (!a._buf) {
+        if (a._buf) {
             ::free(a._buf);
         }
         a._buf = 0;
