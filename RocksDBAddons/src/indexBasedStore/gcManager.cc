@@ -28,7 +28,7 @@ GCManager::GCManager(KeyManager* keyManager, ValueManager* valueManager, DeviceM
     _gcCount.scanSize = 0;
     _gcWriteBackBytes = 0;
 
-    // _gcReadthreads.size_controller().resize(ConfigManager::getInstance().getNumGCReadThread());
+    //    _gcReadthreads.size_controller().resize(ConfigManager::getInstance().getNumGCReadThread());
 }
 
 GCManager::~GCManager()

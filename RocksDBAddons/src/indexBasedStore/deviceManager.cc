@@ -165,7 +165,7 @@ bool DeviceManager::isLogSegment(segment_id_t segmentId)
 
 len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t diskOffset, len_t length, bool isWrite)
 {
-    debug_info("accessDisk offset %lu length %lu write %d\n", diskOffset, length, (int)isWrite);
+    debug_trace("accessDisk offset %lu length %lu write %d\n", diskOffset, length, (int)isWrite);
     // check if disk id is valid
     if (diskId == INVALID_DISK || _diskInfo.count(diskId) < 0) {
         return INVALID_LEN;

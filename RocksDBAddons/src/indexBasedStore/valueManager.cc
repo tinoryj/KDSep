@@ -188,8 +188,6 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         debug_info("DELETE: [%.*s]\n", (int)keySize, KEY_OFFSET(keyStr));
     }
 
-    debug_info("PUT: [%.*s]\n", (int)keySize, KEY_OFFSET(keyStr));
-
     // avoid GC
     _GCLock.lock();
     volatile int& poolIndex = _centralizedReservedPoolIndex.inUsed;
@@ -280,10 +278,10 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         poolOffset = keyIt->second;
         off_len_t offLen(poolOffset + KEY_REC_SIZE + sizeof(len_t), valueSize);
         Segment::overwriteData(pool, valueStr, offLen);
-        debug_info("Inplace update segment %lu len %lu\n", convertedLoc.segmentId, valueSize);
+        debug_trace("Inplace update segment %lu len %lu\n", convertedLoc.segmentId, valueSize);
 
     } else {
-        debug_info("Appenddata: [%.*s] pool size %lu pool offset %lu value size %lu\n", keySize, KEY_OFFSET(keyStr),
+        debug_trace("Appenddata: [%.*s] pool size %lu pool offset %lu value size %lu\n", keySize, KEY_OFFSET(keyStr),
             Segment::getSize(pool), poolOffset, valueSize);
         // append if new / cannot fit in-place
         Segment::appendData(pool, keyStr, KEY_REC_SIZE);
@@ -295,7 +293,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
             // Segment::setShouldFlush(pool);
         }
 
-        debug_info("append update to segment %lu len %lu is full %d canfit %d\n", convertedLoc.segmentId, valueSize,
+        debug_trace("append update to segment %lu len %lu is full %d canfit %d\n", convertedLoc.segmentId, valueSize,
             Segment::isFull(pool), Segment::canFit(pool, 1));
         // increment the total update size counter for the segment
         _centralizedReservedPool[poolIndex].segmentsInPool[convertedLoc.segmentId].first += RECORD_SIZE;
@@ -404,7 +402,7 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
         offLen = { sizeof(len_t) + KEY_REC_SIZE, valueSize };
         assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);
         memmove(valueStr, valueStr + KEY_REC_SIZE + sizeof(len_t), valueSize);
-        debug_info("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
+        debug_trace("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
         ret = true;
     } else {
         // read data
@@ -1283,10 +1281,11 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
     len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
 
     _logManager->getLogHeadTail(gcFront, flushFront);
-    debug_info("gcFront %lu flushFront %lu\n", gcFront, flushFront);
 
     lsmGc = _segmentGroupManager->getLogGCOffset();
     lsmWrite = _segmentGroupManager->getLogWriteOffset();
+
+    debug_info("In file: gcFront (%lu - %lu) flushFront (%lu - %lu)\n", gcFront, lsmGc, flushFront, lsmWrite);
 
     // TODO consider more situations?
     keyValues.clear();
@@ -1356,9 +1355,10 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
             remains -= RECORD_SIZE;
         }
 
+        _segmentGroupManager->getAndIncrementVLogWriteOffset(readSize);
+
         if (start != end) {
             start += readSize;
-            _segmentGroupManager->getAndIncrementVLogWriteOffset(readSize);
             continue;
         }
 
