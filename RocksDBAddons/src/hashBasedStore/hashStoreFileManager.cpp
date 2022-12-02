@@ -615,38 +615,15 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
-        // Update manifest pointer
-        fstream hashStoreFileManifestPointerUpdateStream;
-        hashStoreFileManifestPointerUpdateStream.open(
-            workingDir_ + "/hashStoreFileManifest.pointer", ios::out);
-        if (hashStoreFileManifestPointerUpdateStream.is_open()) {
-            hashStoreFileManifestPointerUpdateStream << currentPointerInt;
-            hashStoreFileManifestPointerUpdateStream.flush();
-            hashStoreFileManifestPointerUpdateStream.close();
-            string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
-            if (filesystem::exists(targetRemoveFileName) != false) {
-                auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
-                if (removeOldManifestStatus == -1) {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
-                }
-            }
-            for (auto removeFileIDIt : targetDeleteFileIDVec) {
-                string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
-                auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
-                if (removeOldBucketStatus == -1) {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
-                }
-            }
-            return true;
-        } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
-
-            return false;
-        }
-    } else {
+    }
+    // Update manifest pointer
+    fstream hashStoreFileManifestPointerUpdateStream;
+    hashStoreFileManifestPointerUpdateStream.open(
+        workingDir_ + "/hashStoreFileManifest.pointer", ios::out);
+    if (hashStoreFileManifestPointerUpdateStream.is_open()) {
+        hashStoreFileManifestPointerUpdateStream << currentPointerInt;
+        hashStoreFileManifestPointerUpdateStream.flush();
+        hashStoreFileManifestPointerUpdateStream.close();
         string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
@@ -655,7 +632,19 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
             }
         }
+        for (auto removeFileIDIt : targetDeleteFileIDVec) {
+            string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
+            auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
+            if (removeOldBucketStatus == -1) {
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
+            }
+        }
         return true;
+    } else {
+
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+
+        return false;
     }
 }
 
@@ -697,52 +686,30 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         }
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
-        // Update manifest pointer
-        fstream hashStoreFileManifestPointerUpdateStream;
-        hashStoreFileManifestPointerUpdateStream.open(
-            workingDir_ + "/hashStoreFileManifest.pointer", ios::out);
-        if (hashStoreFileManifestPointerUpdateStream.is_open()) {
-            hashStoreFileManifestPointerUpdateStream << currentPointerInt << endl;
-            bool closedSuccessFlag = true;
-            hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
-            hashStoreFileManifestPointerUpdateStream.flush();
-            hashStoreFileManifestPointerUpdateStream.close();
-            string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
-            if (filesystem::exists(targetRemoveFileName) != false) {
-                auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
-                if (removeOldManifestStatus == -1) {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
-                }
-            }
-            for (auto removeFileIDIt : targetDeleteFileIDVec) {
-                string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
-                auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
-                if (removeOldBucketStatus == -1) {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
-                }
-            }
-            for (auto it : objectFileMetaDataTrie_) {
-                delete it.second->file_operation_func_ptr_;
-                delete it.second;
-            }
-            return true;
-        } else {
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
-            for (auto it : objectFileMetaDataTrie_) {
-                delete it.second->file_operation_func_ptr_;
-                delete it.second;
-            }
-            return false;
-        }
-    } else {
+    }
+    // Update manifest pointer
+    fstream hashStoreFileManifestPointerUpdateStream;
+    hashStoreFileManifestPointerUpdateStream.open(
+        workingDir_ + "/hashStoreFileManifest.pointer", ios::out);
+    if (hashStoreFileManifestPointerUpdateStream.is_open()) {
+        hashStoreFileManifestPointerUpdateStream << currentPointerInt << endl;
+        bool closedSuccessFlag = true;
+        hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
+        hashStoreFileManifestPointerUpdateStream.flush();
+        hashStoreFileManifestPointerUpdateStream.close();
         string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
-
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
+            }
+        }
+        for (auto removeFileIDIt : targetDeleteFileIDVec) {
+            string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
+            auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
+            if (removeOldBucketStatus == -1) {
+
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
             }
         }
         for (auto it : objectFileMetaDataTrie_) {
@@ -750,6 +717,13 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             delete it.second;
         }
         return true;
+    } else {
+        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
+        for (auto it : objectFileMetaDataTrie_) {
+            delete it.second->file_operation_func_ptr_;
+            delete it.second;
+        }
+        return false;
     }
 }
 
