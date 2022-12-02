@@ -119,7 +119,7 @@ retry_update:
     // update the value of the key, get the new location of value
     STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
 
-    debug_info("Update key [%x-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
+    debug_info("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
         // best effort retry
@@ -181,6 +181,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     ret = (_valueManager->getValueFromBuffer(ckey, keySize, value, valueSize));
 
     if (ret) {
+        delete[] ckey;
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
         return ret;
     }

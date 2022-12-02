@@ -290,7 +290,6 @@ int main(int argc, char* argv[])
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
 
     // deltaKV settings
-    // options_.enable_valueStore = true;
     options_.enable_deltaStore = true;
     options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {

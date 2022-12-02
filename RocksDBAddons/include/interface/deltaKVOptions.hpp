@@ -45,7 +45,7 @@ public:
     uint64_t deltaStore_total_storage_maximum_size = 1024 * 1024 * deltaStore_single_file_maximum_size;
     uint64_t deltaStore_thread_number_limit = 3;
     uint64_t deltaStore_file_flush_buffer_size_limit_ = 4096;
-    uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 2;
+    uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 1000;
     float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_start_total_storage_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;

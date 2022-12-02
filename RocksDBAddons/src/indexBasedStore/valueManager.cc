@@ -171,6 +171,13 @@ ValueManager::~ValueManager()
     Segment::free(_zeroSegment);
     Segment::free(_readBuffer);
 
+    if (cm.persistLogMeta()) {
+        len_t logOffset = _segmentGroupManager->getLogWriteOffset();
+        _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
+        logOffset = _segmentGroupManager->getLogGCOffset();
+        _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), to_string(logOffset));
+    }
+
     delete _slaveValueManager;
     delete _slave.gcm;
     delete _slave.cgm;
@@ -310,6 +317,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     if (groupId != LSM_GROUP && !vlog)
         _segmentGroupManager->releaseGroupLock(groupId);
     offset_t logOffset = _segmentGroupManager->getLogWriteOffset();
+    offset_t newOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || ConfigManager::getInstance().getUpdateKVBufferSize() <= 0) {
@@ -317,12 +325,16 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
+            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &newOffset), StatsType::POOL_FLUSH);
         } else {
             STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
     } else {
         _GCLock.unlock();
+    }
+
+    if (newOffset != INVALID_OFFSET) {
+        logOffset = newOffset;
     }
 
     valueLoc.offset = logOffset + poolOffset;
@@ -1091,6 +1103,7 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
     if (logOffsetPtr) {
         *logOffsetPtr = logOffset;
     }
+
     // nonthing to flush
     if (writeLength == 0) {
         _centralizedReservedPool[poolIndex].lock.unlock();

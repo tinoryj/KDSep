@@ -127,8 +127,9 @@ bool DeltaKV::Close()
         HashStoreInterfaceObjPtr_->setJobDone();
     }
     deleteThreadPool();
-    if (pointerToRawRocksDB_ != nullptr) {
-        delete pointerToRawRocksDB_;
+    if (IndexStoreInterfaceObjPtr_ != nullptr) {
+        delete IndexStoreInterfaceObjPtr_;
+        // delete related object pointers
     }
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         delete HashStoreInterfaceObjPtr_;
@@ -136,9 +137,8 @@ bool DeltaKV::Close()
         delete hashStoreFileManagerPtr_;
         delete hashStoreFileOperatorPtr_;
     }
-    if (IndexStoreInterfaceObjPtr_ != nullptr) {
-        delete IndexStoreInterfaceObjPtr_;
-        // delete related object pointers
+    if (pointerToRawRocksDB_ != nullptr) {
+        delete pointerToRawRocksDB_;
     }
     return true;
 }
