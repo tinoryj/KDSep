@@ -4,14 +4,28 @@ namespace DELTAKV_NAMESPACE {
 
 IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string workingDir, rocksdb::DB* pointerToRawRocksDB)
 {
+    
     internalOptionsPtr_ = options;
     workingDir_ = workingDir;
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
     extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
+
+    ConfigManager::getInstance().setConfigPath("scripts/vlog_sample_config.ini");
+    struct timeval tv1;
+    StatsRecorder::getInstance()->openStatistics(tv1);
+
+    DiskInfo disk1(0, "./data_dir", 1 * 1024 * 1024 * 1024);
+    std::vector<DiskInfo> disks;
+    disks.push_back(disk1);
+    devices_ = new DeviceManager(disks);
+
+    kvServer_ = new KvServer(devices_, pointerToRawRocksDBForGC_);
 }
 
 IndexStoreInterface::~IndexStoreInterface()
 {
+    delete devices_;
+    delete kvServer_;
 }
 
 uint64_t IndexStoreInterface::getExtractSizeThreshold()
@@ -21,25 +35,49 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
 
 bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr)
 {
+    externalIndexInfo valueLoc;
+    kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc);
+    *storageInfoPtr = valueLoc;
     return true;
 }
 
-bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo>* storageInfoVecPtr)
+bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr)
 {
+    for (int i = 0; i < (int)keyStrVec.size(); i++) {
+        put(keyStrVec[i], valueStrPtrVec[i], storageInfoVecPtr[i]);
+    }
+    kvServer_->flushBuffer();
     return true;
 }
 
-bool IndexStoreInterface::get(string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
+bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
 {
+    char* key = new char[keyStr.length() + 2];
+    char* value = nullptr;
+    len_t valueSize = 0;
+
+    debug_info("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
+    strcpy(key, keyStr.c_str());
+    kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo);
+    *valueStrPtr = std::string(value, valueSize);
     return true;
 }
 bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)
 {
+    for (int i = 0; i < (int)keyStrVec.size(); i++) {
+        get(keyStrVec[i], storageInfoVec[i], valueStrPtrVec[i]);
+    }
     return true;
 }
 
 bool IndexStoreInterface::forcedManualGarbageCollection()
 {
+    kvServer_->gc(false);
+    return true;
+}
+
+bool IndexStoreInterface::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues) {
+    kvServer_->restoreVLog(keyValues);
     return true;
 }
 

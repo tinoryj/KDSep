@@ -298,7 +298,7 @@ int main(int argc, char* argv[])
     // fstreamTestFlushSync(100000);
     // fstreamTestDIRECT(100000);
     // return 0;
-
+    
     DeltaKV db_;
     DeltaKVOptions options_;
     int bloomBits = 10;
@@ -314,6 +314,7 @@ int main(int argc, char* argv[])
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
     }
+    options_.enable_valueStore = true;
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     options_.rocksdbRawOptions_.max_background_jobs = 8;

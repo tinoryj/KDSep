@@ -47,7 +47,21 @@ add_library(DeltaKV STATIC
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp
+      indexBasedStore/deviceManager.cc
+      indexBasedStore/ds/bitmap.cc
+      indexBasedStore/ds/segmentPool.cc
+      indexBasedStore/ds/lru.cc
+      indexBasedStore/gcManager.cc
       indexBasedStore/indexStoreInterface.cpp
+      indexBasedStore/indexStore.cpp
+      indexBasedStore/configManager.cc
+      indexBasedStore/indexStoreInterface.cpp
+      indexBasedStore/logManager.cc
+      indexBasedStore/rocksdbKeyManager.cc
+      indexBasedStore/segmentGroupManager.cc
+      indexBasedStore/statsRecorder.cc
+      indexBasedStore/util/debug.cpp
+      indexBasedStore/valueManager.cc
       interface/deltaKVOptions.cpp
       interface/deltaKVInterface.cpp
       interface/mergeOperation.cpp
