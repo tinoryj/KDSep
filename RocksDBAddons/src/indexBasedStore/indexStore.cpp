@@ -83,7 +83,7 @@ bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t
     debug_trace("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey + sizeof(key_len_t), std::min((int)valueSize, 16), cvalue);
 
     if (_cache.lru && _cache.lru->get((unsigned char*)ckey).size() > 0) {
-        debug_info("update cache key %.*s\n", std::min(16, (int)keySize), key);
+        debug_trace("update cache key %.*s\n", std::min(16, (int)keySize), key);
         _cache.lru->update((unsigned char*)ckey, (unsigned char*)cvalue, valueSize);
     }
 
@@ -210,7 +210,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     if (_cache.lru) {
         valueStr = _cache.lru->get((unsigned char*)ckey);
         if (valueStr.size() > 0) {
-            debug_info("get from cache key %.*s\n", std::min(16, (int)keySize), key);
+            debug_trace("get from cache key %.*s\n", std::min(16, (int)keySize), key);
             valueSize = valueStr.size();
             value = (char*)buf_malloc(valueSize);
             memcpy(value, valueStr.c_str(), valueSize);
@@ -227,6 +227,11 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);
     if (timed)
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+
+    if (ret && _cache.lru) {
+        _cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize);
+        debug_trace("insert to cache key %.*s\n", std::min(16, (int)keySize), key);
+    }
 
     delete[] ckey;
     return ret;
