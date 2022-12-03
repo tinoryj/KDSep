@@ -1059,7 +1059,7 @@ void HashStoreFileManager::processGCRequestWorker()
             // process GC contents
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
-            if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
+            if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second != 0) {
                 debug_info("File id = %lu reclain empty space in single file fail, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
 
                 // no space could be reclaimed, may request split
@@ -1146,6 +1146,13 @@ void HashStoreFileManager::processGCRequestWorker()
                     currentHandlerPtr->fileOperationMutex_.unlock();
                     continue;
                 }
+            }
+            if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second == 0) {
+                debug_info("File id = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
+                currentHandlerPtr->file_ownership_flag_ = 0;
+                currentHandlerPtr->fileOperationMutex_.unlock();
+                continue;
             } else {
                 debug_info("File id =  %lu reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_);
                 // reclaimed space success, rewrite current file to new file

@@ -18,4 +18,5 @@ echo "<===================== Benchmark the database start =====================>
 echo "<===================== Benchmark the database done =====================>"
 
 # -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath temp.ini
+# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase run -configpath temp.ini
 # thread apply all bt
