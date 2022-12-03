@@ -7,7 +7,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     std::string* new_value, Logger* logger) const
 {
     // request merge operation when the value is found
-    debug_trace("Full merge value size = %lu, content = %s\n", existing_value->size(), existing_value->data());
+    debug_trace("Full merge value size = %lu, content = %s\n", existing_value->size(), existing_value->ToString().c_str());
     string filteredOperandStr;
     string newValueIndexStr;
     bool findUpdatedValueIndex = false;
@@ -260,30 +260,41 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
     internalValueType tempInternalValueHeader;
     memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
     string rawValueStr;
-    if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
-        // get value from value store first
-        externalIndexInfo tempReadExternalStorageInfo;
-        memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
-        string tempReadValueStr;
-        IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
-        rawValueStr.assign(tempReadValueStr);
-    } else {
-        char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-        memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-        string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
-        rawValueStr.assign(internalRawValueStr);
-    }
     if (tempInternalValueHeader.mergeFlag_ == true) {
         // get deltas from delta store
         vector<pair<bool, string>> deltaInfoVec;
-        processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
+        externalIndexInfo newExternalIndexInfo;
+        bool findNewValueIndexFlag = false;
+        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo);
+        } else {
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo);
+        }
+        if (findNewValueIndexFlag == true) {
+            string tempReadValueStr;
+            IndexStoreInterfaceObjPtr_->get(key, newExternalIndexInfo, &tempReadValueStr);
+            rawValueStr.assign(tempReadValueStr);
+            debug_info("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
+        } else {
+            if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+                // get value from value store first
+                externalIndexInfo tempReadExternalStorageInfo;
+                memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+                string tempReadValueStr;
+                IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+                rawValueStr.assign(tempReadValueStr);
+            } else {
+                char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+                string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+                rawValueStr.assign(internalRawValueStr);
+            }
+        }
         vector<string> finalDeltaOperatorsVec;
         auto index = 0;
         for (auto i = 0; i < deltaInfoVec.size(); i++) {
             if (deltaInfoVec[i].first == true) {
-
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Request external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
-
                 return false;
             } else {
                 finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
@@ -298,6 +309,19 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
             return true;
         }
     } else {
+        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+            // get value from value store first
+            externalIndexInfo tempReadExternalStorageInfo;
+            memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+            string tempReadValueStr;
+            IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+            rawValueStr.assign(tempReadValueStr);
+        } else {
+            char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+            string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+            rawValueStr.assign(internalRawValueStr);
+        }
         value->assign(rawValueStr);
         return true;
     }
@@ -398,7 +422,12 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
         if (tempInternalValueHeader.mergeFlag_ == true) {
             // get deltas from delta store
             vector<pair<bool, string>> deltaInfoVec;
-            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec);
+            externalIndexInfo newExternalIndexInfo;
+            bool findNewValueIndexFlag = false;
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo);
+            if (findNewValueIndexFlag == true) {
+                debug_error("In only delta store, should not extract exteranl index, flag = %d\n", findNewValueIndexFlag);
+            }
             debug_trace("read deltaInfoVec from LSM-tree size = %lu\n", deltaInfoVec.size());
             vector<string>* deltaValueFromExternalStoreVec = new vector<string>;
             if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
@@ -562,23 +591,32 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
         internalValueType tempInternalValueHeader;
         memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
         string rawValueStr;
-        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
-            // read value from value store
-            externalIndexInfo tempReadExternalStorageInfo;
-            memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
-            string tempReadValueStr;
-            IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
-            rawValueStr.assign(tempReadValueStr);
-        } else {
-            char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-            string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
-            rawValueStr.assign(internalRawValueStr);
-        }
         if (tempInternalValueHeader.mergeFlag_ == true) {
             // get deltas from delta store
             vector<pair<bool, string>> deltaInfoVec;
-            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec);
+            externalIndexInfo newExternalIndexInfo;
+            bool findNewValueIndexFlag = false;
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo);
+            if (findNewValueIndexFlag == true) {
+                string tempReadValueStr;
+                IndexStoreInterfaceObjPtr_->get(key, newExternalIndexInfo, &tempReadValueStr);
+                rawValueStr.assign(tempReadValueStr);
+                debug_info("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
+            } else {
+                if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+                    // read value from value store
+                    externalIndexInfo tempReadExternalStorageInfo;
+                    memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+                    string tempReadValueStr;
+                    IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+                    rawValueStr.assign(tempReadValueStr);
+                } else {
+                    char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+                    memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+                    string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+                    rawValueStr.assign(internalRawValueStr);
+                }
+            }
             bool isAnyDeltasAreExtratedFlag = false;
             for (auto it : deltaInfoVec) {
                 if (it.first == true) {
@@ -627,8 +665,20 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                 deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
                 return true;
             }
-
         } else {
+            if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+                // read value from value store
+                externalIndexInfo tempReadExternalStorageInfo;
+                memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
+                string tempReadValueStr;
+                IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr);
+                rawValueStr.assign(tempReadValueStr);
+            } else {
+                char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+                string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+                rawValueStr.assign(internalRawValueStr);
+            }
             value->assign(rawValueStr);
             return true;
         }
@@ -1028,7 +1078,7 @@ bool DeltaKV::deleteThreadPool()
     return true;
 }
 
-bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec)
+bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo)
 {
     uint64_t internalValueSize = internalValue.size();
     debug_trace("internalValueSize = %lu, skipSize = %lu\n", internalValueSize, skipSize);
@@ -1037,6 +1087,12 @@ bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string inter
         internalValueType currentInternalValueTypeHeader;
         memcpy(&currentInternalValueTypeHeader, internalValue.c_str() + currentProcessLocationIndex, sizeof(internalValueType));
         currentProcessLocationIndex += sizeof(internalValueType);
+        if (currentInternalValueTypeHeader.mergeFlag_ == true) {
+            debug_info("Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
+            memcpy(&newExternalIndexInfo, internalValue.c_str() + currentProcessLocationIndex, sizeof(externalIndexInfo));
+            currentProcessLocationIndex += sizeof(externalIndexInfo);
+            findNewValueIndex = true;
+        }
         if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
             string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
             currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;

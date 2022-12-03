@@ -121,10 +121,6 @@ uint64_t HashStoreFileManager::deconstructTargetRecoveryContentsFromFile(char* f
 
 bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
-    if (shouldDoRecoveryFlag_ == false) {
-        debug_trace("DB closed success, do not need recovery, flag = %d\n", shouldDoRecoveryFlag_);
-        return true;
-    }
     vector<uint64_t> scannedOnDiskFileIDList;
     // scan file list
     for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
@@ -135,6 +131,26 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
             debug_trace("find file name = %s, file ID = %lu\n", currentFilePath.c_str(), currentFileID);
             scannedOnDiskFileIDList.push_back(currentFileID);
         }
+    }
+    if (shouldDoRecoveryFlag_ == false) {
+        debug_trace("DB closed success, do not need recovery, flag = %d, just delete all not tracked files, number = %lu\n", shouldDoRecoveryFlag_, scannedOnDiskFileIDList.size());
+        if (scannedOnDiskFileIDList.size() == 0) {
+            return true;
+        }
+        for (auto targetFileID : scannedOnDiskFileIDList) {
+            debug_trace("Target delete file ID = %lu\n", targetFileID);
+            string targetRemoveFileName = workingDir_ + "/" + to_string(targetFileID) + ".delta";
+            auto removeObsoleteFileStatus = remove(targetRemoveFileName.c_str());
+            if (removeObsoleteFileStatus == -1) {
+                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the obsolete file, file path = " << targetRemoveFileName << RESET << endl;
+                return false;
+            } else {
+                debug_trace("delete the obsolete delta file, file path = %s\n", targetRemoveFileName.c_str());
+                continue;
+            }
+        }
+        debug_trace("Deleted all not tracked files, number = %lu\n", scannedOnDiskFileIDList.size());
+        return true;
     }
     // buffer target delete file IDs
     vector<uint64_t> targetDeleteFileIDVec;
@@ -198,8 +214,10 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                             currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                             currentRecoveryFileHandler->fileOperationMutex_.unlock();
                             // update metadata
+                            metadataUpdateMtx_.lock();
                             objectFileMetaDataTrie_.insert(make_pair(currentFilePrefix, currentRecoveryFileHandler));
                             hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt, currentFilePrefix));
+                            metadataUpdateMtx_.unlock();
                             // update recovery data list
                             for (auto recoveryIt : currentFileRecoveryMap) {
                                 if (targetListForRedo.find(recoveryIt.first) != targetListForRedo.end()) {
@@ -269,6 +287,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     uint64_t leftFatherFileID = objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->target_file_id_;
                                     uint64_t rightFatherFileID = objectFileMetaDataTrie_.at(rightFatherFilePrefixStr)->target_file_id_;
                                     // delete left father
+                                    metadataUpdateMtx_.lock();
                                     objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_->closeFile();
                                     delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr)->file_operation_func_ptr_;
                                     delete objectFileMetaDataTrie_.at(leftFatherFilePrefixStr);
@@ -282,6 +301,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     objectFileMetaDataTrie_.erase(rightFatherFilePrefixStr);
                                     hashStoreFileIDToPrefixMap_.erase(rightFatherFileID);
                                     targetDeleteFileIDVec.push_back(rightFatherFileID);
+                                    metadataUpdateMtx_.unlock();
                                     // insert new file into metadata
                                     string currentFilePrefix = leftFatherFilePrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_);
                                     hashStoreFileMetaDataHandler* currentRecoveryFileHandler = new hashStoreFileMetaDataHandler;
@@ -296,8 +316,10 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     currentRecoveryFileHandler->file_operation_func_ptr_->resetPointer(kEnd);
                                     currentRecoveryFileHandler->fileOperationMutex_.unlock();
                                     // update metadata
+                                    metadataUpdateMtx_.lock();
                                     objectFileMetaDataTrie_.insert(make_pair(currentFilePrefix, currentRecoveryFileHandler));
                                     hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt, currentFilePrefix));
+                                    metadataUpdateMtx_.unlock();
                                     // update recovery data list
                                     for (auto recoveryIt : currentFileRecoveryMap) {
                                         if (targetListForRedo.find(recoveryIt.first) != targetListForRedo.end()) {
@@ -332,8 +354,10 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         // update metadata
                         string targetRecoveryPrefixStr;
                         generateHashBasedPrefix(currentFileRecoveryMap.begin()->first, targetRecoveryPrefixStr);
+                        metadataUpdateMtx_.lock();
                         objectFileMetaDataTrie_.insert(make_pair(targetRecoveryPrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_), currentRecoveryFileHandler));
                         hashStoreFileIDToPrefixMap_.insert(make_pair(fileIDIt, targetRecoveryPrefixStr.substr(0, currentFileHeader.current_prefix_used_bit_)));
+                        metadataUpdateMtx_.unlock();
                         // update recovery data list
                         for (auto recoveryIt : currentFileRecoveryMap) {
                             if (targetListForRedo.find(recoveryIt.first) != targetListForRedo.end()) {
@@ -446,8 +470,10 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                     string targetRecoveryPrefixStr;
                     generateHashBasedPrefix(currentFileRecoveryMapTemp[i].begin()->first, targetRecoveryPrefixStr);
                     targetRecoveryPrefixStr = targetRecoveryPrefixStr.substr(0, prefixBitNumber);
+                    metadataUpdateMtx_.lock();
                     objectFileMetaDataTrie_.insert(make_pair(targetRecoveryPrefixStr, currentRecoveryFileHandler));
                     hashStoreFileIDToPrefixMap_.insert(make_pair(splitFileIt.second[i], targetRecoveryPrefixStr));
+                    metadataUpdateMtx_.unlock();
                     // update recovery data list
                     for (auto recoveryIt : currentFileRecoveryMapTemp[i]) {
                         if (targetListForRedo.find(recoveryIt.first) != targetListForRedo.end()) {
@@ -459,12 +485,14 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         }
                     }
                 }
+                metadataUpdateMtx_.lock();
                 objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first))->file_operation_func_ptr_->closeFile();
                 delete objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first))->file_operation_func_ptr_;
                 delete objectFileMetaDataTrie_.at(hashStoreFileIDToPrefixMap_.at(splitFileIt.first));
                 objectFileMetaDataTrie_.erase(hashStoreFileIDToPrefixMap_.at(splitFileIt.first));
                 hashStoreFileIDToPrefixMap_.erase(splitFileIt.first);
                 targetDeleteFileIDVec.push_back(splitFileIt.first);
+                metadataUpdateMtx_.unlock();
             } else {
                 // keep old file
                 targetDeleteFileIDVec.push_back(splitFileIt.second[0]);
@@ -540,7 +568,7 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
     string currentLineStr;
     if (hashStoreFileManifestStream.is_open()) {
         getline(hashStoreFileManifestStream, currentLineStr);
-        targetNewFileID_ = stoull(currentLineStr); // update next file ID from metadata
+        targetNewFileID_ = stoull(currentLineStr) + 1; // update next file ID from metadata
         while (getline(hashStoreFileManifestStream, currentLineStr)) {
             string prefixHashStr = currentLineStr;
             getline(hashStoreFileManifestStream, currentLineStr);
@@ -563,13 +591,14 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
+            metadataUpdateMtx_.lock();
             objectFileMetaDataTrie_.insert(make_pair(prefixHashStr, currentFileHandlerPtr));
             hashStoreFileIDToPrefixMap_.insert(make_pair(hashStoreFileID, prefixHashStr));
+            metadataUpdateMtx_.unlock();
         }
+        debug_info("Read %lu files from metadata\n", objectFileMetaDataTrie_.size());
     } else {
-
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not open hashStore file metadata list (manifest)" << RESET << endl;
-
         return false;
     }
     return true;
@@ -628,7 +657,6 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
-
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old manifest file, file path = " << targetRemoveFileName << RESET << endl;
             }
         }
@@ -637,13 +665,20 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
             if (removeOldBucketStatus == -1) {
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
+                return false;
             }
+            // update metadata (remove)
+            string tempDeletedFilePrefixStr = hashStoreFileIDToPrefixMap_.at(removeFileIDIt);
+            metadataUpdateMtx_.lock();
+            hashStoreFileIDToPrefixMap_.erase(removeFileIDIt);
+            delete objectFileMetaDataTrie_.at(tempDeletedFilePrefixStr)->file_operation_func_ptr_;
+            delete objectFileMetaDataTrie_.at(tempDeletedFilePrefixStr);
+            objectFileMetaDataTrie_.erase(tempDeletedFilePrefixStr);
+            metadataUpdateMtx_.unlock();
         }
         return true;
     } else {
-
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not update hashStore file metadata list pointer file (currentDeltaPointer)" << RESET << endl;
-
         return false;
     }
 }
@@ -708,7 +743,6 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
             string targetRemoveBucketFileName = workingDir_ + "/" + to_string(removeFileIDIt) + ".delta";
             auto removeOldBucketStatus = remove(targetRemoveBucketFileName.c_str());
             if (removeOldBucketStatus == -1) {
-
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): could not delete the old bucket file, file path = " << targetRemoveBucketFileName << RESET << endl;
             }
         }
@@ -891,10 +925,13 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
     currentFileHandlerPtr->file_operation_func_ptr_->writeFile(fileHeaderWriteBuffer, sizeof(newFileHeader));
     currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
+    currentFileHandlerPtr->temp_not_flushed_data_bytes_ = sizeof(newFileHeader);
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
+    metadataUpdateMtx_.lock();
     objectFileMetaDataTrie_.insert(make_pair(prefixStr.substr(0, prefixBitNumber), currentFileHandlerPtr));
     hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHandlerPtr->target_file_id_, prefixStr.substr(0, prefixBitNumber)));
+    metadataUpdateMtx_.unlock();
     fileHandlerPtr = currentFileHandlerPtr;
     return true;
 }
@@ -1006,9 +1043,15 @@ void HashStoreFileManager::processGCRequestWorker()
             debug_info("new file request for GC, file id = %lu, existing size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_);
             // read contents
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
+            while (currentHandlerPtr->file_ownership_flag_ == 1) {
+                asm volatile("");
+                // wait if file is using in user
+            }
             currentHandlerPtr->fileOperationMutex_.lock();
             currentHandlerPtr->file_ownership_flag_ = -1;
             debug_trace("target read file content for gc size = %lu\n", currentHandlerPtr->total_object_bytes_);
+            currentHandlerPtr->file_operation_func_ptr_->flushFile();
+            currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
             currentHandlerPtr->file_operation_func_ptr_->resetPointer(kBegin);
             currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
             currentHandlerPtr->file_operation_func_ptr_->resetPointer(kEnd);
@@ -1017,19 +1060,21 @@ void HashStoreFileManager::processGCRequestWorker()
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
             if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
-                debug_info("File id = %lu reclain empty space fail, try split\n", currentHandlerPtr->target_file_id_);
+                debug_info("File id = %lu reclain empty space in single file fail, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
 
                 // no space could be reclaimed, may request split
                 if (gcResultMap.size() == 1 && currentHandlerPtr->gc_result_status_flag_ != kMayGC) {
                     // keep tracking until forced gc threshold;
                     currentHandlerPtr->gc_result_status_flag_ = kMayGC;
                     currentHandlerPtr->file_ownership_flag_ = 0;
+                    debug_info("File id = %lu contains only %lu different keys, marked as kMayGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
                     currentHandlerPtr->fileOperationMutex_.unlock();
                     continue;
                 } else if (gcResultMap.size() == 1 && currentHandlerPtr->gc_result_status_flag_ == kMayGC) {
                     // Mark this file as could not GC;
                     currentHandlerPtr->gc_result_status_flag_ = kNoGC;
                     currentHandlerPtr->file_ownership_flag_ = 0;
+                    debug_info("File id = %lu contains only %lu different keys, marked as kNoGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
                     currentHandlerPtr->fileOperationMutex_.unlock();
                     continue;
                 } else if (gcResultMap.size() != 1 && currentHandlerPtr->gc_result_status_flag_ == kNew) {
@@ -1051,6 +1096,10 @@ void HashStoreFileManager::processGCRequestWorker()
 
                                 break;
                             } else {
+                                while (currentFileHandlerPtr->file_ownership_flag_ == 1) {
+                                    asm volatile("");
+                                    // wait if file is using in user
+                                }
                                 currentFileHandlerPtr->fileOperationMutex_.lock();
                                 currentFileHandlerPtr->file_ownership_flag_ = -1;
                                 uint64_t targetWriteSize = 0;
@@ -1091,20 +1140,14 @@ void HashStoreFileManager::processGCRequestWorker()
                             }
                         }
                     }
+                    // mark current file as should delete, prevent further use
                     currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
                     currentHandlerPtr->file_ownership_flag_ = 0;
                     currentHandlerPtr->fileOperationMutex_.unlock();
-                    // update metadata (delete the previous file's meta)
-                    string tempDeletedFilePrefixStr = hashStoreFileIDToPrefixMap_.at(currentHandlerPtr->target_file_id_);
-                    hashStoreFileIDToPrefixMap_.erase(currentHandlerPtr->target_file_id_);
-                    delete objectFileMetaDataTrie_.at(tempDeletedFilePrefixStr)->file_operation_func_ptr_;
-                    delete objectFileMetaDataTrie_.at(tempDeletedFilePrefixStr);
-                    objectFileMetaDataTrie_.erase(tempDeletedFilePrefixStr);
                     continue;
                 }
             } else {
                 debug_info("File id =  %lu reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_);
-
                 // reclaimed space success, rewrite current file to new file
                 currentHandlerPtr->file_operation_func_ptr_->closeFile();
                 uint64_t targetFileSize = 0;
@@ -1165,8 +1208,10 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentHandlerPtr->fileOperationMutex_.unlock();
                 // remove old file
                 string originalPrefixStr = hashStoreFileIDToPrefixMap_.at(currentFileHeader.previous_file_id_);
+                metadataUpdateMtx_.lock();
                 hashStoreFileIDToPrefixMap_.erase(currentFileHeader.previous_file_id_);
                 hashStoreFileIDToPrefixMap_.insert(make_pair(currentFileHeader.file_id_, originalPrefixStr));
+                metadataUpdateMtx_.unlock();
                 debug_trace("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_);
                 continue;
             }
