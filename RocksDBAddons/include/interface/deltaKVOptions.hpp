@@ -42,7 +42,7 @@ public:
     uint64_t extract_to_deltaStore_size_lower_bound = 0;
     uint64_t extract_to_deltaStore_size_upper_bound = 0x3f3f3f;
     uint64_t deltaStore_single_file_maximum_size = 1 * 1024 * 1024;
-    uint64_t deltaStore_total_storage_maximum_size = 1024 * 1024 * deltaStore_single_file_maximum_size;
+    uint64_t deltaStore_total_storage_maximum_size = 64 * 1024 * deltaStore_single_file_maximum_size;
     uint64_t deltaStore_thread_number_limit = 3;
     uint64_t deltaStore_file_flush_buffer_size_limit_ = 4096;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;

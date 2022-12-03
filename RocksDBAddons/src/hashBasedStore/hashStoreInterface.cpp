@@ -52,6 +52,9 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
+    string prefixStr;
+    hashStoreFileManagerPtr_->generateHashBasedPrefix(keyStr, prefixStr);
+    debug_trace("Target put key = %s, prefix = %s, value = %s\n", keyStr.c_str(), prefixStr.c_str(), valueStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
         cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
@@ -93,12 +96,16 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
 bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
+    string prefixStr;
+    hashStoreFileManagerPtr_->generateHashBasedPrefix(keyStr, prefixStr);
+    debug_trace("Target put key = %s, prefix = %s\n", keyStr.c_str(), prefixStr.c_str());
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
         return false;
     } else {
         if (hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec) != true) {
             return false;
         } else {
+            debug_trace("Get value vec size = %lu\n", valueStrVec->size());
             return true;
         }
     }
