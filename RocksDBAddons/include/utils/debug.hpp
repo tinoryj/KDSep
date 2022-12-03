@@ -3,7 +3,7 @@
 // #include "common/indexStorePreDefines.hpp"
 #include "common/dataStructure.hpp"
 #include <string>
-#define DEBUG_LEVEL DebugLevel::INFO
+#define DEBUG_LEVEL DebugLevel::ANY
 // for color
 #define RESET "\033[0m"
 #define BLACK "\033[30m" /* Black */

@@ -48,6 +48,7 @@ private:
     uint64_t operationCounterForMetadataCommit_ = 0;
     uint64_t operationNumberForMetadataCommitThreshold_ = 0;
     boost::shared_mutex operationCounterMtx_;
+    boost::shared_mutex metadataUpdateMtx_;
     // file metadata management
     // Trie<hashStoreFileMetaDataHandler*>
     //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.

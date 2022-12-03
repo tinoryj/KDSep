@@ -352,14 +352,15 @@ void HashStoreFileOperator::operationWorker()
                         }
                     }
                 }
+                // insert into GC job queue if exceed the threshold
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
+                    debug_info("GC threshold = %lu\n", perFileGCSizeLimit_);
+                    debug_info("Current file id = %lu, exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                }
                 // mark job done
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 currentHandlerPtr->jobDone = true;
-                // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
-                    notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                    debug_info("Current file id = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
-                }
                 continue;
             } else if (currentHandlerPtr->opType_ == kMultiPut) {
                 debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", (*currentHandlerPtr->write_operation_.key_str_).c_str(), currentHandlerPtr->file_handler_->target_file_id_);
@@ -392,7 +393,6 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
                 currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
-                currentHandlerPtr->file_handler_->file_ownership_flag_ = 1;
                 // write content
                 currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
                 currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
@@ -427,9 +427,8 @@ void HashStoreFileOperator::operationWorker()
                 }
                 continue;
             } else {
-
                 cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Unknown operation type = " << currentHandlerPtr->opType_ << RESET << endl;
-
+                currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 break;
             }
         }
