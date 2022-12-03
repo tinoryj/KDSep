@@ -376,6 +376,7 @@ unsigned long long StatsRecorder::timeProcess (StatsType stat, struct timeval &s
 
     // update time spent 
     ret = timeAddto(start_time,time[stat]);
+
     if (stat == StatsType::UPDATE) {
 //        hdr_record_value(_updateTimeHistogram, ret);
 //        if (valueSize > 0) {

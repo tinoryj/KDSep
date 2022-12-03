@@ -45,7 +45,7 @@ public:
      * \pram needsLock whether to lock the group metadata
      *
      */
-    bool prepareGCGroupInCentralizedPool(group_id_t groupId, bool needsLock = true);
+//    bool prepareGCGroupInCentralizedPool(group_id_t groupId, bool needsLock = true);
     /**
      * cleanupGCGroupInCentralizedPool
      *
@@ -53,7 +53,7 @@ public:
      * \pramgcIsDone whether GC is successful
      *
      */
-    bool cleanupGCGroupInCentralizedPool(group_id_t groupId, bool gcIsDone = true, bool needsLockPool = true);
+//    bool cleanupGCGroupInCentralizedPool(group_id_t groupId, bool gcIsDone = true, bool needsLockPool = true);
 
     void printSlaveStats(FILE* out = stdout);
 

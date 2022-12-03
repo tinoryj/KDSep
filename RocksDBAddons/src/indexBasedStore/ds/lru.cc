@@ -73,6 +73,7 @@ std::string LruList::get (unsigned char *key) {
 
     if (it != _existingRecords.end()) {
         ret = getValue(it->second);
+        list_move(&it->second->listPtr, &_lruList);
     }
 
     _lock.unlock_shared();
@@ -108,9 +109,10 @@ std::vector<std::string> LruList::getItems() {
     struct list_head *rec;
     unsigned char* key;
     key_len_t keySize;
-    list_for_each_prev(rec, &_lruList) {
-        memcpy(&keySize, key, sizeof(key_len_t));
+    printf("Items %d\n", (int)_existingRecords.size()); 
+    list_for_each(rec, &_lruList) {
         key = segment_of(rec, LruListRecord, listPtr)->key;
+        memcpy(&keySize, key, sizeof(key_len_t));
 
         list.push_back(std::string((char*)key + sizeof(key_len_t), keySize));
     }
@@ -129,9 +131,9 @@ std::vector<std::string> LruList::getTopNItems(size_t n) {
     unsigned char* key;
     key_len_t keySize;
 
-    list_for_each_prev(rec, &_lruList) {
-        memcpy(&keySize, key, sizeof(key_len_t));
+    list_for_each(rec, &_lruList) {
         key = segment_of(rec, LruListRecord, listPtr)->key;
+        memcpy(&keySize, key, sizeof(key_len_t));
 
         list.push_back(std::string((char*)key + sizeof(key_len_t), keySize));
         if (list.size() > n)
