@@ -858,7 +858,7 @@ void ValueManager::flushCentralizedReservedPool(group_id_t* reportGroupId, bool 
 
                 // gc for some space
                 do {
-                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
+//                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
                     // check if the update now fits into the free space
                     flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
                     isReservedOverflow = !isGCLogOnlyBuffer && outOfReservedSpaceForObject(flushFront, RECORD_SIZE);
@@ -1092,6 +1092,7 @@ void ValueManager::flushCentralizedReservedPool(group_id_t* reportGroupId, bool 
 
 void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* logOffsetPtr)
 {
+    static int flushTimes = 0;
     // directly write the pool out
     _centralizedReservedPool[poolIndex].lock.lock();
 
@@ -1135,7 +1136,12 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
     //    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
     // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
     if (ConfigManager::getInstance().persistLogMeta()) {
-        _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
+        if (ConfigManager::getInstance().getUpdateKVBufferSize() > 0 || flushTimes >= 512) { 
+            _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
+            flushTimes = 0;
+        } else {
+            flushTimes++;
+        }
         //        _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset + writeLength));
         //        _keyManager->writeMeta(SegmentGroupManager::LogValidByteString, strlen(SegmentGroupManager::LogValidByteString), to_string(_slave.validBytes));
         //        _keyManager->writeMeta(SegmentGroupManager::LogWrittenByteString, strlen(SegmentGroupManager::LogWrittenByteString), to_string(_slave.writtenBytes));
@@ -1158,7 +1164,11 @@ std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment& segme
         Segment::padPage(segment);
     }
 
-    debug_info("Segment writeFront %lu flushFront %lu\n", Segment::getWriteFront(segment), Segment::getFlushFront(segment));
+    if (ConfigManager::getInstance().getUpdateKVBufferSize() == 0) {
+        debug_trace("Segment writeFront %lu flushFront %lu\n", Segment::getWriteFront(segment), Segment::getFlushFront(segment));
+    } else {
+        debug_info("Segment writeFront %lu flushFront %lu\n", Segment::getWriteFront(segment), Segment::getFlushFront(segment));
+    }
 
     segment_len_t flushFront = Segment::getFlushFront(segment);
     len_t writeLength = Segment::getWriteFront(segment) - flushFront;

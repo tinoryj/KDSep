@@ -36,7 +36,9 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
 bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr)
 {
     externalIndexInfo valueLoc;
-    kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc);
+
+    STAT_TIME_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc), StatsType::UPDATE);
+
     *storageInfoPtr = valueLoc;
     return true;
 }
@@ -52,14 +54,17 @@ bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valu
 
 bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr)
 {
+
     char* key = new char[keyStr.length() + 2];
     char* value = nullptr;
     len_t valueSize = 0;
 
     strcpy(key, keyStr.c_str());
-    kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo);
+
+    STAT_TIME_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
+
     *valueStrPtr = std::string(value, valueSize);
-    debug_info("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
+    debug_trace("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);
     if (value) {
         free(value);
     }

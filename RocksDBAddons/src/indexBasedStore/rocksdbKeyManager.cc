@@ -114,7 +114,7 @@ std::string RocksDBKeyManager::getMeta(const char* keyStr, int keySize)
     std::string value;
 
     _lsm->Get(rocksdb::ReadOptions(), rocksdb::Slice(keyStr, keySize), &value);
-    debug_info("get META %.*s %s\n", keySize, keyStr, value.c_str());
+    debug_trace("get META %.*s %s\n", keySize, keyStr, value.c_str());
 
     return value;
 }
@@ -148,7 +148,7 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<char*> keys, std::vector<Value
         kslice = rocksdb::Slice(KEY_OFFSET(keys.at(i)), (int)keySize);
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
-        debug_info("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
+        debug_trace("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("%s\n", s.ToString().c_str());
@@ -208,7 +208,7 @@ ValueLocation RocksDBKeyManager::getKey(const char* keyStr, bool checkExist)
         // value location found
         if (status.ok()) {
             valueLoc.deserialize(value);
-            debug_info("valueLoc length %lu offset %lu segmentId %lu\n", valueLoc.length, valueLoc.offset, valueLoc.segmentId);
+            debug_trace("valueLoc length %lu offset %lu segmentId %lu\n", valueLoc.length, valueLoc.offset, valueLoc.segmentId);
         }
     }
     return valueLoc;

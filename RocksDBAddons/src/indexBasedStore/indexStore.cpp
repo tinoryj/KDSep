@@ -54,6 +54,7 @@ KvServer::~KvServer()
         delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
+    StatsRecorder::DestroyInstance();
 }
 
 bool KvServer::checkKeySize(len_t& keySize)
@@ -79,9 +80,10 @@ bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t
     memcpy(cvalue, value, valueSize);
     cvalue[valueSize] = '\0';
 
-    debug_info("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey + sizeof(key_len_t), (int)valueSize, cvalue);
+    debug_trace("PUT key \"%.*s\" value \"%.*s\"\n", (int)keySize, ckey + sizeof(key_len_t), std::min((int)valueSize, 16), cvalue);
 
     if (_cache.lru && _cache.lru->get((unsigned char*)ckey).size() > 0) {
+        debug_info("update cache key %.*s\n", std::min(16, (int)keySize), key);
         _cache.lru->update((unsigned char*)ckey, (unsigned char*)cvalue, valueSize);
     }
 
@@ -119,7 +121,7 @@ retry_update:
     // update the value of the key, get the new location of value
     STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
 
-    debug_info("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
+    debug_trace("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
     if (!inLSM && curValueLoc.segmentId == INVALID_SEGMENT) {
         // best effort retry
@@ -137,7 +139,7 @@ retry_update:
     indexInfo.externalFileID_ = 0;
     indexInfo.externalFileOffset_ = curValueLoc.offset;
     indexInfo.externalContentSize_ = curValueLoc.length - sizeof(len_t);
-    debug_info("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
+    debug_trace("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
     delete[] cvalue;
 
@@ -208,9 +210,11 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     if (_cache.lru) {
         valueStr = _cache.lru->get((unsigned char*)ckey);
         if (valueStr.size() > 0) {
+            debug_info("get from cache key %.*s\n", std::min(16, (int)keySize), key);
             valueSize = valueStr.size();
             value = (char*)buf_malloc(valueSize);
             memcpy(value, valueStr.c_str(), valueSize);
+            delete[] ckey;
             return ret;
         }
     }
@@ -225,7 +229,6 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 
     delete[] ckey;
-
     return ret;
 }
 
@@ -332,10 +335,10 @@ bool KvServer::flushBuffer()
 
 size_t KvServer::gc(bool all)
 {
-    if (ConfigManager::getInstance().enabledVLogMode()) {
+//    if (ConfigManager::getInstance().enabledVLogMode()) {
         return _gcManager->gcVLog();
-    }
-    return (all ? _gcManager->gcAll() : _gcManager->gcGreedy());
+//    }
+//    return (all ? _gcManager->gcAll() : _gcManager->gcGreedy());
 }
 
 void KvServer::printStorageUsage(FILE* out)

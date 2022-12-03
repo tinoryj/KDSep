@@ -20,8 +20,8 @@ public:
     GCManager(KeyManager* keyManager, ValueManager* valueManager, DeviceManager* deviceManager, SegmentGroupManager* segmentGroupManager, bool isSlave = false);
     ~GCManager();
 
-    size_t gcAll();
-    size_t gcGreedy(bool needGCLock = true, bool needsLockCentralizedReservedPool = true, group_id_t* reportGroupId = 0);
+//    size_t gcAll();
+//    size_t gcGreedy(bool needGCLock = true, bool needsLockCentralizedReservedPool = true, group_id_t* reportGroupId = 0);
     size_t gcVLog();
 
     void printStats(FILE* out = stdout);
@@ -52,9 +52,9 @@ private:
 
     boost::asio::thread_pool* _gcReadthreads;
 
-    inline size_t gcOneGroup(group_id_t groupId, GCMode& gcMode, bool needsLockCentralizedReservedPool = true, len_t originBytes = 0, group_id_t* reportGroupId = 0);
-    size_t gcSegment(group_id_t mainGroupId, Segment& segment, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, len_t total = INVALID_LEN, bool isRemove = false, size_t reservedPos = 0, int gcMode = ALL, size_t* validBytes = 0);
-    segment_len_t gcKvPair(group_id_t mainGroupId, Segment* segment, segment_len_t scanned, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, bool isRemove = false, size_t reservedPos = 0, int gcMode = ALL, size_t* validBytes = 0);
+//    inline size_t gcOneGroup(group_id_t groupId, GCMode& gcMode, bool needsLockCentralizedReservedPool = true, len_t originBytes = 0, group_id_t* reportGroupId = 0);
+//    size_t gcSegment(group_id_t mainGroupId, Segment& segment, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, len_t total = INVALID_LEN, bool isRemove = false, size_t reservedPos = 0, int gcMode = ALL, size_t* validBytes = 0);
+//    segment_len_t gcKvPair(group_id_t mainGroupId, Segment* segment, segment_len_t scanned, std::unordered_map<unsigned char*, std::pair<int, ValueLocation>, hashKey, equalKey>& keyCount, bool isRemove = false, size_t reservedPos = 0, int gcMode = ALL, size_t* validBytes = 0);
 
     inline int getHotness(group_id_t groupId, int updateCount);
     GCMode getGCMode(group_id_t groupId, len_t reservedBytes = 0);
