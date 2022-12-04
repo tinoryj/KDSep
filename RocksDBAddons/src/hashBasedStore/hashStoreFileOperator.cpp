@@ -208,10 +208,10 @@ void HashStoreFileOperator::operationWorker()
                 if (keyToValueListCache_) {
                     if (keyToValueListCache_->existsInCache(*currentHandlerPtr->read_operation_.key_str_)) {
                         vector<string> tempResultVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_);
-                        debug_trace("read operations from cache, cache hit, hit vec size = %lu\n", tempResultVec.size());
-                        for (auto it : tempResultVec) {
-                            debug_trace("\thit vec item =  %s\n", it.c_str());
-                        }
+                        // debug_trace("read operations from cache, cache hit, hit vec size = %lu\n", tempResultVec.size());
+                        // for (auto it : tempResultVec) {
+                        //     debug_trace("\thit vec item =  %s\n", it.c_str());
+                        // }
                         currentHandlerPtr->read_operation_.value_str_vec_->assign(tempResultVec.begin(), tempResultVec.end());
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
