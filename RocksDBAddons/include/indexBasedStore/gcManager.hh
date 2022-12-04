@@ -43,11 +43,12 @@ private:
     } _gcSegment;
 
     size_t _gcWriteBackBytes;
+    size_t _gcCompactedBytes;
     std::unordered_map<int, len_t> _modeCount;
     struct {
         long ops;
         long groups;
-        len_t scanSize;
+        len_t scanBytes;
     } _gcCount;
 
     boost::asio::thread_pool* _gcReadthreads;

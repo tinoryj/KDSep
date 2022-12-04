@@ -172,8 +172,9 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("WBRatioUpdateTime"    , GC_RATIO_UPDATE                 , time[UPDATE]);
     PRINT_FULL("InvalidUpdateTime"    , GC_INVALID_BYTES_UPDATE         , time[UPDATE]);
 
-    PRINT_FULL("- FlushCP"            , POOL_FLUSH                      , time[UPDATE]);
-    PRINT_FULL("GCTotal"              , GC_TOTAL                        , time[UPDATE]);
+    PRINT_FULL("FlushLog/Group"       , POOL_FLUSH                      , time[UPDATE]);
+    PRINT_FULL("- Flush w/o GC"       , POOL_FLUSH_NO_GC                , time[UPDATE]);
+    PRINT_FULL("- GCTotal"            , GC_TOTAL                        , time[UPDATE]);
 
     PRINT_FULL("LogMeta"              , LOG_TIME                        , time[UPDATE]);
 
@@ -234,10 +235,12 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("GCinOthers"           , GC_OTHERS                       , time[GC_TOTAL]);
     PRINT_FULL("KeyLookup"            , GC_KEY_LOOKUP                   , time[GC_TOTAL]);
     PRINT_FULL("GCReadData"           , GC_READ                         , time[GC_TOTAL]);
+    PRINT_FULL("GCReadAheadData"      , GC_READ_AHEAD                   , time[GC_TOTAL]);
     PRINT_FULL("GCFlushPreWrite"      , GC_PRE_FLUSH                    , time[GC_TOTAL]);
     PRINT_FULL("GCFlushWrite"         , GC_FLUSH                        , time[GC_TOTAL]);
     PRINT_FULL("UpdateKeyToLSM (GC)"  , UPDATE_KEY_WRITE_LSM_GC         , time[GC_TOTAL]);
     PRINT_FULL(" - KeyUpdateCache"    , KEY_UPDATE_CACHE                , time[GC_TOTAL]);
+    PRINT_FULL("(Test) Phase 1"       , GC_PHASE_TEST                   , time[GC_TOTAL]);
 
     fprintf(stdout,"------------------------- LSM and Key Cache ---------------------------------\n");
     PRINT_FULL("GetKeyShadow"         , KEY_GET_SHADOW                  , time[KEY_GET_ALL]);

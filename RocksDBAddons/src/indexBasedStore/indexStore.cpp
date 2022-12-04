@@ -208,7 +208,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     // get value using the LRU cache
     std::string valueStr;
     if (_cache.lru) {
-        valueStr = _cache.lru->get((unsigned char*)ckey);
+        STAT_TIME_PROCESS(valueStr = _cache.lru->get((unsigned char*)ckey), StatsType::KEY_GET_CACHE);
         if (valueStr.size() > 0) {
             debug_trace("get from cache key %.*s\n", std::min(16, (int)keySize), key);
             valueSize = valueStr.size();
@@ -229,7 +229,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 
     if (ret && _cache.lru) {
-        _cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize);
+        STAT_TIME_PROCESS(_cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize), StatsType::KEY_UPDATE_CACHE);
         debug_trace("insert to cache key %.*s\n", std::min(16, (int)keySize), key);
     }
 

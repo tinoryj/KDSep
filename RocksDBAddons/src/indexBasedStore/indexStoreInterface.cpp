@@ -24,8 +24,8 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
 
 IndexStoreInterface::~IndexStoreInterface()
 {
-    delete devices_;
     delete kvServer_;
+    delete devices_;
 }
 
 uint64_t IndexStoreInterface::getExtractSizeThreshold()

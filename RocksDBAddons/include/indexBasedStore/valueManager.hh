@@ -64,6 +64,9 @@ public:
 
     static int spare; // level of spare group buffer for flushing reserved space
     void restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
+    void scanAllRecords();
+
+    std::set<std::string>* getStoredKeys();
 
 protected:
     std::mutex _GCLock;

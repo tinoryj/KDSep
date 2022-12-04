@@ -35,6 +35,7 @@ void ConfigManager::setConfigPath(const char* path)
     }
     _buffer.directIO = readBool("buffer.directIO");
     _buffer.testDirectIO = readBool("buffer.testDirectIO");
+    _buffer.testIODelayUs = readULL("buffer.testIODelayUs");
     _buffer.valueCacheSize = readULL("buffer.valueCacheSize");
 
     // hotness
@@ -140,8 +141,9 @@ void ConfigManager::setConfigPath(const char* path)
     if (_debug.level < DebugLevel::NONE) {
         _debug.level = DebugLevel::NONE;
     }
+    _debug.scanAllRecordsUponStop = readBool("debug.scanAllRecordsUponStop");
 
-    // printConfig();
+    printConfig();
 }
 
 bool ConfigManager::readBool(const char* key)
@@ -279,6 +281,12 @@ bool ConfigManager::testDirectIOCorrectness() const
 {
     assert(!_pt.empty());
     return _buffer.testDirectIO;
+}
+
+len_t ConfigManager::getTestIODelayUs() const
+{
+    assert(!_pt.empty());
+    return _buffer.testIODelayUs;
 }
 
 len_t ConfigManager::valueCacheSize() const
@@ -461,6 +469,12 @@ DebugLevel ConfigManager::getDebugLevel() const
     return _debug.level;
 }
 
+bool ConfigManager::scanAllRecordsUponStop() const
+{
+    assert(!_pt.empty());
+    return _debug.scanAllRecordsUponStop;
+}
+
 void ConfigManager::printConfig() const
 {
 
@@ -533,7 +547,8 @@ void ConfigManager::printConfig() const
         " No. of scan threads         : %u\n"
         " Use mmap                    : %s\n"
         "------- Debug  ------\n"
-        " Debug Level                 : %d\n",
+        " Debug Level                 : %d\n"
+        " Scan all records upon stop  : %d\n",
         getHashTableDefaultSize(), getHashTableDefaultHashMethod()
 #ifdef DISK_DIRECT_IO
                                        ,
@@ -543,7 +558,7 @@ void ConfigManager::printConfig() const
         "false"
 #endif // ifdef DISK_DIRECT_IO
         ,
-        getNumIOThread(), getNumCPUThread(), getNumParallelFlush(), syncAfterWrite() ? "true" : "false", getBatchWriteThreshold(), getNumRangeScanThread(), useMmap() ? "true" : "false", (int)getDebugLevel());
+        getNumIOThread(), getNumCPUThread(), getNumParallelFlush(), syncAfterWrite() ? "true" : "false", getBatchWriteThreshold(), getNumRangeScanThread(), useMmap() ? "true" : "false", (int)getDebugLevel(), (int)scanAllRecordsUponStop());
 }
 
 }

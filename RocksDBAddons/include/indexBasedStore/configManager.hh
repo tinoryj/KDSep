@@ -40,6 +40,7 @@ public:
     bool usePipelinedBuffer() const;
     bool useDirectIO() const;
     bool testDirectIOCorrectness() const;
+    len_t getTestIODelayUs() const;
     len_t valueCacheSize() const;
 
     // hotness
@@ -89,6 +90,7 @@ public:
 
     // debug
     DebugLevel getDebugLevel() const;
+    bool scanAllRecordsUponStop() const;
 
     void printConfig() const;
 
@@ -123,6 +125,7 @@ private:
         int numPipelinedBuffer; // no. of pipelined update buffers
         bool directIO;
         bool testDirectIO;
+        len_t testIODelayUs;
         len_t valueCacheSize;
     } _buffer;
 
@@ -180,6 +183,7 @@ private:
 
     struct {
         DebugLevel level; // level of debug
+        bool scanAllRecordsUponStop; 
     } _debug;
 };
 

@@ -122,7 +122,13 @@ std::string RocksDBKeyManager::getMeta(const char* keyStr, int keySize)
 bool RocksDBKeyManager::persistMeta()
 {
     // Flush the LSM-tree
-    _lsm->FlushWAL(true);
+    if (ConfigManager::getInstance().testDirectIOCorrectness()) {
+        if (ConfigManager::getInstance().getTestIODelayUs() > 0) {
+            usleep(ConfigManager::getInstance().getTestIODelayUs());
+        }
+    } else {
+        _lsm->FlushWAL(true);
+    }
     return true;
 }
 
@@ -151,7 +157,7 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<char*> keys, std::vector<Value
         debug_trace("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
         STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
-            debug_error("%s\n", s.ToString().c_str());
+            debug_error("mergeKeyBatch failed: %s\n", s.ToString().c_str());
             return false;
         }
     }

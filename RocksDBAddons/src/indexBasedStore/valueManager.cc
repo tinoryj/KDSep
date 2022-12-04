@@ -138,7 +138,7 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
 ValueManager::~ValueManager()
 {
     // flush and release segments
-    // forceSync(true, true);
+    forceSync();
 
     // allow the bg thread to finish its job first
     _started = false;
@@ -146,6 +146,10 @@ ValueManager::~ValueManager()
     // pthread_join(_bgflushThread, 0);
 
     ConfigManager& cm = ConfigManager::getInstance();
+
+    if (cm.scanAllRecordsUponStop()) {
+        scanAllRecords();
+    }
 
     // release buffers
     int hotnessLevel = cm.getHotnessLevel();
@@ -1185,12 +1189,17 @@ std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment& segme
         logOffset = _segmentGroupManager->getAndIncrementVLogWriteOffset(writeLength);
     }
 
-    assert(logOffset != INVALID_OFFSET);
+    if (logOffset == INVALID_OFFSET) {
+        debug_error("Space not enough: LogHead %lu LogTail %lu\n", _segmentGroupManager->getLogGCOffset(), _segmentGroupManager->getLogWriteOffset());
+        scanAllRecords();
+        assert(logOffset != INVALID_OFFSET);
+    }
+
     len_t ret = 0;
     if (ConfigManager::getInstance().segmentAsFile() && _isSlave) {
-        ret = _deviceManager->writeDisk(ConfigManager::getInstance().segmentAsSeparateFile() ? ConfigManager::getInstance().getNumSegment() : 0, Segment::getData(segment) + flushFront, logOffset, writeLength);
+        STAT_TIME_PROCESS(ret = _deviceManager->writeDisk(ConfigManager::getInstance().segmentAsSeparateFile() ? ConfigManager::getInstance().getNumSegment() : 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
     } else {
-        ret = _deviceManager->writeDisk(/* diskId = */ 0, Segment::getData(segment) + flushFront, logOffset, writeLength);
+        STAT_TIME_PROCESS(ret = _deviceManager->writeDisk(/* diskId = */ 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
     }
 
     if (ret != writeLength) {
@@ -1313,8 +1322,8 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
     // TODO consider more situations?
     keyValues.clear();
 
-    Segment readPool, writePool;
-    Segment::init(readPool, INVALID_SEGMENT, gcSize);
+    Segment seg, writePool;
+    Segment::init(seg, INVALID_SEGMENT, gcSize);
 
     offset_t start = lsmWrite, end = flushFront;
 
@@ -1325,10 +1334,10 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
     while (start != end) {
         len_t readSize = std::min(gcSize, end - start);
         _deviceManager->readAhead(/* diskId = */ 0, start, readSize);
-        _deviceManager->readDisk(/* diskId = */ 0, Segment::getData(readPool), start, readSize);
+        _deviceManager->readDisk(/* diskId = */ 0, Segment::getData(seg), start, readSize);
 
         for (remains = readSize; remains > 0;) {
-            debug_info("remains %lu readSize %lu start %lu end %lu\n", remains, readSize, start, end);
+            debug_trace("remains %lu readSize %lu start %lu end %lu\n", remains, readSize, start, end);
             valueSize = INVALID_LEN;
             keySizeOffset = readSize - remains;
 
@@ -1336,20 +1345,22 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
                 break;
             }
             off_len_t offLen(keySizeOffset, sizeof(key_len_t));
-            Segment::readData(readPool, &keySize, offLen);
+            Segment::readData(seg, &keySize, offLen);
 
-            debug_info("keySize %d\n", (int)keySize);
+            debug_trace("keySize %d\n", (int)keySize);
 
             if (keySize == 0) {
-                debug_info("may use direct I/O. Skip the page gcSize %lu remains %lu\n", gcSize, remains);
-                if (remains % pageSize == 0) {
-                    debug_info("remains aligned; this page has no content (remains %lu)\n", remains);
+                if ((remains + (pageSize - start % pageSize)) % pageSize == 0) {
+                    debug_error("remains aligned; this page has no content (remains %lu)\n", remains);
+                    assert(0);
+                    exit(-1);
                 }
 
                 if (remains % pageSize == 0) {
                     break;
                 }
-                remains -= remains % pageSize;
+                len_t compactedBytes = std::min((remains % pageSize + (pageSize - start % pageSize)) % pageSize, remains);
+                remains -= compactedBytes;
                 continue;
             }
 
@@ -1359,13 +1370,13 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
 
             offLen.first = keySizeOffset + KEY_REC_SIZE;
             offLen.second = sizeof(len_t);
-            Segment::readData(readPool, &valueSize, offLen);
+            Segment::readData(seg, &valueSize, offLen);
 
             if (KEY_REC_SIZE + sizeof(len_t) + valueSize > remains) {
                 break;
             }
 
-            std::string key(KEY_OFFSET((char*)Segment::getData(readPool) + keySizeOffset), (int)keySize);
+            std::string key(KEY_OFFSET((char*)Segment::getData(seg) + keySizeOffset), (int)keySize);
             externalIndexInfo indexInfo;
             indexInfo.externalFileID_ = 0;
             indexInfo.externalFileOffset_ = start + keySizeOffset;
@@ -1373,12 +1384,13 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
 
             keyValues[key] = indexInfo;
 
-            debug_info("read key %s info (%u %u %u)\n", key.c_str(), indexInfo.externalFileID_, indexInfo.externalFileOffset_, indexInfo.externalContentSize_);
+            debug_trace("read key %s info (%u %u %u)\n", key.c_str(), indexInfo.externalFileID_, indexInfo.externalFileOffset_, indexInfo.externalContentSize_);
 
             remains -= RECORD_SIZE;
         }
 
         _segmentGroupManager->getAndIncrementVLogWriteOffset(readSize);
+        debug_info("one loop -- start %lu readSize %lu end %lu remains %lu\n", start, readSize, end, remains);
 
         if (start != end) {
             start += readSize;
@@ -1394,6 +1406,132 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
     }
 
     debug_info("restore finished: number of key values = %lu\n", keyValues.size());
+}
+
+void ValueManager::scanAllRecords() {
+    offset_t gcFront = INVALID_OFFSET, flushFront; 
+    offset_t logTail, keySizeOffset;
+    struct timeval tv1, tv2, res;
+    key_len_t keySize;
+    len_t gcSize = ConfigManager::getInstance().getVLogGCSize();
+    len_t valueSize, remains, readSize = gcSize;
+    len_t pageSize = sysconf(_SC_PAGE_SIZE);
+    len_t capacity = ConfigManager::getInstance().getSystemEffectiveCapacity();
+
+    gettimeofday(&tv1, 0);
+
+    _logManager->getLogHeadTail(gcFront, logTail);
+
+    debug_info("logHead %lu logTail %lu\n", gcFront, logTail);
+
+    Segment seg;
+    char* readPool;
+    Segment::init(seg, INVALID_SEGMENT, gcSize);
+    readPool = (char*)Segment::getData(seg);
+
+    // For scanKeyValue()
+    len_t nextKeySizeOffset;
+    char *key, *value;
+    len_t compactedBytes;
+
+    // Statistics
+    len_t keyNum = 0, keySizes = 0, valueSizes = 0;
+    len_t scanBytes = 0;
+
+    offset_t start = gcFront, end = logTail;
+
+//    if (gcFront > logTail) { // Wrapped
+//        end = capacity;
+//    }
+
+    while (start != end) {
+        flushFront = Segment::getFlushFront(seg);
+        assert(flushFront != readSize); 
+
+        readSize = std::min(gcSize, (end + capacity - start) % capacity);
+        _deviceManager->readAhead(/* diskId = */ 0, start + flushFront, readSize - flushFront);
+        _deviceManager->readDisk(/* diskId = */ 0, (unsigned char*)readPool + flushFront, start + flushFront, readSize - flushFront);
+
+        for (remains = readSize; remains > 0;) {
+            debug_trace("remains %lu readSize %lu flushFront %lu start %lu end %lu\n", remains, readSize, flushFront, start, end);
+            keySizeOffset = readSize - remains;
+
+            // change key, keySize, value, valueSize, remains, compactedBytes
+            bool ret = scanKeyValue((char*)readPool, start, readSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize); 
+
+            if (!ret) {
+                break;
+            }
+
+            off_len_t offLen(keySizeOffset, sizeof(key_len_t));
+            Segment::readData(seg, &keySize, offLen);
+
+            ValueLocation valueLoc = _keyManager->getKey(key);
+
+            if (valueLoc.offset == (start + keySizeOffset + capacity) % capacity) {
+                // matched, a valid KV pair.
+                len_t mod = valueLoc.offset % pageSize;
+                debug_trace("[KV] %s %s%s%s%s%s%s%s%s [%.*s] [%.*s] offset %lu\n", 
+                    mod == 0 ? "*" : ".",  
+                    mod > 0 && mod <= pageSize / 8 * 1 ? "*" : ".",  
+                    mod > pageSize / 8 * 1 && mod <= pageSize / 8 * 2 ? "*" : ".",  
+                    mod > pageSize / 8 * 2 && mod <= pageSize / 8 * 3 ? "*" : ".",  
+                    mod > pageSize / 8 * 3 && mod <= pageSize / 8 * 4 ? "*" : ".",  
+                    mod > pageSize / 8 * 4 && mod <= pageSize / 8 * 5 ? "*" : ".",  
+                    mod > pageSize / 8 * 5 && mod <= pageSize / 8 * 6 ? "*" : ".",  
+                    mod > pageSize / 8 * 6 && mod <= pageSize / 8 * 7 ? "*" : ".", 
+                    mod > pageSize / 8 * 7 && mod <= pageSize / 8 * 8 ? "*" : ".", 
+                    std::min((int)keySize, 16), KEY_OFFSET(key), 
+                    std::min((int)valueSize, 16), value, 
+                    valueLoc.offset);
+                keySizes += keySize;
+                valueSizes += valueSize; 
+            }
+        }
+
+        if (remains > 0) {
+            Segment::setFlushFront(seg, remains);
+            memmove(readPool, readPool + readSize - remains, remains);
+        } else {
+            Segment::resetFronts(seg);
+        }
+
+        debug_info("one loop -- start %lu readSize %lu end %lu remains %lu keyNum %lu keySizes %lu valueSizes %lu\n", start, readSize, end, remains, keyNum, keySizes, valueSizes);
+
+        start = (start + readSize - remains) % capacity;
+        scanBytes += readSize - remains;
+
+        if (scanBytes > capacity) {
+            debug_error("log corruptted: scanBytes %lu capacity %lu\n", scanBytes, capacity);
+            assert(0);
+            exit(-1);
+        } 
+
+//        if (start != end) {
+//            start += readSize - remains;
+//            if (start != end) {
+//                continue;
+//            }
+//        }
+//
+//        if (end != logTail) { // Wrapped
+//            start = 0;
+//            end = logTail;
+//        } else {
+//            break;
+//        }
+    }
+
+    len_t total = keySizes + valueSizes + keyNum * (sizeof(key_len_t) + sizeof(len_t));
+    debug_info("keyNum %lu keySizes %lu valueSizes %lu, totally %llu GiB %llu MiB %llu KiB %llu B\n", keyNum, keySizes, valueSizes, 
+        total / (1ull << 30), 
+        total / (1ull << 20) % (1ull << 10),
+        total / (1ull << 10) % (1ull << 10),
+        total % (1ull << 10));
+
+    gettimeofday(&tv2, 0);
+    timersub(&tv2, &tv1, &res);
+    debug_info("scan time: %.6lf s\n", (res.tv_sec * S2US + res.tv_usec) / 1000000.0);
 }
 
 // void ValueManager::restoreFromUpdateLog() {
