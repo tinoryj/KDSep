@@ -18,7 +18,7 @@ bool FileOperation::createFile(string path)
     if (operationType_ == kFstream) {
         fileStream_.open(path, ios::out);
         if (fileStream_.is_open() == false) {
-            debug_error("File stream (create) error, path = %s\n", path.c_str());
+            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
             return false;
         } else {
             return true;
@@ -27,7 +27,7 @@ bool FileOperation::createFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_CREAT, 0644);
         if (fileDirect_ == -1) {
-            debug_error("File descriptor (create) = %d, err = %s\n", fileDirect_, strerror(errno));
+            debug_error("[ERROR] File descriptor (create) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
         } else {
             return true;
@@ -42,7 +42,7 @@ bool FileOperation::openFile(string path)
     if (operationType_ == kFstream) {
         fileStream_.open(path, ios::in | ios::out | ios::binary);
         if (fileStream_.is_open() == false) {
-            debug_error("File stream (create) error, path = %s\n", path.c_str());
+            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
             return false;
         } else {
             return true;
@@ -50,7 +50,7 @@ bool FileOperation::openFile(string path)
     } else if (operationType_ == kDirectIO) {
         fileDirect_ = open(path.c_str(), O_RDWR | O_DIRECT, 0644);
         if (fileDirect_ == -1) {
-            debug_error("File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
         } else {
             directIOWriteFileSize_ = getFilePhysicalSize(path);
@@ -90,7 +90,7 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
         auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
         if (ret) {
-            debug_error("posix_memalign failed: %d %s\n", errno, strerror(errno));
+            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
         } else {
             memset(writeBuffer, 0, writeBufferSize);
@@ -112,7 +112,7 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         if (wReturn != writeBufferSize) {
             free(writeBuffer);
             directIOWriteFileSize_ += wReturn;
-            debug_error("Write return value = %ld, err = %s\n", wReturn, strerror(errno));
+            debug_error("[ERROR] Write return value = %ld, err = %s\n", wReturn, strerror(errno));
             return false;
         } else {
             free(writeBuffer);
@@ -139,13 +139,13 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
         auto ret = posix_memalign((void**)&readBuffer, directIOPageSize_, readBufferSize);
         if (ret) {
-            debug_error("posix_memalign failed: %d %s\n", errno, strerror(errno));
+            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
         }
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
-            debug_error("Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
+            debug_error("[ERROR] Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             return false;
         }
         uint64_t currentReadDoneSize = 0;
@@ -157,7 +157,7 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
-            debug_error("Read size mismatch, read size = %lu, request size = %lu\n", currentReadDoneSize, contentSize);
+            debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu\n", currentReadDoneSize, contentSize);
             return false;
         } else {
             free(readBuffer);
@@ -214,13 +214,13 @@ uint64_t FileOperation::getFileSize()
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
         auto ret = posix_memalign((void**)&readBuffer, directIOPageSize_, readBufferSize);
         if (ret) {
-            debug_error("posix_memalign failed: %d %s\n", errno, strerror(errno));
+            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
         }
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
-            debug_error("Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
+            debug_error("[ERROR] Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             free(readBuffer);
             return false;
         }

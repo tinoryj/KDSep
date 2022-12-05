@@ -224,13 +224,13 @@ void HashStoreFileOperator::operationWorker()
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                         if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
-                            debug_error("Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
+                            debug_error("[ERROR] Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
                         } else {
                             if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
-                                debug_error("Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
+                                debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                                 currentHandlerPtr->jobDone = true;
                                 continue;
@@ -261,13 +261,13 @@ void HashStoreFileOperator::operationWorker()
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                     if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
-                        debug_error("Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
+                        debug_error("[ERROR] Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
                         continue;
                     } else {
                         if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
-                            debug_error("Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
+                            debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
@@ -415,7 +415,7 @@ void HashStoreFileOperator::operationWorker()
                 }
                 continue;
             } else {
-                debug_error("Unknown operation type = %d\n", currentHandlerPtr->opType_);
+                debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->opType_);
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 break;
             }

@@ -452,7 +452,7 @@ private:
 
     bool removePrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
     {
-        for (uint64_t currentLevel = 0; currentLevel < findAtLevelID; currentLevel++) {
+        for (uint64_t currentLevel = 0; currentLevel <= findAtLevelID; currentLevel++) {
             // cerr << "Current level = " << currentLevel << ", Current node ID = " << root->thisNodeID_ << endl;
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
