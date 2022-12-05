@@ -4,7 +4,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-// #include "utils/trie.hpp"
+#include "utils/prefixTree.hpp"
 #include <bits/stdc++.h>
 #include <filesystem>
 
@@ -49,19 +49,14 @@ private:
     uint64_t operationCounterForMetadataCommit_ = 0;
     uint64_t operationNumberForMetadataCommitThreshold_ = 0;
     boost::shared_mutex operationCounterMtx_;
-    boost::shared_mutex metadataUpdateMtx_;
     // file metadata management
-    // Trie<hashStoreFileMetaDataHandler*>
-    //     objectFileMetaDataTrie_; // prefix-hash to object file metadata.
-    std::unordered_map<string, hashStoreFileMetaDataHandler*> objectFileMetaDataTrie_; // prefix-hash to object file metadata.
-    std::unordered_map<uint64_t, string>
-        hashStoreFileIDToPrefixMap_; // hashStore file id -> prefix;
+    PrefixTree<hashStoreFileMetaDataHandler*> objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     uint64_t currentTotalHashStoreFileSize_ = 0;
     uint64_t currentTotalHashStoreFileNumber_ = 0;
     uint64_t targetNewFileID_ = 0;
-    uint64_t getHashStoreFileHandlerStatusAndPrefixLenInUseByPrefix(const string prefixStr);
+    bool getHashStoreFileHandlerExistFlag(const string prefixStr);
 
-    bool getHashStoreFileHandlerByPrefix(const string prefixStr, uint64_t prefixUsageLength, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool createAndGetNewHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID); // previousFileID only used when createByGCFlag == true
     uint64_t generateNewFileID();
     boost::mutex fileIDGeneratorMtx_;

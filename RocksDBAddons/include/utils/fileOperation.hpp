@@ -1,7 +1,7 @@
 #pragma once
 
 #include "rocksdb/options.h"
-#include "utils/loggerColor.hpp"
+#include "utils/debug.hpp"
 #include <bits/stdc++.h>
 #include <fcntl.h>
 #include <sys/stat.h>

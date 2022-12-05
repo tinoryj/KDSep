@@ -1,9 +1,18 @@
 #pragma once
 
-// #include "common/indexStorePreDefines.hpp"
-#include "common/dataStructure.hpp"
+// #include "common/dataStructure.hpp"
 #include <string>
-#define DEBUG_LEVEL DebugLevel::INFO
+
+enum class DebugOutPutLevel : int {
+    NONE,
+    ERROR,
+    WARN,
+    INFO,
+    TRACE,
+    ANY
+};
+
+#define DEBUG_LEVEL DebugOutPutLevel::ERROR
 // for color
 #define RESET "\033[0m"
 #define BLACK "\033[30m" /* Black */
@@ -25,35 +34,35 @@
 
 #define debug(fmt, ...)                                                           \
     do {                                                                          \
-        if (DEBUG_LEVEL >= DebugLevel::ANY)                                       \
+        if (DEBUG_LEVEL >= DebugOutPutLevel::ANY)                                 \
             fprintf(stderr, "[%s] %s:%d:%s(): " fmt, getTime().c_str(), __FILE__, \
                 __LINE__, __func__, __VA_ARGS__);                                 \
     } while (0)
 
 #define debug_warn(fmt, ...)                                                                   \
     do {                                                                                       \
-        if (DEBUG_LEVEL >= DebugLevel::WARN)                                                   \
+        if (DEBUG_LEVEL >= DebugOutPutLevel::WARN)                                             \
             fprintf(stderr, YELLOW "[%s] %s:%d:%s(): " fmt RESET, getTime().c_str(), __FILE__, \
                 __LINE__, __func__, __VA_ARGS__);                                              \
     } while (0)
 
 #define debug_error(fmt, ...)                                                                   \
     do {                                                                                        \
-        if (DEBUG_LEVEL >= DebugLevel::ERROR)                                                   \
+        if (DEBUG_LEVEL >= DebugOutPutLevel::ERROR)                                             \
             fprintf(stderr, BOLDRED "[%s] %s:%d:%s(): " fmt RESET, getTime().c_str(), __FILE__, \
                 __LINE__, __func__, __VA_ARGS__);                                               \
     } while (0)
 
 #define debug_info(fmt, ...)                                                                 \
     do {                                                                                     \
-        if (DEBUG_LEVEL >= DebugLevel::INFO)                                                 \
+        if (DEBUG_LEVEL >= DebugOutPutLevel::INFO)                                           \
             fprintf(stderr, CYAN "[%s] %s:%d:%s(): " fmt RESET, getTime().c_str(), __FILE__, \
                 __LINE__, __func__, __VA_ARGS__);                                            \
     } while (0)
 
 #define debug_trace(fmt, ...)                                                                   \
     do {                                                                                        \
-        if (DEBUG_LEVEL >= DebugLevel::TRACE)                                                   \
+        if (DEBUG_LEVEL >= DebugOutPutLevel::TRACE)                                             \
             fprintf(stderr, MAGENTA "[%s] %s:%d:%s(): " fmt RESET, getTime().c_str(), __FILE__, \
                 __LINE__, __func__, __VA_ARGS__);                                               \
     } while (0)

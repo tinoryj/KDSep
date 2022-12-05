@@ -192,12 +192,8 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
 
 void HashStoreFileOperator::operationWorker()
 {
-    if (operationToWorkerMQ_ == nullptr) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): message queue not initial" << RESET << endl;
-        return;
-    }
     while (true) {
-        if (operationToWorkerMQ_->done_ == true) {
+        if (operationToWorkerMQ_->done_ == true && operationToWorkerMQ_->isEmpty() == true) {
             break;
         }
         hashStoreOperationHandler* currentHandlerPtr;
@@ -223,20 +219,18 @@ void HashStoreFileOperator::operationWorker()
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         }
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin);
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                         if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
-                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
+                            debug_error("Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
                         } else {
                             if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
-                                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket done, but could not found values for key = " << (*currentHandlerPtr->read_operation_.key_str_) << RESET << endl;
+                                debug_error("Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                                 currentHandlerPtr->jobDone = true;
                                 continue;
@@ -262,24 +256,18 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     }
                     debug_trace("target read file content (cache not enabled) size = %lu\n", currentHandlerPtr->file_handler_->total_object_bytes_);
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kBegin);
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->resetPointer(kEnd);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                     if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
-
-                        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket get mismatched object number, number in metadata = " << currentHandlerPtr->file_handler_->total_object_count_ << ", number read from file = " << totalProcessedObjectNumber << RESET << endl;
-
+                        debug_error("Read bucket get mismatched object number, number in metadata = %lu, number read from file = %lu\n", currentHandlerPtr->file_handler_->total_object_count_, totalProcessedObjectNumber);
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
                         continue;
                     } else {
                         if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
-
-                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): read bucket done, but could not found values for key = " << (*currentHandlerPtr->read_operation_.key_str_) << RESET << endl;
-
+                            debug_error("Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                             currentHandlerPtr->jobDone = true;
                             continue;
@@ -306,12 +294,12 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                         // write content
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                             debug_trace("lushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         } else {
-                            currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
                             debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
                         }
                         // Update metadata
@@ -327,12 +315,12 @@ void HashStoreFileOperator::operationWorker()
                     currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                     // write content
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                    currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                         debug_trace("flushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {
-                        currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                         debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
                     }
                     // Update metadata
@@ -397,8 +385,8 @@ void HashStoreFileOperator::operationWorker()
                 currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
                 currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
                 if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                     debug_trace("flushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
+                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                     currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                 }
                 // Update metadata
@@ -427,7 +415,7 @@ void HashStoreFileOperator::operationWorker()
                 }
                 continue;
             } else {
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Unknown operation type = " << currentHandlerPtr->opType_ << RESET << endl;
+                debug_error("Unknown operation type = %d\n", currentHandlerPtr->opType_);
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 break;
             }

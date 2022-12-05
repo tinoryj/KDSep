@@ -73,7 +73,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     }
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!s.ok()) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open underlying rocksdb" << RESET << endl;
+        debug_error("Can't open underlying rocksdb, status = %s\n", s.getState());
         return false;
     }
     // Create objects
@@ -147,7 +147,7 @@ bool DeltaKV::PutWithPlainRocksDB(const string& key, const string& value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, value);
     if (!s.ok()) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << RESET << endl;
+        debug_error("Write underlying rocksdb with raw value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -158,9 +158,7 @@ bool DeltaKV::MergeWithPlainRocksDB(const string& key, const string& value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, value);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << RESET << endl;
-
+        debug_error("Write underlying rocksdb with merge value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -171,9 +169,7 @@ bool DeltaKV::GetWithPlainRocksDB(const string& key, string* value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, value);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read underlying rocksdb fault" << RESET << endl;
-
+        debug_error("Read underlying rocksdb with raw value fault, key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -196,17 +192,13 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
             rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+                debug_error("Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 return true;
             }
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write value to external storage fault" << RESET << endl;
-
+            debug_error("Write value to external storage fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     } else {
@@ -214,15 +206,13 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
         internalValueType currentInternalValueType;
         currentInternalValueType.mergeFlag_ = false;
         currentInternalValueType.rawValueSize_ = value.size();
-        currentInternalValueType.valueSeparatedFlag_ = true;
+        currentInternalValueType.valueSeparatedFlag_ = false;
         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
         memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
         rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
         if (!s.ok()) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << RESET << endl;
-
+            debug_error("Write underlying rocksdb with raw value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         } else {
             return true;
@@ -243,9 +233,7 @@ bool DeltaKV::MergeWithOnlyValueStore(const string& key, const string& value)
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
     rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValueStr);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge underlying rocksdb with interanl value header fault" << RESET << endl;
-
+        debug_error("Merge underlying rocksdb with interanl value header fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -996,12 +984,6 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
 
 void DeltaKV::processBatchedOperationsWorker()
 {
-    if (notifyWriteBatchMQ_ == nullptr) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): message queue not initial" << RESET << endl;
-
-        return;
-    }
     while (true) {
         deque<tuple<DBOperationType, string, string>>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
@@ -1040,7 +1022,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
                         rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), keyToDeltaStoreVec[index], newWriteValue);
                         if (!s.ok()) {
-                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
+                            debug_error("Write underlying rocksdb with external storage index fault, status = %s\n", s.getState());
                         }
                     }
                 }
