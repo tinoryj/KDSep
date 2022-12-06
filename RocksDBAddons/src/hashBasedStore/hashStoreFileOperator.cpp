@@ -306,10 +306,10 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
-                            debug_trace("lushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
+                            debug_trace("lushed file ID = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         } else {
-                            debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
+                            debug_trace("buffered not flushed file ID = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
                         }
                         // Update metadata
                         currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
@@ -327,10 +327,10 @@ void HashStoreFileOperator::operationWorker()
                     currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                     if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
-                        debug_trace("flushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
+                        debug_trace("flushed file ID = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     } else {
-                        debug_trace("buffered not flushed file id = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
+                        debug_trace("buffered not flushed file ID = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
                     }
                     // Update metadata
                     currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
@@ -350,13 +350,19 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
                 // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC)) {
-                    debug_info("GC threshold = %lu\n", perFileGCSizeLimit_);
-                    debug_info("Current file id = %lu, exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_) {
+                    if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    } else {
+                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                    }
+                } else {
+                    currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 }
                 // mark job done
-                currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 currentHandlerPtr->jobDone = true;
                 continue;
             } else if (currentHandlerPtr->opType_ == kMultiPut) {
@@ -394,16 +400,14 @@ void HashStoreFileOperator::operationWorker()
                 currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
                 currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
                 if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-                    debug_trace("flushed file id = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
+                    debug_trace("flushed file ID = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
                     currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                     currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                 }
                 // Update metadata
                 currentHandlerPtr->file_handler_->total_object_bytes_ += targetWriteBufferSize;
                 currentHandlerPtr->file_handler_->total_object_count_ += currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size();
-                currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                 currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
-
                 // insert to cache if need
                 if (keyToValueListCache_ != nullptr) {
                     for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
@@ -415,13 +419,21 @@ void HashStoreFileOperator::operationWorker()
                         }
                     }
                 }
+                // insert into GC job queue if exceed the threshold
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_) {
+                    if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    } else {
+                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                    }
+                } else {
+                    currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                }
                 // mark job done
                 currentHandlerPtr->jobDone = true;
-                // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC)) {
-                    notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                    debug_info("Current file id = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
-                }
                 continue;
             } else {
                 debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->opType_);

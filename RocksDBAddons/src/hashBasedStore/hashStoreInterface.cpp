@@ -96,11 +96,13 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
     hashStoreFileMetaDataHandler* tempFileHandler;
     string prefixStr;
     hashStoreFileManagerPtr_->generateHashBasedPrefix(keyStr, prefixStr);
-    debug_trace("Target put key = %s, prefix = %s\n", keyStr.c_str(), prefixStr.c_str());
+    debug_trace("Target read key = %s, prefix = %s\n", keyStr.c_str(), prefixStr.c_str());
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
+        debug_error("[ERROR] Could not get file handler for key = %s\n", keyStr.c_str());
         return false;
     } else {
         if (hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec) != true) {
+            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
             return false;
         } else {
             debug_trace("Get value vec size = %lu\n", valueStrVec->size());

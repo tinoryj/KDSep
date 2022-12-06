@@ -4,6 +4,7 @@
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/fileOperation.hpp"
 #include "utils/murmurHash.hpp"
+#include "utils/prefixTree.hpp"
 #include "utils/timer.hpp"
 
 using namespace DELTAKV_NAMESPACE;
@@ -250,8 +251,41 @@ bool directIOTest(string path)
     return true;
 }
 
+bool prefixTreeTest()
+{
+    PrefixTree<uint64_t> testTree(2, 16);
+    uint64_t number1 = 2;
+    uint64_t number2 = 3;
+    testTree.insert("0000", number1);
+    uint64_t newContent;
+    bool status = testTree.get("0000", newContent);
+    if (status == true) {
+        cerr << "Find value = " << newContent << endl;
+    } else {
+        cerr << "Not find value for 0000" << endl;
+    }
+    testTree.insert("00000", number2);
+    testTree.insertWithFixedBitNumber("00000", 5, number2);
+    status = testTree.get("0000", newContent);
+    if (status == true) {
+        cerr << "Find value = " << newContent << endl;
+    } else {
+        cerr << "Not find value for 0000" << endl;
+    }
+    status = testTree.get("00000", newContent);
+    if (status == true) {
+        cerr << "Find value = " << newContent << endl;
+    } else {
+        cerr << "Not find value for 00000" << endl;
+    }
+    testTree.printNodeMap();
+    return true;
+}
+
 int main(int argc, char* argv[])
 {
+    prefixTreeTest();
+    return 0;
     // string path = "test.log";
     // directIOTest(path);
     // fstreamTestFlush(100000);

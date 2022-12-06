@@ -206,7 +206,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         // judge previous file ID
                         if (hashStoreFileIDToPrefixMap.find(currentFileHeader.previous_file_id_) == hashStoreFileIDToPrefixMap.end() && isGCFlushedDoneFlag == false) {
                             // previous ID not in metadata && gc file is not correctly flushed;
-                            debug_error("[ERROR] find kGC file that previous file ID not in metadata, seems error, previous file id = %lu\n", currentFileHeader.previous_file_id_);
+                            debug_error("[ERROR] find kGC file that previous file ID not in metadata, seems error, previous file ID = %lu\n", currentFileHeader.previous_file_id_);
                             return false;
                         } else if (hashStoreFileIDToPrefixMap.find(currentFileHeader.previous_file_id_) == hashStoreFileIDToPrefixMap.end() && isGCFlushedDoneFlag == true) {
                             // gc flushed done, kGC file should add
@@ -288,7 +288,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                 // merge file gc
                                 if (isGCFlushedDoneFlag == true) {
                                     // gc success, keep current file, and delete old one
-                                    string leftFatherFilePrefixStr = hashStoreFileIDToPrefixMap.at(currentFileHeader.previous_file_id_).first; // we store left file as previous file id (last bit in use = 0)
+                                    string leftFatherFilePrefixStr = hashStoreFileIDToPrefixMap.at(currentFileHeader.previous_file_id_).first; // we store left file as previous file ID (last bit in use = 0)
                                     string rightFatherFilePrefixStr = hashStoreFileIDToPrefixMap.at(currentFileHeader.previous_file_id_).first.substr(0, currentFileHeader.current_prefix_used_bit_) + "1";
                                     uint64_t leftFatherFileID = currentFileHeader.previous_file_id_;
                                     hashStoreFileMetaDataHandler* tempHandlerForRightFileID;
@@ -388,7 +388,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 debug_error("[ERROR] file ID = %lu, file size in metadata = %lu larger than file size in file system = %lu\n", fileIDIt, currentIDInMetadataFileHandlerPtr->total_object_bytes_, onDiskFileSize);
             } else if (currentIDInMetadataFileHandlerPtr->total_object_bytes_ < onDiskFileSize) {
                 // file may append, should recovery
-                debug_trace("target file id = %lu, file size (system) = %lu != file size (metadata) = %lu, try recovery\n", fileIDIt, onDiskFileSize, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
+                debug_trace("target file ID = %lu, file size (system) = %lu != file size (metadata) = %lu, try recovery\n", fileIDIt, onDiskFileSize, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
 
                 currentIDInMetadataFileHandlerPtr->fileOperationMutex_.lock();
                 // start read
@@ -407,7 +407,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
 
             } else {
                 // file size match, skip current file
-                debug_trace("target file id = %lu, file size (system) = %lu, file size (metadata) = %lu\n", fileIDIt, onDiskFileSize, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
+                debug_trace("target file ID = %lu, file size (system) = %lu, file size (metadata) = %lu\n", fileIDIt, onDiskFileSize, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
                 continue;
             }
         }
@@ -613,7 +613,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
             it.second->fileOperationMutex_.lock();
             it.second->file_operation_func_ptr_->flushFile();
-            debug_trace("flushed file id = %lu, file correspond prefix = %s\n", it.second->target_file_id_, it.first.c_str());
+            debug_trace("flushed file ID = %lu, file correspond prefix = %s\n", it.second->target_file_id_, it.first.c_str());
             it.second->fileOperationMutex_.unlock();
         }
         hashStoreFileManifestStream.flush();
@@ -774,40 +774,39 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
         } else {
-            debug_info("[Insert] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
+            debug_info("[Insert] Create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
             fileHandlerPtr->file_ownership_flag_ = 1;
             return true;
         }
     } else if (fileHandlerExistFlag == true) {
-        bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
-        if (!getFileHandlerStatus) {
-            debug_error("[ERROR] get existing bucket file handler for put/get operation error, key = %s\n", keyStr.c_str());
-            return false;
-        } else {
-            // avoid get file handler which is in GC;
-            debug_trace("Get exist file id = %lu, for key = %s, waiting for file ownership \n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-            while (fileHandlerPtr->file_ownership_flag_ != 0) {
-                asm volatile("");
-                // wait if file is using in gc
-            }
-            if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
-                // retry if the file should delete;
-                uint64_t previousPrefixBitNumber = fileHandlerPtr->current_prefix_used_bit_;
-                uint64_t findAtLevelID = previousPrefixBitNumber;
-                // objectFileMetaDataTrie_.remove(prefixStr.substr(0, previousPrefixBitNumber), findAtLevelID);
-                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, previousPrefixBitNumber + 1, false, 0);
+        while (true) {
+            bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
+            if (!getFileHandlerStatus) {
+                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
                 if (!createNewFileHandlerStatus) {
-                    debug_error("[ERROR] Previous file is marked as kShouldDelete, create new bucket for put operation error, key = %s\n", keyStr.c_str());
+                    debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
                 } else {
-                    debug_info("[Insert] Previous file is marked as kShouldDelete, create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
+                    debug_info("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
                     fileHandlerPtr->file_ownership_flag_ = 1;
                     return true;
                 }
             } else {
-                debug_trace("Get exist file id = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                fileHandlerPtr->file_ownership_flag_ = 1;
-                return true;
+                // avoid get file handler which is in GC;
+                debug_trace("Get exist file ID = %lu, for key = %s, waiting for file ownership \n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                while (fileHandlerPtr->file_ownership_flag_ != 0) {
+                    asm volatile("");
+                    // wait if file is using in gc
+                }
+                if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
+                    // retry if the file should delete;
+                    debug_warn("Get exist file ID = %lu, for key = %s, this file is marked as kShouldDelete\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    continue;
+                } else {
+                    debug_trace("Get exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    fileHandlerPtr->file_ownership_flag_ = 1;
+                    return true;
+                }
             }
         }
     } else {
@@ -886,7 +885,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     memcpy(fileHeaderWriteBuffer, &newFileHeader, sizeof(newFileHeader));
     // write header to current file
     currentFileHandlerPtr->fileOperationMutex_.lock();
-    debug_trace("Newly created file id = %lu, prefix bit number = %lu, prefix = %s\n", currentFileHandlerPtr->target_file_id_, prefixBitNumber, prefixStr.c_str());
+    debug_trace("Newly created file ID = %lu, prefix bit number = %lu, prefix = %s\n", currentFileHandlerPtr->target_file_id_, prefixBitNumber, prefixStr.c_str());
     currentFileHandlerPtr->file_operation_func_ptr_->createFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
     currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
     currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
@@ -913,43 +912,37 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
     }
 }
 
-bool HashStoreFileManager::getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(const string keyStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID)
+bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForSplitGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID)
 {
-    string prefixStr;
-    bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
-    if (!genPrefixStatus) {
-        debug_error("[ERROR] generate prefix hash for current key error, key = %s\n", keyStr.c_str());
-        return false;
-    }
-    bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
-    if (!getFileHandlerStatus) {
-        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, targetPrefixLen, true, previousFileID);
-        if (!createNewFileHandlerStatus) {
-            debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
-            return false;
-        } else {
-            debug_info("[GC] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
-            fileHandlerPtr->file_ownership_flag_ = -1;
-            return true;
-        }
-    } else {
-        // During split gc, file prefix length should be extend;
-        if (fileHandlerPtr->current_prefix_used_bit_ != targetPrefixLen) {
-            debug_info("Get existing file handler in GC, but request prefix len = %lu, current prefix len = %lu, start re-generate new file\n", targetPrefixLen, fileHandlerPtr->current_prefix_used_bit_);
-            bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, targetPrefixLen, true, previousFileID);
-            if (!createNewFileHandlerStatus) {
-                debug_error("[ERROR] Create new bucket for put operation error, key = %s\n", keyStr.c_str());
-                return false;
-            } else {
-                debug_info("[GC] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
-                fileHandlerPtr->file_ownership_flag_ = -1;
-                return true;
-            }
-        } else {
-            fileHandlerPtr->file_ownership_flag_ = -1;
-            return true;
-        }
-    }
+    hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
+    currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
+    currentFileHandlerPtr->current_prefix_used_bit_ = targetPrefixLen;
+    currentFileHandlerPtr->target_file_id_ = generateNewFileID();
+    currentFileHandlerPtr->file_ownership_flag_ = -1;
+    currentFileHandlerPtr->gc_result_status_flag_ = kNew;
+    currentFileHandlerPtr->total_object_bytes_ = 0;
+    currentFileHandlerPtr->total_object_count_ = 0;
+    // set up new file header for write
+    hashStoreFileHeader newFileHeader;
+    newFileHeader.current_prefix_used_bit_ = targetPrefixLen;
+    newFileHeader.previous_file_id_ = previousFileID;
+    newFileHeader.file_create_reason_ = kGCFile;
+    newFileHeader.file_id_ = currentFileHandlerPtr->target_file_id_;
+    char fileHeaderWriteBuffer[sizeof(newFileHeader)];
+    memcpy(fileHeaderWriteBuffer, &newFileHeader, sizeof(newFileHeader));
+    // write header to current file
+    currentFileHandlerPtr->fileOperationMutex_.lock();
+    debug_trace("Newly created file ID = %lu, target prefix bit number = %lu, prefix = %s\n", currentFileHandlerPtr->target_file_id_, targetPrefixLen, prefixStr.c_str());
+    currentFileHandlerPtr->file_operation_func_ptr_->createFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+    currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
+    currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+    currentFileHandlerPtr->file_operation_func_ptr_->writeFile(fileHeaderWriteBuffer, sizeof(newFileHeader));
+    currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
+    currentFileHandlerPtr->temp_not_flushed_data_bytes_ = sizeof(newFileHeader);
+    currentFileHandlerPtr->fileOperationMutex_.unlock();
+    // move pointer for return
+    fileHandlerPtr = currentFileHandlerPtr;
+    return true;
 }
 
 uint64_t HashStoreFileManager::generateNewFileID()
@@ -1025,7 +1018,7 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* currentHandlerPtr;
         if (notifyGCMQ_->pop(currentHandlerPtr)) {
-            debug_info("new file request for GC, file id = %lu, existing size = %lu, file gc status = %d\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_, currentHandlerPtr->gc_result_status_flag_);
+            debug_info("new file request for GC, file ID = %lu, existing size = %lu, file gc status = %d\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_, currentHandlerPtr->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
             currentHandlerPtr->fileOperationMutex_.lock();
@@ -1041,12 +1034,12 @@ void HashStoreFileManager::processGCRequestWorker()
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
             if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second != 0) {
-                debug_info("File id = %lu could not reclaim space in single file, try split, total contains object number = %lu, should keep object number = %lu, find different key number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first, gcResultMap.size());
+                debug_info("File ID = %lu could not reclaim space in single file, try split, total contains object number = %lu, should keep object number = %lu, find different key number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first, gcResultMap.size());
                 // no space could be reclaimed, may request split
                 if (gcResultMap.size() == 0) {
                     // keep tracking until forced gc threshold;
                     currentHandlerPtr->file_ownership_flag_ = 0;
-                    debug_error("[ERROR] File id = %lu contains no keys, but processed object number = %lu, target keep object number = %lu, skip this file\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                    debug_error("[ERROR] File ID = %lu contains no keys, but processed object number = %lu, target keep object number = %lu, skip this file\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                     currentHandlerPtr->fileOperationMutex_.unlock();
                     continue;
                 } else if (gcResultMap.size() == 1) {
@@ -1054,7 +1047,7 @@ void HashStoreFileManager::processGCRequestWorker()
                         // keep tracking until forced gc threshold;
                         currentHandlerPtr->gc_result_status_flag_ = kMayGC;
                         currentHandlerPtr->file_ownership_flag_ = 0;
-                        debug_info("File id = %lu contains only %lu different keys, marked as kMayGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
+                        debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
                         currentHandlerPtr->fileOperationMutex_.unlock();
                         continue;
                     }
@@ -1062,7 +1055,7 @@ void HashStoreFileManager::processGCRequestWorker()
                         // Mark this file as could not GC;
                         currentHandlerPtr->gc_result_status_flag_ = kNoGC;
                         currentHandlerPtr->file_ownership_flag_ = 0;
-                        debug_info("File id = %lu contains only %lu different keys, marked as kNoGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
+                        debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", currentHandlerPtr->target_file_id_, gcResultMap.size());
                         currentHandlerPtr->fileOperationMutex_.unlock();
                         continue;
                     }
@@ -1073,10 +1066,23 @@ void HashStoreFileManager::processGCRequestWorker()
                         uint64_t currentUsedPrefixBitNumber = currentHandlerPtr->current_prefix_used_bit_;
                         uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
                         bool isSplitDoneFlag = true;
+                        unordered_map<hashStoreFileMetaDataHandler*, string> tempHandlerToPrefixMapForMetadataUpdate;
+                        unordered_map<string, hashStoreFileMetaDataHandler*> tempPrefixToHandlerMapForFileSplitGC;
                         for (auto keyIt : gcResultMap) {
                             debug_info("write new file for key = %s\n", keyIt.first.c_str());
                             hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-                            bool getFileHandlerStatus = getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(keyIt.first, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_);
+                            bool getFileHandlerStatus;
+                            string prefixTempStr;
+                            generateHashBasedPrefix(keyIt.first, prefixTempStr);
+                            if (tempPrefixToHandlerMapForFileSplitGC.find(prefixTempStr.substr(0, targetPrefixBitNumber)) != tempPrefixToHandlerMapForFileSplitGC.end()) {
+                                currentFileHandlerPtr = tempPrefixToHandlerMapForFileSplitGC.at(prefixTempStr.substr(0, targetPrefixBitNumber));
+                                getFileHandlerStatus = true;
+                            } else {
+                                getFileHandlerStatus = createHashStoreFileHandlerByPrefixStrForSplitGC(prefixTempStr, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_);
+                                // update metadata for currentFileHandler;
+                                tempHandlerToPrefixMapForMetadataUpdate.insert(make_pair(currentFileHandlerPtr, prefixTempStr));
+                                tempPrefixToHandlerMapForFileSplitGC.insert(make_pair(prefixTempStr.substr(0, targetPrefixBitNumber), currentFileHandlerPtr));
+                            }
                             if (getFileHandlerStatus == false) {
                                 debug_error("[ERROR] could not get/create new bucket for key = %s during split gc\n", keyIt.first.c_str());
                                 isSplitDoneFlag = false;
@@ -1118,37 +1124,63 @@ void HashStoreFileManager::processGCRequestWorker()
                                 currentFileHandlerPtr->file_operation_func_ptr_->flushFile();
                                 debug_trace("flushed new file to filesystem since split gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHandlerPtr->target_file_id_, currentHandlerPtr->target_file_id_);
                                 currentFileHandlerPtr->temp_not_flushed_data_bytes_ = 0;
-                                currentFileHandlerPtr->file_ownership_flag_ = 0;
                                 currentFileHandlerPtr->fileOperationMutex_.unlock();
                             }
                         }
                         if (isSplitDoneFlag == true) {
                             // mark current file as should delete, prevent further use
-                            debug_info("Split file id = %lu for gc success, mark as should delete\n", currentHandlerPtr->target_file_id_);
+                            debug_info("Split file ID = %lu for gc success, mark as should delete\n", currentHandlerPtr->target_file_id_);
+                            // update all metadata
+                            if (tempHandlerToPrefixMapForMetadataUpdate.size() > 2) {
+                                debug_error("[ERROR] Split file ID = %lu for gc success, but generate more than 2 files, generated file number = %lu\n", currentHandlerPtr->target_file_id_, tempHandlerToPrefixMapForMetadataUpdate.size());
+                                currentHandlerPtr->file_ownership_flag_ = 0;
+                                currentHandlerPtr->fileOperationMutex_.unlock();
+                                continue;
+                            }
+                            for (auto mapIt : tempHandlerToPrefixMapForMetadataUpdate) {
+                                hashStoreFileMetaDataHandler* tempHandler = mapIt.first;
+                                uint64_t insertAtLevel = objectFileMetaDataTrie_.insert(mapIt.second, tempHandler);
+                                if (insertAtLevel == 0) {
+                                    debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", tempHandler->current_prefix_used_bit_, tempHandler->target_file_id_);
+                                    debug_error("[ERROR] Split file ID = %lu for gc not success, could not update metadata for file ID = %lu\n", currentHandlerPtr->target_file_id_, tempHandler->target_file_id_);
+                                    currentHandlerPtr->file_ownership_flag_ = 0;
+                                    currentHandlerPtr->fileOperationMutex_.unlock();
+                                    continue;
+                                } else {
+                                    if (tempHandler->current_prefix_used_bit_ != insertAtLevel) {
+                                        debug_info("After insert to prefix tree, get handler at level = %lu, but prefix length used = %lu, inserted file ID = %lu, update the current bit number used in the file handler\n", insertAtLevel, tempHandler->current_prefix_used_bit_, tempHandler->target_file_id_);
+                                        tempHandler->current_prefix_used_bit_ = insertAtLevel;
+                                    }
+                                }
+                            }
+                            for (auto mapIt : tempHandlerToPrefixMapForMetadataUpdate) {
+                                hashStoreFileMetaDataHandler* tempHandler = mapIt.first;
+                                tempHandler->file_ownership_flag_ = 0;
+                            }
                             currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
                             currentHandlerPtr->file_ownership_flag_ = 0;
                             currentHandlerPtr->fileOperationMutex_.unlock();
                         } else {
-                            debug_error("[ERROR] Split file id = %lu for gc not success, skip this file\n", currentHandlerPtr->target_file_id_);
+                            debug_error("[ERROR] Split file ID = %lu for gc not success, skip this file\n", currentHandlerPtr->target_file_id_);
                             currentHandlerPtr->file_ownership_flag_ = 0;
                             currentHandlerPtr->fileOperationMutex_.unlock();
                         }
                         continue;
                     } else {
-                        debug_error("[ERROR] GC for file id = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->gc_result_status_flag_, gcResultMap.size());
+                        debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->gc_result_status_flag_, gcResultMap.size());
                         currentHandlerPtr->file_ownership_flag_ = 0;
                         currentHandlerPtr->fileOperationMutex_.unlock();
                         continue;
                     }
                 }
             } else if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second == 0) {
-                debug_info("File id = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                debug_info("File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                 currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
                 currentHandlerPtr->file_ownership_flag_ = 0;
                 currentHandlerPtr->fileOperationMutex_.unlock();
                 continue;
             } else {
-                debug_info("File id = %lu,total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                debug_info("File ID = %lu,total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                 // reclaimed space success, rewrite current file to new file
                 currentHandlerPtr->file_operation_func_ptr_->closeFile();
                 uint64_t targetFileSize = 0;
