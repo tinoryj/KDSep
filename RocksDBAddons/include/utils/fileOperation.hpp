@@ -27,6 +27,7 @@ public:
     bool closeFile();
     bool resetPointer(fileOperationSetPointerOps ops);
     uint64_t getFileSize();
+    uint64_t getFilePhysicalSize(string path);
 
 private:
     fileOperationType operationType_;
@@ -34,7 +35,7 @@ private:
     int fileDirect_;
     uint64_t directIOPageSize_ = sysconf(_SC_PAGESIZE);
     uint64_t directIOWriteFileSize_ = 0;
-    uint64_t getFilePhysicalSize(string path);
+    uint64_t newlyCreatedFileFlag_ = false;
 };
 
 } // namespace DELTAKV_NAMESPACE

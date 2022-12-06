@@ -469,7 +469,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
             rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
+                debug_error("[ERROR] Write underlying rocksdb with external value type info, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 return true;

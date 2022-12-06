@@ -569,6 +569,12 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             // open current file for further usage
             currentFileHandlerPtr->fileOperationMutex_.lock();
             currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
+            uint64_t onDiskFileSize = currentFileHandlerPtr->file_operation_func_ptr_->getFileSize();
+            if (onDiskFileSize > currentFileHandlerPtr->total_object_bytes_ && shouldDoRecoveryFlag_ == false) {
+                debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, currentFileHandlerPtr->total_object_bytes_);
+            } else if (onDiskFileSize < currentFileHandlerPtr->total_object_bytes_ && shouldDoRecoveryFlag_ == false) {
+                debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, currentFileHandlerPtr->total_object_bytes_);
+            }
             currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
             objectFileMetaDataTrie_.insertWithFixedBitNumber(prefixHashStr, currentFileUsedPrefixLength, currentFileHandlerPtr);
@@ -1027,7 +1033,7 @@ void HashStoreFileManager::processGCRequestWorker()
             currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
             uint64_t currentFileOnDiskSize = currentHandlerPtr->file_operation_func_ptr_->getFileSize();
             if (currentFileOnDiskSize != currentHandlerPtr->total_object_bytes_) {
-                debug_error("[ERROR] file size in metadata = %lu, in filesystem = %lu\n", currentFileOnDiskSize, currentHandlerPtr->total_object_bytes_);
+                debug_error("[ERROR] file size in metadata = %lu, in filesystem = %lu\n", currentHandlerPtr->total_object_bytes_, currentFileOnDiskSize);
             }
             currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
             // process GC contents

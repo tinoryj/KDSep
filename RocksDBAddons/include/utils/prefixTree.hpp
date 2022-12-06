@@ -24,6 +24,7 @@ public:
 
     PrefixTree()
     {
+        rootNode_ = new prefixTreeNode;
     }
 
     ~PrefixTree()
@@ -38,7 +39,6 @@ public:
     {
         initBitNumber_ = initBitNumber;
         maxBitNumber_ = maxBitNumber;
-        rootNode_ = new prefixTreeNode;
         {
             std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             createPrefixTree(rootNode_, 0);
@@ -86,7 +86,7 @@ public:
         uint64_t findAtLevelID = 0;
         bool status;
         {
-            std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         }
         if (status == true) {
@@ -101,7 +101,7 @@ public:
         dataT newData;
         bool status;
         {
-            std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         }
         if (status == true) {
@@ -128,7 +128,7 @@ public:
     bool getCurrentValidNodes(vector<pair<string, dataT>>& validObjectList)
     {
         {
-            std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->isLeafNodeFlag_ == true) {
                     validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -145,7 +145,7 @@ public:
     bool getPossibleValidNodes(vector<pair<string, dataT>>& validObjectList)
     {
         {
-            std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->currentNodePrefix.size() != 0) {
                     validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -162,7 +162,7 @@ public:
     bool getInValidNodes(vector<pair<string, dataT>>& invalidObjectList)
     {
         {
-            std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->currentNodePrefix.size() != 0 && it.second->isLeafNodeFlag_ == false) {
                     invalidObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -178,7 +178,7 @@ public:
 
     void printNodeMap()
     {
-        std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         for (auto it : nodeMap_) {
             if (it.second->currentNodePrefix.size() != 0) {
                 debug_trace("Find node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
