@@ -7,9 +7,7 @@ bool DeltaKVOptions::dumpOptions(string dumpPath)
     ofstream dumpOptionsOutStream;
     dumpOptionsOutStream.open(dumpPath, ios::out);
     if (!dumpOptionsOutStream.is_open()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
-
+        debug_error("[ERROR] Can not open target file = %s for dump\n", dumpPath.c_str());
         return false;
     }
     dumpOptionsOutStream << "Common options:" << endl;
@@ -67,9 +65,7 @@ bool DeltaKVOptions::dumpDataStructureInfo(string dumpPath)
     ofstream dumpStructureSizeOutStream;
     dumpStructureSizeOutStream.open(dumpPath, ios::out);
     if (!dumpStructureSizeOutStream.is_open()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): can not open target file" << RESET << endl;
-
+        debug_error("[ERROR] Can not open target file = %s for dump\n", dumpPath.c_str());
         return false;
     }
     // write content

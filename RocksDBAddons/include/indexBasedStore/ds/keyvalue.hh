@@ -3,15 +3,15 @@
 
 #include "common/dataStructure.hpp"
 #include "common/indexStorePreDefines.hpp"
-#include "utils/debug.hpp"
 #include "indexBasedStore/configManager.hh"
+#include "utils/debug.hpp"
 #include "utils/hash.hpp"
 #include <stdlib.h>
 #define LSM_MASK (0x80000000)
 
 namespace DELTAKV_NAMESPACE {
 
-// Scan a KV pair in the buffer. 
+// Scan a KV pair in the buffer.
 // Parameters:
 //   Input:
 //     diskStart - The corresponding starting offset in the disk
@@ -22,16 +22,17 @@ namespace DELTAKV_NAMESPACE {
 //   Output:
 //     key, value - The pointer to the real key and value
 //     keySize, valueSize - The key and value sizes
-//     compactedBytes - The number of bytes with empty bytes (not invalid data. Just zero bytes created because of alignment in direct I/O) 
+//     compactedBytes - The number of bytes with empty bytes (not invalid data. Just zero bytes created because of alignment in direct I/O)
 //
 // Compared with the original GC design in gcVLog():
 //
 // diskStart                   <-> gcFront
 // maxScanSize                 <-> gcSize
-// 
-// Return false: the KV record is not complete 
+//
+// Return false: the KV record is not complete
 
-inline bool scanKeyValue(char* buffer, len_t diskStart, len_t maxScanSize, len_t &keySizeOffset, char*& key, key_len_t &keySize, char*& value, len_t &valueSize, len_t &remains, len_t &compactedBytes, len_t pageSize = 4096) {
+inline bool scanKeyValue(char* buffer, len_t diskStart, len_t maxScanSize, len_t& keySizeOffset, char*& key, key_len_t& keySize, char*& value, len_t& valueSize, len_t& remains, len_t& compactedBytes, len_t pageSize = 4096)
+{
     compactedBytes = 0;
 
     valueSize = INVALID_LEN;
@@ -44,30 +45,30 @@ inline bool scanKeyValue(char* buffer, len_t diskStart, len_t maxScanSize, len_t
             break;
         }
 
-        memcpy(&keySize, buffer + keySizeOffset, sizeof(key_len_t)); 
+        memcpy(&keySize, buffer + keySizeOffset, sizeof(key_len_t));
         if (keySize == 0) {
             if ((remains + (pageSize - diskStart % pageSize)) % pageSize == 0) {
-                debug_error("remains aligned; this page has no content (remains %lu) gcFront %lu keySizeOffset %lu\n", remains, diskStart, keySizeOffset);
+                debug_error("[ERROR] remains aligned; this page has no content (remains %lu) gcFront %lu keySizeOffset %lu\n", remains, diskStart, keySizeOffset);
                 assert(0);
                 exit(-1);
             }
             debug_trace("diskStart %lu remains %lu pageSize %lu ... %lu\n", diskStart, remains, pageSize, (remains % pageSize + (pageSize - diskStart % pageSize)) % pageSize);
             len_t compacted = std::min((remains % pageSize + (pageSize - diskStart % pageSize)) % pageSize, remains);
-            compactedBytes += compacted; 
+            compactedBytes += compacted;
             keySizeOffset += compacted;
             remains -= compacted;
             debug_trace("keySizeOffset %lu -> %lu compacted %lu (remains %lu)\n", keySizeOffset - compacted, keySizeOffset, compacted, remains);
             continue;
         }
 
-        // Step 2: get key 
+        // Step 2: get key
         if (KEY_REC_SIZE + sizeof(len_t) > remains) {
             break;
         }
         key = buffer + keySizeOffset;
 
-        // Step 3: get value size 
-        memcpy(&valueSize, buffer + keySizeOffset + KEY_REC_SIZE, sizeof(len_t)); 
+        // Step 3: get value size
+        memcpy(&valueSize, buffer + keySizeOffset + KEY_REC_SIZE, sizeof(len_t));
 
         // Step 4: get value
         if (KEY_REC_SIZE + sizeof(len_t) + valueSize > remains) {

@@ -16,12 +16,10 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileManager = new HashStoreFileManager(internalOptionsPtr_->hashStore_init_prefix_bit_number, internalOptionsPtr_->hashStore_max_prefix_bit_number, singleFileGCThreshold, totalHashStoreFileGCThreshold, workingDirStr, notifyGCMQ_, options->fileOperationMethod_);
     hashStoreFileOperator = new HashStoreFileOperator(options, notifyGCMQ_);
     if (!hashStoreFileManager) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create HashStoreFileManager error" << RESET << endl;
+        debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());
     }
     if (!hashStoreFileOperator) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Create HashStoreFileOperator error" << RESET << endl;
+        debug_error("[ERROR] Create HashStoreFileOperator error, file path = %s\n", workingDirStr.c_str());
     }
     hashStoreFileManagerPtr_ = hashStoreFileManager;
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
@@ -57,11 +55,11 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
     debug_trace("Target put key = %s, prefix = %s, value = %s\n", keyStr.c_str(), prefixStr.c_str(), valueStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): get fileHandler from file manager error" << RESET << endl;
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
+            debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
         } else {
             return true;
@@ -86,7 +84,7 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
         }
     }
     if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap) != true) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): write to dLog error" << RESET << endl;
+        debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
         return false;
     } else {
         return true;

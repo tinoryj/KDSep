@@ -190,7 +190,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     }
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!s.ok()) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open underlying rocksdb" << RESET << endl;
+        debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", s.getState());
         return false;
     }
     // Create objects
@@ -264,7 +264,7 @@ bool DeltaKV::PutWithPlainRocksDB(const string& key, const string& value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, value);
     if (!s.ok()) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << s.ToString() << RESET << endl;
+        debug_error("[ERROR] Write underlying rocksdb with raw value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -275,9 +275,7 @@ bool DeltaKV::MergeWithPlainRocksDB(const string& key, const string& value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, value);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault: " << s.ToString() << RESET << endl;
-
+        debug_error("[ERROR] Write underlying rocksdb with merge value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -288,9 +286,7 @@ bool DeltaKV::GetWithPlainRocksDB(const string& key, string* value)
 {
     rocksdb::Status s = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, value);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read underlying rocksdb fault" << RESET << endl;
-
+        debug_error("[ERROR] Read underlying rocksdb with raw value fault, key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -313,17 +309,13 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
             rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 return true;
             }
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write value to external storage fault" << RESET << endl;
-
+            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     } else {
@@ -337,9 +329,7 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
         rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
         if (!s.ok()) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << RESET << endl;
-
+            debug_error("[ERROR] Write underlying rocksdb with raw value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         } else {
             return true;
@@ -360,9 +350,7 @@ bool DeltaKV::MergeWithOnlyValueStore(const string& key, const string& value)
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
     rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValueStr);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Merge underlying rocksdb with interanl value header fault" << RESET << endl;
-
+        debug_error("[ERROR] Merge underlying rocksdb with interanl value header fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         return true;
@@ -411,16 +399,14 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
         auto index = 0;
         for (auto i = 0; i < deltaInfoVec.size(); i++) {
             if (deltaInfoVec[i].first == true) {
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Request external deltaStore when no KD separation enabled (Internal value error)" << RESET << endl;
+                debug_error("[ERROR] Request external deltaStore when no KD separation enabled (Internal value error), index = %d\n", i);
                 return false;
             } else {
                 finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
             }
         }
         if (deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value) != true) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): DeltaKV merge operation fault" << RESET << endl;
-
+            debug_error("[ERROR] DeltaKV merge operation fault, rawValueStr = %s, operand number = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
             return false;
         } else {
             return true;
@@ -457,9 +443,7 @@ bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
     rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValueStr);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with added value header fault" << RESET << endl;
-
+        debug_error("[ERROR] Write underlying rocksdb with added value header fault, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     } else {
         // need to append anchor to delta store
@@ -467,9 +451,7 @@ bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
         if (addAnchorStatus == true) {
             return true;
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Append anchor to delta store fault" << RESET << endl;
-
+            debug_error("[ERROR]  Append anchor to delta store fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     }
@@ -489,17 +471,13 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
             rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 return true;
             }
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write value to external storage fault" << RESET << endl;
-
+            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     } else {
@@ -513,9 +491,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
         rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValue);
         if (!s.ok()) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+            debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         } else {
             return true;
@@ -528,7 +504,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
     string internalValueStr;
     rocksdb::Status s = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, &internalValueStr);
     if (!s.ok()) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read underlying rocksdb fault" << RESET << endl;
+        debug_error("[ERROR] Read underlying rocksdb fault, key = %s\n", key.c_str());
         return false;
     } else {
         internalValueType tempInternalValueHeader;
@@ -543,12 +519,12 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
             bool findNewValueIndexFlag = false;
             processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo);
             if (findNewValueIndexFlag == true) {
-                debug_error("In only delta store, should not extract exteranl index, flag = %d\n", findNewValueIndexFlag);
+                debug_error("[ERROR] In only delta store, should not extract exteranl index, flag = %d\n", findNewValueIndexFlag);
             }
             debug_trace("read deltaInfoVec from LSM-tree size = %lu\n", deltaInfoVec.size());
             vector<string>* deltaValueFromExternalStoreVec = new vector<string>;
             if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read external deltaStore fault" << RESET << endl;
+                debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
                 delete deltaValueFromExternalStoreVec;
                 return false;
             } else {
@@ -564,7 +540,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
                     }
                 }
                 if (index != deltaValueFromExternalStoreVec->size()) {
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec->size() << ", current index = " << index << RESET << endl;
+                    debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = %lu\n", deltaValueFromExternalStoreVec->size());
                     delete deltaValueFromExternalStoreVec;
                     return false;
                 } else {
@@ -597,25 +573,19 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
             rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 bool updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true);
                 if (updateDeltaStoreWithAnchorFlagstatus == true) {
                     return true;
                 } else {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Update anchor to current key fault" << RESET << endl;
-
+                    debug_error("[ERROR] Update anchor to current key fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                     return false;
                 }
             }
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write value to external storage fault" << RESET << endl;
-
+            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     } else {
@@ -629,18 +599,14 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
         rocksdb::Status s = pointerToRawRocksDB_->Put(rocksdb::WriteOptions(), key, newWriteValue);
         if (!s.ok()) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with raw value fault" << RESET << endl;
-
+            debug_error("[ERROR] Write underlying rocksdb with raw value fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         } else {
             bool updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true);
             if (updateDeltaStoreWithAnchorFlagstatus == true) {
                 return true;
             } else {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Update anchor to current key fault" << RESET << endl;
-
+                debug_error("[ERROR] Update anchor to current key fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             }
         }
@@ -661,17 +627,13 @@ bool DeltaKV::MergeWithValueAndDeltaStore(const string& key, const string& value
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
             rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValue);
             if (!s.ok()) {
-
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
                 return false;
             } else {
                 return true;
             }
         } else {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write value to external storage fault" << RESET << endl;
-
+            debug_error("[ERROR] Write value to external storage faul, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         }
     } else {
@@ -685,9 +647,7 @@ bool DeltaKV::MergeWithValueAndDeltaStore(const string& key, const string& value
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
         rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), key, newWriteValue);
         if (!s.ok()) {
-
-            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
-
+            debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s\n", key.c_str(), value.c_str());
             return false;
         } else {
             return true;
@@ -700,9 +660,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
     string internalValueStr;
     rocksdb::Status s = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, &internalValueStr);
     if (!s.ok()) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read underlying rocksdb fault" << RESET << endl;
-
+        debug_error("[ERROR] Read underlying rocksdb fault, key = %s\n", key.c_str());
         return false;
     } else {
         internalValueType tempInternalValueHeader;
@@ -744,9 +702,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                 // should read external delta store
                 vector<string>* deltaValueFromExternalStoreVec = new vector<string>;
                 if (HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec) != true) {
-
-                    cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read external deltaStore fault" << RESET << endl;
-
+                    debug_error("[ERROR] Read external deltaStore fault, key = %s\n", key.c_str());
                     return false;
                 } else {
                     vector<string> finalDeltaOperatorsVec;
@@ -760,9 +716,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                         }
                     }
                     if (index != deltaValueFromExternalStoreVec->size()) {
-
-                        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = " << deltaValueFromExternalStoreVec->size() << ", current index = " << index << RESET << endl;
-
+                        debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = %lu\n", deltaValueFromExternalStoreVec->size());
                         delete deltaValueFromExternalStoreVec;
                         return false;
                     } else {
@@ -1059,7 +1013,7 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
             return true;
         }
     } else {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Batched operation with buffer not enabled " << RESET << endl;
+        debug_error("[ERROR] Batched operation with buffer not enabled, key = %s\n", key.c_str());
         return false;
     }
 }
@@ -1104,21 +1058,13 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
             return true;
         }
     } else {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Batched operation with buffer not enabled " << RESET << endl;
-
+        debug_error("[ERROR] Batched operation with buffer not enabled, key = %s\n", key.c_str());
         return false;
     }
 }
 
 void DeltaKV::processBatchedOperationsWorker()
 {
-    if (notifyWriteBatchMQ_ == nullptr) {
-
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): message queue not initial" << RESET << endl;
-
-        return;
-    }
     while (true) {
         deque<tuple<DBOperationType, string, string>>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
@@ -1142,7 +1088,7 @@ void DeltaKV::processBatchedOperationsWorker()
             // commit to delta store
             bool putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, isAnchorFlagToDeltaStoreVec);
             if (putToDeltaStoreStatus == false) {
-                cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write batched objects to underlying DeltaStore fault" << RESET << endl;
+                debug_error("[ERROR] Write batched objects to underlying DeltaStore fault, keyToDeltaStoreVec size = %lu\n", keyToDeltaStoreVec.size());
             } else {
                 for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
                     if (isAnchorFlagToDeltaStoreVec[index] == true) {
@@ -1157,7 +1103,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
                         rocksdb::Status s = pointerToRawRocksDB_->Merge(rocksdb::WriteOptions(), keyToDeltaStoreVec[index], newWriteValue);
                         if (!s.ok()) {
-                            cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Write underlying rocksdb with external storage index fault" << RESET << endl;
+                            debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", s.getState());
                         }
                     }
                 }

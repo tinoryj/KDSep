@@ -145,7 +145,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         // deltaKV settings
         options_.enable_deltaStore = true;
         options_.enable_deltaStore_KDLevel_cache = true;
-        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;
+        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = 1000;
         options_.deltaStore_single_file_maximum_size = 1 * 1024;
         options_.deltaStore_file_flush_buffer_size_limit_ = 256;
     }

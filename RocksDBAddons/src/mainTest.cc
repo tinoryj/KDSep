@@ -78,7 +78,7 @@ bool testPut(DeltaKV& db_, string key, string& value)
 {
     debug_info("Test put operation with key = %s\n", key.c_str());
     if (!db_.Put(key, value)) {
-        debug_error("Could not put KV pairs to DB for key = %s\n", key.c_str());
+        debug_error("[ERROR] Could not put KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -89,7 +89,7 @@ bool testGet(DeltaKV& db_, string key, string& value)
 {
     debug_info("Test get operation with key = %s\n", key.c_str());
     if (!db_.Get(key, &value)) {
-        debug_error("Could not get KV pairs from DB for key = %s\n", key.c_str());
+        debug_error("[ERROR] Could not get KV pairs from DB for key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -100,7 +100,7 @@ bool testMerge(DeltaKV& db_, string key, string& value)
 {
     debug_info("Test merge operation with key = %s\n", key.c_str());
     if (!db_.Merge(key, value)) {
-        debug_error("Could not merge KV pairs to DB for key = %s\n", key.c_str());
+        debug_error("[ERROR] Could not merge KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -111,7 +111,7 @@ bool testBatchedPut(DeltaKV& db_, string key, string& value)
 {
     debug_info("Test batched put operation with key = %s\n", key.c_str());
     if (!db_.PutWithWriteBatch(key, value)) {
-        debug_error("Could not put KV pairs to DB for key = %s\n", key.c_str());
+        debug_error("[ERROR] Could not put KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
         return true;
@@ -122,7 +122,7 @@ bool testBatchedMerge(DeltaKV& db_, string key, string& value)
 {
     debug_info("Test batched merge operation with key = %s\n", key.c_str());
     if (!db_.MergeWithWriteBatch(key, value)) {
-        debug_error("Could not merge KV pairs to DB for key = %s\n", key.c_str());
+        debug_error("[ERROR] Could not merge KV pairs to DB for key = %s\n", key.c_str());
         return false;
     } else {
         return true;
