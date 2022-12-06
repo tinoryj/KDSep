@@ -30,6 +30,7 @@ bool FileOperation::createFile(string path)
             debug_error("[ERROR] File descriptor (create) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
         } else {
+            newlyCreatedFileFlag_ = true;
             return true;
         }
     } else {
@@ -53,7 +54,12 @@ bool FileOperation::openFile(string path)
             debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
         } else {
-            directIOWriteFileSize_ = getFilePhysicalSize(path);
+            if (newlyCreatedFileFlag_ == true) {
+                directIOWriteFileSize_ = 0;
+            } else {
+                directIOWriteFileSize_ = getFilePhysicalSize(path);
+                debug_info("Open old file at path = %s, current file size = %lu\n", path.c_str(), directIOWriteFileSize_);
+            }
             return true;
         }
     } else {
@@ -112,7 +118,7 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         if (wReturn != writeBufferSize) {
             free(writeBuffer);
             directIOWriteFileSize_ += wReturn;
-            debug_error("[ERROR] Write return value = %ld, err = %s\n", wReturn, strerror(errno));
+            debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
             return false;
         } else {
             free(writeBuffer);
@@ -145,7 +151,7 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
-            debug_error("[ERROR] Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
+            debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             return false;
         }
         uint64_t currentReadDoneSize = 0;
@@ -157,7 +163,7 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
-            debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu\n", currentReadDoneSize, contentSize);
+            debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber);
             return false;
         } else {
             free(readBuffer);
@@ -207,7 +213,6 @@ uint64_t FileOperation::getFileSize()
         return fileSize;
     } else if (operationType_ == kDirectIO) {
         uint64_t fileRealSizeWithoutPadding = 0;
-
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         // align mem
         char* readBuffer;

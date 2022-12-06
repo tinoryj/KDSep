@@ -17,13 +17,14 @@ public:
         maxBitNumber_ = maxBitNumber;
         rootNode_ = new prefixTreeNode;
         {
-            std::unique_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             createPrefixTree(rootNode_, 0);
         }
     }
 
     PrefixTree()
     {
+        rootNode_ = new prefixTreeNode;
     }
 
     ~PrefixTree()
@@ -38,9 +39,8 @@ public:
     {
         initBitNumber_ = initBitNumber;
         maxBitNumber_ = maxBitNumber;
-        rootNode_ = new prefixTreeNode;
         {
-            std::unique_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             createPrefixTree(rootNode_, 0);
         }
     }
@@ -50,7 +50,7 @@ public:
         uint64_t insertAtLevel = 0;
         bool status;
         {
-            std::unique_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             status = addPrefixTreeNode(rootNode_, prefixStr, newData, insertAtLevel);
         }
         if (status == true) {
@@ -68,7 +68,7 @@ public:
         uint64_t insertAtLevel = 0;
         bool status;
         {
-            std::unique_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             status = addPrefixTreeNodeWithFixedBitNumber(rootNode_, prefixStr, fixedBitNumber, newData, insertAtLevel);
         }
         if (status == true) {
@@ -86,7 +86,7 @@ public:
         uint64_t findAtLevelID = 0;
         bool status;
         {
-            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         }
         if (status == true) {
@@ -101,7 +101,7 @@ public:
         dataT newData;
         bool status;
         {
-            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         }
         if (status == true) {
@@ -115,7 +115,7 @@ public:
     {
         bool status;
         {
-            std::unique_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
             status = removePrefixTreeNode(rootNode_, prefixStr, findAtLevelID);
         }
         if (status == true) {
@@ -128,7 +128,7 @@ public:
     bool getCurrentValidNodes(vector<pair<string, dataT>>& validObjectList)
     {
         {
-            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->isLeafNodeFlag_ == true) {
                     validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -145,7 +145,7 @@ public:
     bool getPossibleValidNodes(vector<pair<string, dataT>>& validObjectList)
     {
         {
-            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->currentNodePrefix.size() != 0) {
                     validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -162,7 +162,7 @@ public:
     bool getInValidNodes(vector<pair<string, dataT>>& invalidObjectList)
     {
         {
-            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
             for (auto it : nodeMap_) {
                 if (it.second->currentNodePrefix.size() != 0 && it.second->isLeafNodeFlag_ == false) {
                     invalidObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
@@ -178,7 +178,7 @@ public:
 
     void printNodeMap()
     {
-        std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         for (auto it : nodeMap_) {
             if (it.second->currentNodePrefix.size() != 0) {
                 debug_trace("Find node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
@@ -223,12 +223,13 @@ private:
     bool addPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, dataT newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
-        for (; currentLevel < maxBitNumber_; currentLevel++) {
+        for (; currentLevel < bitBasedPrefixStr.size() && currentLevel < maxBitNumber_; currentLevel++) {
             // cout << "Current level = " << currentLevel << endl;
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
                 if (root->leftChildNodePtr_ == nullptr) {
                     root->leftChildNodePtr_ = new prefixTreeNode;
+                    // insert at next level
                     root = root->leftChildNodePtr_;
                     root->isLeafNodeFlag_ = true;
                     root->data_ = newDataObj;
@@ -252,6 +253,7 @@ private:
                 // go to right if 1
                 if (root->rightChildNodePtr_ == nullptr) {
                     root->rightChildNodePtr_ = new prefixTreeNode;
+                    // insert at next level
                     root = root->rightChildNodePtr_;
                     root->isLeafNodeFlag_ = true;
                     root->data_ = newDataObj;
@@ -282,6 +284,7 @@ private:
             // go to left if 0
             if (root->leftChildNodePtr_ == nullptr) {
                 root->leftChildNodePtr_ = new prefixTreeNode;
+                // insert at next level
                 root = root->leftChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -299,6 +302,7 @@ private:
             // go to right if 1
             if (root->rightChildNodePtr_ == nullptr) {
                 root->rightChildNodePtr_ = new prefixTreeNode;
+                // insert at next level
                 root = root->rightChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -407,44 +411,49 @@ private:
     bool findPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, dataT& currentDataTObj, uint64_t& findAtLevelID)
     {
         uint64_t currentLevel = 0;
-        for (; currentLevel < maxBitNumber_; currentLevel++) {
+        for (; currentLevel < bitBasedPrefixStr.size() && currentLevel < maxBitNumber_; currentLevel++) {
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
-                if (root->leftChildNodePtr_ == nullptr) {
-                    if (root->isLeafNodeFlag_ == true) {
-                        currentDataTObj = root->data_;
-                        findAtLevelID = currentLevel;
-                        return true;
-                    } else {
+                if (root->isLeafNodeFlag_ == true) {
+                    currentDataTObj = root->data_;
+                    findAtLevelID = currentLevel;
+                    return true;
+                } else {
+                    if (root->leftChildNodePtr_ == nullptr) {
                         debug_info("No left node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         return false;
+                    } else {
+                        root = root->leftChildNodePtr_;
                     }
-                } else {
-                    root = root->leftChildNodePtr_;
                 }
             } else {
                 // go to right if 1
-                if (root->rightChildNodePtr_ == nullptr) {
-                    if (root->isLeafNodeFlag_ == true) {
-                        currentDataTObj = root->data_;
-                        findAtLevelID = currentLevel;
-                        return true;
-                    } else {
+                if (root->isLeafNodeFlag_ == true) {
+                    currentDataTObj = root->data_;
+                    findAtLevelID = currentLevel;
+                    return true;
+                } else {
+                    if (root->rightChildNodePtr_ == nullptr) {
                         debug_info("No right node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         return false;
+                    } else {
+                        root = root->rightChildNodePtr_;
                     }
-                } else {
-                    root = root->rightChildNodePtr_;
                 }
             }
         }
-        if (root != nullptr && root->isLeafNodeFlag_ == true) {
-            currentDataTObj = root->data_;
-            findAtLevelID = currentLevel;
-            return true;
-        } else {
-            debug_info("This node may be deleted. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+        if (root == nullptr) {
+            debug_info("This node not exist, may be deleted. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             return false;
+        } else {
+            if (root->isLeafNodeFlag_ == true) {
+                currentDataTObj = root->data_;
+                findAtLevelID = currentLevel;
+                return true;
+            } else {
+                debug_info("This node is not leaf node. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                return false;
+            }
         }
     }
 
