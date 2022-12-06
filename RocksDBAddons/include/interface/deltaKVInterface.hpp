@@ -31,6 +31,8 @@ public:
 
     static const char* kClassName() { return "RocksDBInternalMergeOperator"; }
     const char* Name() const override { return kClassName(); }
+private:
+    bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
 };
 
 class DeltaKV {

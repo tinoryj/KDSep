@@ -154,7 +154,10 @@ public:
     static inline bool padPage(Segment& a)
     {
         segment_len_t pageSize = sysconf(_SC_PAGE_SIZE), padSize;
-        padSize = pageSize - a._writeFront % pageSize;
+        padSize = (pageSize - a._writeFront % pageSize) % pageSize;
+        if (padSize == 0) {
+            return false;
+        }
         if (!Segment::canFit(a, padSize)) {
             return false;
         }

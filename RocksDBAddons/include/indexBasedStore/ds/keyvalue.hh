@@ -27,14 +27,12 @@ namespace DELTAKV_NAMESPACE {
 // Compared with the original GC design in gcVLog():
 //
 // diskStart                   <-> gcFront
-// end                         <-> nextKeySizeOffset
 // maxScanSize                 <-> gcSize
 //
 // Return false: the KV record is not complete
 
 inline bool scanKeyValue(char* buffer, len_t diskStart, len_t maxScanSize, len_t& keySizeOffset, char*& key, key_len_t& keySize, char*& value, len_t& valueSize, len_t& remains, len_t& compactedBytes, len_t pageSize = 4096)
 {
-    len_t end = keySizeOffset;
     compactedBytes = 0;
 
     valueSize = INVALID_LEN;
@@ -79,7 +77,6 @@ inline bool scanKeyValue(char* buffer, len_t diskStart, len_t maxScanSize, len_t
         }
         value = buffer + keySizeOffset + KEY_REC_SIZE + sizeof(len_t);
 
-        end = keySizeOffset + KEY_REC_SIZE + sizeof(len_t) + valueSize;
         remains -= KEY_REC_SIZE + sizeof(len_t) + valueSize;
         flag = true;
         break;

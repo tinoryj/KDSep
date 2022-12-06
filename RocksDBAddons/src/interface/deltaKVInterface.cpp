@@ -8,33 +8,120 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 {
     // request merge operation when the value is found
     debug_trace("Full merge value size = %lu, content = %s\n", existing_value->size(), existing_value->ToString().c_str());
-    string filteredOperandStr;
     string newValueIndexStr;
+    string filteredOperandStr;
+    int headerSize = sizeof(internalValueType), valueIndexSize = sizeof(externalIndexInfo);
+
+    internalValueType existingValueType; 
+    internalValueType outputValueType;
+    memcpy(&existingValueType, existing_value->ToString().c_str(), headerSize);
+
+    int operandIndex = 0;
     bool findUpdatedValueIndex = false;
+    vector<string> leadingRawDeltas;
+    string operand;
+
+    // Output format: 
+    // If value is separated:    [internalValueType] [externalIndexInfo] [appended deltas if any]
+    // If value is not separated:[internalValueType] [   raw   value   ] [appended deltas if any]
+
+    // Step 1. Scan the operand list
     for (auto operandListIt : operand_list) {
-        internalValueType tempInternalValueTypeStructForCheck;
-        memcpy(&tempInternalValueTypeStructForCheck, operandListIt.c_str(), sizeof(internalValueType));
-        if (tempInternalValueTypeStructForCheck.mergeFlag_ == false) {
-            filteredOperandStr.append(operandListIt);
-        } else {
-            findUpdatedValueIndex = true;
-            newValueIndexStr.assign(operandListIt);
+        uint64_t deltaOffset = 0;
+
+        while (deltaOffset < operandListIt.size()) {
+            internalValueType tempInternalValueType;
+            memcpy(&tempInternalValueType, operandListIt.substr(deltaOffset).c_str(), headerSize);
+
+
+            // extract the oprand
+            if (tempInternalValueType.mergeFlag_ == true) {
+                // index update
+                assert(tempInternalValueType.valueSeparatedFlag_ == true && deltaOffset + headerSize + valueIndexSize <= operandListIt.size());
+                operand.assign(operandListIt.substr(deltaOffset, headerSize + valueIndexSize));
+                deltaOffset += headerSize + valueIndexSize;
+            } else {
+                if (tempInternalValueType.valueSeparatedFlag_ == false) {
+                    // raw delta
+                    assert(deltaOffset + headerSize + tempInternalValueType.rawValueSize_ <= operandListIt.size());
+                    operand.assign(operandListIt.substr(deltaOffset, headerSize + tempInternalValueType.rawValueSize_));
+                    deltaOffset += headerSize + tempInternalValueType.rawValueSize_;
+                } else {
+                    // separated delta
+                    assert(deltaOffset + headerSize <= operandListIt.size());
+                    operand.assign(operandListIt.substr(deltaOffset, headerSize));
+                    deltaOffset += headerSize;
+                }
+            }
+
+            // Find a delta from normal merge operator
+            if (tempInternalValueType.mergeFlag_ == false) {  
+                // Check whether we need to collect the raw deltas for immediate merging.
+                // 1. The value should be not separated (i.e., should be raw value)
+                // 2. The previous deltas (if exists) should also be raw deltas 
+                // 3. The current deltas should be a raw delta
+                if (existingValueType.valueSeparatedFlag_ == false && 
+                    (int)leadingRawDeltas.size() == operandIndex && 
+                    tempInternalValueType.valueSeparatedFlag_ == false) {
+                    // Extract the raw delta, prepare for field updates
+                    leadingRawDeltas.push_back(operand.substr(headerSize));
+                } else {
+                    // Append to the string
+                    filteredOperandStr.append(operand);
+                } 
+            } else {  // Find a delta from vLog GC 
+                if (existingValueType.valueSeparatedFlag_ == false) {
+                    debug_error("updating a value index but the value is not separated! key [%s]\n", key.ToString().c_str());
+                    assert(0);
+                }
+                findUpdatedValueIndex = true;
+                newValueIndexStr.assign(operand);
+            }
+            operandIndex++;
         }
     }
+
+    // Step 2. Check index updates and output
+    //         output format     [internalValueType] [externalIndexInfo] [appended deltas]
     if (findUpdatedValueIndex == true) {
-        new_value->assign(newValueIndexStr);
+        memcpy(&outputValueType, newValueIndexStr.c_str(), headerSize); 
+        if (filteredOperandStr.empty()) {
+            outputValueType.mergeFlag_ = false;
+            new_value->assign(std::string((char*)(&outputValueType), headerSize)); // internalValueType
+            new_value->append(newValueIndexStr.substr(headerSize));       // externalIndexInfo
+        } else {
+            new_value->assign(newValueIndexStr);   // internalValueType + externalIndexInfo
+        }
         new_value->append(filteredOperandStr);
-    } else {
-        char contentBuffer[existing_value->size()];
-        memcpy(contentBuffer, existing_value->data(), existing_value->size());
-        internalValueType tempInternalValueTypeStructForCheck;
-        memcpy(&tempInternalValueTypeStructForCheck, existing_value->data(), sizeof(internalValueType));
-        tempInternalValueTypeStructForCheck.mergeFlag_ = true;
-        memcpy(contentBuffer, &tempInternalValueTypeStructForCheck, sizeof(internalValueType));
-        string newValueStr(contentBuffer, existing_value->size());
-        new_value->assign(newValueStr);
-        new_value->append(filteredOperandStr);
+        return true;
+    } 
+
+    // Step 3.1 Prepare the header
+    outputValueType = existingValueType;
+    if (!filteredOperandStr.empty()) {
+        outputValueType.mergeFlag_ = true;
     }
+
+    // Step 3.2 Prepare the value, if some merges on raw deltas can be performed
+    string mergedValueWithoutValueType;
+    if (!leadingRawDeltas.empty()) {
+        FullMergeFieldUpdates(existing_value->ToString().substr(headerSize), leadingRawDeltas, &mergedValueWithoutValueType);
+        if (mergedValueWithoutValueType.size() != existingValueType.rawValueSize_) {
+            debug_error("value size differs after merging: %lu v.s. %u\n", mergedValueWithoutValueType.size(), existingValueType.rawValueSize_);
+        }
+    } else {
+        mergedValueWithoutValueType.assign(existing_value->ToString().substr(headerSize));
+    }
+
+    // Step 3.3 Prepare the following deltas (whether raw or not raw)
+    //          Already prepared, don't need to do anything
+
+    // Step 3.4 Append everything 
+
+    new_value->assign(string((char*)&outputValueType, headerSize));
+    new_value->append(mergedValueWithoutValueType);
+    new_value->append(filteredOperandStr);
+
     return true;
 };
 
@@ -48,6 +135,36 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     new_value->append(rightOpStr);
     return true;
 };
+
+bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const {
+    vector<string> rawValueFieldsVec;
+
+    size_t pos = 0;
+    string token;
+    string delimiter = ",";
+    while ((pos = rawValue.find(delimiter)) != std::string::npos) {
+        token = rawValue.substr(0, pos);
+        rawValueFieldsVec.push_back(token);
+        rawValue.erase(0, pos + delimiter.length());
+    }
+    rawValueFieldsVec.push_back(token);
+
+    for (auto& q : operandList) {
+        string indexStr = q.substr(0, q.find(","));
+        int index = stoi(indexStr);
+        string updateContentStr = q.substr(q.find(",") + 1, q.size());
+        debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
+        rawValueFieldsVec[index].assign(updateContentStr);
+    }
+
+    string temp;
+    for (auto i = 0; i < rawValueFieldsVec.size() - 1; i++) {
+        finalValue->append(rawValueFieldsVec[i]);
+        finalValue->append(",");
+    }
+    finalValue->append(rawValueFieldsVec[rawValueFieldsVec.size() - 1]);
+    return true;
+}
 
 DeltaKV::DeltaKV()
 {
@@ -262,7 +379,7 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
             string tempReadValueStr;
             IndexStoreInterfaceObjPtr_->get(key, newExternalIndexInfo, &tempReadValueStr);
             rawValueStr.assign(tempReadValueStr);
-            debug_info("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
+            debug_error("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
         } else {
             if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
                 // get value from value store first
@@ -559,7 +676,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                 string tempReadValueStr;
                 IndexStoreInterfaceObjPtr_->get(key, newExternalIndexInfo, &tempReadValueStr);
                 rawValueStr.assign(tempReadValueStr);
-                debug_info("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
+                debug_error("Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
             } else {
                 if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
                     // read value from value store
@@ -1034,12 +1151,14 @@ bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string inter
         memcpy(&currentInternalValueTypeHeader, internalValue.c_str() + currentProcessLocationIndex, sizeof(internalValueType));
         currentProcessLocationIndex += sizeof(internalValueType);
         if (currentInternalValueTypeHeader.mergeFlag_ == true) {
-            debug_info("Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
+            debug_error("Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
             memcpy(&newExternalIndexInfo, internalValue.c_str() + currentProcessLocationIndex, sizeof(externalIndexInfo));
+
             currentProcessLocationIndex += sizeof(externalIndexInfo);
             findNewValueIndex = true;
         }
         if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
+            assert(currentProcessLocationIndex + currentInternalValueTypeHeader.rawValueSize_ <= internalValue.size());
             string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
             currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;
             mergeOperatorsVec.push_back(make_pair(false, currentValue));
