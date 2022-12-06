@@ -136,8 +136,8 @@ retry_update:
     } else {
         ret = (curValueLoc.length == valueSize + (curValueLoc.segmentId == LSM_SEGMENT ? 0 : sizeof(len_t)));
     }
-    indexInfo.externalFileID_ = 0;
-    indexInfo.externalFileOffset_ = curValueLoc.offset;
+    indexInfo.externalFileID_ = (uint32_t)(curValueLoc.offset / (1ull << 32));
+    indexInfo.externalFileOffset_ = (uint32_t)(curValueLoc.offset % (1ull << 32));
     indexInfo.externalContentSize_ = curValueLoc.length - sizeof(len_t);
     debug_trace("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
@@ -221,7 +221,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
 
     ValueLocation readValueLoc;
     readValueLoc.segmentId = 0;
-    readValueLoc.offset = storageInfoVec.externalFileOffset_;
+    readValueLoc.offset = storageInfoVec.externalFileOffset_ + ((uint64_t)storageInfoVec.externalFileID_ << 32);
     readValueLoc.length = storageInfoVec.externalContentSize_;
 
     ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);

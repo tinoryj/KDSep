@@ -250,7 +250,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     // flush before write, if no more place for updates
     if (!Segment::canFit(_centralizedReservedPool[poolIndex].pool, RECORD_SIZE) && !inPlaceUpdate) {
-        _GCLock.unlock();
+//        _GCLock.unlock();
         group_id_t prevGroupId = groupId;
         // printf("Flush before write\n");
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
@@ -265,7 +265,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
             _segmentGroupManager->releaseGroupLock(prevGroupId);
             return valueLoc;
         }
-        _GCLock.lock();
+//        _GCLock.lock();
         inPool = false;
         inPlaceUpdate = false;
     }
@@ -325,7 +325,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || ConfigManager::getInstance().getUpdateKVBufferSize() <= 0) {
-        _GCLock.unlock();
+//        _GCLock.unlock();
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
@@ -334,8 +334,10 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
             STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
     } else {
-        _GCLock.unlock();
+//        _GCLock.unlock();
     }
+
+    _GCLock.unlock();
 
     if (newOffset != INVALID_OFFSET) {
         logOffset = newOffset;
@@ -414,6 +416,9 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
 #else
         valueSize = readValueLoc.length;
 #endif // NDEBUG
+        if (valueSize != readValueLoc.length) {
+            debug_error("valueSize %lu v.s. readValueLoc.length %lu (offset %lu)\n", valueSize, readValueLoc.length, readValueLoc.offset);
+        }
         assert(valueSize == readValueLoc.length);
         offLen = { sizeof(len_t) + KEY_REC_SIZE, valueSize };
         assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);
@@ -1378,8 +1383,8 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
 
             std::string key(KEY_OFFSET((char*)Segment::getData(seg) + keySizeOffset), (int)keySize);
             externalIndexInfo indexInfo;
-            indexInfo.externalFileID_ = 0;
-            indexInfo.externalFileOffset_ = start + keySizeOffset;
+            indexInfo.externalFileID_ = (uint32_t)((start + keySizeOffset) / (1ull << 32));
+            indexInfo.externalFileOffset_ = (uint32_t)((start + keySizeOffset) % (1ull << 32));
             indexInfo.externalContentSize_ = valueSize;
 
             keyValues[key] = indexInfo;
