@@ -124,6 +124,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     bool directIO = config.getDirectIO();
     bool keyValueSeparation = config.getKeyValueSeparation();
     bool keyDeltaSeparation = config.getKeyDeltaSeparation();
+    bool blobDbKeyValueSeparation = config.getBlobDbKeyValueSeparation();
     size_t memtableSize = config.getMemtable();
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -136,8 +137,23 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     options_.enable_batched_operations_ = false;
     options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
-    if (keyValueSeparation == true) {
+    if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
+        options_.rocksdbRawOptions_.enable_blob_files = true;
+        options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
+        options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
+        options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
+        options_.rocksdbRawOptions_.enable_blob_garbage_collection = false;                            // Default false
+        options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
+        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
+        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
+        options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
+        options_.rocksdbRawOptions_.blob_cache = nullptr;                                              // Default nullptr
+        options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
+        assert(!keyValueSeparation);
+    }
+    if (keyValueSeparation == true) {
+        cerr << "Enabled vLog based KV separation" << endl;
         options_.enable_valueStore = true;
     }
     if (keyDeltaSeparation == true) {
