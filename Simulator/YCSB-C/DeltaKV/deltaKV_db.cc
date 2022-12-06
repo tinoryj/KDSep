@@ -211,8 +211,9 @@ int DeltaKVDB::Read(const std::string &table, const std::string &key,
                     const std::vector<std::string> *fields,
                     std::vector<KVPair> &result) {
     string value;
-    // cerr << "[YCSB] Read op, key = " << key << endl;
-    return db_.Get(key, &value);
+    int ret = db_.Get(key, &value);
+    // outputStream_ << "YCSB Read " << key << " " << value << endl;
+    return ret;
 }
 
 int DeltaKVDB::Scan(const std::string &table, const std::string &key, int len,
