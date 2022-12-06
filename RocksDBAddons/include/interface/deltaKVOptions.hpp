@@ -5,7 +5,6 @@
 #include "rocksdb/options.h"
 #include "utils/debug.hpp"
 #include "utils/fileOperation.hpp"
-#include "utils/loggerColor.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;

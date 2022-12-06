@@ -1,5 +1,6 @@
 #pragma once
 
+#include "utils/debug.hpp"
 #include <bits/stdc++.h>
 #include <shared_mutex>
 using namespace std;
@@ -28,7 +29,7 @@ public:
     ~PrefixTree()
     {
         for (auto it : nodeMap_) {
-            cerr << "Cleanup node ID = " << it.first << ", is leaf node flag = " << it.second->isLeafNodeFlag_ << ", linked prefix = " << it.second->currentNodePrefix << endl;
+            debug_trace("Cleanup node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
             delete it.second;
         }
     }
@@ -53,10 +54,10 @@ public:
             status = addPrefixTreeNode(rootNode_, prefixStr, newData, insertAtLevel);
         }
         if (status == true) {
-            cerr << "Insert to new node success at level = " << insertAtLevel << ", for prefix = " << prefixStr << ", Current Node map size = " << nodeMap_.size() << endl;
+            debug_trace("Insert to new node success at level = %lu, for prefix = %s, Current Node map size = %lu\n", insertAtLevel, prefixStr.c_str(), nodeMap_.size());
             return insertAtLevel;
         } else {
-            cerr << "Insert to new node fail at level = " << insertAtLevel << ", for prefix = " << prefixStr << ", Current Node map size = " << nodeMap_.size() << endl;
+            debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %s, Current Node map size = %lu\n", insertAtLevel, prefixStr.c_str(), nodeMap_.size());
             printNodeMap();
             return 0;
         }
@@ -71,10 +72,10 @@ public:
             status = addPrefixTreeNodeWithFixedBitNumber(rootNode_, prefixStr, fixedBitNumber, newData, insertAtLevel);
         }
         if (status == true) {
-            cerr << "Insert to new node with fixed bit number = " << fixedBitNumber << " success at level = " << insertAtLevel << ", for prefix = " << prefixStr << ", Current Node map size = " << nodeMap_.size() << endl;
+            debug_trace("Insert to new node with fixed bit number =  %lu, success at level =  %lu, for prefix = %s, Current Node map size = %lu\n", fixedBitNumber, insertAtLevel, prefixStr.c_str(), nodeMap_.size());
             return insertAtLevel;
         } else {
-            cerr << "Insert to new node with fixed bit number = " << fixedBitNumber << " fail at level = " << insertAtLevel << ", for prefix = " << prefixStr << ", Current Node map size = " << nodeMap_.size() << endl;
+            debug_error("[ERROR] Insert to new node with fixed bit number =  %lu, fail at level =  %lu, for prefix = %s, Current Node map size = %lu\n", fixedBitNumber, insertAtLevel, prefixStr.c_str(), nodeMap_.size());
             printNodeMap();
             return 0;
         }
@@ -158,12 +159,29 @@ public:
         }
     }
 
+    bool getInValidNodes(vector<pair<string, dataT>>& invalidObjectList)
+    {
+        {
+            std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+            for (auto it : nodeMap_) {
+                if (it.second->currentNodePrefix.size() != 0 && it.second->isLeafNodeFlag_ == false) {
+                    invalidObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
+                }
+            }
+        }
+        if (invalidObjectList.size() != 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     void printNodeMap()
     {
         std::unique_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         for (auto it : nodeMap_) {
             if (it.second->currentNodePrefix.size() != 0) {
-                cerr << "Find node ID = " << it.first << ", is leaf node flag = " << it.second->isLeafNodeFlag_ << ", linked prefix = " << it.second->currentNodePrefix << endl;
+                debug_trace("Find node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
             }
         }
     }
@@ -211,7 +229,6 @@ private:
                 // go to left if 0
                 if (root->leftChildNodePtr_ == nullptr) {
                     root->leftChildNodePtr_ = new prefixTreeNode;
-                    // cerr << "Create new left node at level = " << currentLevel + 1 << endl;
                     root = root->leftChildNodePtr_;
                     root->isLeafNodeFlag_ = true;
                     root->data_ = newDataObj;
@@ -220,13 +237,12 @@ private:
                     nextNodeID_++;
                     nodeMap_.insert(make_pair(root->thisNodeID_, root));
                     insertAtLevelID = currentLevel + 1;
-                    // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                     return true;
                 } else {
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        cerr << "Meet old leaf node (left) during add, should mark as not leaf node" << endl;
+                        debug_warn("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         break;
                     } else {
                         continue;
@@ -236,7 +252,6 @@ private:
                 // go to right if 1
                 if (root->rightChildNodePtr_ == nullptr) {
                     root->rightChildNodePtr_ = new prefixTreeNode;
-                    // cerr << "Create new right node at level = " << currentLevel + 1 << endl;
                     root = root->rightChildNodePtr_;
                     root->isLeafNodeFlag_ = true;
                     root->data_ = newDataObj;
@@ -245,13 +260,12 @@ private:
                     nextNodeID_++;
                     nodeMap_.insert(make_pair(root->thisNodeID_, root));
                     insertAtLevelID = currentLevel + 1;
-                    // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                     return true;
                 } else {
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        cerr << "Meet old leaf node (right) during add, should mark as not leaf node" << endl;
+                        debug_warn("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         break;
                     } else {
                         continue;
@@ -261,14 +275,13 @@ private:
         }
         currentLevel++;
         if (currentLevel >= maxBitNumber_) {
-            cerr << "Reached max bit number, could not add new node" << endl;
+            debug_error("[ERROR] Reached max bit number during add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             return false;
         }
         if (bitBasedPrefixStr.at(currentLevel) == '0') {
             // go to left if 0
             if (root->leftChildNodePtr_ == nullptr) {
                 root->leftChildNodePtr_ = new prefixTreeNode;
-                // cerr << "Create new left node at level = " << currentLevel + 1 << endl;
                 root = root->leftChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -277,17 +290,15 @@ private:
                 nextNodeID_++;
                 nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel + 1;
-                // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                 return true;
             } else {
-                cerr << "find left node after leaf node mark, error" << endl;
+                debug_error("[ERROR] Find left node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                 return false;
             }
         } else {
             // go to right if 1
             if (root->rightChildNodePtr_ == nullptr) {
                 root->rightChildNodePtr_ = new prefixTreeNode;
-                // cerr << "Create new right node at level = " << currentLevel + 1 << endl;
                 root = root->rightChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -296,10 +307,9 @@ private:
                 nextNodeID_++;
                 nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel + 1;
-                // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                 return true;
             } else {
-                cerr << "find right node after leaf node mark, error" << endl;
+                debug_error("[ERROR] Find right node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                 return false;
             }
         }
@@ -315,7 +325,6 @@ private:
                 // go to left if 0
                 if (root->leftChildNodePtr_ == nullptr) {
                     root->leftChildNodePtr_ = new prefixTreeNode;
-                    // cerr << "Create new left node at level = " << currentLevel + 1 << endl;
                     root = root->leftChildNodePtr_;
                     root->isLeafNodeFlag_ = false;
                     root->thisNodeID_ = nextNodeID_;
@@ -325,7 +334,7 @@ private:
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        cerr << "[Fixed bit number insert] Meet old leaf node (left) during fixed bit number add, should mark as not leaf node" << endl;
+                        debug_warn("Meet old leaf node (left) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         continue;
                     } else {
                         continue;
@@ -335,7 +344,6 @@ private:
                 // go to right if 1
                 if (root->rightChildNodePtr_ == nullptr) {
                     root->rightChildNodePtr_ = new prefixTreeNode;
-                    // cerr << "Create new left node at level = " << currentLevel + 1 << endl;
                     root = root->rightChildNodePtr_;
                     root->isLeafNodeFlag_ = false;
                     root->thisNodeID_ = nextNodeID_;
@@ -345,7 +353,7 @@ private:
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        cerr << "[Fixed bit number insert] Meet old leaf node (right) during fixed bit number add, should mark as not leaf node" << endl;
+                        debug_warn("Meet old leaf node (right) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         continue;
                     } else {
                         continue;
@@ -355,14 +363,13 @@ private:
         }
         currentLevel++;
         if (currentLevel >= maxBitNumber_) {
-            cerr << "[Fixed bit number insert] Reached max bit number, could not add new node" << endl;
+            debug_error("[ERROR] Reached max bit number during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             return false;
         }
         if (bitBasedPrefixStr.at(fixedBitNumber - 1) == '0') {
             // go to left if 0
             if (root->leftChildNodePtr_ == nullptr) {
                 root->leftChildNodePtr_ = new prefixTreeNode;
-                // cerr << "Create new left node at level = " << currentLevel + 1 << endl;
                 root = root->leftChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -371,17 +378,15 @@ private:
                 nextNodeID_++;
                 nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel;
-                // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                 return true;
             } else {
-                cerr << "[Fixed bit number insert] find left node after leaf node mark, error" << endl;
+                debug_error("[ERROR] Find left node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                 return false;
             }
         } else {
             // go to right if 1
             if (root->rightChildNodePtr_ == nullptr) {
                 root->rightChildNodePtr_ = new prefixTreeNode;
-                // cerr << "Create new right node at level = " << currentLevel + 1 << endl;
                 root = root->rightChildNodePtr_;
                 root->isLeafNodeFlag_ = true;
                 root->data_ = newDataObj;
@@ -390,10 +395,9 @@ private:
                 nextNodeID_++;
                 nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel;
-                // cerr << "Current node ID = " << root->thisNodeID_ << endl;
                 return true;
             } else {
-                cerr << "[Fixed bit number insert] find right node after leaf node mark, error" << endl;
+                debug_error("[ERROR] Find right node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                 return false;
             }
         }
@@ -404,56 +408,51 @@ private:
     {
         uint64_t currentLevel = 0;
         for (; currentLevel < maxBitNumber_; currentLevel++) {
-            // cerr << "Current level = " << currentLevel << ", Current node ID = " << root->thisNodeID_ << endl;
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
                 if (root->leftChildNodePtr_ == nullptr) {
                     if (root->isLeafNodeFlag_ == true) {
-                        // cerr << "Serach to leaf node, get data at level = " << currentLevel << endl;
                         currentDataTObj = root->data_;
                         findAtLevelID = currentLevel;
                         return true;
                     } else {
-                        cerr << "No left node, but this node is not leaf node, not exist" << endl;
+                        debug_info("No left node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         return false;
                     }
                 } else {
-                    // cerr << "Serach to new level = " << currentLevel + 1 << endl;
                     root = root->leftChildNodePtr_;
                 }
             } else {
                 // go to right if 1
                 if (root->rightChildNodePtr_ == nullptr) {
                     if (root->isLeafNodeFlag_ == true) {
-                        // cerr << "Serach to leaf node, get data at level = " << currentLevel << endl;
                         currentDataTObj = root->data_;
                         findAtLevelID = currentLevel;
                         return true;
                     } else {
-                        cerr << "No right node, but this node is not leaf node, not exist" << endl;
+                        debug_info("No right node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         return false;
                     }
                 } else {
-                    // cerr << "Serach to new level = " << currentLevel + 1 << endl;
                     root = root->rightChildNodePtr_;
                 }
             }
         }
         if (root != nullptr && root->isLeafNodeFlag_ == true) {
-            // cerr << "Serach to leaf node, get data at level = " << currentLevel << endl;
             currentDataTObj = root->data_;
             findAtLevelID = currentLevel;
             return true;
         } else {
-            cerr << "This node may be deleted" << endl;
+            debug_info("This node may be deleted. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             return false;
         }
     }
 
     bool removePrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
     {
-        for (uint64_t currentLevel = 0; currentLevel <= findAtLevelID; currentLevel++) {
-            // cerr << "Current level = " << currentLevel << ", Current node ID = " << root->thisNodeID_ << endl;
+        uint64_t searchLevelNumber = bitBasedPrefixStr.size();
+        findAtLevelID = 0;
+        for (uint64_t currentLevel = 0; currentLevel < searchLevelNumber; currentLevel++) {
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
                 root = root->leftChildNodePtr_;
@@ -461,13 +460,18 @@ private:
                 // go to right if 1
                 root = root->rightChildNodePtr_;
             }
+            findAtLevelID++;
         }
         if (root != nullptr && root->isLeafNodeFlag_ == true) {
-            cerr << "Find leaf node ID = " << root->thisNodeID_ << ", remove it now" << endl;
+            debug_trace("Find leaf node ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             root->isLeafNodeFlag_ = false;
             return true;
         } else {
-            cerr << "Error, could not delete target node" << endl;
+            if (root != nullptr) {
+                debug_error("[ERROR] Could not delete target node (not leaf) ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+            } else {
+                debug_error("[ERROR] Could not delete target node (not exist) pointer = %p\n", (void*)root);
+            }
             return false;
         }
     }

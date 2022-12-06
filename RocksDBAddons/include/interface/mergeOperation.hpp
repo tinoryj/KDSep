@@ -3,7 +3,6 @@
 #include "common/dataStructure.hpp"
 #include "common/rocksdbHeaders.hpp"
 #include "utils/debug.hpp"
-#include "utils/loggerColor.hpp"
 #include <bits/stdc++.h>
 using namespace std;
 using namespace rocksdb;

@@ -119,7 +119,11 @@ bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHa
         asm volatile("");
     }
     delete currentHandler;
-    return true;
+    if (valueVec->size() == 0) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec)
@@ -140,6 +144,11 @@ bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStore
                 delete (*currentIt);
                 currentOperationHandlerVec.erase(currentIt);
             }
+        }
+    }
+    for (auto it : *valueVecVec) {
+        if (it->size() == 0) {
+            return false;
         }
     }
     return true;
@@ -341,7 +350,7 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
                 // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC)) {
                     debug_info("GC threshold = %lu\n", perFileGCSizeLimit_);
                     debug_info("Current file id = %lu, exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
                     notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
@@ -409,7 +418,7 @@ void HashStoreFileOperator::operationWorker()
                 // mark job done
                 currentHandlerPtr->jobDone = true;
                 // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kNoGC && currentHandlerPtr->file_handler_->gc_result_status_flag_ != kShouldDelete) {
+                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_ && (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC)) {
                     notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
                     debug_info("Current file id = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
                 }

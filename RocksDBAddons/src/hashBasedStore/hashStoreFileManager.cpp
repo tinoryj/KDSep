@@ -765,7 +765,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         return false;
     }
     bool fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr);
-    // debug_info("Get prefix length = %lu, for key = %s\n", fileHandlerUsedPrefixLength, keyStr.c_str());
     if (fileHandlerExistFlag == false && opType == kGet) {
         debug_error("[ERROR] get operation meet not stored buckets, key = %s\n", keyStr.c_str());
         return false;
@@ -775,7 +774,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
         } else {
-            debug_info("Create new file id = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+            debug_info("[Insert] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
             fileHandlerPtr->file_ownership_flag_ = 1;
             return true;
         }
@@ -795,13 +794,13 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
                 // retry if the file should delete;
                 uint64_t previousPrefixBitNumber = fileHandlerPtr->current_prefix_used_bit_;
                 uint64_t findAtLevelID = previousPrefixBitNumber;
-                objectFileMetaDataTrie_.remove(prefixStr.substr(0, previousPrefixBitNumber), findAtLevelID);
+                // objectFileMetaDataTrie_.remove(prefixStr.substr(0, previousPrefixBitNumber), findAtLevelID);
                 bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, previousPrefixBitNumber + 1, false, 0);
                 if (!createNewFileHandlerStatus) {
-                    debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
+                    debug_error("[ERROR] Previous file is marked as kShouldDelete, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
                 } else {
-                    debug_info("Create new file id = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    debug_info("[Insert] Previous file is marked as kShouldDelete, create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
                     fileHandlerPtr->file_ownership_flag_ = 1;
                     return true;
                 }
@@ -929,8 +928,8 @@ bool HashStoreFileManager::getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(con
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
         } else {
+            debug_info("[GC] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
             fileHandlerPtr->file_ownership_flag_ = -1;
-            debug_info("Created new file ID = %lu during GC, file gc status flag = %d\n", fileHandlerPtr->target_file_id_, fileHandlerPtr->file_ownership_flag_);
             return true;
         }
     } else {
@@ -942,13 +941,12 @@ bool HashStoreFileManager::getOrCreateHashStoreFileHandlerByKeyStrForSplitGC(con
                 debug_error("[ERROR] Create new bucket for put operation error, key = %s\n", keyStr.c_str());
                 return false;
             } else {
+                debug_info("[GC] Create new file id = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
                 fileHandlerPtr->file_ownership_flag_ = -1;
-                debug_info("Created new file ID = %lu during GC, file gc status flag = %d\n", fileHandlerPtr->target_file_id_, fileHandlerPtr->file_ownership_flag_);
                 return true;
             }
         } else {
             fileHandlerPtr->file_ownership_flag_ = -1;
-            debug_info("Get existing file ID = %lu during GC, file gc status flag = %d\n", fileHandlerPtr->target_file_id_, fileHandlerPtr->file_ownership_flag_);
             return true;
         }
     }
@@ -1027,7 +1025,7 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* currentHandlerPtr;
         if (notifyGCMQ_->pop(currentHandlerPtr)) {
-            debug_info("new file request for GC, file id = %lu, existing size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_);
+            debug_info("new file request for GC, file id = %lu, existing size = %lu, file gc status = %d\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->total_object_bytes_, currentHandlerPtr->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[currentHandlerPtr->total_object_bytes_];
             currentHandlerPtr->fileOperationMutex_.lock();
@@ -1249,7 +1247,15 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
     vector<pair<string, hashStoreFileMetaDataHandler*>> validFilesVec;
     objectFileMetaDataTrie_.getCurrentValidNodes(validFilesVec);
     for (auto fileHandlerIt : validFilesVec) {
-        notifyGCMQ_->push(fileHandlerIt.second);
+        if (fileHandlerIt.second->gc_result_status_flag_ == kNoGC) {
+            debug_warn("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_);
+            continue;
+        } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
+            debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
+            continue;
+        } else {
+            notifyGCMQ_->push(fileHandlerIt.second);
+        }
     }
     while (notifyGCMQ_->isEmpty() != true) {
         asm volatile("");

@@ -8,7 +8,6 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"
-#include "utils/loggerColor.hpp"
 #include "utils/messageQueue.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>

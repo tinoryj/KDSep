@@ -303,8 +303,6 @@ int main(int argc, char* argv[])
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
-        cerr << BOLDRED << "[ERROR]:" << __STR_FILE__ << "<->" << __STR_FUNCTIONP__ << "<->(line " << __LINE__ << "): Can't open DeltaKV "
-             << dbNameStr << RESET << endl;
         exit(0);
     }
     // dump operations
@@ -335,7 +333,7 @@ int main(int argc, char* argv[])
             bool statusGet1 = testGet(db_, key1, tempReadStr1);
             testResultBoolVec.push_back(statusGet1);
             if (tempReadStr1.compare(value1) != 0) {
-                cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+                debug_error("[ERROR]: Error read raw value, raw value = %s, read value = %s\n", value1.c_str(), tempReadStr1.c_str());
                 break;
             }
             for (int i = 0; i < 4; i++) {
@@ -348,7 +346,7 @@ int main(int argc, char* argv[])
             testResultBoolVec.push_back(statusGetTemp);
             string resultStr = "value3,value2";
             if (tempReadStrTemp.compare(resultStr) != 0) {
-                cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << resultStr << ", read value = " << tempReadStrTemp << endl;
+                debug_error("[ERROR]: Error read merged value, merged value = %s, read value = %s\n", resultStr.c_str(), tempReadStrTemp.c_str());
                 break;
             }
         } else {
@@ -360,7 +358,7 @@ int main(int argc, char* argv[])
             bool statusGet1 = testGet(db_, key1, tempReadStr1);
             testResultBoolVec.push_back(statusGet1);
             if (tempReadStr1.compare(value1) != 0) {
-                cerr << BOLDRED << "[ERROR]: Error read raw value, raw value = " << value1 << ", read value = " << tempReadStr1 << endl;
+                debug_error("[ERROR]: Error read raw value, raw value = %s, read value = %s\n", value1.c_str(), tempReadStr1.c_str());
                 break;
             }
             bool statusMerge1 = testMerge(db_, key1, merge1);
@@ -373,7 +371,7 @@ int main(int argc, char* argv[])
             bool statusGet2 = testGet(db_, key1, tempReadStr2);
             testResultBoolVec.push_back(statusGet2);
             if (tempReadStr2.compare(value1Merged) != 0) {
-                cerr << BOLDRED << "[ERROR]: Error read merged value, merged value = " << value1Merged << ", read value = " << tempReadStr2 << endl;
+                debug_error("[ERROR]: Error read merged value, merged value = %s, read value = %s\n", value1Merged.c_str(), tempReadStr2.c_str());
                 break;
             }
 
@@ -384,8 +382,7 @@ int main(int argc, char* argv[])
             bool statusGet3 = testGet(db_, key1, tempReadStr3);
             testResultBoolVec.push_back(statusGet3);
             if (tempReadStr3.compare(value2) != 0) {
-                cerr << BOLDRED << "[ERROR]: Error read overwrited value, overwrited value = "
-                     << value2 << ", read value = " << tempReadStr3 << endl;
+                debug_error("[ERROR]: Error read overwrited value, raw value = %s, read value = %s\n", value2.c_str(), tempReadStr3.c_str());
                 break;
             }
         }
