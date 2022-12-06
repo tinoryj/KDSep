@@ -20,6 +20,96 @@ double totalTimeFull = 0;
 uint64_t counter_part = 0;
 double totalTimePart = 0;
 
+vector<string> split(string str, string token) {
+    vector<string> result;
+    while (str.size()) {
+        size_t index = str.find(token);
+        if (index != std::string::npos) {
+            result.push_back(str.substr(0, index));
+            str = str.substr(index + token.size());
+            if (str.size() == 0) result.push_back(str);
+        } else {
+            result.push_back(str);
+            str = "";
+        }
+    }
+    return result;
+}
+
+class FieldUpdateMergeOperator : public MergeOperator {
+   public:
+    // Gives the client a way to express the read -> modify -> write semantics
+    // key:         (IN) The key that's associated with this merge operation.
+    // existing:    (IN) null indicates that the key does not exist before this op
+    // operand_list:(IN) the sequence of merge operations to apply, front() first.
+    // new_value:  (OUT) Client is responsible for filling the merge result here
+    // logger:      (IN) Client could use this to log errors during merge.
+    //
+    // Return true on success, false on failure/corruption/etc.
+    bool FullMerge(const Slice &key, const Slice *existing_value,
+                   const std::deque<std::string> &operand_list,
+                   std::string *new_value, Logger *logger) const override {
+        counter_full++;
+        gettimeofday(&timestartFull, NULL);
+        // cout << "Do full merge operation in as field update" << endl;
+        // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
+        // new_value->assign(existing_value->ToString());
+        // if (existing_value == nullptr) {
+        //     cout << "Merge operation existing value = nullptr" << endl;
+        //     return false;
+        // }
+        // cout << "Merge operation existing value size = " << existing_value->size() << endl;
+        vector<std::string> words = split(existing_value->ToString(), ",");
+        // for (long unsigned int i = 0; i < words.size(); i++) {
+        //     cout << "Index = " << i << ", Words = " << words[i] << endl;
+        // }
+        for (auto q : operand_list) {
+            // cout << "Operand list content = " << q << endl;
+            vector<string> operandVector = split(q, ",");
+            for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
+                words[stoi(operandVector[i])] = operandVector[i + 1];
+            }
+        }
+        string temp;
+        for (long unsigned int i = 0; i < words.size() - 1; i++) {
+            temp += words[i] + ",";
+        }
+        temp += words[words.size() - 1];
+        new_value->assign(temp);
+        // cout << new_value->data() << "\n Size=" << new_value->length() <<endl;
+        gettimeofday(&timeendFull, NULL);
+        totalTimeFull += 1000000 * (timeendFull.tv_sec - timestartFull.tv_sec) +
+                         timeendFull.tv_usec - timestartFull.tv_usec;
+        return true;
+    };
+
+    // This function performs merge(left_op, right_op)
+    // when both the operands are themselves merge operation types.
+    // Save the result in *new_value and return true. If it is impossible
+    // or infeasible to combine the two operations, return false instead.
+    bool PartialMerge(const Slice &key, const Slice &left_operand,
+                      const Slice &right_operand, std::string *new_value,
+                      Logger *logger) const override {
+        // cout << "Do partial merge operation in as field update" << endl;
+        counter_part++;
+        gettimeofday(&timestartPart, NULL);
+        new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
+        gettimeofday(&timeendPart, NULL);
+        totalTimePart += 1000000 * (timeendPart.tv_sec - timestartPart.tv_sec) +
+                         timeendPart.tv_usec - timestartPart.tv_usec;
+        // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
+        // cout << right_operand.data() << "\n Size=" << right_operand.size() <<
+        // endl; cout << new_value << "\n Size=" << new_value->length() << endl;
+        // new_value->assign(left_operand.data(), left_operand.size());
+        return true;
+    };
+
+    // The name of the MergeOperator. Used to check for MergeOperator
+    // mismatches (i.e., a DB created with one MergeOperator is
+    // accessed using a different MergeOperator)
+    const char *Name() const override { return "FieldUpdateMergeOperator"; }
+};
+
 DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path) {
     // outputStream_.open("operations.log", ios::binary | ios::out);
     // if (!outputStream_.is_open()) {
@@ -58,7 +148,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;
         options_.deltaStore_single_file_maximum_size = 1 * 1024;
         options_.deltaStore_file_flush_buffer_size_limit_ = 256;
+    }
+    if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
+    } else {
+        options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
     }
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;

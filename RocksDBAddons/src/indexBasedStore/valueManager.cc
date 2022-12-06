@@ -1484,6 +1484,7 @@ void ValueManager::scanAllRecords() {
                     std::min((int)keySize, 16), KEY_OFFSET(key), 
                     std::min((int)valueSize, 16), value, 
                     valueLoc.offset);
+                keyNum++;
                 keySizes += keySize;
                 valueSizes += valueSize; 
             }
