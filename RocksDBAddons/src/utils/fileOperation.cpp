@@ -24,7 +24,7 @@ bool FileOperation::createFile(string path)
             return true;
         }
         return true;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         fileDirect_ = open(path.c_str(), O_CREAT, 0644);
         if (fileDirect_ == -1) {
             debug_error("[ERROR] File descriptor (create) = %d, err = %s\n", fileDirect_, strerror(errno));
@@ -56,9 +56,29 @@ bool FileOperation::openFile(string path)
         } else {
             if (newlyCreatedFileFlag_ == true) {
                 directIOWriteFileSize_ = 0;
+                directIOActualWriteFileSize_ = 0;
+                debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
             } else {
                 directIOWriteFileSize_ = getFilePhysicalSize(path);
-                debug_info("Open old file at path = %s, current file size = %lu\n", path.c_str(), directIOWriteFileSize_);
+                directIOActualWriteFileSize_ = getFileSize();
+                debug_info("Open old file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            }
+            return true;
+        }
+    } else if (operationType_ == kAlignLinuxIO) {
+        fileDirect_ = open(path.c_str(), O_RDWR, 0644);
+        if (fileDirect_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        } else {
+            if (newlyCreatedFileFlag_ == true) {
+                directIOWriteFileSize_ = 0;
+                directIOActualWriteFileSize_ = 0;
+                debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            } else {
+                directIOWriteFileSize_ = getFilePhysicalSize(path);
+                directIOActualWriteFileSize_ = getFileSize();
+                debug_info("Open old file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
             }
             return true;
         }
@@ -74,8 +94,15 @@ bool FileOperation::closeFile()
         fileStream_.close();
         return true;
     } else if (operationType_ == kDirectIO) {
-        close(fileDirect_);
-        return true;
+        debug_info("Close file fd = %d\n", fileDirect_);
+        int status = close(fileDirect_);
+        if (status == 0) {
+            debug_info("Close file success, current file fd = %d\n", fileDirect_);
+            return true;
+        } else {
+            debug_error("[ERROR] File descriptor (close) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        }
     } else {
         return false;
     }
@@ -88,7 +115,7 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         fileStream_.seekp(0, ios::end);
         fileStream_.write(contentBuffer, contentSize);
         return true;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         uint64_t targetRequestPageNumber = ceil((double)contentSize / (double)(directIOPageSize_ - sizeof(uint32_t)));
         uint64_t writeDoneContentSize = 0;
         // align mem
@@ -117,12 +144,12 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         auto wReturn = pwrite(fileDirect_, writeBuffer, writeBufferSize, directIOWriteFileSize_);
         if (wReturn != writeBufferSize) {
             free(writeBuffer);
-            directIOWriteFileSize_ += wReturn;
             debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
             return false;
         } else {
             free(writeBuffer);
             directIOWriteFileSize_ += writeBufferSize;
+            directIOActualWriteFileSize_ += contentSize;
             return true;
         }
         return true;
@@ -137,7 +164,7 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         fileStream_.seekg(0, ios::beg);
         fileStream_.read(contentBuffer, contentSize);
         return true;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         uint64_t readDoneContentSize = 0;
         // align mem
@@ -163,7 +190,7 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
-            debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber);
+            debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current write physical size = %lu, actual size = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber, directIOWriteFileSize_, directIOActualWriteFileSize_);
             return false;
         } else {
             free(readBuffer);
@@ -179,26 +206,8 @@ bool FileOperation::flushFile()
     if (operationType_ == kFstream) {
         fileStream_.flush();
         return true;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         return true;
-    } else {
-        return false;
-    }
-}
-
-bool FileOperation::resetPointer(fileOperationSetPointerOps ops)
-{
-    if (operationType_ == kFstream) {
-        if (ops == kBegin) {
-            fileStream_.seekg(0, ios::beg);
-            fileStream_.seekp(0, ios::beg);
-        } else {
-            fileStream_.seekg(0, ios::end);
-            fileStream_.seekp(0, ios::end);
-        }
-        return true;
-    } else if (operationType_ == kDirectIO) {
-        return false;
     } else {
         return false;
     }
@@ -211,7 +220,7 @@ uint64_t FileOperation::getFileSize()
         uint64_t fileSize = fileStream_.tellg();
         fileStream_.seekg(0, ios::beg);
         return fileSize;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         uint64_t fileRealSizeWithoutPadding = 0;
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         // align mem

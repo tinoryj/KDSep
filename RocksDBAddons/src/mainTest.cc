@@ -243,7 +243,6 @@ bool directIOTest(string path)
     currentFilePtr.writeFile(writeBuffer, 4);
     cout << "Write content = " << writeBuffer << endl;
     char readBuffer[4];
-    currentFilePtr.resetPointer(kBegin);
     currentFilePtr.readFile(readBuffer, 4);
     string readStr(readBuffer, 4);
     cout << "Read content = " << readStr << endl;

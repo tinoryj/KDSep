@@ -2,8 +2,6 @@
 
 #include "_lru11Cache.hpp"
 #include <bits/stdc++.h>
-#include <boost/thread.hpp>
-#include <boost/thread/mutex.hpp>
 
 using namespace std;
 
@@ -15,7 +13,7 @@ private:
     uint8_t** memoryPool_;
     uint64_t cacheSize_ = 0;
     size_t currentIndex_ = 0;
-    boost::shared_mutex mtx;
+    std::shared_mutex mtx;
 
 public:
     LRUCache(uint64_t cacheSize);

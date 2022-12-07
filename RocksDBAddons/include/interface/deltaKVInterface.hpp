@@ -11,7 +11,7 @@
 #include "utils/messageQueue.hpp"
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
 
@@ -31,6 +31,7 @@ public:
 
     static const char* kClassName() { return "RocksDBInternalMergeOperator"; }
     const char* Name() const override { return kClassName(); }
+
 private:
     bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
 };

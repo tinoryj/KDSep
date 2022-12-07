@@ -1,7 +1,6 @@
 #pragma once
 
 #include <bits/stdc++.h>
-#include <boost/thread.hpp>
 
 using namespace std;
 

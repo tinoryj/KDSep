@@ -8,7 +8,7 @@
 #include <atomic>
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
 #include <unordered_map>

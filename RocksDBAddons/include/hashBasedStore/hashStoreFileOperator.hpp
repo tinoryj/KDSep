@@ -7,11 +7,6 @@
 #include "utils/murmurHash.hpp"
 // #include "utils/trie.hpp"
 #include <bits/stdc++.h>
-#include <boost/asio.hpp>
-#include <boost/asio/thread_pool.hpp>
-#include <boost/bind.hpp>
-#include <boost/thread.hpp>
-#include <boost/thread/thread.hpp>
 
 namespace DELTAKV_NAMESPACE {
 

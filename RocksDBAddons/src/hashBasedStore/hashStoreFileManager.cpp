@@ -607,7 +607,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
     ofstream hashStoreFileManifestStream;
     hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
     hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
-    vector<pair<string, hashStoreFileMetaDataHandler*>> validObjectVec;
+    vector<pair<string, hashStoreFileMetaDataHandler*>> validObjectVec, invalidObjectVec;
     objectFileMetaDataTrie_.getCurrentValidNodes(validObjectVec);
     debug_info("Start update metadata, current valid trie size = %lu\n", validObjectVec.size());
     if (validObjectVec.size() != 0) {
@@ -638,6 +638,26 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
                 debug_error("[ERROR] Could not delete the obsolete file, file path = %s\n", targetRemoveFileName.c_str());
+            }
+        }
+        objectFileMetaDataTrie_.getInValidNodes(invalidObjectVec);
+        debug_info("Start delete obslate files, current invalid trie size = %lu\n", invalidObjectVec.size());
+        if (invalidObjectVec.size() != 0) {
+            for (auto it : invalidObjectVec) {
+                if (it.second) {
+                    it.second->fileOperationMutex_.lock();
+                    it.second->file_operation_func_ptr_->flushFile();
+                    it.second->file_operation_func_ptr_->closeFile();
+                    debug_trace("Closed file ID = %lu, file correspond prefix = %s\n", it.second->target_file_id_, it.first.c_str());
+                    it.second->fileOperationMutex_.unlock();
+                    string targetRemoveObslateFileName = workingDir_ + "/" + to_string(it.second->target_file_id_) + ".delta";
+                    if (filesystem::exists(targetRemoveObslateFileName) != false) {
+                        auto removeOldManifestStatus = remove(targetRemoveObslateFileName.c_str());
+                        if (removeOldManifestStatus == -1) {
+                            debug_error("[ERROR] Could not delete the obsolete file, file path = %s\n", targetRemoveObslateFileName.c_str());
+                        }
+                    }
+                }
             }
         }
         return true;
@@ -716,9 +736,11 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         vector<pair<string, hashStoreFileMetaDataHandler*>> possibleValidObjectVec;
         objectFileMetaDataTrie_.getPossibleValidNodes(possibleValidObjectVec);
         for (auto it : possibleValidObjectVec) {
-            it.second->file_operation_func_ptr_->closeFile();
-            delete it.second->file_operation_func_ptr_;
-            delete it.second;
+            if (it.second) {
+                it.second->file_operation_func_ptr_->closeFile();
+                delete it.second->file_operation_func_ptr_;
+                delete it.second;
+            }
         }
         return true;
     } else {
@@ -726,9 +748,11 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         vector<pair<string, hashStoreFileMetaDataHandler*>> possibleValidObjectVec;
         objectFileMetaDataTrie_.getPossibleValidNodes(possibleValidObjectVec);
         for (auto it : possibleValidObjectVec) {
-            it.second->file_operation_func_ptr_->closeFile();
-            delete it.second->file_operation_func_ptr_;
-            delete it.second;
+            if (it.second) {
+                it.second->file_operation_func_ptr_->closeFile();
+                delete it.second->file_operation_func_ptr_;
+                delete it.second;
+            }
         }
         return false;
     }
@@ -1034,7 +1058,7 @@ void HashStoreFileManager::processGCRequestWorker()
             uint64_t currentFileOnDiskSize = currentHandlerPtr->file_operation_func_ptr_->getFileSize();
             if (currentFileOnDiskSize != currentHandlerPtr->total_object_bytes_) {
                 debug_error("[ERROR] file size in metadata = %lu, in filesystem = %lu\n", currentHandlerPtr->total_object_bytes_, currentFileOnDiskSize);
-            }
+                        }
             currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
             // process GC contents
             unordered_map<string, vector<string>> gcResultMap;
@@ -1248,6 +1272,18 @@ void HashStoreFileManager::processGCRequestWorker()
                 currentHandlerPtr->total_object_count_ = newObjectNumber + 1;
                 currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
                 debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n", currentHandlerPtr->total_object_bytes_, currentHandlerPtr->target_file_id_);
+                string targetRemoveFilePath = workingDir_ + "/" + to_string(currentFileHeader.previous_file_id_) + ".delta";
+                if (filesystem::exists(targetRemoveFilePath) != false) {
+                    auto removeOldManifestStatus = remove(targetRemoveFilePath.c_str());
+                    if (removeOldManifestStatus == -1) {
+                        debug_error("[ERROR] Could not delete the obsolete file, file path = %s, the new file ID = %lu\n", targetRemoveFilePath.c_str(), currentFileHeader.file_id_);
+                    } else {
+                        debug_info("Deleted old file ID = %lu since single file gc create new file ID = %lu\n", currentFileHeader.previous_file_id_, currentFileHeader.file_id_);
+                    }
+                }
+                if (currentHandlerPtr->total_object_bytes_ > singleFileGCTriggerSize_) {
+                    currentHandlerPtr->gc_result_status_flag_ = kNoGC;
+                }
                 currentHandlerPtr->fileOperationMutex_.unlock();
                 // remove old file
                 currentHandlerPtr->file_ownership_flag_ = 0;

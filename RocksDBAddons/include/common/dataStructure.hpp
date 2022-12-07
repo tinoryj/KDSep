@@ -43,7 +43,7 @@ typedef struct hashStoreFileMetaDataHandler {
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
-    boost::shared_mutex fileOperationMutex_;
+    std::shared_mutex fileOperationMutex_;
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {

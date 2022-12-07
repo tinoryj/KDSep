@@ -11,9 +11,8 @@ using namespace std;
 namespace DELTAKV_NAMESPACE {
 
 enum fileOperationType { kFstream = 0,
-    kDirectIO = 1 };
-enum fileOperationSetPointerOps { kBegin = 0,
-    kEnd = 1 };
+    kDirectIO = 1,
+    kAlignLinuxIO = 2 };
 
 class FileOperation {
 public:
@@ -25,7 +24,6 @@ public:
     bool openFile(string path);
     bool createFile(string path);
     bool closeFile();
-    bool resetPointer(fileOperationSetPointerOps ops);
     uint64_t getFileSize();
     uint64_t getFilePhysicalSize(string path);
 
@@ -35,6 +33,7 @@ private:
     int fileDirect_;
     uint64_t directIOPageSize_ = sysconf(_SC_PAGESIZE);
     uint64_t directIOWriteFileSize_ = 0;
+    uint64_t directIOActualWriteFileSize_ = 0;
     uint64_t newlyCreatedFileFlag_ = false;
 };
 

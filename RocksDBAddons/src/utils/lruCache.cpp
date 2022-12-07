@@ -16,7 +16,7 @@ LRUCache::LRUCache(uint64_t cacheSize)
 void LRUCache::insertToCache(string& cacheKey, uint8_t* data, uint32_t length)
 {
     {
-        boost::unique_lock<boost::shared_mutex> t(this->mtx);
+        std::unique_lock<std::shared_mutex> t(this->mtx);
         if (Cache_->size() + 1 > cacheSize_) {
             // evict a item
             uint32_t replaceIndex = Cache_->pruneValue();
@@ -35,7 +35,7 @@ bool LRUCache::existsInCache(string& cacheKey)
 {
     bool flag = false;
     {
-        // boost::shared_lock<boost::shared_mutex> t(this->mtx);
+        std::shared_lock<std::shared_mutex> t(this->mtx);
         flag = this->Cache_->contains(cacheKey);
     }
     return flag;
@@ -44,7 +44,7 @@ bool LRUCache::existsInCache(string& cacheKey)
 uint8_t* LRUCache::getFromCache(string& cacheKey)
 {
     {
-        // boost::shared_lock<boost::shared_mutex> t(this->mtx);
+        std::shared_lock<std::shared_mutex> t(this->mtx);
         uint32_t index = this->Cache_->get(cacheKey);
         return memoryPool_[index];
     }

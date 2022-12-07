@@ -131,11 +131,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (directIO == true) {
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
     }
     options_.enable_batched_operations_ = false;
     if (blobDbKeyValueSeparation == true) {
@@ -166,6 +166,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_single_file_maximum_size = 1 * 1024;
         options_.deltaStore_file_flush_buffer_size_limit_ = 256;
         options_.deltaStore_thread_number_limit = 3;
+        options_.hashStore_init_prefix_bit_number = 6;
+        options_.hashStore_max_prefix_bit_number = 7;
     }
     if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
