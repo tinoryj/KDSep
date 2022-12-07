@@ -47,6 +47,12 @@ class ExternDBConfig {
     uint64_t target_file_size_base_;
     uint64_t blob_file_size_;
     uint64_t deltaLog_file_size_;
+    uint64_t deltaLog_file_flush_size_;
+    double deltaLog_gc_threshold_;
+    uint64_t deltaLog_cache_object_number_;
+    uint64_t deltaLog_prefix_bit_number_;
+    uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
+    uint64_t deltaStore_thread_number_limit;
 
    public:
     ExternDBConfig(std::string file_path) {
@@ -84,6 +90,12 @@ class ExternDBConfig {
         target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase");
         blob_file_size_ = pt_.get<uint64_t>("config.blobFileSize");
         deltaLog_file_size_ = pt_.get<uint64_t>("config.deltaLogFileSize");
+        deltaLog_file_flush_size_ = pt_.get<uint64_t>("config.deltaLogFileFlushSize");
+        deltaLog_gc_threshold_ = pt_.get<double>("config.deltaLogGCThreshold");
+        deltaLog_cache_object_number_ = pt_.get<uint64_t>("config.deltaLogCacheObjectNumber");
+        deltaLog_prefix_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixBitNumber");
+        deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForMetadataCommitThreshold_");
+        deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
     }
 
     int getBloomBits() {
@@ -184,6 +196,30 @@ class ExternDBConfig {
     }
     uint64_t getDeltaLogFileSize() {
         return deltaLog_file_size_;
+    }
+
+    uint64_t getDeltaLogFileFlushSize() {
+        return deltaLog_file_flush_size_;
+    }
+
+    double getDeltaLogGCThreshold() {
+        return deltaLog_gc_threshold_;
+    }
+
+    uint64_t getDeltaLogCacheObjectNumber() {
+        return deltaLog_cache_object_number_;
+    }
+
+    uint64_t getDeltaLogPrefixBitNumber() {
+        return deltaLog_prefix_bit_number_;
+    }
+
+    uint64_t getDelteLogMetadataCommitLatency() {
+        return deltaStore_operationNumberForMetadataCommitThreshold_;
+    }
+
+    uint64_t getDeltaLogThreadNumber() {
+        return deltaStore_thread_number_limit;
     }
 };
 }  // namespace ycsbc

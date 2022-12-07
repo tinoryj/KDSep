@@ -132,7 +132,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
-        options_.rocksdb_sync = true;
+        options_.rocksdb_sync = !(keyValueSeparation || keyDeltaSeparation);
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
@@ -162,13 +162,17 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         cerr << "Enabled DeltaLog based KD separation" << endl;
         // deltaKV settings
         options_.enable_deltaStore = true;
-        options_.enable_deltaStore_KDLevel_cache = true;
-        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = 1000;
-        options_.deltaStore_single_file_maximum_size = 10 * 1024;
-        options_.deltaStore_file_flush_buffer_size_limit_ = 2 * 1024;
-        options_.deltaStore_thread_number_limit = 3;
-        options_.hashStore_init_prefix_bit_number = 6;
-        options_.hashStore_max_prefix_bit_number = 7;
+        uint64_t deltaLogCacheObjectNumber = config.getDeltaLogCacheObjectNumber();
+        if (deltaLogCacheObjectNumber != 0) {
+            options_.enable_deltaStore_KDLevel_cache = true;
+            options_.deltaStore_KDLevel_cache_item_number = deltaLogCacheObjectNumber;
+        }
+        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = config.getDelteLogMetadataCommitLatency();
+        options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
+        options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
+        options_.deltaStore_thread_number_limit = config.getDeltaLogThreadNumber();
+        options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixBitNumber();
+        options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixBitNumber() + 2;
     }
     if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);

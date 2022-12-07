@@ -6,8 +6,8 @@
 // #include "RocksDB/rocksdb_db.h"
 
 using namespace std;
-using ycsbc::YCSBDB;
 using ycsbc::DBFactory;
+using ycsbc::YCSBDB;
 
 YCSBDB *DBFactory::CreateDB(utils::Properties &props) {
     if (props["dbname"] == "rocksdb") {
