@@ -132,11 +132,12 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
-        options_.rocksdb_sync = !(keyValueSeparation || keyDeltaSeparation);
+        options_.rocksdb_sync = !(keyValueSeparation && keyDeltaSeparation);
+        cerr << "Sync status = " << options_.rocksdb_sync << endl;
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
     }
     options_.enable_batched_operations_ = false;
     if (blobDbKeyValueSeparation == true) {
@@ -157,8 +158,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
         options_.enable_valueStore = true;
+        options_.rocksdb_sync_merge = true;
     }
     if (keyDeltaSeparation == true) {
+        options_.rocksdb_sync_put = true;
         cerr << "Enabled DeltaLog based KD separation" << endl;
         // deltaKV settings
         options_.enable_deltaStore = true;

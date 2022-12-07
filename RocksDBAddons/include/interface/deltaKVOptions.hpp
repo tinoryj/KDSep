@@ -76,6 +76,8 @@ public:
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
     fileOperationType fileOperationMethod_ = kDirectIO;
     bool enable_batched_operations_ = false;
+    bool rocksdb_sync_put = false;
+    bool rocksdb_sync_merge = false;
     bool rocksdb_sync = false;
 
     // dump options

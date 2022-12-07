@@ -92,6 +92,7 @@ private:
     bool isBatchedOperationsWithBuffer_ = false;
     bool syncBasedRocksDB_ = false;
     rocksdb::WriteOptions internalWriteOption_;
+    rocksdb::WriteOptions internalMergeOption_;
     boost::shared_mutex batchedBufferOperationMtx_;
     // thread management
     boost::asio::thread_pool* threadpool_;

@@ -186,9 +186,13 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset internal merge operator
         deltaKVMergeOperatorPtr_ = options.deltaKV_merge_operation_ptr;
     }
-    syncBasedRocksDB_ = options.rocksdb_sync;
-    if (syncBasedRocksDB_ == true) {
+    if (options.rocksdb_sync == true) {
         internalWriteOption_.sync = true;
+        internalMergeOption_.sync = true;
+    } else if (options.rocksdb_sync_put) {
+        internalWriteOption_.sync = true;
+    } else if (options.rocksdb_sync_merge) {
+        internalMergeOption_.sync = true;
     }
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!s.ok()) {
@@ -275,7 +279,7 @@ bool DeltaKV::PutWithPlainRocksDB(const string& key, const string& value)
 
 bool DeltaKV::MergeWithPlainRocksDB(const string& key, const string& value)
 {
-    rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, value);
+    rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, value);
     if (!s.ok()) {
         debug_error("[ERROR] Write underlying rocksdb with merge value fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
         return false;
@@ -350,7 +354,7 @@ bool DeltaKV::MergeWithOnlyValueStore(const string& key, const string& value)
     memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
     memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
-    rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, newWriteValueStr);
+    rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValueStr);
     if (!s.ok()) {
         debug_error("[ERROR] Merge underlying rocksdb with interanl value header fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
         return false;
@@ -471,7 +475,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
             currentInternalValueType.rawValueSize_ = value.size();
             memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
-            rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, newWriteValue);
+            rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValue);
             if (!s.ok()) {
                 debug_error("[ERROR] Write underlying rocksdb with external value type info, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
                 return false;
@@ -491,7 +495,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
         memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
-        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, newWriteValue);
+        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValue);
         if (!s.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
             return false;
@@ -627,7 +631,7 @@ bool DeltaKV::MergeWithValueAndDeltaStore(const string& key, const string& value
             currentInternalValueType.rawValueSize_ = value.size();
             memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
-            rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, newWriteValue);
+            rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValue);
             if (!s.ok()) {
                 debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
                 return false;
@@ -647,7 +651,7 @@ bool DeltaKV::MergeWithValueAndDeltaStore(const string& key, const string& value
         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
         memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
-        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, key, newWriteValue);
+        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValue);
         if (!s.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
             return false;
@@ -1105,7 +1109,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         currentInternalValueType.valueSeparatedFlag_ = true;
                         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
                         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
-                        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalWriteOption_, keyToDeltaStoreVec[index], newWriteValue);
+                        rocksdb::Status s = pointerToRawRocksDB_->Merge(internalMergeOption_, keyToDeltaStoreVec[index], newWriteValue);
                         if (!s.ok()) {
                             debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", s.ToString().c_str());
                         }
