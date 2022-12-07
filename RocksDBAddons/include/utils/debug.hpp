@@ -12,7 +12,7 @@ enum class DebugOutPutLevel : int {
     ANY
 };
 
-#define DEBUG_LEVEL DebugOutPutLevel::INFO
+#define DEBUG_LEVEL DebugOutPutLevel::ERROR
 // for color
 #define RESET "\033[0m"
 #define BLACK "\033[30m" /* Black */

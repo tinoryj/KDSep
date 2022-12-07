@@ -36,7 +36,9 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
 
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_ = 0;
+    uint64_t previous_file_id_ = 0;
     uint64_t current_prefix_used_bit_ = 0;
+    hashStoreFileCreateReason file_create_reason_ = kNewFile;
     uint64_t total_object_count_ = 0;
     uint64_t total_object_bytes_ = 0;
     uint64_t temp_not_flushed_data_bytes_ = 0;

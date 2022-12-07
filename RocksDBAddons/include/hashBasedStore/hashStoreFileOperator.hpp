@@ -12,7 +12,7 @@ namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileOperator {
 public:
-    HashStoreFileOperator(DeltaKVOptions* options, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
+    HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
     ~HashStoreFileOperator();
 
     // file operations
@@ -33,6 +33,7 @@ private:
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
+    string workingDir_;
 };
 
 } // namespace DELTAKV_NAMESPACE

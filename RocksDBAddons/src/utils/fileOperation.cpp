@@ -7,6 +7,7 @@ namespace DELTAKV_NAMESPACE {
 FileOperation::FileOperation(fileOperationType operationType)
 {
     operationType_ = operationType;
+    fileDirect_ = -1;
 }
 
 FileOperation::~FileOperation()
@@ -93,15 +94,31 @@ bool FileOperation::closeFile()
         fileStream_.flush();
         fileStream_.close();
         return true;
-    } else if (operationType_ == kDirectIO) {
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         debug_info("Close file fd = %d\n", fileDirect_);
         int status = close(fileDirect_);
         if (status == 0) {
             debug_info("Close file success, current file fd = %d\n", fileDirect_);
+            fileDirect_ = -1;
             return true;
         } else {
             debug_error("[ERROR] File descriptor (close) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
+        }
+    } else {
+        return false;
+    }
+}
+
+bool FileOperation::isFileOpen()
+{
+    if (operationType_ == kFstream) {
+        return fileStream_.is_open();
+    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        if (fileDirect_ == -1) {
+            return false;
+        } else {
+            return true;
         }
     } else {
         return false;

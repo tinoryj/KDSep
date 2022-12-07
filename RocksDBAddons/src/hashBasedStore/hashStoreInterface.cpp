@@ -14,7 +14,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     uint64_t totalHashStoreFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size;
 
     hashStoreFileManager = new HashStoreFileManager(internalOptionsPtr_->hashStore_init_prefix_bit_number, internalOptionsPtr_->hashStore_max_prefix_bit_number, singleFileGCThreshold, totalHashStoreFileGCThreshold, workingDirStr, notifyGCMQ_, options->fileOperationMethod_);
-    hashStoreFileOperator = new HashStoreFileOperator(options, notifyGCMQ_);
+    hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, notifyGCMQ_);
     if (!hashStoreFileManager) {
         debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());
     }

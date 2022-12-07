@@ -24,6 +24,7 @@ public:
     bool openFile(string path);
     bool createFile(string path);
     bool closeFile();
+    bool isFileOpen();
     uint64_t getFileSize();
     uint64_t getFilePhysicalSize(string path);
 
