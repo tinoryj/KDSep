@@ -125,13 +125,13 @@ bool FileOperation::isFileOpen()
     }
 }
 
-bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
+uint64_t FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
 {
     if (operationType_ == kFstream) {
         fileStream_.seekg(0, ios::end);
         fileStream_.seekp(0, ios::end);
         fileStream_.write(contentBuffer, contentSize);
-        return true;
+        return contentSize;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         uint64_t targetRequestPageNumber = ceil((double)contentSize / (double)(directIOPageSize_ - sizeof(uint32_t)));
         uint64_t writeDoneContentSize = 0;
@@ -141,7 +141,7 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
         if (ret) {
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-            return false;
+            return 0;
         } else {
             memset(writeBuffer, 0, writeBufferSize);
         }
@@ -162,16 +162,15 @@ bool FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         if (wReturn != writeBufferSize) {
             free(writeBuffer);
             debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
-            return false;
+            return 0;
         } else {
             free(writeBuffer);
             directIOWriteFileSize_ += writeBufferSize;
             directIOActualWriteFileSize_ += contentSize;
-            return true;
+            return writeBufferSize;
         }
-        return true;
     } else {
-        return false;
+        return 0;
     }
 }
 
@@ -198,6 +197,16 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             return false;
         }
+        // uint64_t currentFindDataSize = 0;
+        // for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
+        //     uint32_t currentPageContentSize = 0;
+        //     memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
+        //     currentFindDataSize += currentPageContentSize;
+        // }
+        // if (currentFindDataSize > contentSize) {
+        //     debug_error("[ERROR] Read find data size = %lu, but request size = %lu, may lead to buffer overflow, stop read fuinction\n", currentFindDataSize, contentSize);
+        //     return false;
+        // }
         uint64_t currentReadDoneSize = 0;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;

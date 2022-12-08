@@ -179,6 +179,8 @@ DeltaKV::~DeltaKV()
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 {
+    boost::thread::attributes attrs;
+    attrs.set_stack_size(1000 * 1024 * 1024);
     // start threadPool, memPool, etc.
     launchThreadPool(options.deltaKV_thread_number_limit);
     // Rest merge function if delta/value separation enabled
@@ -204,7 +206,9 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         writeBatchDeque[0] = new deque<tuple<DBOperationType, string, string>>;
         writeBatchDeque[1] = new deque<tuple<DBOperationType, string, string>>;
         notifyWriteBatchMQ_ = new messageQueue<deque<tuple<DBOperationType, string, string>>*>;
-        boost::asio::post(*threadpool_, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
+        // boost::asio::post(*threadpool_, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
+        boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
+        thList_.push_back(th);
         isBatchedOperationsWithBuffer_ = true;
     }
 
@@ -212,20 +216,30 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         isDeltaStoreInUseFlag = true;
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_);
         // create deltaStore related threads
-        boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
+        // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
+        boost::thread* th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
+        thList_.push_back(th);
         uint64_t totalNumberOfThreadsAllowed = options.deltaStore_thread_number_limit - 1;
         if (totalNumberOfThreadsAllowed > 2) {
             uint64_t totalNumberOfThreadsForOperationAllowed = totalNumberOfThreadsAllowed / 2 + 1;
             uint64_t totalNumberOfThreadsForGCAllowed = totalNumberOfThreadsAllowed - totalNumberOfThreadsForOperationAllowed;
             for (auto threadID = 0; threadID < totalNumberOfThreadsForGCAllowed; threadID++) {
-                boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                thList_.push_back(th);
             }
             for (auto threadID = 0; threadID < totalNumberOfThreadsForOperationAllowed; threadID++) {
-                boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                thList_.push_back(th);
             }
         } else {
-            boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-            boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+            // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+            // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+            thList_.push_back(th);
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+            thList_.push_back(th);
         }
     }
     if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
@@ -1169,14 +1183,18 @@ void DeltaKV::processBatchedOperationsWorker()
 
 bool DeltaKV::launchThreadPool(uint64_t totalThreadNumber)
 {
-    threadpool_ = new boost::asio::thread_pool(totalThreadNumber);
+    // threadpool_ = new boost::asio::thread_pool(totalThreadNumber);
     return true;
 }
 
 bool DeltaKV::deleteThreadPool()
 {
-    threadpool_->join();
-    delete threadpool_;
+    // threadpool_->join();
+    // delete threadpool_;
+    for (auto thIt : thList_) {
+        thIt->join();
+        delete thIt;
+    }
     return true;
 }
 

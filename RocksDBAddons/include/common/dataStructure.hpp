@@ -32,7 +32,8 @@ enum hashStoreFileOperationType { kPut = 0,
 enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
     kNoGC = 2, // tried gc by force threshold, but could not done internal gc or split, mark as not gc forever
-    kShouldDelete = 3 }; // gc done, split/merge to new file, this file should be delete
+    kNeverGC = 3, // if GC, the file will exceed trie bit number limit
+    kShouldDelete = 4 }; // gc done, split/merge to new file, this file should be delete
 
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_ = 0;
@@ -41,6 +42,8 @@ typedef struct hashStoreFileMetaDataHandler {
     hashStoreFileCreateReason file_create_reason_ = kNewFile;
     uint64_t total_object_count_ = 0;
     uint64_t total_object_bytes_ = 0;
+    uint64_t total_on_disk_bytes_ = 0;
+    uint64_t no_gc_wait_operation_number_ = 0;
     uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC

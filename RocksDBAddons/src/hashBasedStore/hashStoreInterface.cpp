@@ -26,6 +26,8 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
     hashStoreFileManagerPtr_->setOperationNumberThresholdForMetadataUpdata(options->deltaStore_operationNumberForMetadataCommitThreshold_);
+    hashStoreFileManagerPtr_->setSplitGCFileSizeLimit(options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size);
+    hashStoreFileOperatorPtr_->setOperationNumberThresholdForForcedSingleFileGC(options->deltaStore_operationNumberForMetadataCommitThreshold_);
 }
 
 HashStoreInterface::~HashStoreInterface()

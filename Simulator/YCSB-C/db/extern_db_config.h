@@ -50,9 +50,12 @@ class ExternDBConfig {
     uint64_t deltaLog_file_size_;
     uint64_t deltaLog_file_flush_size_;
     double deltaLog_gc_threshold_;
+    double deltaLog_split_gc_threshold_;
     uint64_t deltaLog_cache_object_number_;
-    uint64_t deltaLog_prefix_bit_number_;
+    uint64_t deltaLog_prefix_min_bit_number_;
+    uint64_t deltaLog_prefix_max_bit_number_;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
+    uint64_t deltaStore_operationNumberForForcedGCThreshold_;
     uint64_t deltaStore_thread_number_limit;
 
     struct {
@@ -98,9 +101,12 @@ class ExternDBConfig {
         deltaLog_file_size_ = pt_.get<uint64_t>("config.deltaLogFileSize");
         deltaLog_file_flush_size_ = pt_.get<uint64_t>("config.deltaLogFileFlushSize");
         deltaLog_gc_threshold_ = pt_.get<double>("config.deltaLogGCThreshold");
+        deltaLog_split_gc_threshold_ = pt_.get<double>("config.deltaLogSplitGCThreshold");
         deltaLog_cache_object_number_ = pt_.get<uint64_t>("config.deltaLogCacheObjectNumber");
-        deltaLog_prefix_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixBitNumber");
+        deltaLog_prefix_min_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixMinBitNumber");
+        deltaLog_prefix_max_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixMaxBitNumber");
         deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForMetadataCommitThreshold_");
+        deltaStore_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForForcedGCThreshold_");
         deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
         debug_.level = pt_.get<uint64_t>("debug.level");
     }
@@ -216,16 +222,28 @@ class ExternDBConfig {
         return deltaLog_gc_threshold_;
     }
 
+    double getDeltaLogSplitGCThreshold() {
+        return deltaLog_split_gc_threshold_;
+    }
+
     uint64_t getDeltaLogCacheObjectNumber() {
         return deltaLog_cache_object_number_;
     }
 
-    uint64_t getDeltaLogPrefixBitNumber() {
-        return deltaLog_prefix_bit_number_;
+    uint64_t getDeltaLogPrefixMinBitNumber() {
+        return deltaLog_prefix_min_bit_number_;
+    }
+
+    uint64_t getDeltaLogPrefixMaxBitNumber() {
+        return deltaLog_prefix_max_bit_number_;
     }
 
     uint64_t getDelteLogMetadataCommitLatency() {
         return deltaStore_operationNumberForMetadataCommitThreshold_;
+    }
+
+    uint64_t getDelteLogForcedGCLatency() {
+        return deltaStore_operationNumberForForcedGCThreshold_;
     }
 
     uint64_t getDeltaLogThreadNumber() {

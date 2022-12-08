@@ -28,6 +28,7 @@ public:
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool setOperationNumberThresholdForMetadataUpdata(uint64_t threshold);
+    bool setSplitGCFileSizeLimit(uint64_t threshold);
 
     // GC manager
     void processGCRequestWorker();
@@ -43,6 +44,7 @@ private:
     uint64_t initialTrieBitNumber_;
     uint64_t maxTrieBitNumber_;
     uint64_t singleFileGCTriggerSize_;
+    uint64_t singleFileSplitGCTriggerSize_;
     uint64_t globalGCTriggerSize_;
     std::string workingDir_;
     fileOperationType fileOperationMethod_ = kFstream;

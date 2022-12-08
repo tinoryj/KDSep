@@ -6,6 +6,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
 {
     perFileFlushBufferSizeLimit_ = options->deltaStore_file_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
+    singleFileSizeLimit_ = options->deltaStore_single_file_maximum_size;
     operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
     notifyGCToManagerMQ_ = notifyGCToManagerMQ;
     if (options->enable_deltaStore_KDLevel_cache == true) {
@@ -20,6 +21,16 @@ HashStoreFileOperator::~HashStoreFileOperator()
         delete keyToValueListCache_;
     }
     delete operationToWorkerMQ_;
+}
+
+bool HashStoreFileOperator::setOperationNumberThresholdForForcedSingleFileGC(uint64_t threshold)
+{
+    operationNumberThresholdForForcedSingleFileGC_ = threshold;
+    if (operationNumberThresholdForForcedSingleFileGC_ != threshold) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 bool HashStoreFileOperator::setJobDone()
@@ -235,8 +246,14 @@ void HashStoreFileOperator::operationWorker()
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
                             currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                         }
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        bool readFileStatus = currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+                        if (readFileStatus == false) {
+                            debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                            currentHandlerPtr->jobDone = true;
+                            continue;
+                        }
                         unordered_map<string, vector<string>> currentFileProcessMap;
                         uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                         if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
@@ -272,8 +289,14 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ = 0;
                     }
                     debug_trace("target read file content (cache not enabled) size = %lu\n", currentHandlerPtr->file_handler_->total_object_bytes_);
-                    currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    bool readFileStatus = currentHandlerPtr->file_handler_->file_operation_func_ptr_->readFile(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_);
                     currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+                    if (readFileStatus == false) {
+                        debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        currentHandlerPtr->jobDone = true;
+                        continue;
+                    }
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     uint64_t totalProcessedObjectNumber = processReadContentToValueLists(readBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
                     if (totalProcessedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
@@ -309,7 +332,14 @@ void HashStoreFileOperator::operationWorker()
                         memcpy(writeHeaderBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                         // write content
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        uint64_t onDiskWriteSize = currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        if (onDiskWriteSize == 0) {
+                            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                            currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+                            currentHandlerPtr->jobDone = true;
+                            continue;
+                        }
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
@@ -320,6 +350,7 @@ void HashStoreFileOperator::operationWorker()
                         }
                         // Update metadata
                         currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_);
+                        currentHandlerPtr->file_handler_->total_on_disk_bytes_ += onDiskWriteSize;
                         currentHandlerPtr->file_handler_->total_object_count_++;
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     }
@@ -343,7 +374,14 @@ void HashStoreFileOperator::operationWorker()
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->closeFile();
                         }
                         currentHandlerPtr->file_handler_->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentHandlerPtr->file_handler_->target_file_id_) + ".delta");
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeBuffer, sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        uint64_t onDiskWriteSize = currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeBuffer, sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        if (onDiskWriteSize == 0) {
+                            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                            currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+                            currentHandlerPtr->jobDone = true;
+                            continue;
+                        }
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
@@ -353,6 +391,7 @@ void HashStoreFileOperator::operationWorker()
                             debug_trace("buffered not flushed file ID = %lu, buffered size = %lu, current key size = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_, newRecordHeader.key_size_);
                         }
                         currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        currentHandlerPtr->file_handler_->total_on_disk_bytes_ += onDiskWriteSize;
                         currentHandlerPtr->file_handler_->total_object_count_ = 1;
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     } else {
@@ -362,7 +401,14 @@ void HashStoreFileOperator::operationWorker()
                         memcpy(writeHeaderBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.value_str_->c_str(), newRecordHeader.value_size_);
                         currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                         // write content
-                        currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        uint64_t onDiskWriteSize = currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeHeaderBuffer, sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        if (onDiskWriteSize == 0) {
+                            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                            currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
+                            currentHandlerPtr->jobDone = true;
+                            continue;
+                        }
                         currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
                         if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                             currentHandlerPtr->file_handler_->file_operation_func_ptr_->flushFile();
@@ -373,6 +419,7 @@ void HashStoreFileOperator::operationWorker()
                         }
                         // Update metadata
                         currentHandlerPtr->file_handler_->total_object_bytes_ += (sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_);
+                        currentHandlerPtr->file_handler_->total_on_disk_bytes_ += onDiskWriteSize;
                         currentHandlerPtr->file_handler_->total_object_count_++;
                         currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                     }
@@ -389,7 +436,17 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
                 // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_) {
+                if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
+                    currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
+                    if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                        currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
+                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                        debug_info("Current file ID = %lu exceed file size threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, singleFileSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    } else {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                    }
+                } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
                     if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
                         notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
@@ -436,7 +493,7 @@ void HashStoreFileOperator::operationWorker()
                 }
                 currentHandlerPtr->file_handler_->fileOperationMutex_.lock();
                 // write content
-                currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
+                uint64_t onDiskWriteSize = currentHandlerPtr->file_handler_->file_operation_func_ptr_->writeFile(writeContentBuffer, targetWriteBufferSize);
                 currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ += targetWriteBufferSize;
                 if (currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
                     debug_trace("flushed file ID = %lu, flushed size = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->temp_not_flushed_data_bytes_);
@@ -445,6 +502,7 @@ void HashStoreFileOperator::operationWorker()
                 }
                 // Update metadata
                 currentHandlerPtr->file_handler_->total_object_bytes_ += targetWriteBufferSize;
+                currentHandlerPtr->file_handler_->total_on_disk_bytes_ += onDiskWriteSize;
                 currentHandlerPtr->file_handler_->total_object_count_ += currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size();
                 currentHandlerPtr->file_handler_->fileOperationMutex_.unlock();
                 // insert to cache if need
@@ -459,7 +517,17 @@ void HashStoreFileOperator::operationWorker()
                     }
                 }
                 // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_object_bytes_ >= perFileGCSizeLimit_) {
+                if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
+                    currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
+                    if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                        currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
+                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                        debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                    } else {
+                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                    }
+                } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
                     if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
                         notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);

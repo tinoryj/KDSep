@@ -96,6 +96,7 @@ private:
     boost::shared_mutex batchedBufferOperationMtx_;
     // thread management
     boost::asio::thread_pool* threadpool_;
+    vector<boost::thread*> thList_;
     bool launchThreadPool(uint64_t totalThreadNumber);
     bool deleteThreadPool();
     // for separated operations

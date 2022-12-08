@@ -36,6 +36,16 @@ bool HashStoreFileManager::setOperationNumberThresholdForMetadataUpdata(uint64_t
     }
 }
 
+bool HashStoreFileManager::setSplitGCFileSizeLimit(uint64_t threshold)
+{
+    singleFileSplitGCTriggerSize_ = threshold;
+    if (singleFileSplitGCTriggerSize_ != threshold) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 // Recovery
 /*
 fileContentBuffer start after file header
@@ -982,8 +992,9 @@ bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForSplitGC(strin
         currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
     }
     currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
-    currentFileHandlerPtr->file_operation_func_ptr_->writeFile(fileHeaderWriteBuffer, sizeof(newFileHeader));
+    uint64_t onDiskWriteSize = currentFileHandlerPtr->file_operation_func_ptr_->writeFile(fileHeaderWriteBuffer, sizeof(newFileHeader));
     currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
+    currentFileHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
     currentFileHandlerPtr->temp_not_flushed_data_bytes_ = sizeof(newFileHeader);
     currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
@@ -1079,17 +1090,24 @@ void HashStoreFileManager::processGCRequestWorker()
             // process GC contents
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
-            if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second != 0) {
-                debug_info("File ID = %lu could not reclaim space in single file, try split, total contains object number = %lu, should keep object number = %lu, find different key number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first, gcResultMap.size());
-                // no space could be reclaimed, may request split
-                if (gcResultMap.size() == 0) {
-                    // keep tracking until forced gc threshold;
-                    currentHandlerPtr->file_ownership_flag_ = 0;
-                    debug_error("[ERROR] File ID = %lu contains no keys, but processed object number = %lu, target keep object number = %lu, skip this file\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                    currentHandlerPtr->fileOperationMutex_.unlock();
-                    continue;
-                } else if (gcResultMap.size() == 1) {
-                    if (currentHandlerPtr->gc_result_status_flag_ != kMayGC) {
+
+            // count valid object size to determine GC method;
+            if (remainObjectNumberPair.second == 0) {
+                debug_info("File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
+                currentHandlerPtr->file_ownership_flag_ = 0;
+                currentHandlerPtr->fileOperationMutex_.unlock();
+                continue;
+            }
+            if (gcResultMap.size() == 0) {
+                currentHandlerPtr->file_ownership_flag_ = 0;
+                debug_error("[ERROR] File ID = %lu contains no keys, but processed object number = %lu, target keep object number = %lu, skip this file\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                currentHandlerPtr->fileOperationMutex_.unlock();
+                continue;
+            }
+            if (gcResultMap.size() == 1) {
+                if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
+                    if (currentHandlerPtr->gc_result_status_flag_ == kNew) {
                         // keep tracking until forced gc threshold;
                         currentHandlerPtr->gc_result_status_flag_ = kMayGC;
                         currentHandlerPtr->file_ownership_flag_ = 0;
@@ -1105,12 +1123,115 @@ void HashStoreFileManager::processGCRequestWorker()
                         currentHandlerPtr->fileOperationMutex_.unlock();
                         continue;
                     }
-                } else if (gcResultMap.size() > 1) {
-                    if (currentHandlerPtr->gc_result_status_flag_ == kNew || currentHandlerPtr->gc_result_status_flag_ == kMayGC) {
-                        // perform split into two buckets via extend prefix bit (+1)
-                        debug_info("start split for key number = %lu\n", gcResultMap.size());
-                        uint64_t currentUsedPrefixBitNumber = currentHandlerPtr->current_prefix_used_bit_;
-                        uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
+                } else {
+                    debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                    // reclaimed space success, rewrite current file to new file
+                    if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                        currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                    }
+                    uint64_t targetFileSize = 0;
+                    for (auto keyIt : gcResultMap) {
+                        for (auto valueIt : keyIt.second) {
+                            targetFileSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
+                            // debug_info("Rewrite: key = %s, value = %s\n", keyIt.first.c_str(), valueIt.c_str());
+                        }
+                    }
+                    debug_trace("Rewrite processed size = %lu\n", targetFileSize);
+                    targetFileSize += (sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader));
+                    char currentWriteBuffer[targetFileSize];
+                    uint64_t newObjectNumber = 0;
+                    uint64_t currentProcessLocationIndex = 0;
+                    hashStoreFileHeader currentFileHeader;
+                    currentFileHeader.current_prefix_used_bit_ = currentHandlerPtr->current_prefix_used_bit_;
+                    currentFileHeader.file_create_reason_ = kGCFile;
+                    currentFileHeader.file_id_ = generateNewFileID();
+                    currentFileHeader.previous_file_id_ = currentHandlerPtr->target_file_id_;
+                    memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentFileHeader, sizeof(hashStoreFileHeader));
+                    currentProcessLocationIndex += sizeof(currentFileHeader);
+                    // add file header
+                    for (auto keyIt : gcResultMap) {
+                        for (auto valueIt : keyIt.second) {
+                            newObjectNumber++;
+                            hashStoreRecordHeader currentObjectRecordHeader;
+                            currentObjectRecordHeader.is_anchor_ = false;
+                            currentObjectRecordHeader.key_size_ = keyIt.first.size();
+                            currentObjectRecordHeader.value_size_ = valueIt.size();
+                            memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+                            currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
+                            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.c_str(), keyIt.first.size());
+                            currentProcessLocationIndex += keyIt.first.size();
+                            memcpy(currentWriteBuffer + currentProcessLocationIndex, valueIt.c_str(), valueIt.size());
+                            currentProcessLocationIndex += valueIt.size();
+                        }
+                    }
+                    // add gc done flag into bucket file
+                    hashStoreRecordHeader currentObjectRecordHeader;
+                    currentObjectRecordHeader.is_anchor_ = false;
+                    currentObjectRecordHeader.is_gc_done_ = true;
+                    currentObjectRecordHeader.key_size_ = 0;
+                    currentObjectRecordHeader.value_size_ = 0;
+                    memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+                    debug_trace("Rewrite done buffer size = %lu, total target write size = %lu\n", currentProcessLocationIndex, targetFileSize);
+                    string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
+                    // create since file not exist
+                    if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                        currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                    } // close old file
+                    currentHandlerPtr->file_operation_func_ptr_->createFile(targetOpenFileName);
+                    if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                        currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                    }
+                    // write content and update current file stream to new one.
+                    currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
+                    uint64_t onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
+                    currentHandlerPtr->file_operation_func_ptr_->flushFile();
+                    debug_trace("Rewrite done file size = %lu, file path = %s\n", currentHandlerPtr->file_operation_func_ptr_->getFileSize(), targetOpenFileName.c_str());
+                    // update metadata
+                    currentHandlerPtr->target_file_id_ = currentFileHeader.file_id_;
+                    currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
+                    currentHandlerPtr->total_object_count_ = newObjectNumber + 1;
+                    currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
+                    currentHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
+                    debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n", currentHandlerPtr->total_object_bytes_, currentHandlerPtr->target_file_id_);
+                    string targetRemoveFilePath = workingDir_ + "/" + to_string(currentFileHeader.previous_file_id_) + ".delta";
+                    if (filesystem::exists(targetRemoveFilePath) != false) {
+                        auto removeOldManifestStatus = remove(targetRemoveFilePath.c_str());
+                        if (removeOldManifestStatus == -1) {
+                            debug_error("[ERROR] Could not delete the obsolete file, file path = %s, the new file ID = %lu\n", targetRemoveFilePath.c_str(), currentFileHeader.file_id_);
+                        } else {
+                            debug_info("Deleted old file ID = %lu since single file gc create new file ID = %lu\n", currentFileHeader.previous_file_id_, currentFileHeader.file_id_);
+                        }
+                    }
+                    if (currentHandlerPtr->total_object_bytes_ > singleFileGCTriggerSize_) {
+                        currentHandlerPtr->gc_result_status_flag_ = kNoGC;
+                    }
+                    currentHandlerPtr->fileOperationMutex_.unlock();
+                    // remove old file
+                    currentHandlerPtr->file_ownership_flag_ = 0;
+                    debug_info("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_);
+                    continue;
+                }
+            } else {
+                if (currentHandlerPtr->gc_result_status_flag_ == kNew || currentHandlerPtr->gc_result_status_flag_ == kMayGC) {
+                    // perform split into two buckets via extend prefix bit (+1)
+                    debug_info("start split for key number = %lu\n", gcResultMap.size());
+                    uint64_t currentUsedPrefixBitNumber = currentHandlerPtr->current_prefix_used_bit_;
+                    uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
+                    if (targetPrefixBitNumber > maxTrieBitNumber_) {
+                        debug_info("GC for file ID = %lu, current file gc type = %d, gcResultMap size = %lu, but next prefix bit number will exceed limit, mark as never GC\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->gc_result_status_flag_, gcResultMap.size());
+                        currentHandlerPtr->gc_result_status_flag_ = kNoGC;
+                        currentHandlerPtr->file_ownership_flag_ = 0;
+                        currentHandlerPtr->fileOperationMutex_.unlock();
+                        continue;
+                    }
+                    uint64_t validObjectSizeCounter = 0;
+                    for (auto keyIt : gcResultMap) {
+                        for (auto valueIt : keyIt.second) {
+                            validObjectSizeCounter += (keyIt.first.size() + valueIt.size());
+                        }
+                    }
+                    if (validObjectSizeCounter > singleFileSplitGCTriggerSize_) {
+                        // split
                         bool isSplitDoneFlag = true;
                         unordered_map<hashStoreFileMetaDataHandler*, string> tempHandlerToPrefixMapForMetadataUpdate;
                         unordered_map<string, hashStoreFileMetaDataHandler*> tempPrefixToHandlerMapForFileSplitGC;
@@ -1164,8 +1285,9 @@ void HashStoreFileManager::processGCRequestWorker()
                                 currentObjectRecordHeader.key_size_ = 0;
                                 currentObjectRecordHeader.value_size_ = 0;
                                 memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                                currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize + sizeof(hashStoreRecordHeader));
+                                uint64_t onDiskWriteSize = currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize + sizeof(hashStoreRecordHeader));
                                 currentFileHandlerPtr->total_object_bytes_ += sizeof(hashStoreRecordHeader);
+                                currentFileHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
                                 currentFileHandlerPtr->total_object_count_++;
                                 currentFileHandlerPtr->file_operation_func_ptr_->flushFile();
                                 debug_trace("flushed new file to filesystem since split gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHandlerPtr->target_file_id_, currentHandlerPtr->target_file_id_);
@@ -1213,104 +1335,100 @@ void HashStoreFileManager::processGCRequestWorker()
                         }
                         continue;
                     } else {
-                        debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->gc_result_status_flag_, gcResultMap.size());
-                        currentHandlerPtr->file_ownership_flag_ = 0;
-                        currentHandlerPtr->fileOperationMutex_.unlock();
-                        continue;
-                    }
-                }
-            } else if (remainObjectNumberPair.first == remainObjectNumberPair.second && remainObjectNumberPair.second == 0) {
-                debug_info("File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
-                currentHandlerPtr->file_ownership_flag_ = 0;
-                currentHandlerPtr->fileOperationMutex_.unlock();
-                continue;
-            } else {
-                debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                // reclaimed space success, rewrite current file to new file
-                if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
-                    currentHandlerPtr->file_operation_func_ptr_->closeFile();
-                }
-                uint64_t targetFileSize = 0;
-                for (auto keyIt : gcResultMap) {
-                    for (auto valueIt : keyIt.second) {
-                        targetFileSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
-                        // debug_info("Rewrite: key = %s, value = %s\n", keyIt.first.c_str(), valueIt.c_str());
-                    }
-                }
-                debug_trace("Rewrite processed size = %lu\n", targetFileSize);
-                targetFileSize += (sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader));
-                char currentWriteBuffer[targetFileSize];
-                uint64_t newObjectNumber = 0;
-                uint64_t currentProcessLocationIndex = 0;
-                hashStoreFileHeader currentFileHeader;
-                currentFileHeader.current_prefix_used_bit_ = currentHandlerPtr->current_prefix_used_bit_;
-                currentFileHeader.file_create_reason_ = kGCFile;
-                currentFileHeader.file_id_ = generateNewFileID();
-                currentFileHeader.previous_file_id_ = currentHandlerPtr->target_file_id_;
-                memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentFileHeader, sizeof(hashStoreFileHeader));
-                currentProcessLocationIndex += sizeof(currentFileHeader);
-                // add file header
-                for (auto keyIt : gcResultMap) {
-                    for (auto valueIt : keyIt.second) {
-                        newObjectNumber++;
+                        // single file rewrite
+                        debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", currentHandlerPtr->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                        // reclaimed space success, rewrite current file to new file
+                        if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                            currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                        }
+                        uint64_t targetFileSize = 0;
+                        for (auto keyIt : gcResultMap) {
+                            for (auto valueIt : keyIt.second) {
+                                targetFileSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
+                                // debug_info("Rewrite: key = %s, value = %s\n", keyIt.first.c_str(), valueIt.c_str());
+                            }
+                        }
+                        debug_trace("Rewrite processed size = %lu\n", targetFileSize);
+                        targetFileSize += (sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader));
+                        char currentWriteBuffer[targetFileSize];
+                        uint64_t newObjectNumber = 0;
+                        uint64_t currentProcessLocationIndex = 0;
+                        hashStoreFileHeader currentFileHeader;
+                        currentFileHeader.current_prefix_used_bit_ = currentHandlerPtr->current_prefix_used_bit_;
+                        currentFileHeader.file_create_reason_ = kGCFile;
+                        currentFileHeader.file_id_ = generateNewFileID();
+                        currentFileHeader.previous_file_id_ = currentHandlerPtr->target_file_id_;
+                        memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentFileHeader, sizeof(hashStoreFileHeader));
+                        currentProcessLocationIndex += sizeof(currentFileHeader);
+                        // add file header
+                        for (auto keyIt : gcResultMap) {
+                            for (auto valueIt : keyIt.second) {
+                                newObjectNumber++;
+                                hashStoreRecordHeader currentObjectRecordHeader;
+                                currentObjectRecordHeader.is_anchor_ = false;
+                                currentObjectRecordHeader.key_size_ = keyIt.first.size();
+                                currentObjectRecordHeader.value_size_ = valueIt.size();
+                                memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+                                currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
+                                memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.c_str(), keyIt.first.size());
+                                currentProcessLocationIndex += keyIt.first.size();
+                                memcpy(currentWriteBuffer + currentProcessLocationIndex, valueIt.c_str(), valueIt.size());
+                                currentProcessLocationIndex += valueIt.size();
+                            }
+                        }
+                        // add gc done flag into bucket file
                         hashStoreRecordHeader currentObjectRecordHeader;
                         currentObjectRecordHeader.is_anchor_ = false;
-                        currentObjectRecordHeader.key_size_ = keyIt.first.size();
-                        currentObjectRecordHeader.value_size_ = valueIt.size();
+                        currentObjectRecordHeader.is_gc_done_ = true;
+                        currentObjectRecordHeader.key_size_ = 0;
+                        currentObjectRecordHeader.value_size_ = 0;
                         memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                        currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
-                        memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.c_str(), keyIt.first.size());
-                        currentProcessLocationIndex += keyIt.first.size();
-                        memcpy(currentWriteBuffer + currentProcessLocationIndex, valueIt.c_str(), valueIt.size());
-                        currentProcessLocationIndex += valueIt.size();
+                        debug_trace("Rewrite done buffer size = %lu, total target write size = %lu\n", currentProcessLocationIndex, targetFileSize);
+                        string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
+                        // create since file not exist
+                        if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                            currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                        } // close old file
+                        currentHandlerPtr->file_operation_func_ptr_->createFile(targetOpenFileName);
+                        if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
+                            currentHandlerPtr->file_operation_func_ptr_->closeFile();
+                        }
+                        // write content and update current file stream to new one.
+                        currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
+                        uint64_t onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
+                        currentHandlerPtr->file_operation_func_ptr_->flushFile();
+                        debug_trace("Rewrite done file size = %lu, file path = %s\n", currentHandlerPtr->file_operation_func_ptr_->getFileSize(), targetOpenFileName.c_str());
+                        // update metadata
+                        currentHandlerPtr->target_file_id_ = currentFileHeader.file_id_;
+                        currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
+                        currentHandlerPtr->total_object_count_ = newObjectNumber + 1;
+                        currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
+                        currentHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
+                        debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n", currentHandlerPtr->total_object_bytes_, currentHandlerPtr->target_file_id_);
+                        string targetRemoveFilePath = workingDir_ + "/" + to_string(currentFileHeader.previous_file_id_) + ".delta";
+                        if (filesystem::exists(targetRemoveFilePath) != false) {
+                            auto removeOldManifestStatus = remove(targetRemoveFilePath.c_str());
+                            if (removeOldManifestStatus == -1) {
+                                debug_error("[ERROR] Could not delete the obsolete file, file path = %s, the new file ID = %lu\n", targetRemoveFilePath.c_str(), currentFileHeader.file_id_);
+                            } else {
+                                debug_info("Deleted old file ID = %lu since single file gc create new file ID = %lu\n", currentFileHeader.previous_file_id_, currentFileHeader.file_id_);
+                            }
+                        }
+                        if (currentHandlerPtr->total_object_bytes_ > singleFileGCTriggerSize_) {
+                            currentHandlerPtr->gc_result_status_flag_ = kNoGC;
+                        }
+                        currentHandlerPtr->fileOperationMutex_.unlock();
+                        // remove old file
+                        currentHandlerPtr->file_ownership_flag_ = 0;
+                        debug_info("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_);
+                        continue;
                     }
+                } else {
+                    debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", currentHandlerPtr->target_file_id_, currentHandlerPtr->gc_result_status_flag_, gcResultMap.size());
+                    currentHandlerPtr->file_ownership_flag_ = 0;
+                    currentHandlerPtr->fileOperationMutex_.unlock();
+                    continue;
                 }
-                // add gc done flag into bucket file
-                hashStoreRecordHeader currentObjectRecordHeader;
-                currentObjectRecordHeader.is_anchor_ = false;
-                currentObjectRecordHeader.is_gc_done_ = true;
-                currentObjectRecordHeader.key_size_ = 0;
-                currentObjectRecordHeader.value_size_ = 0;
-                memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                debug_trace("Rewrite done buffer size = %lu, total target write size = %lu\n", currentProcessLocationIndex, targetFileSize);
-                string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
-                // create since file not exist
-                if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
-                    currentHandlerPtr->file_operation_func_ptr_->closeFile();
-                } // close old file
-                currentHandlerPtr->file_operation_func_ptr_->createFile(targetOpenFileName);
-                if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
-                    currentHandlerPtr->file_operation_func_ptr_->closeFile();
-                }
-                // write content and update current file stream to new one.
-                currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
-                currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
-                currentHandlerPtr->file_operation_func_ptr_->flushFile();
-                debug_trace("Rewrite done file size = %lu, file path = %s\n", currentHandlerPtr->file_operation_func_ptr_->getFileSize(), targetOpenFileName.c_str());
-                // update metadata
-                currentHandlerPtr->target_file_id_ = currentFileHeader.file_id_;
-                currentHandlerPtr->temp_not_flushed_data_bytes_ = 0;
-                currentHandlerPtr->total_object_count_ = newObjectNumber + 1;
-                currentHandlerPtr->total_object_bytes_ = currentProcessLocationIndex + sizeof(hashStoreRecordHeader);
-                debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n", currentHandlerPtr->total_object_bytes_, currentHandlerPtr->target_file_id_);
-                string targetRemoveFilePath = workingDir_ + "/" + to_string(currentFileHeader.previous_file_id_) + ".delta";
-                if (filesystem::exists(targetRemoveFilePath) != false) {
-                    auto removeOldManifestStatus = remove(targetRemoveFilePath.c_str());
-                    if (removeOldManifestStatus == -1) {
-                        debug_error("[ERROR] Could not delete the obsolete file, file path = %s, the new file ID = %lu\n", targetRemoveFilePath.c_str(), currentFileHeader.file_id_);
-                    } else {
-                        debug_info("Deleted old file ID = %lu since single file gc create new file ID = %lu\n", currentFileHeader.previous_file_id_, currentFileHeader.file_id_);
-                    }
-                }
-                if (currentHandlerPtr->total_object_bytes_ > singleFileGCTriggerSize_) {
-                    currentHandlerPtr->gc_result_status_flag_ = kNoGC;
-                }
-                currentHandlerPtr->fileOperationMutex_.unlock();
-                // remove old file
-                currentHandlerPtr->file_ownership_flag_ = 0;
-                debug_info("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_);
-                continue;
             }
         }
     }

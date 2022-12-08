@@ -18,7 +18,7 @@ class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
     ~FileOperation();
-    bool writeFile(char* contentBuffer, uint64_t contentSize);
+    uint64_t writeFile(char* contentBuffer, uint64_t contentSize);
     bool readFile(char* contentBuffer, uint64_t contentSize);
     bool flushFile();
     bool openFile(string path);
