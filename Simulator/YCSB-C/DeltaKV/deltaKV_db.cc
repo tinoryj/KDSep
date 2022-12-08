@@ -180,8 +180,12 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
         options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
         options_.deltaStore_thread_number_limit = config.getDeltaLogThreadNumber();
-        options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixBitNumber();
-        options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixBitNumber() + 2;
+        options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixMinBitNumber();
+        options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixMaxBitNumber();
+        options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
+        options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
+        options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
+        options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
     }
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;
