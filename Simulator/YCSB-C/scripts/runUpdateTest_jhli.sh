@@ -35,7 +35,7 @@ DB_Name="loadedDB"
 ResultLogFolder="ResultLogs"
 MAXRunTimes=1
 Thread_number=1
-rawConfigPath="configDir/deltakv_config.ini"
+rawConfigPath="configDir/deltakv.ini"
 
 usage
 
@@ -50,13 +50,37 @@ for param in $*; do
         sed -i "29s/false/true/g" temp.ini
     elif [[ $param == "kd" ]]; then
         suffix=${suffix}_kd
-        sed -i "30s/false/true/g" temp.ini
+        cp "configDir/deltakv_delta.ini" temp.ini
+    elif [[ $param == "testkd" ]]; then
+        suffix=${suffix}_testkd
+        cp "configDir/deltakv_testkd.ini" temp.ini
     elif [[ $param == "bkv" ]]; then
         suffix=${suffix}_bkv
         sed -i "31s/false/true/g" temp.ini
+    elif [[ `echo $param | grep "req" | wc -l` -eq 1 ]]; then
+        num=`echo $param | sed 's/req//g' | sed 's/m/000000/g' | sed 's/M/000000/g'`
+        KVPairsNumber=$num
+        OperationsNumber=$num
+    elif [[ `echo $param | grep "op" | wc -l` -eq 1 ]]; then
+        num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
+        OperationsNumber=$num
     fi
 done
+
 size="$(( $KVPairsNumber / 1000000 ))M"
+if [[ $size == "0M" ]]; then
+    size="$(( $KVPairsNumber / 1000 ))K"
+elif [[ "$(( $KVPairsNumber % 1000000 ))" -ne 0 ]]; then
+    size="${size}$(( ($KVPairsNumber % 1000000) / 1000 ))K"
+fi
+echo $size
+exit
+
+ops="$(( $OperationsNumber / 1000000 ))M"
+if [[ $ops == "0M" ]]; then
+    ops="$(( $OperationsNumber / 1000 ))K"
+fi
+
 suffix="${suffix}_${size}"
 
 DB_Name=${DB_Name}${suffix}
@@ -81,13 +105,16 @@ echo "<===================== Loading the database =====================>"
 
 if [[ ! -d ${DB_Loaded_Path}/${DB_Name} ]]; then
     output_file=`generate_file_name $ResultLogFolder/LoadDB`
+
+    if [[ -d ${DB_Working_Path}/$DB_Name ]]; then 
+        rm -rf ${DB_Working_Path}/$DB_Name
+    fi
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath $configPath > ${output_file}
     if [[ -f ${DB_Working_Path}/operations.log ]]; then
         mv ${DB_Working_Path}/operations.log $ResultLogFolder/load-operations.log
     fi
     cp -r ${DB_Working_Path}/$DB_Name $DB_Loaded_Path/ # Copy loaded DB
 fi
-exit
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
@@ -110,21 +137,24 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         cat workloada-temp.spec | head -n 20 | tail -n 6
 
         # Running the ycsb-benchmark
-        if [ -d ${DB_Working_Path}/DB_Name ]; then
-            rm -rf ${DB_Working_Path}/DB_Name
+        if [ -d ${DB_Working_Path}/${DB_Name} ]; then
+            rm -rf ${DB_Working_Path}/${DB_Name}
             echo "Deleted old database folder"
         fi
+        echo "cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path}"
         cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path} 
         echo "Copy loaded database"
-        if [ ! -d $DB_Working_Path}/$DB_Name ]; then
+        if [ ! -d ${DB_Working_Path}/$DB_Name ]; then
             echo "Retrived loaded database error"
             exit
         fi
 
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
-        ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath >$ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-Round-$roundIndex.log
+        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-op${ops}`
+        ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath > $output_file
         mv operations.log $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-OverWrite-$OverWriteRatio-operations.log
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
+        exit
 
         # # Running DB count:
         # echo "<===================== Count the database Info (Round $roundIndex) start =====================>"
