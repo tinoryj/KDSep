@@ -1,6 +1,6 @@
 #include "indexBasedStore/gcManager.hh"
 #include "indexBasedStore/configManager.hh"
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include <float.h>
 #include <unordered_set>
 #include <vector>

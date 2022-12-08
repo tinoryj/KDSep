@@ -116,23 +116,29 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     //     cerr << "Load logging files error" << endl;
     // }
     // get rocksdb config
+    struct timeval tv1;
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->openStatistics(tv1);
     ExternDBConfig config = ExternDBConfig(config_file_path);
     int bloomBits = config.getBloomBits();
     size_t blockCacheSize = config.getBlockCache();
     // bool seekCompaction = config.getSeekCompaction();
     bool compression = config.getCompression();
     bool directIO = config.getDirectIO();
+    bool fakeDirectIO = config.getFakeDirectIO();  // for testing
     bool keyValueSeparation = config.getKeyValueSeparation();
     bool keyDeltaSeparation = config.getKeyDeltaSeparation();
     bool blobDbKeyValueSeparation = config.getBlobDbKeyValueSeparation();
     size_t memtableSize = config.getMemtable();
+    uint64_t debugLevel = config.getDebugLevel();
+    DebugManager::getInstance().setDebugLevel(debugLevel);
+    cerr << "debug level set to " << debugLevel << endl;
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
     if (directIO == true) {
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
-        options_.rocksdb_sync = !(keyValueSeparation && keyDeltaSeparation);
+        options_.rocksdb_sync = !keyValueSeparation && !keyDeltaSeparation;
         cerr << "Sync status = " << options_.rocksdb_sync << endl;
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
@@ -177,6 +183,17 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixBitNumber();
         options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixBitNumber() + 2;
     }
+    if (fakeDirectIO) {
+        cerr << "Enabled fake I/O, do not sync" << endl;
+        options_.rocksdbRawOptions_.use_direct_reads = false;
+        options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = false;
+        options_.rocksdbRawOptions_.allow_mmap_reads = true;
+        options_.rocksdbRawOptions_.allow_mmap_writes = true;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
+        options_.rocksdb_sync = false;
+        options_.rocksdb_sync_put = false;
+        options_.rocksdb_sync_merge = false;
+    }
     if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
     } else {
@@ -212,6 +229,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
 
     cerr << "Start create DeltaKVDB instance" << endl;
 
+    DELTAKV_NAMESPACE::ConfigManager::getInstance().setConfigPath(config_file_path.c_str());
+
     bool dbOpenStatus = db_.Open(options_, dbfilename);
     if (!dbOpenStatus) {
         cerr << "Can't open DeltaKV " << dbfilename << endl;
@@ -223,7 +242,10 @@ int DeltaKVDB::Read(const std::string &table, const std::string &key,
                     const std::vector<std::string> *fields,
                     std::vector<KVPair> &result) {
     string value;
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
     int ret = db_.Get(key, &value);
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_GET, tv);
     // outputStream_ << "YCSB Read " << key << " " << value << endl;
     return ret;
 }
@@ -240,11 +262,14 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
                       std::vector<KVPair> &values) {
     rocksdb::Status s;
     string fullValue;
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
     for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
     bool status = db_.Put(key, fullValue);
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_PUT, tv);
     if (!status) {
         cerr << "insert error"
              << endl;
@@ -255,6 +280,8 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
 
 int DeltaKVDB::Update(const std::string &table, const std::string &key,
                       std::vector<KVPair> &values) {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
     for (KVPair &p : values) {
         bool status = db_.Merge(key, p.second);
         if (!status) {
@@ -263,6 +290,7 @@ int DeltaKVDB::Update(const std::string &table, const std::string &key,
         }
         // outputStream_ << "[YCSB] Update op, key = " << key << ", op value = " << p.second << endl;
     }
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_MERGE, tv);
     // s = db_.Flush(rocksdb::FlushOptions());
     return 1;
 }
@@ -270,6 +298,8 @@ int DeltaKVDB::Update(const std::string &table, const std::string &key,
 int DeltaKVDB::OverWrite(const std::string &table, const std::string &key,
                          std::vector<KVPair> &values) {
     string fullValue;
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
     for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
     }
@@ -279,6 +309,7 @@ int DeltaKVDB::OverWrite(const std::string &table, const std::string &key,
         cerr << "OverWrite error" << endl;
         exit(0);
     }
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_PUT, tv);
     // outputStream_ << "[YCSB] Overwrite op, key = " << key << ", value = " << fullValue << endl;
     return 1;
 }
@@ -293,5 +324,7 @@ void DeltaKVDB::printStats() {
 DeltaKVDB::~DeltaKVDB() {
     outputStream_.close();
     db_.Close();
+    DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
+    cerr << "Delete DeltaKVDB complete" << endl;
 }
 }  // namespace ycsbc

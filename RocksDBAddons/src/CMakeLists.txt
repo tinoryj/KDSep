@@ -42,6 +42,7 @@ SET (CMAKE_RANLIB                   "/usr/bin/llvm-ranlib")
 add_library(DeltaKV STATIC 
       utils/murmurHash.cpp
       utils/lruCache.cpp
+      utils/statsRecorder.cc
       utils/timer.cpp
       utils/debug.cpp
       utils/fileOperation.cpp
@@ -60,7 +61,6 @@ add_library(DeltaKV STATIC
       indexBasedStore/logManager.cc
       indexBasedStore/rocksdbKeyManager.cc
       indexBasedStore/segmentGroupManager.cc
-      indexBasedStore/statsRecorder.cc
       indexBasedStore/valueManager.cc
       interface/deltaKVOptions.cpp
       interface/deltaKVInterface.cpp

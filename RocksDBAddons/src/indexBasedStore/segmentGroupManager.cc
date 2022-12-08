@@ -1,6 +1,6 @@
 #include "indexBasedStore/segmentGroupManager.hh"
 #include "indexBasedStore/configManager.hh"
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
 #include <float.h>
 

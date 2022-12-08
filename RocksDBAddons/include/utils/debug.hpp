@@ -12,7 +12,25 @@ enum class DebugOutPutLevel : int {
     ANY
 };
 
-#define DEBUG_LEVEL DebugOutPutLevel::ERROR
+class DebugManager {
+public:
+    static DebugManager& getInstance()
+    {
+        static DebugManager instance; // Guaranteed to be destroyed
+        // Instantiated on first use
+        return instance;
+    }
+    void setDebugLevel(int level) {
+        debugLevel_ = (DebugOutPutLevel)level;
+    }
+    DebugOutPutLevel getDebugLevel() {
+        return debugLevel_;
+    }
+private:
+    DebugOutPutLevel debugLevel_ = DebugOutPutLevel::ERROR;
+};
+
+#define DEBUG_LEVEL DebugManager::getInstance().getDebugLevel() // DebugOutPutLevel::ERROR
 // for color
 #define RESET "\033[0m"
 #define BLACK "\033[30m" /* Black */

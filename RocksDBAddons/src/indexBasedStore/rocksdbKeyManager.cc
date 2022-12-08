@@ -1,5 +1,5 @@
 #include "indexBasedStore/rocksdbKeyManager.hh"
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
 
 namespace DELTAKV_NAMESPACE {

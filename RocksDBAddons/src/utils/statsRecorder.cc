@@ -1,6 +1,5 @@
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include <boost/concept_check.hpp>
-#include "indexBasedStore/configManager.hh"
 
 namespace DELTAKV_NAMESPACE {
 
@@ -56,7 +55,7 @@ StatsRecorder::StatsRecorder(){
     }
 
     // init gc bytes stats
-    unsigned long long segmentSize = ConfigManager::getInstance().getMainSegmentSize();
+    unsigned long long segmentSize = 1048576; // ConfigManager::getInstance().getMainSegmentSize();
     int K  = MAX_DISK;
     // max log segment in a group
     unsigned long long factor = K * 8;
@@ -81,7 +80,7 @@ StatsRecorder::StatsRecorder(){
     }
     gcGroupBytesCount.bucketLen = numBuckets;
     gcGroupBytesCount.bucketSize = bytesPerSlot;
-    int maxGroup = ConfigManager::getInstance().getNumMainSegment() + 1;
+    int maxGroup = 2; //ConfigManager::getInstance().getNumMainSegment() + 1;
     flushGroupCountBucketLen = segmentSize/512+1;
     flushGroupCount.buckets[0] = new unsigned long long [maxGroup]; // data stripes in each flush
     flushGroupCount.buckets[1] = new unsigned long long [flushGroupCountBucketLen]; // updates in each data stripe
@@ -115,6 +114,20 @@ StatsRecorder::~StatsRecorder(){
     do { \
         fprintf(stdout, "%-24s sum:%16llu count:%12llu avg.:%10.2lf per.:%6.2lf%%\n", _NAME_, time[_TYPE_], counts[_TYPE_], time[_TYPE_]*1.0/counts[_TYPE_],time[_TYPE_] * 100.0 / _SUM_); \
     } while (0);
+
+    fprintf(stdout,"------------------------- DELTAKV Request -----------------------------------\n");
+    PRINT_FULL("DeltaKV-put"          , DELTAKV_PUT                    , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-put-rocksdb"  , DELTAKV_PUT_ROCKSDB            , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-put-vLog"     , DELTAKV_PUT_INDEXSTORE         , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-put-dStore"   , DELTAKV_PUT_HASHSTORE          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-get"          , DELTAKV_GET                    , time[DELTAKV_GET]);
+    PRINT_FULL("DeltaKV-get-rocksdb"  , DELTAKV_GET_ROCKSDB            , time[DELTAKV_GET]);
+    PRINT_FULL("DeltaKV-get-vLog"     , DELTAKV_GET_INDEXSTORE         , time[DELTAKV_GET]);
+    PRINT_FULL("DeltaKV-get-dStore"   , DELTAKV_GET_HASHSTORE          , time[DELTAKV_GET]);
+    PRINT_FULL("DeltaKV-merge"        , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-vLog"   , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-dStore" , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
 
     fprintf(stdout,"-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall"           , SET                            , time[SET]);

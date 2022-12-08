@@ -10,10 +10,6 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
     pointerToRawRocksDBForGC_ = pointerToRawRocksDB;
     extractValueSizeThreshold_ = options->extract_to_valueStore_size_lower_bound;
 
-    ConfigManager::getInstance().setConfigPath("vlog_sample_config.ini");
-    struct timeval tv1;
-    StatsRecorder::getInstance()->openStatistics(tv1);
-
     DiskInfo disk1(0, workingDir.c_str(), 1 * 1024 * 1024 * 1024);
     std::vector<DiskInfo> disks;
     disks.push_back(disk1);

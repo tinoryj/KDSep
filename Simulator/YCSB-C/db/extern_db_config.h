@@ -18,6 +18,7 @@ class ExternDBConfig {
     bool seekCompaction_;
     bool compression_;
     bool directIO_;
+    bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
     int gcThreads_;
@@ -54,6 +55,10 @@ class ExternDBConfig {
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
     uint64_t deltaStore_thread_number_limit;
 
+    struct {
+        uint64_t level;
+    } debug_;
+
    public:
     ExternDBConfig(std::string file_path) {
         boost::property_tree::ini_parser::read_ini(file_path, pt_);
@@ -61,6 +66,7 @@ class ExternDBConfig {
         seekCompaction_ = pt_.get<bool>("config.seekCompaction");
         compression_ = pt_.get<bool>("config.compression");
         directIO_ = pt_.get<bool>("config.directIO");
+        fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
         sizeRatio_ = pt_.get<int>("config.sizeRatio");
         gcSize_ = pt_.get<size_t>("config.gcSize");
@@ -96,6 +102,7 @@ class ExternDBConfig {
         deltaLog_prefix_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixBitNumber");
         deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForMetadataCommitThreshold_");
         deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
+        debug_.level = pt_.get<uint64_t>("debug.level");
     }
 
     int getBloomBits() {
@@ -118,6 +125,9 @@ class ExternDBConfig {
     }
     bool getDirectIO() {
         return directIO_;
+    }
+    bool getFakeDirectIO() {
+        return fakeDirectIO_;
     }
     int getNumThreads() {
         return numThreads_;
@@ -220,6 +230,10 @@ class ExternDBConfig {
 
     uint64_t getDeltaLogThreadNumber() {
         return deltaStore_thread_number_limit;
+    }
+
+    uint64_t getDebugLevel() {
+        return debug_.level;
     }
 };
 }  // namespace ycsbc

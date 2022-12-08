@@ -10,7 +10,7 @@
 #include "keyManager.hh"
 #include "logManager.hh"
 #include "segmentGroupManager.hh"
-#include "statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include <pthread.h>
 #include <queue>
 #include <unordered_map>

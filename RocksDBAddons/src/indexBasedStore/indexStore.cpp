@@ -1,6 +1,6 @@
 #include "indexBasedStore/indexStore.hh"
 #include "indexBasedStore/rocksdbKeyManager.hh"
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
 #include "utils/timer.hpp"
 #include <stdlib.h>
@@ -54,7 +54,6 @@ KvServer::~KvServer()
         delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
-    StatsRecorder::DestroyInstance();
 }
 
 bool KvServer::checkKeySize(len_t& keySize)

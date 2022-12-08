@@ -1,5 +1,5 @@
 #include "indexBasedStore/deviceManager.hh"
-#include "indexBasedStore/statsRecorder.hh"
+#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
 #include <fcntl.h>
 #include <sys/mman.h>
