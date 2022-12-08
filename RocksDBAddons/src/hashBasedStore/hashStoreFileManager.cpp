@@ -3,47 +3,33 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreFileManager::HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-    uint64_t objectGlobalGCTriggerSize, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, fileOperationType fileOperationType)
+HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
 {
-    initialTrieBitNumber_ = initialBitNumber;
-    maxTrieBitNumber_ = maxBitNumber;
-    singleFileGCTriggerSize_ = objectGCTriggerSize;
-    globalGCTriggerSize_ = objectGlobalGCTriggerSize;
+    initialTrieBitNumber_ = options->hashStore_init_prefix_bit_number;
+    maxTrieBitNumber_ = options->hashStore_max_prefix_bit_number;
+    uint64_t singleFileGCThreshold = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
+    uint64_t totalHashStoreFileGCThreshold = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
+    singleFileGCTriggerSize_ = singleFileGCThreshold;
+    globalGCTriggerSize_ = totalHashStoreFileGCThreshold;
     workingDir_ = workingDirStr;
     notifyGCMQ_ = notifyGCMQ;
-    fileOperationMethod_ = fileOperationType;
+    fileOperationMethod_ = options->fileOperationMethod_;
+    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
+    operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
+    singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxTrieBitNumber_);
     RetriveHashStoreFileMetaDataList();
 }
 
 HashStoreFileManager::~HashStoreFileManager()
 {
-    while (gcThreadJobDoneFlag_ == false) {
-        asm volatile("");
-        // prevent metadata update before forced gc done;
+    if (enableGCFlag_ == true) {
+        while (gcThreadJobDoneFlag_ == false) {
+            asm volatile("");
+            // prevent metadata update before forced gc done;
+        }
     }
     CloseHashStoreFileMetaDataList();
-}
-
-bool HashStoreFileManager::setOperationNumberThresholdForMetadataUpdata(uint64_t threshold)
-{
-    operationNumberForMetadataCommitThreshold_ = threshold;
-    if (operationNumberForMetadataCommitThreshold_ != threshold) {
-        return false;
-    } else {
-        return true;
-    }
-}
-
-bool HashStoreFileManager::setSplitGCFileSizeLimit(uint64_t threshold)
-{
-    singleFileSplitGCTriggerSize_ = threshold;
-    if (singleFileSplitGCTriggerSize_ != threshold) {
-        return false;
-    } else {
-        return true;
-    }
 }
 
 // Recovery

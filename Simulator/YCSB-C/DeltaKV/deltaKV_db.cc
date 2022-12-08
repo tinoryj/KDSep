@@ -183,9 +183,12 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixMinBitNumber();
         options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixMaxBitNumber();
         options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
-        options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
-        options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
-        options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
+        bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
+        if (enable_gc_flag == true) {
+            options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
+            options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
+            options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
+        }
     }
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;

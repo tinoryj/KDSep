@@ -24,13 +24,13 @@ public:
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     void operationWorker();
     bool setJobDone();
-    bool setOperationNumberThresholdForForcedSingleFileGC(uint64_t threshold);
 
 private:
     uint64_t perFileFlushBufferSizeLimit_;
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
+    bool enable_GC_flag_ = false;
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;

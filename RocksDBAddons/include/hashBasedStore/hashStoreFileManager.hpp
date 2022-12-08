@@ -14,8 +14,7 @@ namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileManager {
 public:
-    HashStoreFileManager(uint64_t initialBitNumber, uint64_t maxBitNumber, uint64_t objectGCTriggerSize,
-        uint64_t objectGlobalGCTriggerSize, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, fileOperationType fileOperationType);
+    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
@@ -27,8 +26,6 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool setOperationNumberThresholdForMetadataUpdata(uint64_t threshold);
-    bool setSplitGCFileSizeLimit(uint64_t threshold);
 
     // GC manager
     void processGCRequestWorker();
@@ -71,6 +68,7 @@ private:
     bool stopMessageQueueFlag_ = false;
     bool shouldDoRecoveryFlag_ = false;
     bool gcThreadJobDoneFlag_ = false;
+    bool enableGCFlag_ = true;
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
 };

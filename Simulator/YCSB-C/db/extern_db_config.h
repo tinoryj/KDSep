@@ -57,6 +57,7 @@ class ExternDBConfig {
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
     uint64_t deltaStore_operationNumberForForcedGCThreshold_;
     uint64_t deltaStore_thread_number_limit;
+    bool deltaStore_enable_gc;
 
     struct {
         uint64_t level;
@@ -109,6 +110,7 @@ class ExternDBConfig {
         deltaStore_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForForcedGCThreshold_");
         deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
         debug_.level = pt_.get<uint64_t>("debug.level");
+        deltaStore_enable_gc = pt_.get<bool>("config.deltaStoreEnableGC");
     }
 
     int getBloomBits() {
@@ -252,6 +254,10 @@ class ExternDBConfig {
 
     uint64_t getDebugLevel() {
         return debug_.level;
+    }
+
+    bool getDeltaStoreGCEnableStatus() {
+        return deltaStore_enable_gc;
     }
 };
 }  // namespace ycsbc

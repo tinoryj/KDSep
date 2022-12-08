@@ -91,6 +91,7 @@ private:
     bool isValueStoreInUseFlag = false;
     bool isBatchedOperationsWithBuffer_ = false;
     bool syncBasedRocksDB_ = false;
+    bool enableDeltaStoreGC_ = true;
     rocksdb::WriteOptions internalWriteOption_;
     rocksdb::WriteOptions internalMergeOption_;
     boost::shared_mutex batchedBufferOperationMtx_;

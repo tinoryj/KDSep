@@ -13,6 +13,12 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
         keyToValueListCache_ = new AppendAbleLRUCache<string, vector<string>>(options->deltaStore_KDLevel_cache_item_number);
     }
     workingDir_ = workingDirStr;
+    operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
+    if (options->enable_deltaStore_garbage_collection == true) {
+        enable_GC_flag_ = true;
+    } else {
+        enable_GC_flag_ = false;
+    }
 }
 
 HashStoreFileOperator::~HashStoreFileOperator()
@@ -21,16 +27,6 @@ HashStoreFileOperator::~HashStoreFileOperator()
         delete keyToValueListCache_;
     }
     delete operationToWorkerMQ_;
-}
-
-bool HashStoreFileOperator::setOperationNumberThresholdForForcedSingleFileGC(uint64_t threshold)
-{
-    operationNumberThresholdForForcedSingleFileGC_ = threshold;
-    if (operationNumberThresholdForForcedSingleFileGC_ != threshold) {
-        return false;
-    } else {
-        return true;
-    }
 }
 
 bool HashStoreFileOperator::setJobDone()
@@ -435,24 +431,28 @@ void HashStoreFileOperator::operationWorker()
                         }
                     }
                 }
-                // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
-                    currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
-                    if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
-                        currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
-                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                        debug_info("Current file ID = %lu exceed file size threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, singleFileSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                if (enable_GC_flag_ == true) {
+                    // insert into GC job queue if exceed the threshold
+                    if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
+                        currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
+                        if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                            currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
+                            notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        } else {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        }
+                    } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
+                        if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                            notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        } else {
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        }
                     } else {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
-                    }
-                } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
-                    if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
-                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    } else {
-                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                     }
                 } else {
@@ -516,24 +516,28 @@ void HashStoreFileOperator::operationWorker()
                         }
                     }
                 }
-                // insert into GC job queue if exceed the threshold
-                if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
-                    currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
-                    if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
-                        currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
-                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                        debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                if (enable_GC_flag_ == true) {
+                    // insert into GC job queue if exceed the threshold
+                    if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= singleFileSizeLimit_ && currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNoGC) {
+                        currentHandlerPtr->file_handler_->no_gc_wait_operation_number_++;
+                        if (currentHandlerPtr->file_handler_->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                            currentHandlerPtr->file_handler_->gc_result_status_flag_ = kMayGC;
+                            notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        } else {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        }
+                    } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
+                        if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
+                            notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
+                        } else {
+                            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
+                            currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        }
                     } else {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
-                    }
-                } else if (currentHandlerPtr->file_handler_->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
-                    if (currentHandlerPtr->file_handler_->gc_result_status_flag_ == kNew || currentHandlerPtr->file_handler_->gc_result_status_flag_ == kMayGC) {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = -1;
-                        notifyGCToManagerMQ_->push(currentHandlerPtr->file_handler_);
-                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, put into GC job queue\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_);
-                    } else {
-                        debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, not put into GC job queue, since file type = %d\n", currentHandlerPtr->file_handler_->target_file_id_, perFileGCSizeLimit_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->gc_result_status_flag_);
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
                     }
                 } else {
@@ -549,6 +553,7 @@ void HashStoreFileOperator::operationWorker()
             }
         }
     }
+    debug_info("Thread of operation worker exit success %p\n", this);
     return;
 }
 

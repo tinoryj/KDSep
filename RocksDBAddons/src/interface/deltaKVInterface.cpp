@@ -221,23 +221,38 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         thList_.push_back(th);
         uint64_t totalNumberOfThreadsAllowed = options.deltaStore_thread_number_limit - 1;
         if (totalNumberOfThreadsAllowed > 2) {
-            uint64_t totalNumberOfThreadsForOperationAllowed = totalNumberOfThreadsAllowed / 2 + 1;
-            uint64_t totalNumberOfThreadsForGCAllowed = totalNumberOfThreadsAllowed - totalNumberOfThreadsForOperationAllowed;
-            for (auto threadID = 0; threadID < totalNumberOfThreadsForGCAllowed; threadID++) {
-                // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-                thList_.push_back(th);
-            }
-            for (auto threadID = 0; threadID < totalNumberOfThreadsForOperationAllowed; threadID++) {
-                // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
-                thList_.push_back(th);
+            if (options.enable_deltaStore_garbage_collection == true) {
+                enableDeltaStoreGC_ = true;
+                uint64_t totalNumberOfThreadsForOperationAllowed = totalNumberOfThreadsAllowed / 2 + 1;
+                uint64_t totalNumberOfThreadsForGCAllowed = totalNumberOfThreadsAllowed - totalNumberOfThreadsForOperationAllowed;
+                for (auto threadID = 0; threadID < totalNumberOfThreadsForGCAllowed; threadID++) {
+                    // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                    th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                    thList_.push_back(th);
+                }
+                for (auto threadID = 0; threadID < totalNumberOfThreadsForOperationAllowed; threadID++) {
+                    // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                    th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                    thList_.push_back(th);
+                }
+            } else {
+                enableDeltaStoreGC_ = false;
+                for (auto threadID = 0; threadID < totalNumberOfThreadsAllowed; threadID++) {
+                    // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                    th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+                    thList_.push_back(th);
+                }
             }
         } else {
             // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
             // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
-            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-            thList_.push_back(th);
+            if (options.enable_deltaStore_garbage_collection == true) {
+                enableDeltaStoreGC_ = true;
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                thList_.push_back(th);
+            } else {
+                enableDeltaStoreGC_ = false;
+            }
             th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
             thList_.push_back(th);
         }
@@ -260,7 +275,9 @@ bool DeltaKV::Close()
         notifyWriteBatchMQ_->done_ = true;
     }
     if (isDeltaStoreInUseFlag == true) {
-        HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
+        if (enableDeltaStoreGC_ == true) {
+            HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
+        }
         HashStoreInterfaceObjPtr_->setJobDone();
     }
     deleteThreadPool();
@@ -1191,10 +1208,13 @@ bool DeltaKV::deleteThreadPool()
 {
     // threadpool_->join();
     // delete threadpool_;
+    debug_info("Start threads join, number = %lu\n", thList_.size());
     for (auto thIt : thList_) {
         thIt->join();
+        debug_info("Thread exit success = %p\n", thIt);
         delete thIt;
     }
+    debug_info("All threads exit success, number = %lu\n", thList_.size());
     return true;
 }
 
