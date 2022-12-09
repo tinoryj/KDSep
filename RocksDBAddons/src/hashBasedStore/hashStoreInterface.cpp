@@ -49,14 +49,14 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
-    string prefixStr;
-    hashStoreFileManagerPtr_->generateHashBasedPrefix(keyStr, prefixStr);
-    debug_trace("Target put key = %s, prefix = %s, value = %s\n", keyStr.c_str(), prefixStr.c_str(), valueStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
+        if (tempFileHandler->total_object_bytes_ == 0 && isAnchor == true) {
+            return true;
+        }
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
@@ -93,9 +93,6 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
 bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
-    string prefixStr;
-    hashStoreFileManagerPtr_->generateHashBasedPrefix(keyStr, prefixStr);
-    debug_trace("Target read key = %s, prefix = %s\n", keyStr.c_str(), prefixStr.c_str());
     if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
         debug_error("[ERROR] Could not get file handler for key = %s\n", keyStr.c_str());
         return false;
