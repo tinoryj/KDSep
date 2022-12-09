@@ -138,8 +138,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
-        options_.rocksdb_sync = !keyValueSeparation && !keyDeltaSeparation;
-        cerr << "Sync status = " << options_.rocksdb_sync << endl;
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
@@ -195,13 +193,13 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
-        options_.rocksdb_sync = false;
         options_.rocksdb_sync_put = false;
         options_.rocksdb_sync_merge = false;
     } else {
-        options_.rocksdb_sync_put = !keyDeltaSeparation;
-        options_.rocksdb_sync_merge = !keyValueSeparation;
+        options_.rocksdb_sync_put = !keyValueSeparation;
+        options_.rocksdb_sync_merge = !keyDeltaSeparation;
     }
+
     if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
     } else {
@@ -217,6 +215,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.disable_auto_compactions = config.getNoCompaction();
     options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
     options_.rocksdbRawOptions_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
+    cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
     cerr << "write buffer size " << options_.rocksdbRawOptions_.write_buffer_size << endl;
     cerr << "write buffer number " << options_.rocksdbRawOptions_.max_write_buffer_number << endl;
     cerr << "num compaction trigger "

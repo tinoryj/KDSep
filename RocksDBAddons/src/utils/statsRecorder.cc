@@ -125,9 +125,9 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("DeltaKV-get-vLog"     , DELTAKV_GET_INDEXSTORE         , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-dStore"   , DELTAKV_GET_HASHSTORE          , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-merge"        , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-merge-vLog"   , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-merge-dStore" , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE_ROCKSDB          , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-vLog"   , DELTAKV_MERGE_INDEXSTORE       , time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge-dStore" , DELTAKV_MERGE_HASHSTORE        , time[DELTAKV_MERGE]);
 
     fprintf(stdout,"-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall"           , SET                            , time[SET]);

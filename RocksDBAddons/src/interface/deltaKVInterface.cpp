@@ -188,12 +188,10 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset internal merge operator
         deltaKVMergeOperatorPtr_ = options.deltaKV_merge_operation_ptr;
     }
-    if (options.rocksdb_sync == true) {
+    if (options.rocksdb_sync_put) {
         internalWriteOption_.sync = true;
-        internalMergeOption_.sync = true;
-    } else if (options.rocksdb_sync_put) {
-        internalWriteOption_.sync = true;
-    } else if (options.rocksdb_sync_merge) {
+    } 
+    if (options.rocksdb_sync_merge) {
         internalMergeOption_.sync = true;
     }
     rocksdb::Status s = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
