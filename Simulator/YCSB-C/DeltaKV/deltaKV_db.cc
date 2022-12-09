@@ -164,10 +164,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
         options_.enable_valueStore = true;
-        options_.rocksdb_sync_merge = true;
     }
     if (keyDeltaSeparation == true) {
-        options_.rocksdb_sync_put = true;
         cerr << "Enabled DeltaLog based KD separation" << endl;
         // deltaKV settings
         options_.enable_deltaStore = true;
@@ -200,6 +198,9 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdb_sync = false;
         options_.rocksdb_sync_put = false;
         options_.rocksdb_sync_merge = false;
+    } else {
+        options_.rocksdb_sync_put = !keyDeltaSeparation;
+        options_.rocksdb_sync_merge = !keyValueSeparation;
     }
     if (keyValueSeparation == true || keyDeltaSeparation == true) {
         options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);

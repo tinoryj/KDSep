@@ -55,6 +55,7 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
         return false;
     } else {
         if (tempFileHandler->total_object_bytes_ == 0 && isAnchor == true) {
+            tempFileHandler->file_ownership_flag_ = 0;
             return true;
         }
         if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
