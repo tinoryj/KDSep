@@ -485,6 +485,7 @@ bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
     memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
     memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
+
     rocksdb::Status s;
     STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValueStr), StatsType::DELTAKV_PUT_ROCKSDB);
     if (!s.ok()) {
@@ -1151,15 +1152,36 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
             }
             // commit to value store
+            bool putToIndexStoreStatus;
+            vector<externalIndexInfo*> storageInfoVecPtr;
+            for (int i = 0; i < (int)keyToValueStoreVec.size(); i++) {
+                storageInfoVecPtr.push_back(new externalIndexInfo);
+            }
+            
+            STAT_TIME_PROCESS(putToIndexStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(keyToValueStoreVec, valueToValueStoreVec, storageInfoVecPtr), StatsType::DELTAKV_PUT_INDEXSTORE);
+                  
             // commit to delta store
             bool putToDeltaStoreStatus;
             STAT_TIME_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
             if (putToDeltaStoreStatus == false) {
                 debug_error("[ERROR] Write batched objects to underlying DeltaStore fault, keyToDeltaStoreVec size = %lu\n", keyToDeltaStoreVec.size());
+            } else if (putToIndexStoreStatus == false) {
+                debug_error("[ERROR] Write batched objects to underlying IndexStore fault, keyToValueStoreVec size = %lu\n", keyToValueStoreVec.size());
             } else {
+                uint64_t valueIndex = 0;
                 for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
                     if (isAnchorFlagToDeltaStoreVec[index] == true) {
-                        // write value;
+                        char writeInternalValueBuffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
+                        internalValueType currentInternalValueType;
+                        currentInternalValueType.mergeFlag_ = false;
+                        currentInternalValueType.rawValueSize_ = valueToValueStoreVec[valueIndex].size();
+                        currentInternalValueType.valueSeparatedFlag_ = true;
+                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                        memcpy(writeInternalValueBuffer + sizeof(internalValueType), storageInfoVecPtr.at(valueIndex), sizeof(externalIndexInfo));
+                        string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
+                        rocksdb::Status s;
+                        STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, keyToValueStoreVec[valueIndex], newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
+                        valueIndex++;
                     } else {
                         char writeInternalValueBuffer[sizeof(internalValueType)];
                         internalValueType currentInternalValueType;

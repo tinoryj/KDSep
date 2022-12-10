@@ -1,5 +1,6 @@
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include <unordered_map>
+#include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
@@ -807,23 +808,32 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
 // file operations - public
 bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     if (opType == kPut || opType == kMultiPut) {
         operationCounterMtx_.lock();
         operationCounterForMetadataCommit_++;
         operationCounterMtx_.unlock();
     }
+
     string prefixStr;
     bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyStr.c_str());
         return false;
     }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP2, tv);
+    gettimeofday(&tv, 0);
     bool fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP3, tv);
+    gettimeofday(&tv, 0);
     if (fileHandlerExistFlag == false && opType == kGet) {
         debug_error("[ERROR] get operation meet not stored buckets, key = %s\n", keyStr.c_str());
         return false;
     } else if (fileHandlerExistFlag == false && opType == kPut) {
         bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP4, tv);
+        gettimeofday(&tv, 0);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -932,7 +942,10 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
         currentFileHandlerPtr->file_create_reason_ = kNewFile;
     }
     // move pointer for return
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     uint64_t finalInsertLevel = objectFileMetaDataTrie_.insert(prefixStr, currentFileHandlerPtr);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP1, tv);
     if (finalInsertLevel == 0) {
         debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", currentFileHandlerPtr->current_prefix_used_bit_, currentFileHandlerPtr->target_file_id_);
         fileHandlerPtr = nullptr;
@@ -1072,7 +1085,9 @@ void HashStoreFileManager::processGCRequestWorker()
             if (currentFileOnDiskSize != currentHandlerPtr->total_object_bytes_) {
                 debug_error("[ERROR] file size in metadata = %lu, in filesystem = %lu\n", currentHandlerPtr->total_object_bytes_, currentFileOnDiskSize);
             }
-            currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_);
+            STAT_TIME_PROCESS(currentHandlerPtr->file_operation_func_ptr_->readFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+            StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr->total_object_bytes_);
+
             // process GC contents
             unordered_map<string, vector<string>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, currentHandlerPtr->total_object_bytes_, gcResultMap);
@@ -1169,7 +1184,10 @@ void HashStoreFileManager::processGCRequestWorker()
                     }
                     // write content and update current file stream to new one.
                     currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
-                    uint64_t onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
+                    uint64_t onDiskWriteSize;
+                    STAT_TIME_PROCESS(onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize), StatsType::DELTAKV_GC_WRITE);
+                    StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSize);
+
                     currentHandlerPtr->file_operation_func_ptr_->flushFile();
                     debug_trace("Rewrite done file size = %lu, file path = %s\n", currentHandlerPtr->file_operation_func_ptr_->getFileSize(), targetOpenFileName.c_str());
                     // update metadata
@@ -1271,7 +1289,11 @@ void HashStoreFileManager::processGCRequestWorker()
                                 currentObjectRecordHeader.key_size_ = 0;
                                 currentObjectRecordHeader.value_size_ = 0;
                                 memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                                uint64_t onDiskWriteSize = currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize + sizeof(hashStoreRecordHeader));
+                                uint64_t onDiskWriteSize; 
+                                
+                                STAT_TIME_PROCESS(onDiskWriteSize = currentFileHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize + sizeof(hashStoreRecordHeader)), StatsType::DELTAKV_GC_WRITE);
+                                StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSize);
+
                                 currentFileHandlerPtr->total_object_bytes_ += sizeof(hashStoreRecordHeader);
                                 currentFileHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
                                 currentFileHandlerPtr->total_object_count_++;
@@ -1381,7 +1403,10 @@ void HashStoreFileManager::processGCRequestWorker()
                         }
                         // write content and update current file stream to new one.
                         currentHandlerPtr->file_operation_func_ptr_->openFile(targetOpenFileName);
-                        uint64_t onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize);
+                        uint64_t onDiskWriteSize;
+                        STAT_TIME_PROCESS(onDiskWriteSize = currentHandlerPtr->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetFileSize), StatsType::DELTAKV_GC_WRITE);
+                        StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSize);
+
                         currentHandlerPtr->file_operation_func_ptr_->flushFile();
                         debug_trace("Rewrite done file size = %lu, file path = %s\n", currentHandlerPtr->file_operation_func_ptr_->getFileSize(), targetOpenFileName.c_str());
                         // update metadata

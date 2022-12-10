@@ -2,7 +2,9 @@
 
 #include "utils/debug.hpp"
 #include <bits/stdc++.h>
+#include <stack>
 #include <shared_mutex>
+#include "utils/statsRecorder.hh"
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
@@ -29,9 +31,29 @@ public:
 
     ~PrefixTree()
     {
-        for (auto it : nodeMap_) {
-            debug_trace("Cleanup node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
-            delete it.second;
+        stack<prefixTreeNode*> stk;
+        prefixTreeNode *p = rootNode_, *pre = nullptr;
+
+        // almost a template for post order traversal ...
+        while (p != nullptr || !stk.empty()) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->leftChildNodePtr_;  // go down one level
+            }
+
+            if (!stk.empty()) {
+                p = stk.top();             // its left children are deleted 
+                stk.pop();
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                    debug_trace("delete p %s\n", p->currentNodePrefix.c_str());
+                    delete p;
+                    pre = p;
+                    p = nullptr; 
+                } else {
+                    stk.push(p);
+                    p = p->rightChildNodePtr_;
+                }
+            }
         }
     }
 
@@ -54,10 +76,10 @@ public:
             status = addPrefixTreeNode(rootNode_, prefixStr, newData, insertAtLevel);
         }
         if (status == true) {
-            debug_trace("Insert to new node success at level = %lu, for prefix = %s, Current Node map size = %lu\n", insertAtLevel, prefixStr.c_str(), nodeMap_.size());
+            debug_trace("Insert to new node success at level = %lu, for prefix = %s\n", insertAtLevel, prefixStr.c_str());
             return insertAtLevel;
         } else {
-            debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %s, Current Node map size = %lu\n", insertAtLevel, prefixStr.c_str(), nodeMap_.size());
+            debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %s\n", insertAtLevel, prefixStr.c_str());
             printNodeMap();
             return 0;
         }
@@ -72,10 +94,10 @@ public:
             status = addPrefixTreeNodeWithFixedBitNumber(rootNode_, prefixStr, fixedBitNumber, newData, insertAtLevel);
         }
         if (status == true) {
-            debug_trace("Insert to new node with fixed bit number =  %lu, success at level =  %lu, for prefix = %s, Current Node map size = %lu\n", fixedBitNumber, insertAtLevel, prefixStr.c_str(), nodeMap_.size());
+            debug_trace("Insert to new node with fixed bit number =  %lu, success at level =  %lu, for prefix = %s\n", fixedBitNumber, insertAtLevel, prefixStr.c_str());
             return insertAtLevel;
         } else {
-            debug_error("[ERROR] Insert to new node with fixed bit number =  %lu, fail at level =  %lu, for prefix = %s, Current Node map size = %lu\n", fixedBitNumber, insertAtLevel, prefixStr.c_str(), nodeMap_.size());
+            debug_error("[ERROR] Insert to new node with fixed bit number =  %lu, fail at level =  %lu, for prefix = %s\n", fixedBitNumber, insertAtLevel, prefixStr.c_str());
             printNodeMap();
             return 0;
         }
@@ -129,9 +151,28 @@ public:
     {
         {
             std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-            for (auto it : nodeMap_) {
-                if (it.second->isLeafNodeFlag_ == true) {
-                    validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
+
+            prefixTreeNode *p = rootNode_, *pre = nullptr;
+            stack<prefixTreeNode*> stk;
+            while (!stk.empty() || p != nullptr) {
+                while (p != nullptr) {
+                    stk.push(p);
+                    p = p->leftChildNodePtr_;
+                }
+
+                if (!stk.empty()) {
+                    p = stk.top();
+                    stk.pop();
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                        if (p->isLeafNodeFlag_ == true) {
+                          validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                        }
+                        pre = p;
+                        p = nullptr; 
+                    } else {
+                        stk.push(p);
+                        p = p->rightChildNodePtr_;
+                    }
                 }
             }
         }
@@ -146,11 +187,32 @@ public:
     {
         {
             std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-            for (auto it : nodeMap_) {
-                if (it.second->currentNodePrefix.size() != 0) {
-                    validObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
+
+            // post order
+            stack<prefixTreeNode*> stk;
+            prefixTreeNode *p = rootNode_, *pre = nullptr;
+            while (!stk.empty() || p != nullptr) {
+                while (p != nullptr) {
+                    stk.push(p);
+                    p = p->leftChildNodePtr_;
+                }
+
+                if (!stk.empty()) {
+                    p = stk.top();
+                    stk.pop();
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                        if (p->currentNodePrefix.size() != 0) {
+                            validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                        }
+                        pre = p;
+                        p = nullptr; 
+                    } else {
+                        stk.push(p);
+                        p = p->rightChildNodePtr_;
+                    }
                 }
             }
+
         }
         if (validObjectList.size() != 0) {
             return true;
@@ -163,9 +225,28 @@ public:
     {
         {
             std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-            for (auto it : nodeMap_) {
-                if (it.second->currentNodePrefix.size() != 0 && it.second->isLeafNodeFlag_ == false) {
-                    invalidObjectList.push_back(make_pair(it.second->currentNodePrefix, it.second->data_));
+
+            stack<prefixTreeNode*> stk;
+            prefixTreeNode *p = rootNode_, *pre = nullptr;
+            while (!stk.empty() || p != nullptr) {
+                while (p != nullptr) {
+                    stk.push(p);
+                    p = p->leftChildNodePtr_;
+                }
+
+                if (!stk.empty()) {
+                    p = stk.top();
+                    stk.pop();
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                        if (p->currentNodePrefix.size() != 0 && p->isLeafNodeFlag_ == false) {
+                            invalidObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                        }
+                        pre = p;
+                        p = nullptr; 
+                    } else {
+                        stk.push(p);
+                        p = p->rightChildNodePtr_;
+                    }
                 }
             }
         }
@@ -179,9 +260,28 @@ public:
     void printNodeMap()
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-        for (auto it : nodeMap_) {
-            if (it.second->currentNodePrefix.size() != 0) {
-                debug_trace("Find node ID = %lu, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", it.first, it.second->isLeafNodeFlag_, it.second->currentNodePrefix.size(), it.second->currentNodePrefix.c_str());
+
+        stack<prefixTreeNode*> stk;
+        prefixTreeNode *p = rootNode_, *pre = nullptr;
+        while (!stk.empty() || p != nullptr) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->leftChildNodePtr_;
+            }
+
+            if (!stk.empty()) {
+                p = stk.top();
+                stk.pop();
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                    if (p->currentNodePrefix.size() != 0) {
+                        debug_trace("Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
+                    }
+                    pre = p;
+                    p = nullptr; 
+                } else {
+                    stk.push(p);
+                    p = p->rightChildNodePtr_;
+                }
             }
         }
     }
@@ -196,7 +296,7 @@ private:
         string currentNodePrefix;
         dataT data_;
     } prefixTreeNode;
-    unordered_map<uint64_t, prefixTreeNode*> nodeMap_;
+
     std::shared_mutex nodeOperationMtx_;
     uint64_t nextNodeID_ = 0;
     uint64_t initBitNumber_;
@@ -209,7 +309,6 @@ private:
         root->isLeafNodeFlag_ = false;
         root->thisNodeID_ = nextNodeID_;
         nextNodeID_++;
-        nodeMap_.insert(make_pair(root->thisNodeID_, root));
         if (currentLevel != initBitNumber_) {
             root->leftChildNodePtr_ = new prefixTreeNode;
             root->rightChildNodePtr_ = new prefixTreeNode;
@@ -236,7 +335,6 @@ private:
                     root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel + 1);
                     root->thisNodeID_ = nextNodeID_;
                     nextNodeID_++;
-                    nodeMap_.insert(make_pair(root->thisNodeID_, root));
                     insertAtLevelID = currentLevel + 1;
                     return true;
                 } else {
@@ -260,7 +358,6 @@ private:
                     root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel + 1);
                     root->thisNodeID_ = nextNodeID_;
                     nextNodeID_++;
-                    nodeMap_.insert(make_pair(root->thisNodeID_, root));
                     insertAtLevelID = currentLevel + 1;
                     return true;
                 } else {
@@ -291,7 +388,6 @@ private:
                 root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel + 1);
                 root->thisNodeID_ = nextNodeID_;
                 nextNodeID_++;
-                nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel + 1;
                 return true;
             } else {
@@ -309,7 +405,6 @@ private:
                 root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel + 1);
                 root->thisNodeID_ = nextNodeID_;
                 nextNodeID_++;
-                nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel + 1;
                 return true;
             } else {
@@ -333,7 +428,6 @@ private:
                     root->isLeafNodeFlag_ = false;
                     root->thisNodeID_ = nextNodeID_;
                     nextNodeID_++;
-                    nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 } else {
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
@@ -352,7 +446,6 @@ private:
                     root->isLeafNodeFlag_ = false;
                     root->thisNodeID_ = nextNodeID_;
                     nextNodeID_++;
-                    nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 } else {
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
@@ -380,7 +473,6 @@ private:
                 root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel);
                 root->thisNodeID_ = nextNodeID_;
                 nextNodeID_++;
-                nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel;
                 return true;
             } else {
@@ -397,7 +489,6 @@ private:
                 root->currentNodePrefix = bitBasedPrefixStr.substr(0, currentLevel);
                 root->thisNodeID_ = nextNodeID_;
                 nextNodeID_++;
-                nodeMap_.insert(make_pair(root->thisNodeID_, root));
                 insertAtLevelID = currentLevel;
                 return true;
             } else {

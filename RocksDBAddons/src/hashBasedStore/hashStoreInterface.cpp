@@ -1,4 +1,5 @@
 #include "hashBasedStore/hashStoreInterface.hpp"
+#include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
@@ -50,7 +51,9 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
-    if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler) != true) {
+    bool ret;
+    STAT_TIME_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DHP_GET_HANDLER);
+    if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
@@ -58,7 +61,8 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
             tempFileHandler->file_ownership_flag_ = 0;
             return true;
         }
-        if (hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor) != true) {
+        STAT_TIME_PROCESS(ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor), StatsType::DHP_INTO_JOBQUEUE);
+        if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
         } else {

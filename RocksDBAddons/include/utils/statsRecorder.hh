@@ -17,11 +17,20 @@ namespace DELTAKV_NAMESPACE {
 
 enum StatsType {
     KEY_IDENTIFY,
+    DELTAKV_TMP1,
+    DELTAKV_TMP2,
+    DELTAKV_TMP3,
+    DELTAKV_TMP4,
+    DELTAKV_GC_READ,
+    DELTAKV_GC_WRITE,
     /* DeltaKV interface */
     DELTAKV_PUT,
     DELTAKV_PUT_ROCKSDB,
     DELTAKV_PUT_INDEXSTORE,
+    DELTAKV_PREPUT_HASHSTORE,
     DELTAKV_PUT_HASHSTORE,
+    DHP_GET_HANDLER,
+    DHP_INTO_JOBQUEUE,
     DELTAKV_GET,
     DELTAKV_GET_ROCKSDB,
     DELTAKV_GET_INDEXSTORE,
@@ -147,6 +156,18 @@ public:
         IOBytes[diskId].second += bytes;
     }
 
+    void inline DeltaGcBytesWrite(unsigned int bytes) {
+        if (!statisticsOpen) return;
+        DeltaGcBytes.first += bytes;
+        DeltaGcTimes.first++;
+    }
+
+    void inline DeltaGcBytesRead(unsigned int bytes) {
+        if (!statisticsOpen) return;
+        DeltaGcBytes.second += bytes;
+        DeltaGcTimes.second++;
+    }
+
     void minMaxGCUpdate(unsigned int mn, unsigned int mx) {
         if (!statisticsOpen) return;
         if (mn < min[GC_UPDATE_COUNT]) min[GC_UPDATE_COUNT] = mn;
@@ -179,6 +200,8 @@ private:
     unsigned long long lsmLookupTime;
     unsigned long long approximateMemoryUsage;
     std::vector<std::pair<unsigned long long, unsigned long long>> IOBytes; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcBytes = {0, 0}; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcTimes = {0, 0};
 
 //    struct hdr_histogram *_updateTimeHistogram;
 //    struct hdr_histogram *_getTimeHistogram;

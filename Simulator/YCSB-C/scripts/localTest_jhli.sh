@@ -7,9 +7,8 @@ if [ -d $DB_Name ]; then
     echo "Deleted old database files"
 fi
 
-cp configDir/rocksdb_test_config.ini ./temp.ini
-#sed -i "30s/NaN/$1/g" temp.ini
-sed -i "29s/NaN/$1/g" temp.ini
+cp configDir/deltakv_test_config.ini ./temp.ini
+sed -i "29s/false/$1/g" temp.ini
 
 echo "<===================== Loading the database =====================>"
 time ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase load -configpath temp.ini > load.log

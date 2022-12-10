@@ -181,6 +181,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
         if (enable_gc_flag == true) {
+            options_.enable_deltaStore_garbage_collection = true;
             options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
             options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
             options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();

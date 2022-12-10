@@ -115,11 +115,20 @@ StatsRecorder::~StatsRecorder(){
         fprintf(stdout, "%-24s sum:%16llu count:%12llu avg.:%10.2lf per.:%6.2lf%%\n", _NAME_, time[_TYPE_], counts[_TYPE_], time[_TYPE_]*1.0/counts[_TYPE_],time[_TYPE_] * 100.0 / _SUM_); \
     } while (0);
 
+    fprintf(stdout,"------------------------- DELTAKV Temp  -------------------------------------\n");
+    PRINT_FULL("DeltaKV-tmp1"   , DELTAKV_TMP1          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-tmp2"   , DELTAKV_TMP2          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-tmp3"   , DELTAKV_TMP3          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-tmp4"   , DELTAKV_TMP4          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-GC-write"     , DELTAKV_GC_WRITE            , 0);
+    PRINT_FULL("DeltaKV-GC-read"      , DELTAKV_GC_READ             , 0);
+
     fprintf(stdout,"------------------------- DELTAKV Request -----------------------------------\n");
     PRINT_FULL("DeltaKV-put"          , DELTAKV_PUT                    , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-rocksdb"  , DELTAKV_PUT_ROCKSDB            , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-vLog"     , DELTAKV_PUT_INDEXSTORE         , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-dStore"   , DELTAKV_PUT_HASHSTORE          , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-preput-dStore", DELTAKV_PREPUT_HASHSTORE       , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-get"          , DELTAKV_GET                    , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-rocksdb"  , DELTAKV_GET_ROCKSDB            , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-vLog"     , DELTAKV_GET_INDEXSTORE         , time[DELTAKV_GET]);
@@ -128,6 +137,10 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE_ROCKSDB          , time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-vLog"   , DELTAKV_MERGE_INDEXSTORE       , time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-dStore" , DELTAKV_MERGE_HASHSTORE        , time[DELTAKV_MERGE]);
+
+    fprintf(stdout,"-------------- DeltaKV HashStore Put (DHP) Breakdown ------------------------\n");
+    PRINT_FULL("DeltaKV-get-handler"  , DHP_GET_HANDLER                , (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
+    PRINT_FULL("DeltaKV-put-jobqueue" , DHP_INTO_JOBQUEUE              , (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
 
     fprintf(stdout,"-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall"           , SET                            , time[SET]);
@@ -262,6 +275,13 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("SetKeyLSM"            , KEY_SET_LSM                     , time[KEY_SET_ALL]);
     PRINT_FULL("SetKeyLSM (Batch)"    , KEY_SET_LSM_BATCH               , time[KEY_SET_ALL]);
     PRINT_FULL("SetKeyCache"          , KEY_SET_CACHE                   , time[KEY_SET_ALL]);
+
+    fprintf(stdout,"-------------------- DeltaStore Bytes Counters ------------------------------\n");
+
+    fprintf(stdout,"dStore GC write bytes     : %16llu (average %16llu, %8llu times)\n", 
+        DeltaGcBytes.first, DeltaGcBytes.first / DeltaGcTimes.first, DeltaGcTimes.first);
+    fprintf(stdout,"dStore GC read bytes      : %16llu (average %16llu, %8llu times)\n", 
+        DeltaGcBytes.second, DeltaGcBytes.second / DeltaGcTimes.second, DeltaGcTimes.second);
 
     fprintf(stdout,"------------------------- Bytes Counters ------------------------------------\n");
     unsigned long long writeIOSum = 0, readIOSum = 0;

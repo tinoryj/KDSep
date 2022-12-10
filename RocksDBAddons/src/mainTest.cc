@@ -350,8 +350,8 @@ bool dump(string path)
 
 int main(int argc, char* argv[])
 {
-    dump(argv[1]);
-    // prefixTreeTest();
+    //dump(argv[1]);
+    prefixTreeTest();
     return 0;
     // string path = "test.log";
     // directIOTest(path);
