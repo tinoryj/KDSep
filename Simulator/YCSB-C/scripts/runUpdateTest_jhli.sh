@@ -141,7 +141,7 @@ ops="op$(( $OperationsNumber / 1000000 ))M"
 if [[ $ops == "0M" ]]; then
     ops="op$(( $OperationsNumber / 1000 ))K"
 elif [[ "$(( $OperationsNumber % 1000000 ))" -ne 0 ]]; then
-    size="${size}$(( ($OperationsNumber % 1000000) / 1000 ))K"
+    ops="${ops}$(( ($OperationsNumber % 1000000) / 1000 ))K"
 fi
 
 suffix="${suffix}_${size}"
@@ -187,6 +187,7 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} ]]; then
     fi
     output_file=`generate_file_name $ResultLogFolder/LoadDB`
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath $configPath > ${output_file}
+    echo "output at $output_file"
     cp -r ${DB_Working_Path}/$DB_Name $DB_Loaded_Path/ # Copy loaded DB
 fi
 

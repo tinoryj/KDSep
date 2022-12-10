@@ -61,10 +61,13 @@ private:
     uint64_t generateNewFileID();
     boost::mutex fileIDGeneratorMtx_;
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap);
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_set<string>& savedAnchors, unordered_map<string, vector<string>>& resultMap);
     bool createHashStoreFileHandlerByPrefixStrForSplitGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID);
     // recovery
     uint64_t deconstructTargetRecoveryContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
+    void singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t targetFileSize);
+    void singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t prefixBitNumber);
+
     bool stopMessageQueueFlag_ = false;
     bool shouldDoRecoveryFlag_ = false;
     bool gcThreadJobDoneFlag_ = false;

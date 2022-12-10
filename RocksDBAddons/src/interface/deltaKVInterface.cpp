@@ -208,6 +208,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
         thList_.push_back(th);
         isBatchedOperationsWithBuffer_ = true;
+        cerr << "Enabled batch operations" << endl;
     }
 
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
@@ -585,7 +586,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
                 auto index = 0;
                 debug_trace("Read from deltaStore object number = %lu\n", deltaValueFromExternalStoreVec->size());
                 for (auto i = 0; i < deltaInfoVec.size(); i++) {
-                    if (deltaInfoVec[i].first == true) {
+                    if (deltaInfoVec[i].first == true) {  // separated
                         finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
                         index++;
                     } else {
@@ -593,7 +594,8 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
                     }
                 }
                 if (index != deltaValueFromExternalStoreVec->size()) {
-                    debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = %lu\n", deltaValueFromExternalStoreVec->size());
+                    debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, index = %d, deltaValueFromExternalStoreVec.size = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size());
+                    exit(-1);
                     delete deltaValueFromExternalStoreVec;
                     return false;
                 } else {

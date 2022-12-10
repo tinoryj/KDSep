@@ -279,9 +279,9 @@ StatsRecorder::~StatsRecorder(){
     fprintf(stdout,"-------------------- DeltaStore Bytes Counters ------------------------------\n");
 
     fprintf(stdout,"dStore GC write bytes     : %16llu (average %16llu, %8llu times)\n", 
-        DeltaGcBytes.first, DeltaGcBytes.first / DeltaGcTimes.first, DeltaGcTimes.first);
+        DeltaGcBytes.first, DeltaGcBytes.first / (DeltaGcTimes.first + 1), DeltaGcTimes.first);
     fprintf(stdout,"dStore GC read bytes      : %16llu (average %16llu, %8llu times)\n", 
-        DeltaGcBytes.second, DeltaGcBytes.second / DeltaGcTimes.second, DeltaGcTimes.second);
+        DeltaGcBytes.second, DeltaGcBytes.second / (DeltaGcTimes.second + 1), DeltaGcTimes.second);
 
     fprintf(stdout,"------------------------- Bytes Counters ------------------------------------\n");
     unsigned long long writeIOSum = 0, readIOSum = 0;

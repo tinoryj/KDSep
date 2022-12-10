@@ -30,8 +30,11 @@ private:
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
-    bool enable_GC_flag_ = false;
+    bool enableGCFlag_ = false;
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
+    void operationWorkerGetFromFile(hashStoreFileMetaDataHandler* fileHandler, hashStoreOperationHandler* opHandler, unordered_map<string, vector<string>>& currentFileProcessMap);
+    void operationWorkerPutAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName);
+    void operationWorkerPut(hashStoreOperationHandler* currentHandlerPtr);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;

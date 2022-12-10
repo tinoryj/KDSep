@@ -375,6 +375,7 @@ private:
         currentLevel++;
         if (currentLevel >= maxBitNumber_) {
             debug_error("[ERROR] Reached max bit number during add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+            exit(-1);
             return false;
         }
         if (bitBasedPrefixStr.at(currentLevel) == '0') {
