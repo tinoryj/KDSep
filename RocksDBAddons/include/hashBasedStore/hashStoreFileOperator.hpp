@@ -14,35 +14,38 @@ class HashStoreFileOperator {
 public:
     HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
     ~HashStoreFileOperator();
-
-    // file operations
+    // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
-    bool putWriteOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<string> valueVec, vector<bool> isAnchorStatusVec);
-    bool putWriteOperationsVectorIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, vector<string> keyVec, vector<string> valueVec, vector<bool> isAnchorStatusVec);
-    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> tempFileHandlerMap);
+    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> batchedWriteOperationsMap);
     bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
+    // file operations without job queue support-> only support single operation
+    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
+    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string* value);
+    // threads with job queue support
     void operationWorker();
     bool setJobDone();
-    bool bufferAnchor(hashStoreFileMetaDataHandler* fileHandler, string key);
-    void put(hashStoreFileMetaDataHandler* fileHandler, string key, string value);
 
 private:
+    // settings
+    string workingDir_;
     uint64_t perFileFlushBufferSizeLimit_;
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
     bool enableGCFlag_ = false;
-    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
-    void operationWorkerGetFromFile(hashStoreFileMetaDataHandler* fileHandler, hashStoreOperationHandler* opHandler, unordered_map<string, vector<string>>& currentFileProcessMap);
-    void operationWorkerPut(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerPutWithCache(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerPutWithoutCahe(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerGetWithCache(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerGetWithoutCache(hashStoreOperationHandler* currentHandlerPtr);
 
-    void putAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName);
+    uint64_t readContentFromFile(hashStoreOperationHandler* opHandler, char* contentBuffer, uint64_t contentSize);
+    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
+
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
-    string workingDir_;
 };
 
 } // namespace DELTAKV_NAMESPACE

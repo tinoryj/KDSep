@@ -23,7 +23,9 @@ enum DBOperationType { kPutOp = 0,
     kMergeOp = 1 };
 
 enum hashStoreFileCreateReason { kNewFile = 0,
-    kGCFile = 1 };
+    kInternalGCFile = 1,
+    kSplitFile = 2,
+    kMergeFile = 3 };
 
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
@@ -37,7 +39,7 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
 
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_ = 0;
-    uint64_t previous_file_id_ = 0;
+    vector<uint64_t> previous_file_id_first_vec_ = 0; // for merge, should contain two different previous file id
     uint64_t current_prefix_used_bit_ = 0;
     hashStoreFileCreateReason file_create_reason_ = kNewFile;
     uint64_t total_object_count_ = 0;
@@ -69,19 +71,26 @@ typedef struct hashStoreReadOperationHandler {
     vector<string>* value_str_vec_;
 } hashStoreReadOperationHandler;
 
+enum operationStatus {
+    kDone = 1,
+    kNotDone = 2,
+    kError = 3
+}
+
 typedef struct hashStoreOperationHandler {
     hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
     hashStoreBaatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
-    bool jobDone = false;
+    operationStatus jobDone_ = kNotDone;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
     uint64_t file_id_;
-    uint64_t previous_file_id_ = 0xffffffffffffffff; // only used for file create reason == kGCFile
+    uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
+    uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
     uint64_t current_prefix_used_bit_;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;

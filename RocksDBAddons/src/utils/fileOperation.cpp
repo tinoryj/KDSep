@@ -197,16 +197,6 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             return false;
         }
-        // uint64_t currentFindDataSize = 0;
-        // for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
-        //     uint32_t currentPageContentSize = 0;
-        //     memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
-        //     currentFindDataSize += currentPageContentSize;
-        // }
-        // if (currentFindDataSize > contentSize) {
-        //     debug_error("[ERROR] Read find data size = %lu, but request size = %lu, may lead to buffer overflow, stop read fuinction\n", currentFindDataSize, contentSize);
-        //     return false;
-        // }
         uint64_t currentReadDoneSize = 0;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;

@@ -68,17 +68,21 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
         struct timeval tv;
         gettimeofday(&tv, 0);
         if (isAnchor) {
-            // Directly buffering instead of putting into the queue saves 3-4us 
-            hashStoreFileOperatorPtr_->bufferAnchor(tempFileHandler, keyStr);
-//            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            if (internalOptionsPtr_->enable_batched_operations_ == true) {
+                ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            } else {
+                hashStoreFileOperatorPtr_->bufferAnchor(tempFileHandler, keyStr);
+            }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_ANCHOR, tv);
-        } else { 
-            hashStoreFileOperatorPtr_->put(tempFileHandler, keyStr, valueStr);
-//            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+        } else {
+            if (internalOptionsPtr_->enable_batched_operations_ == true) {
+                ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            } else {
+                hashStoreFileOperatorPtr_->put(tempFileHandler, keyStr, valueStr);
+            }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_DELTA, tv);
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE, tv);
-
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
