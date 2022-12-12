@@ -24,6 +24,8 @@ public:
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     void operationWorker();
     bool setJobDone();
+    bool bufferAnchor(hashStoreFileMetaDataHandler* fileHandler, string key);
+    void put(hashStoreFileMetaDataHandler* fileHandler, string key, string value);
 
 private:
     uint64_t perFileFlushBufferSizeLimit_;
@@ -33,8 +35,9 @@ private:
     bool enableGCFlag_ = false;
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
     void operationWorkerGetFromFile(hashStoreFileMetaDataHandler* fileHandler, hashStoreOperationHandler* opHandler, unordered_map<string, vector<string>>& currentFileProcessMap);
-    void operationWorkerPutAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName);
     void operationWorkerPut(hashStoreOperationHandler* currentHandlerPtr);
+
+    void putAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;

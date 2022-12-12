@@ -120,27 +120,53 @@ StatsRecorder::~StatsRecorder(){
     PRINT_FULL("DeltaKV-tmp2"   , DELTAKV_TMP2          , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-tmp3"   , DELTAKV_TMP3          , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-tmp4"   , DELTAKV_TMP4          , time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-GC-write"     , DELTAKV_GC_WRITE            , 0);
-    PRINT_FULL("DeltaKV-GC-read"      , DELTAKV_GC_READ             , 0);
+    PRINT_FULL("DKV-gc-write-back"    , DELTAKV_WRITE_BACK             , 0);
+    PRINT_FULL("DKV-get-write-back"   , DELTAKV_GET_WRITE_BACK         , 0);
 
     fprintf(stdout,"------------------------- DELTAKV Request -----------------------------------\n");
     PRINT_FULL("DeltaKV-put"          , DELTAKV_PUT                    , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-rocksdb"  , DELTAKV_PUT_ROCKSDB            , time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-vLog"     , DELTAKV_PUT_INDEXSTORE         , time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-put-dStore"   , DELTAKV_PUT_HASHSTORE          , time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-preput-dStore", DELTAKV_PREPUT_HASHSTORE       , time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-put-dStore"   , DELTAKV_PUT_HASHSTORE_INTERFACE, time[DELTAKV_PUT]);
+    fprintf(stdout,"\n");
     PRINT_FULL("DeltaKV-get"          , DELTAKV_GET                    , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-rocksdb"  , DELTAKV_GET_ROCKSDB            , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-vLog"     , DELTAKV_GET_INDEXSTORE         , time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-dStore"   , DELTAKV_GET_HASHSTORE          , time[DELTAKV_GET]);
+    fprintf(stdout,"\n");
     PRINT_FULL("DeltaKV-merge"        , DELTAKV_MERGE                  , time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE_ROCKSDB          , time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-vLog"   , DELTAKV_MERGE_INDEXSTORE       , time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-dStore" , DELTAKV_MERGE_HASHSTORE        , time[DELTAKV_MERGE]);
 
-    fprintf(stdout,"-------------- DeltaKV HashStore Put (DHP) Breakdown ------------------------\n");
-    PRINT_FULL("DeltaKV-get-handler"  , DHP_GET_HANDLER                , (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
-    PRINT_FULL("DeltaKV-put-jobqueue" , DHP_INTO_JOBQUEUE              , (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
+    fprintf(stdout,"----------- DeltaKV HashStore Put Interface Breakdown -----------------------\n");
+
+    PRINT_FULL("put"                  , DELTAKV_PUT_HASHSTORE_INTERFACE    , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("put-get-handler"      , DELTAKV_PUT_HASHSTORE_GET_HANDLER  , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("put-queue"            , DELTAKV_PUT_HASHSTORE_QUEUE        , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("  - queue-anchor"     , DELTAKV_PUT_HASHSTORE_QUEUE_ANCHOR , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("  - queue-delta"      , DELTAKV_PUT_HASHSTORE_QUEUE_DELTA  , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("put-wait"             , DELTAKV_PUT_HASHSTORE_WAIT        , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("  - wait-delta"       , DELTAKV_PUT_HASHSTORE_WAIT_DELTA  , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+    PRINT_FULL("  - wait-anchor"      , DELTAKV_PUT_HASHSTORE_WAIT_ANCHOR , time[DELTAKV_PUT_HASHSTORE_INTERFACE]);
+
+    fprintf(stdout,"-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
+    PRINT_FULL("worker-put"           , DELTAKV_HASHSTORE_WORKER_PUT   , (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
+    PRINT_FULL("- put-file-lock"      , DELTAKV_HASHSTORE_WORKER_PUT_LOCK, time[DELTAKV_HASHSTORE_WORKER_PUT]);
+    PRINT_FULL("  - put-file-write"   , DELTAKV_HASHSTORE_WORKER_PUT_IO, time[DELTAKV_HASHSTORE_WORKER_PUT]);
+    PRINT_FULL("- put anchor"         , DELTAKV_HASHSTORE_WORKER_PUT_ANCHOR, time[DELTAKV_HASHSTORE_WORKER_PUT]);
+    PRINT_FULL("- put delta"          , DELTAKV_HASHSTORE_WORKER_PUT_DELTA, time[DELTAKV_HASHSTORE_WORKER_PUT]);
+
+    fprintf(stdout,"-------------- DeltaKV HashStore Get Breakdown ------------------------------\n");
+    PRINT_FULL("worker-get"           , DELTAKV_HASHSTORE_WORKER_GET        , (time[DELTAKV_HASHSTORE_WORKER_GET]));
+    PRINT_FULL("worker-get-cache"     , DELTAKV_HASHSTORE_WORKER_GET_CACHE  , (time[DELTAKV_HASHSTORE_WORKER_GET]));
+    PRINT_FULL("worker-get-file"      , DELTAKV_HASHSTORE_WORKER_GET_FILE   , (time[DELTAKV_HASHSTORE_WORKER_GET]));
+    PRINT_FULL("worker-get-file-io"   , DELTAKV_HASHSTORE_WORKER_GET_IO     , (time[DELTAKV_HASHSTORE_WORKER_GET]));
+
+    fprintf(stdout,"-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
+    PRINT_FULL("worker-gc"            , DELTAKV_HASHSTORE_WORKER_GC    , (time[DELTAKV_GET]));
+    PRINT_FULL("- gc read"            , DELTAKV_GC_READ             , time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("- gc write"           , DELTAKV_GC_WRITE            , time[DELTAKV_HASHSTORE_WORKER_GC]);
 
     fprintf(stdout,"-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall"           , SET                            , time[SET]);

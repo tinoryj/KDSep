@@ -24,7 +24,7 @@ public:
     KvServer(DeviceManager* deviceManager, rocksdb::DB* lsm);
     ~KvServer();
 
-    bool putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& storageInfoVec);
+    bool putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& storageInfoVec, bool sync = true);
     bool getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed = true);
     //    void getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize);
     //    bool delValue (char *key, len_t keySize);

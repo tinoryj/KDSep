@@ -188,7 +188,7 @@ ValueManager::~ValueManager()
     delete _slave.dm;
 }
 
-ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valueStr, len_t valueSize, const ValueLocation& oldValueLoc, int hotness)
+ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valueStr, len_t valueSize, const ValueLocation& oldValueLoc, bool sync, int hotness)
 {
     ValueLocation valueLoc;
 
@@ -324,7 +324,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     offset_t newOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
-    if (!Segment::canFit(pool, 1) || ConfigManager::getInstance().getUpdateKVBufferSize() <= 0) {
+    if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 && sync)) {
 //        _GCLock.unlock();
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);

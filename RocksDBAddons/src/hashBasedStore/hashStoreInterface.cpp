@@ -4,7 +4,7 @@
 namespace DELTAKV_NAMESPACE {
 
 HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-    HashStoreFileOperator*& hashStoreFileOperator)
+    HashStoreFileOperator*& hashStoreFileOperator, messageQueue<string*>* notifyWriteBackMQ)
 {
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
@@ -14,7 +14,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     uint64_t singleFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_single_file_minimum_occupancy * internalOptionsPtr_->deltaStore_single_file_maximum_size;
     uint64_t totalHashStoreFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size;
 
-    hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_);
+    hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, notifyWriteBackMQ);
     hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, notifyGCMQ_);
     if (!hashStoreFileManager) {
         debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());
@@ -52,16 +52,33 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_TIME_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DHP_GET_HANDLER);
+
+    STAT_TIME_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
-        if (tempFileHandler->total_object_bytes_ == 0 && isAnchor == true) {
-            tempFileHandler->file_ownership_flag_ = 0;
+        if (isAnchor == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes_ == 0)) {
+            if (tempFileHandler != nullptr) {
+                tempFileHandler->file_ownership_flag_ = 0;
+            }
             return true;
         }
-        STAT_TIME_PROCESS(ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor), StatsType::DHP_INTO_JOBQUEUE);
+
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        if (isAnchor) {
+            // Directly buffering instead of putting into the queue saves 3-4us 
+            hashStoreFileOperatorPtr_->bufferAnchor(tempFileHandler, keyStr);
+//            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_ANCHOR, tv);
+        } else { 
+            hashStoreFileOperatorPtr_->put(tempFileHandler, keyStr, valueStr);
+//            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_DELTA, tv);
+        }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE, tv);
+
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;

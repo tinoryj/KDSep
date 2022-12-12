@@ -1,4 +1,5 @@
 #include "hashBasedStore/hashStoreFileOperator.hpp"
+#include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
@@ -203,6 +204,8 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
     return processedObjectNumber;
 }
 
+// Called after an operation is extracted from operationToWorkerMQ_.
+// Read from file, when the cache does not have the object or there is no cache
 void HashStoreFileOperator::operationWorkerGetFromFile(hashStoreFileMetaDataHandler* fileHandler, hashStoreOperationHandler* opHandler, unordered_map<string, vector<string>>& currentFileProcessMap)
 {
     debug_trace("get from file %s\n", "");
@@ -219,8 +222,10 @@ void HashStoreFileOperator::operationWorkerGetFromFile(hashStoreFileMetaDataHand
         fileHandler->file_operation_func_ptr_->flushFile();
         fileHandler->temp_not_flushed_data_bytes_ = 0;
     }
-    bool readFileStatus = fileHandler->file_operation_func_ptr_->readFile(readBuffer, fileHandler->total_object_bytes_);
+    bool readFileStatus;
+    STAT_TIME_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(readBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_WORKER_GET_IO);
     fileHandler->fileOperationMutex_.unlock();
+
     if (readFileStatus == false) {
         debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", fileHandler->target_file_id_);
         fileHandler->file_ownership_flag_ = 0;
@@ -254,12 +259,25 @@ void HashStoreFileOperator::operationWorkerGetFromFile(hashStoreFileMetaDataHand
 
     debug_trace("get current key related values success, key = %s, value number = %lu\n", keyStr.c_str(), currentFileProcessMap.at(keyStr).size());
     opHandler->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(keyStr).begin(), currentFileProcessMap.at(keyStr).end());
+
+    // Put the cache operation before job done, to avoid some synchronization issues
+    if (keyToValueListCache_) {
+        // insert to cache
+        // should not be in the cache before
+        for (auto mapIt : currentFileProcessMap) {
+            string tempKeyForCacheInsert = mapIt.first;
+            keyToValueListCache_->insertToCache(tempKeyForCacheInsert, mapIt.second);
+            debug_trace("Insert to cache key %s delta num %d\n", mapIt.first.c_str(), (int)mapIt.second.size());
+        }
+    }
+
     fileHandler->file_ownership_flag_ = 0;
     opHandler->jobDone = true;
 } 
 
-// Assume that the file is already created and opened.
-void HashStoreFileOperator::operationWorkerPutAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName) {
+// Assume that the file is already created and opened. It writes the buffered
+// anchors first, then the other deltas.
+void HashStoreFileOperator::putAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName) {
     debug_trace("push %d anchors\n", (int)fileHandler->savedAnchors_.size());
     uint64_t bufferSize = sizeof(hashStoreRecordHeader) * fileHandler->savedAnchors_.size() + size; 
     for (auto& keyIt : fileHandler->savedAnchors_) {
@@ -284,6 +302,10 @@ void HashStoreFileOperator::operationWorkerPutAnchorsAndWriteBuffer(hashStoreFil
         memcpy(buffer + bufferIndex, data, size);
     }
 
+
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     fileHandler->fileOperationMutex_.lock();
 
     // Check whether need to open file 
@@ -299,7 +321,8 @@ void HashStoreFileOperator::operationWorkerPutAnchorsAndWriteBuffer(hashStoreFil
     }
 
     // write content
-    uint64_t onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(buffer, bufferSize);
+    uint64_t onDiskWriteSize; 
+    STAT_TIME_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(buffer, bufferSize), StatsType::DELTAKV_HASHSTORE_WORKER_PUT_IO);
     if (onDiskWriteSize == 0) {
         debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
         exit(-1);
@@ -328,8 +351,108 @@ void HashStoreFileOperator::operationWorkerPutAnchorsAndWriteBuffer(hashStoreFil
     }
     fileHandler->savedAnchors_.clear();
     fileHandler->fileOperationMutex_.unlock();
+
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_PUT_LOCK, tv);
 }
 
+//
+// A simplified version of operationWorkerPut(), just for the anchors.  It saves
+// lots of calculation. If it is executed directly in HashStoreInterface::put(),
+// the writing of anchors can surprisingly save more than 3us for each operation, 
+// compared with putting into operationToWorkerMQ_ and running operationWorkerPut().
+//
+// It is a public function.
+//
+bool HashStoreFileOperator::bufferAnchor(hashStoreFileMetaDataHandler* fileHandler, string key) {
+    fileHandler->savedAnchors_.insert(key);
+    if (keyToValueListCache_ != nullptr) {
+        if (keyToValueListCache_->existsInCache(key)) {
+            debug_trace("key %s clear in cache\n", key.c_str());
+            keyToValueListCache_->getFromCache(key).clear();
+        }
+    }
+    fileHandler->file_ownership_flag_ = 0;
+    return true;
+}
+
+// A simplified version of operationWorkerPut(), just for the deltas.
+// It is a public function.
+void HashStoreFileOperator::put(hashStoreFileMetaDataHandler* fileHandler, string key, string value) {
+    debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu, current file size = %lu - %lu\n", 
+            key.c_str(), fileHandler->target_file_id_, 
+            fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+
+    hashStoreRecordHeader newRecordHeader;
+    newRecordHeader.is_anchor_ = false;
+    newRecordHeader.key_size_ = key.size();
+    newRecordHeader.value_size_ = value.size();
+
+    if (fileHandler->file_operation_func_ptr_->isFileOpen() == false) {
+        hashStoreFileHeader newFileHeader;
+        newFileHeader.current_prefix_used_bit_ = fileHandler->current_prefix_used_bit_;
+        newFileHeader.previous_file_id_ = fileHandler->previous_file_id_;
+        newFileHeader.file_create_reason_ = kNewFile;
+        newFileHeader.file_id_ = fileHandler->target_file_id_;
+        uint64_t size = sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
+        char buffer[size];
+        memcpy(buffer, &newFileHeader, sizeof(newFileHeader));
+        memcpy(buffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
+        memcpy(buffer + sizeof(newFileHeader) + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
+        memcpy(buffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, value.c_str(), newRecordHeader.value_size_);
+
+        // write content
+        putAnchorsAndWriteBuffer(fileHandler, buffer, size, /* openFileName */ workingDir_ + "/" + to_string(fileHandler->target_file_id_) + ".delta");
+    } else {
+        uint64_t size = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
+        char buffer[size];
+        memcpy(buffer, &newRecordHeader, sizeof(newRecordHeader));
+        memcpy(buffer + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
+        memcpy(buffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, value.c_str(), newRecordHeader.value_size_);
+
+        // write content
+        debug_trace("key %s directly write\n", key.c_str());
+        putAnchorsAndWriteBuffer(fileHandler, buffer, size, "");
+    }
+
+    // insert to cache if need
+    if (keyToValueListCache_ != nullptr) {
+        if (keyToValueListCache_->existsInCache(key)) {
+            // insert into cache only if the key has been read
+            keyToValueListCache_->getFromCache(key).push_back(value);
+        }
+    }
+
+    if (enableGCFlag_ == true) {
+        // insert into GC job queue if exceed the threshold
+        if (fileHandler->total_on_disk_bytes_ >= singleFileSizeLimit_ && fileHandler->gc_result_status_flag_ == kNoGC) {
+            fileHandler->no_gc_wait_operation_number_++;
+            if (fileHandler->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
+                fileHandler->file_ownership_flag_ = -1;
+                fileHandler->gc_result_status_flag_ = kMayGC;
+                notifyGCToManagerMQ_->push(fileHandler);
+                debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+            } else {
+                fileHandler->file_ownership_flag_ = 0;
+            }
+        } else if (fileHandler->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
+            if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
+                fileHandler->file_ownership_flag_ = -1;
+                notifyGCToManagerMQ_->push(fileHandler);
+                debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+            } else {
+                debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
+                fileHandler->file_ownership_flag_ = 0;
+            }
+        } else {
+            fileHandler->file_ownership_flag_ = 0;
+        }
+    } else {
+        fileHandler->file_ownership_flag_ = 0;
+    }
+}
+
+// Called after an operation is extracted from operationToWorkerMQ_.
+// The put operations, it can be used for both anchors and deltas.
 void HashStoreFileOperator::operationWorkerPut(hashStoreOperationHandler* currentHandlerPtr) {
     auto fileHandler = currentHandlerPtr->file_handler_;
     debug_trace("receive operations, type = kPut, key = %s, anchor %d, target file ID = %lu, current file size = %lu - %lu\n", 
@@ -337,8 +460,8 @@ void HashStoreFileOperator::operationWorkerPut(hashStoreOperationHandler* curren
             (int)currentHandlerPtr->write_operation_.is_anchor,
             fileHandler->target_file_id_, 
             fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
-    if (enableGCFlag_ && fileHandler->total_on_disk_bytes_ > (1ull << 21)) {
-        debug_error("[ERROR] No... that's crazy. object bytes %lu v.s. disk bytes %lu\n", fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+    if (enableGCFlag_ && fileHandler->total_on_disk_bytes_ > (1ull << 24)) {
+        debug_error("[ERROR] disk bytes too large. object bytes %lu v.s. disk bytes %lu\n", fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
         exit(-1);
     }
     hashStoreRecordHeader newRecordHeader;
@@ -353,7 +476,7 @@ void HashStoreFileOperator::operationWorkerPut(hashStoreOperationHandler* curren
             if (fileHandler->savedAnchors_.size() < 20) { 
                 // do not need to write anything for now
             } else {
-                operationWorkerPutAnchorsAndWriteBuffer(fileHandler, /* buffer */ nullptr, /* size */ 0, /* openFileName */ "");
+                putAnchorsAndWriteBuffer(fileHandler, /* buffer */ nullptr, /* size */ 0, /* openFileName */ "");
             }
             debug_trace("anchors saved %d\n", (int)fileHandler->savedAnchors_.size());
         }
@@ -372,7 +495,7 @@ void HashStoreFileOperator::operationWorkerPut(hashStoreOperationHandler* curren
             memcpy(buffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.value_str_->c_str(), newRecordHeader.value_size_);
 
             // write content
-            operationWorkerPutAnchorsAndWriteBuffer(fileHandler, buffer, size, /* openFileName */ workingDir_ + "/" + to_string(fileHandler->target_file_id_) + ".delta");
+            putAnchorsAndWriteBuffer(fileHandler, buffer, size, /* openFileName */ workingDir_ + "/" + to_string(fileHandler->target_file_id_) + ".delta");
         } else {
             uint64_t size = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
             char buffer[size];
@@ -382,7 +505,7 @@ void HashStoreFileOperator::operationWorkerPut(hashStoreOperationHandler* curren
 
             // write content
             debug_trace("key %s directly write\n", (*currentHandlerPtr->write_operation_.key_str_).c_str());
-            operationWorkerPutAnchorsAndWriteBuffer(fileHandler, buffer, size, "");
+            putAnchorsAndWriteBuffer(fileHandler, buffer, size, "");
         }
     }
     // insert to cache if need
@@ -438,6 +561,8 @@ void HashStoreFileOperator::operationWorker()
         if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
             auto fileHandler = currentHandlerPtr->file_handler_;
             if (currentHandlerPtr->opType_ == kGet) {
+                struct timeval tv;
+                gettimeofday(&tv, 0);
                 auto keyStr = *currentHandlerPtr->read_operation_.key_str_;
                 debug_trace("receive operations, type = kGet, key = %s, target file ID = %lu\n", keyStr.c_str(), fileHandler->target_file_id_);
                 // try extract from cache first
@@ -451,26 +576,31 @@ void HashStoreFileOperator::operationWorker()
                         currentHandlerPtr->read_operation_.value_str_vec_->assign(tempResultVec.begin(), tempResultVec.end());
                         fileHandler->file_ownership_flag_ = 0;
                         currentHandlerPtr->jobDone = true;
-                        continue;
-                    } 
-
-                    // Not exist in cache, find the content in the file
-                    unordered_map<string, vector<string>> currentFileProcessMap;
-                    operationWorkerGetFromFile(fileHandler, currentHandlerPtr, currentFileProcessMap);
-
-                    // insert to cache
-                    for (auto mapIt : currentFileProcessMap) {
-                        string tempKeyForCacheInsert = mapIt.first;
-                        keyToValueListCache_->insertToCache(tempKeyForCacheInsert, mapIt.second);
-                        debug_trace("Insert to cache key %s\n", mapIt.first.c_str());
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GET_CACHE, tv);
+                    } else { 
+                        // Not exist in cache, find the content in the file
+                        unordered_map<string, vector<string>> currentFileProcessMap;
+                        operationWorkerGetFromFile(fileHandler, currentHandlerPtr, currentFileProcessMap);
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GET_FILE, tv);
                     }
                 } else {
                     // no cache, only read content
                     unordered_map<string, vector<string>> currentFileProcessMap;
                     operationWorkerGetFromFile(fileHandler, currentHandlerPtr, currentFileProcessMap);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GET_FILE, tv);
                 }
+                
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GET, tv);
             } else if (currentHandlerPtr->opType_ == kPut) {
+                struct timeval tv;
+                gettimeofday(&tv, 0);
                 operationWorkerPut(currentHandlerPtr);
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_PUT, tv);
+                if (currentHandlerPtr->write_operation_.is_anchor == true) {
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_PUT_ANCHOR, tv);
+                } else {
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_PUT_DELTA, tv);
+                }
             } else if (currentHandlerPtr->opType_ == kMultiPut) {
                 debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", (*currentHandlerPtr->write_operation_.key_str_).c_str(), fileHandler->target_file_id_);
                 // prepare write buffer;

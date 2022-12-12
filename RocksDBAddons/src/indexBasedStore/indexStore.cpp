@@ -63,7 +63,7 @@ bool KvServer::checkKeySize(len_t& keySize)
     return (keySize != 0);
 }
 
-bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& indexInfo)
+bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& indexInfo, bool sync)
 {
     static int putCount = 0;
     putCount++;
@@ -118,7 +118,7 @@ retry_update:
     bool inLSM = oldValueLoc.segmentId == LSM_SEGMENT;
     StatsRecorder::getInstance()->timeProcess(StatsType::UPDATE_KEY_LOOKUP, keyLookupStartTime);
     // update the value of the key, get the new location of value
-    STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc), StatsType::UPDATE_VALUE);
+    STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc, sync), StatsType::UPDATE_VALUE);
 
     debug_trace("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
@@ -229,7 +229,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
 
     if (ret && _cache.lru) {
         STAT_TIME_PROCESS(_cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize), StatsType::KEY_UPDATE_CACHE);
-        debug_trace("insert to cache key %.*s\n", std::min(16, (int)keySize), key);
+        debug_trace("insert to cache key %.*s value %.*s\n", std::min(16, (int)keySize), key, std::min(16, (int)valueSize), value);
     }
 
     delete[] ckey;

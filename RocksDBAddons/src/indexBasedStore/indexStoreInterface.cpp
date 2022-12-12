@@ -29,11 +29,11 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr)
+bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr, bool sync)
 {
     externalIndexInfo valueLoc;
 
-    STAT_TIME_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc), StatsType::UPDATE);
+    STAT_TIME_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc, sync), StatsType::UPDATE);
 
     *storageInfoPtr = valueLoc;
     return true;

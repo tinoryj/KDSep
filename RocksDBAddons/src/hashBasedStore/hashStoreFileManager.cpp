@@ -4,7 +4,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
+HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<string*>* notifyWriteBackMQ)
 {
     initialTrieBitNumber_ = options->hashStore_init_prefix_bit_number;
     maxTrieBitNumber_ = options->hashStore_max_prefix_bit_number;
@@ -14,6 +14,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     globalGCTriggerSize_ = totalHashStoreFileGCThreshold;
     workingDir_ = workingDirStr;
     notifyGCMQ_ = notifyGCMQ;
+    notifyWriteBackMQ_ = notifyWriteBackMQ;
+    gcWriteBackDeltaNum_ = options->deltaStore_write_back_during_gc_threshold;
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
@@ -806,10 +808,10 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
 }
 
 // file operations - public
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr)
+// A modification: add "getForAnchorWriting". If true, and if the file handler
+// does not exist, do not create the file and directly return.  
+bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting)
 {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
     if (opType == kPut || opType == kMultiPut) {
         operationCounterMtx_.lock();
         operationCounterForMetadataCommit_++;
@@ -822,18 +824,21 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyStr.c_str());
         return false;
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP2, tv);
-    gettimeofday(&tv, 0);
     bool fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr);
-    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP3, tv);
-    gettimeofday(&tv, 0);
     if (fileHandlerExistFlag == false && opType == kGet) {
         debug_error("[ERROR] get operation meet not stored buckets, key = %s\n", keyStr.c_str());
         return false;
     } else if (fileHandlerExistFlag == false && opType == kPut) {
+        // Anchor: handler does not exist, do not create the file and directly return  
+        if (getForAnchorWriting) {
+            fileHandlerPtr = nullptr;
+            return true;
+        }
+
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP4, tv);
-        gettimeofday(&tv, 0);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -943,10 +948,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefix(const str
         currentFileHandlerPtr->file_create_reason_ = kNewFile;
     }
     // move pointer for return
-    struct timeval tv;
-    gettimeofday(&tv, 0);
     uint64_t finalInsertLevel = objectFileMetaDataTrie_.insert(prefixStr, currentFileHandlerPtr);
-    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP1, tv);
     if (finalInsertLevel == 0) {
         debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", currentFileHandlerPtr->current_prefix_used_bit_, currentFileHandlerPtr->target_file_id_);
         fileHandlerPtr = nullptr;
@@ -1280,6 +1282,9 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* fileHandler;
         if (notifyGCMQ_->pop(fileHandler)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[fileHandler->total_object_bytes_];
@@ -1302,9 +1307,11 @@ void HashStoreFileManager::processGCRequestWorker()
             // calculate target file size
             uint64_t targetFileSize = 0;
             for (auto keyIt : gcResultMap) {
-                if (keyIt.second.size() > 10) {
+                if (keyIt.second.size() > gcWriteBackDeltaNum_) {
                     debug_warn("key %.*s has %d deltas\n", (int)keyIt.first.size(), keyIt.first.c_str(), (int)keyIt.second.size()); 
                     // TODO for further optimizations: Write back 
+                    string* keyItPtr = new string(keyIt.first);
+                    notifyWriteBackMQ_->push(keyItPtr);
                 }
                 for (auto valueIt : keyIt.second) {
                     targetFileSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
@@ -1317,8 +1324,8 @@ void HashStoreFileManager::processGCRequestWorker()
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                 exit(-1);
-                fileHandler->file_ownership_flag_ = 0;
-                fileHandler->fileOperationMutex_.unlock();
+//                fileHandler->file_ownership_flag_ = 0;
+//                fileHandler->fileOperationMutex_.unlock();
             }
             if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
                 debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
@@ -1329,9 +1336,7 @@ void HashStoreFileManager::processGCRequestWorker()
             if (gcResultMap.size() == 0) {
                 debug_info("File ID = %lu total disk size %lu have no valid objects\n", fileHandler->target_file_id_, fileHandler->total_on_disk_bytes_);
                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                continue;
-            }
-            if (gcResultMap.size() == 1) {
+            } else if (gcResultMap.size() == 1) {
                 // No invalid objects, cannot save space
                 if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
                     if (fileHandler->gc_result_status_flag_ == kNew) {
@@ -1340,28 +1345,23 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", fileHandler->target_file_id_, gcResultMap.size());
                         fileHandler->fileOperationMutex_.unlock();
-                        continue;
-                    }
-                    if (fileHandler->gc_result_status_flag_ == kMayGC) {
+                    } else if (fileHandler->gc_result_status_flag_ == kMayGC) {
                         // Mark this file as could not GC;
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", fileHandler->target_file_id_, gcResultMap.size());
                         fileHandler->fileOperationMutex_.unlock();
-                        continue;
                     }
                 } else {
                     // single file rewrite
                     debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                     singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                    continue;
                 }
             } else {
                 if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
                     // perform split into two buckets via extend prefix bit (+1)
                     if (targetFileSize <= singleFileSplitGCTriggerSize_) {
                         singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                        continue;
                     } else {
                         debug_info("try split for key number = %lu\n", gcResultMap.size());
                         uint64_t currentUsedPrefixBitNumber = fileHandler->current_prefix_used_bit_;
@@ -1369,25 +1369,24 @@ void HashStoreFileManager::processGCRequestWorker()
                         if (targetPrefixBitNumber > maxTrieBitNumber_) {
                             if (targetFileSize <= singleFileGCTriggerSize_) {
                                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                                continue;
+                            } else {
+                                debug_info("GC for file ID = %lu, current file gc type = %d, gcResultMap size = %lu, but next prefix bit number will exceed limit, mark as never GC\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
+                                fileHandler->gc_result_status_flag_ = kNoGC;
+                                fileHandler->file_ownership_flag_ = 0;
+                                fileHandler->fileOperationMutex_.unlock();
                             }
-                            debug_info("GC for file ID = %lu, current file gc type = %d, gcResultMap size = %lu, but next prefix bit number will exceed limit, mark as never GC\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
-                            fileHandler->gc_result_status_flag_ = kNoGC;
-                            fileHandler->file_ownership_flag_ = 0;
-                            fileHandler->fileOperationMutex_.unlock();
-                            continue;
+                        } else {
+                            singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber);
                         }
-
-                        singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber);
-                        continue;
                     }
                 } else {
                     debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
                     fileHandler->file_ownership_flag_ = 0;
                     fileHandler->fileOperationMutex_.unlock();
-                    continue;
                 }
             }
+
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
         }
     }
     gcThreadJobDoneFlag_ = true;

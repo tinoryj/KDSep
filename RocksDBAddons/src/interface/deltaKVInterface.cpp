@@ -175,6 +175,13 @@ DeltaKV::~DeltaKV()
         delete writeBatchDeque[0];
         delete writeBatchDeque[1];
     }
+    if (notifyWriteBackMQ_) {
+        string* str;
+        while (notifyWriteBackMQ_->pop(str)) {
+            delete str;
+        }
+        delete notifyWriteBackMQ_;
+    }
 }
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
@@ -211,9 +218,13 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         cerr << "Enabled batch operations" << endl;
     }
 
+    writeBackDeltaNum_ = options.deltaStore_write_back_during_reads_threshold;
+
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         isDeltaStoreInUseFlag = true;
-        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_);
+        notifyWriteBackMQ_ = new messageQueue<string*>;
+
+        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, notifyWriteBackMQ_);
         // create deltaStore related threads
         // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
         boost::thread* th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
@@ -475,7 +486,7 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value)
     }
 }
 
-bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
+bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value, bool sync)
 {
     // for merge flag check, add internal value header to raw value
     char writeInternalValueBuffer[sizeof(internalValueType) + value.size()];
@@ -488,14 +499,18 @@ bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
     string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
 
     rocksdb::Status s;
-    STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValueStr), StatsType::DELTAKV_PUT_ROCKSDB);
+    rocksdb::WriteOptions wo = internalWriteOption_;
+    if (sync == false) {
+        wo.sync = false;
+    }
+    STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(wo, key, newWriteValueStr), StatsType::DELTAKV_PUT_ROCKSDB);
     if (!s.ok()) {
         debug_error("[ERROR] Write underlying rocksdb with added value header fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
         return false;
     } else {
         // need to append anchor to delta store
         bool addAnchorStatus;
-        STAT_TIME_PROCESS(addAnchorStatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE);
+        STAT_TIME_PROCESS(addAnchorStatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE_INTERFACE);
         if (addAnchorStatus == true) {
             return true;
         } else {
@@ -508,8 +523,12 @@ bool DeltaKV::PutWithOnlyDeltaStore(const string& key, const string& value)
 bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
 {
     if (value.size() >= HashStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
-        bool status;
-        STAT_TIME_PROCESS(status = HashStoreInterfaceObjPtr_->put(key, value, false), StatsType::DELTAKV_MERGE_HASHSTORE);
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        bool status = HashStoreInterfaceObjPtr_->put(key, value, false);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_MERGE_HASHSTORE, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_INTERFACE, tv);
+
         if (status == true) {
             char writeInternalValueBuffer[sizeof(internalValueType)];
             internalValueType currentInternalValueType;
@@ -539,6 +558,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
         memcpy(writeInternalValueBuffer + sizeof(internalValueType), value.c_str(), value.size());
         string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + value.size());
+
         rocksdb::Status s;
         STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Merge(internalMergeOption_, key, newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
         if (!s.ok()) {
@@ -593,6 +613,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
                         finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                     }
                 }
+
                 if (index != deltaValueFromExternalStoreVec->size()) {
                     debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, index = %d, deltaValueFromExternalStoreVec.size = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size());
                     exit(-1);
@@ -601,6 +622,10 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
                 } else {
                     debug_trace("Start DeltaKV merge operation, internalRawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", internalRawValueStr.c_str(), finalDeltaOperatorsVec.size());
                     deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
+                    if (index > writeBackDeltaNum_) {
+                        debug_warn("during read key %.*s has %d deltas\n", (int)key.size(), key.c_str(), (int)key.size()); 
+                        STAT_TIME_PROCESS(PutWithOnlyDeltaStore(key, *value, false), StatsType::DELTAKV_GET_WRITE_BACK); 
+                    }
                     delete deltaValueFromExternalStoreVec;
                     return true;
                 }
@@ -612,12 +637,12 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value)
     }
 }
 
-bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
+bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value, bool sync)
 {
     if (value.size() >= IndexStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
         externalIndexInfo currentExternalIndexInfo;
         bool status;
-        STAT_TIME_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo), StatsType::DELTAKV_PUT_INDEXSTORE);
+        STAT_TIME_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, sync), StatsType::DELTAKV_PUT_INDEXSTORE);
         if (status == true) {
             char writeInternalValueBuffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
             internalValueType currentInternalValueType;
@@ -628,13 +653,14 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
             memcpy(writeInternalValueBuffer + sizeof(internalValueType), &currentExternalIndexInfo, sizeof(externalIndexInfo));
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
             rocksdb::Status s;
+            // the write option should be not sync here. not touch
             STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
             if (!s.ok()) {
                 debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
                 return false;
             } else {
                 bool updateDeltaStoreWithAnchorFlagstatus;
-                STAT_TIME_PROCESS(updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE);
+                STAT_TIME_PROCESS(updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE_INTERFACE);
                 if (updateDeltaStoreWithAnchorFlagstatus == true) {
                     return true;
                 } else {
@@ -662,7 +688,7 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
             return false;
         } else {
             bool updateDeltaStoreWithAnchorFlagstatus;
-            STAT_TIME_PROCESS(updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE);
+            STAT_TIME_PROCESS(updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, true), StatsType::DELTAKV_PUT_HASHSTORE_INTERFACE);
             if (updateDeltaStoreWithAnchorFlagstatus == true) {
                 return true;
             } else {
@@ -782,13 +808,19 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                             finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                         }
                     }
+
                     if (index != deltaValueFromExternalStoreVec->size()) {
-                        debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), deltaValueFromExternalStoreVec.size = %lu\n", deltaValueFromExternalStoreVec->size());
+                        debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key %s, deltaValueFromExternalStoreVec.size = %lu, index = %d\n", key.c_str(), deltaValueFromExternalStoreVec->size(), index);
+                        exit(-1);
                         delete deltaValueFromExternalStoreVec;
                         return false;
                     } else {
-                        debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
+                        debug_trace("Start DeltaKV merge operation, rawValueStr = %.*s, finalDeltaOperatorsVec.size = %lu\n", 16, rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                         deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
+                        if (index > writeBackDeltaNum_) {
+                            debug_warn("during read key %.*s has %d deltas\n", (int)key.size(), key.c_str(), (int)key.size()); 
+                            STAT_TIME_PROCESS(PutWithValueAndDeltaStore(key, *value, false), StatsType::DELTAKV_GET_WRITE_BACK); 
+                        }
                         delete deltaValueFromExternalStoreVec;
                         return true;
                     }
@@ -801,6 +833,10 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
                 }
                 debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                 deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
+                if (deltaInfoVec.size() > writeBackDeltaNum_) {
+                    debug_warn("during read key %.*s has %d deltas\n", (int)key.size(), key.c_str(), (int)key.size()); 
+                    STAT_TIME_PROCESS(PutWithValueAndDeltaStore(key, *value, false), StatsType::DELTAKV_GET_WRITE_BACK); 
+                }
                 return true;
             }
         } else {
@@ -823,9 +859,55 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value)
     }
 }
 
+bool DeltaKV::tryWriteBack() {
+    static int tryCount = 0;
+    string *writeBackKey, value, key;
+    bool ret;
+    if (tryCount >= 15 && notifyWriteBackMQ_->pop(writeBackKey)) {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        debug_warn("Write back key %s\n", writeBackKey->c_str());
+        key = *writeBackKey;
+
+        if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == false) {
+            ret = GetWithOnlyDeltaStore(key, &value);
+            if (!ret) {
+                debug_error("Do not have key %s. Return\n", key.c_str()); 
+                return false;
+            }
+            ret = PutWithOnlyDeltaStore(key, value, false);
+            if (!ret) {
+                debug_error("Write back key %s failed\n", key.c_str()); 
+                return false;
+            }
+        } else if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == true) {
+            ret = GetWithValueAndDeltaStore(key, &value);
+            if (!ret) {
+                debug_error("Do not have key %s. Return\n", key.c_str()); 
+                return false;
+            }
+            ret = PutWithValueAndDeltaStore(key, value, false);
+            if (!ret) {
+                debug_error("Write back key %s failed\n", key.c_str()); 
+                return false;
+            }
+        } else {
+            debug_error("Delta store not enabled but queue not empty. exit %s\n", "");
+            exit(-1);
+        }
+        delete writeBackKey;
+        tryCount = 0;
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
+    }
+    tryCount = tryCount > 15 ? 15 : tryCount+1;
+    return true;
+}
+
 bool DeltaKV::Put(const string& key, const string& value)
 {
     if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == true) {
+        // TODO not a good position... Think about it later
+        tryWriteBack();
         if (PutWithValueAndDeltaStore(key, value) == false) {
             return false;
         } else {
@@ -838,6 +920,8 @@ bool DeltaKV::Put(const string& key, const string& value)
             return true;
         }
     } else if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == false) {
+        // TODO not a good position... Think about it later
+        tryWriteBack();
         if (PutWithOnlyDeltaStore(key, value) == false) {
             return false;
         } else {
@@ -892,6 +976,8 @@ bool DeltaKV::Get(const string& key, string* value)
         batchedBufferOperationMtx_.unlock();
     }
     if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == true) {
+        // TODO not a good position... Think about it later
+        tryWriteBack();
         if (GetWithValueAndDeltaStore(key, value) == false) {
             return false;
         } else {
@@ -920,6 +1006,8 @@ bool DeltaKV::Get(const string& key, string* value)
             }
         }
     } else if (isDeltaStoreInUseFlag == true && isValueStoreInUseFlag == false) {
+        // TODO not a good position... Think about it later
+        tryWriteBack();
         if (GetWithOnlyDeltaStore(key, value) == false) {
             return false;
         } else {
@@ -1164,7 +1252,7 @@ void DeltaKV::processBatchedOperationsWorker()
                   
             // commit to delta store
             bool putToDeltaStoreStatus;
-            STAT_TIME_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
+            STAT_TIME_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE_INTERFACE);
             if (putToDeltaStoreStatus == false) {
                 debug_error("[ERROR] Write batched objects to underlying DeltaStore fault, keyToDeltaStoreVec size = %lu\n", keyToDeltaStoreVec.size());
             } else if (putToIndexStoreStatus == false) {

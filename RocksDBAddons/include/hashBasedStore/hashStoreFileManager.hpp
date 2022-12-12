@@ -14,7 +14,7 @@ namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileManager {
 public:
-    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ);
+    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<string*>* notifyWriteBackMQ);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
@@ -25,7 +25,7 @@ public:
     bool CreateHashStoreFileMetaDataListIfNotExist();
 
     // file operations
-    bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
 
     // GC manager
     void processGCRequestWorker();
@@ -53,6 +53,7 @@ private:
     uint64_t currentTotalHashStoreFileSize_ = 0;
     uint64_t currentTotalHashStoreFileNumber_ = 0;
     uint64_t targetNewFileID_ = 0;
+    uint64_t gcWriteBackDeltaNum_ = 5;
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
 
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
@@ -74,6 +75,7 @@ private:
     bool enableGCFlag_ = true;
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
+    messageQueue<string*>* notifyWriteBackMQ_;
 };
 
 } // namespace DELTAKV_NAMESPACE

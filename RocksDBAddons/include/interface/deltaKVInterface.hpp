@@ -70,6 +70,10 @@ private:
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber = 3;
     messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
+    messageQueue<string*>* notifyWriteBackMQ_ = nullptr;
+
+    bool tryWriteBack();
+
     // operations
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
@@ -79,11 +83,11 @@ private:
     bool MergeWithOnlyValueStore(const string& key, const string& value);
     bool GetWithOnlyValueStore(const string& key, string* value);
 
-    bool PutWithOnlyDeltaStore(const string& key, const string& value);
+    bool PutWithOnlyDeltaStore(const string& key, const string& value, bool sync = true);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
     bool GetWithOnlyDeltaStore(const string& key, string* value);
 
-    bool PutWithValueAndDeltaStore(const string& key, const string& value);
+    bool PutWithValueAndDeltaStore(const string& key, const string& value, bool sync = true);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
     bool GetWithValueAndDeltaStore(const string& key, string* value);
 
@@ -92,6 +96,8 @@ private:
     bool isBatchedOperationsWithBuffer_ = false;
     bool syncBasedRocksDB_ = false;
     bool enableDeltaStoreGC_ = true;
+    int writeBackDeltaNum_ = 4;
+
     rocksdb::WriteOptions internalWriteOption_;
     rocksdb::WriteOptions internalMergeOption_;
     boost::shared_mutex batchedBufferOperationMtx_;

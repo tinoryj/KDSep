@@ -58,6 +58,9 @@ class ExternDBConfig {
     uint64_t deltaStore_operationNumberForForcedGCThreshold_;
     uint64_t deltaStore_thread_number_limit;
     bool deltaStore_enable_gc;
+    bool deltaStore_enable_batch;
+    uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
+    uint64_t deltaStore_write_back_during_gc_threshold_ = 5;
 
     struct {
         uint64_t level;
@@ -111,6 +114,9 @@ class ExternDBConfig {
         deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
         debug_.level = pt_.get<uint64_t>("debug.level");
         deltaStore_enable_gc = pt_.get<bool>("config.deltaStoreEnableGC");
+        deltaStore_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
+        deltaStore_write_back_during_reads_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringReadsThreshold");
+        deltaStore_write_back_during_gc_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringGCThreshold");
     }
 
     int getBloomBits() {
@@ -258,6 +264,18 @@ class ExternDBConfig {
 
     bool getDeltaStoreGCEnableStatus() {
         return deltaStore_enable_gc;
+    }
+
+    bool getDeltaStoreBatchEnableStatus() {
+        return deltaStore_enable_batch;
+    }
+
+    uint64_t getDeltaStoreWriteBackDuringReadsThreshold() {
+        return deltaStore_write_back_during_reads_threshold_;
+    }
+
+    uint64_t getDeltaStoreWriteBackDuringGCThreshold() {
+        return deltaStore_write_back_during_gc_threshold_;
     }
 };
 }  // namespace ycsbc

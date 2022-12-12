@@ -132,6 +132,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     uint64_t debugLevel = config.getDebugLevel();
     DebugManager::getInstance().setDebugLevel(debugLevel);
     cerr << "debug level set to " << debugLevel << endl;
+
+    options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
+    options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
+
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
     if (directIO == true) {
@@ -143,7 +147,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
     }
-    options_.enable_batched_operations_ = false;
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
         options_.rocksdbRawOptions_.enable_blob_files = true;
@@ -187,6 +190,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
             options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
         }
     }
+    options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
+
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;
         options_.rocksdbRawOptions_.use_direct_reads = false;
