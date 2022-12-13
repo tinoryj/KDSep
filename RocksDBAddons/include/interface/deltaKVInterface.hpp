@@ -9,11 +9,10 @@
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"
 #include "utils/messageQueue.hpp"
-#include <boost/asio.hpp>
-#include <boost/asio/thread_pool.hpp>
+#include <bits/stdc++.h>
 #include <boost/bind/bind.hpp>
-#include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
+#include <shared_mutex>
 
 using namespace std;
 
@@ -53,15 +52,15 @@ public:
 
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
+    bool Get(const string& key, string* value);
     bool PutWithWriteBatch(const string& key, const string& value);
     bool MergeWithWriteBatch(const string& key, const string& value);
-    bool Get(const string& key, string* value);
+    bool GetWithWriteBatch(const string& key, string* value);
+
     vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
     vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
     vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
     bool SingleDelete(const string& key);
-
-    void processBatchedOperationsWorker();
 
 private:
     // batched write
@@ -83,29 +82,49 @@ private:
     bool MergeWithOnlyValueStore(const string& key, const string& value);
     bool GetWithOnlyValueStore(const string& key, string* value);
 
-    bool PutWithOnlyDeltaStore(const string& key, const string& value, bool sync = true);
+    bool PutWithOnlyDeltaStore(const string& key, const string& value);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
     bool GetWithOnlyDeltaStore(const string& key, string* value);
 
-    bool PutWithValueAndDeltaStore(const string& key, const string& value, bool sync = true);
+    bool PutWithValueAndDeltaStore(const string& key, const string& value);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
     bool GetWithValueAndDeltaStore(const string& key, string* value);
 
-    bool isDeltaStoreInUseFlag = false;
-    bool isValueStoreInUseFlag = false;
-    bool isBatchedOperationsWithBuffer_ = false;
-    bool syncBasedRocksDB_ = false;
-    bool enableDeltaStoreGC_ = true;
-    int writeBackDeltaNum_ = 4;
+    void processBatchedOperationsWorker();
+    void processWriteBackOperationsWorker();
+
+    bool isDeltaStoreInUseFlag_ = false;
+    bool isValueStoreInUseFlag_ = false;
+    bool isBatchedOperationsWithBufferInUse_ = false;
+    bool enableDeltaStoreWithBackgroundGCFlag_ = true;
+    int writeBackWhenReadDeltaNumerThreshold_ = 4;
+
+    uint32_t globalSequenceNumber_ = 0;
+    std::shared_mutex globalSequenceNumberGeneratorMtx_;
 
     rocksdb::WriteOptions internalWriteOption_;
     rocksdb::WriteOptions internalMergeOption_;
-    boost::shared_mutex batchedBufferOperationMtx_;
+    std::shared_mutex batchedBufferOperationMtx_;
+
+    typedef struct writeBackObjectPair {
+        string key;
+        string value;
+        uint32_t sequenceNumber;
+        writeBackObjectPair(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+        {
+            key = keyIn;
+            value = valueIn;
+            sequenceNumber = sequenceNumberIn;
+        };
+        writeBackObjectPair() {};
+    } writeBackObjectPair; // key to value pair fpr write back
+    messageQueue<writeBackObjectPair*>* writeBackOperationsQueue_;
+    bool enableWriteBackOperationsFlag_ = false;
+    std::shared_mutex writeBackOperationsMtx_;
+
     // thread management
-    boost::asio::thread_pool* threadpool_;
     vector<boost::thread*> thList_;
-    bool launchThreadPool(uint64_t totalThreadNumber);
-    bool deleteThreadPool();
+    bool deleteExistingThreads();
     // for separated operations
     bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
     // Storage component for delta store

@@ -68,5 +68,7 @@ add_library(DeltaKV STATIC
 )
 
 target_link_libraries(DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
-add_executable(test mainTest.cc)
-target_link_libraries(test DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
+add_executable(deltaDump deltaStoreDump.cc)
+target_link_libraries(deltaDump DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
+# add_executable(test mainTest.cc)
+# target_link_libraries(test DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})

@@ -103,23 +103,21 @@ size_t GCManager::gcVLog()
         }
         assert(flushFront != gcSize);
         // read and fit up only the available part of buffer
-        gcFront = _segmentGroupManager->getLogGCOffset(); 
+        gcFront = _segmentGroupManager->getLogGCOffset();
 
-        if ((gcFront < logTail && logTail - gcFront < gcSize * 2) || 
-           (gcFront > logTail && logTail + capacity - gcFront < gcSize * 2)) {
-            debug_info("GC stop: go through whole log but gcBytes not enough: gcBytes %lu gcSize %lu logHead %lu logTail %lu\n", 
+        if ((gcFront < logTail && logTail - gcFront < gcSize * 2) || (gcFront > logTail && logTail + capacity - gcFront < gcSize * 2)) {
+            debug_info("GC stop: go through whole log but gcBytes not enough: gcBytes %lu gcSize %lu logHead %lu logTail %lu\n",
                 gcBytes, gcSize, gcFront, logTail);
             break;
-        } 
+        }
 
         if (_useMmap) {
             readPool = _deviceManager->readMmap(0, gcFront - flushFront, gcSize, 0);
             Segment::init(_gcSegment.read, 0, readPool, gcSize);
         } else {
-            STAT_TIME_PROCESS(_deviceManager->readAhead(/* diskId = */ 0, gcFront + flushFront, gcSize - flushFront), StatsType::GC_READ_AHEAD);
-            STAT_TIME_PROCESS(_deviceManager->readDisk(/* diskId = */ 0, readPool + flushFront, gcFront + flushFront, gcSize - flushFront), StatsType::GC_READ);
+            STAT_PROCESS(_deviceManager->readAhead(/* diskId = */ 0, gcFront + flushFront, gcSize - flushFront), StatsType::GC_READ_AHEAD);
+            STAT_PROCESS(_deviceManager->readDisk(/* diskId = */ 0, readPool + flushFront, gcFront + flushFront, gcSize - flushFront), StatsType::GC_READ);
         }
-
 
         // mark the amount of data in buffer
         Segment::setWriteFront(_gcSegment.read, gcSize);
@@ -128,14 +126,14 @@ size_t GCManager::gcVLog()
             keySizeOffset = gcSize - remains;
 
             // change key, keySize, value, valueSize, remains, compactedBytes
-            bool ret = scanKeyValue((char*)readPool, gcFront, gcSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize);  
+            bool ret = scanKeyValue((char*)readPool, gcFront, gcSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize);
 
             if (!ret) {
                 break;
             }
 
             // check if we can read the value. Keep it to the next buffer.
-            STAT_TIME_PROCESS(valueLoc = _keyManager->getKey(key), StatsType::GC_KEY_LOOKUP);
+            STAT_PROCESS(valueLoc = _keyManager->getKey(key), StatsType::GC_KEY_LOOKUP);
             debug_trace("read LSM: key [%.*s] offset %lu\n", (int)keySize, KEY_OFFSET(key), valueLoc.offset);
             // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
             if (valueLoc.segmentId == (_isSlave ? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
@@ -143,13 +141,13 @@ size_t GCManager::gcVLog()
                 // buffer full, flush before write
                 if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
                     // Flush to Vlog
-                    STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
+                    STAT_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
                     assert(len > 0);
                     // update metadata
                     for (auto& v : values) {
                         v.offset = (v.offset + logOffset) % capacity;
                     }
-                    STAT_TIME_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
+                    STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
                     if (!ret) {
                         debug_error("Failed to update %lu keys to LSM\n", keys.size());
                         assert(0);
@@ -172,13 +170,13 @@ size_t GCManager::gcVLog()
                 cleanedKeys++;
                 // space is reclaimed directly
                 gcBytes += RECORD_SIZE;
-                // cold storage invalid bytes cleaned 
+                // cold storage invalid bytes cleaned
                 if (_isSlave) {
                     _valueManager->_slave.writtenBytes -= RECORD_SIZE;
                 }
             }
 
-            gcCompactedBytes += compactedBytes; 
+            gcCompactedBytes += compactedBytes;
             gcBytes += compactedBytes;
         }
         if (remains > 0) {
@@ -198,18 +196,17 @@ size_t GCManager::gcVLog()
         gcScanBytes += gcSize - remains;
         _segmentGroupManager->getAndIncrementVLogGCOffset(gcSize - remains);
         debug_info("one loop -- logHead %lu gcScanBytes %lu (%lu keys) gcBytes %lu (%lu keys)\n", _segmentGroupManager->getLogGCOffset(), gcScanBytes, rewrittenKeys + cleanedKeys, gcBytes, cleanedKeys);
-
     }
 
     // final check on remaining data to flush
     if (!keys.empty()) {
 
-        STAT_TIME_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC */ true), StatsType::GC_FLUSH);
+        STAT_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC */ true), StatsType::GC_FLUSH);
         for (auto& v : values) {
             v.offset = (v.offset + logOffset) % capacity;
         }
         // update metadata of flushed data
-        STAT_TIME_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
+        STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
         if (!ret) {
             debug_error("Failed to update %lu keys to LSM\n", keys.size());
             assert(0);

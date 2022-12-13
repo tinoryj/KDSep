@@ -1,10 +1,10 @@
 #pragma once
 
 #include "utils/debug.hpp"
-#include <bits/stdc++.h>
-#include <stack>
-#include <shared_mutex>
 #include "utils/statsRecorder.hh"
+#include <bits/stdc++.h>
+#include <shared_mutex>
+#include <stack>
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
@@ -38,17 +38,17 @@ public:
         while (p != nullptr || !stk.empty()) {
             while (p != nullptr) {
                 stk.push(p);
-                p = p->leftChildNodePtr_;  // go down one level
+                p = p->leftChildNodePtr_; // go down one level
             }
 
             if (!stk.empty()) {
-                p = stk.top();             // its left children are deleted 
+                p = stk.top(); // its left children are deleted
                 stk.pop();
-                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                     debug_trace("delete p %s\n", p->currentNodePrefix.c_str());
                     delete p;
                     pre = p;
-                    p = nullptr; 
+                    p = nullptr;
                 } else {
                     stk.push(p);
                     p = p->rightChildNodePtr_;
@@ -163,12 +163,12 @@ public:
                 if (!stk.empty()) {
                     p = stk.top();
                     stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                         if (p->isLeafNodeFlag_ == true) {
-                          validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                            validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
                         }
                         pre = p;
-                        p = nullptr; 
+                        p = nullptr;
                     } else {
                         stk.push(p);
                         p = p->rightChildNodePtr_;
@@ -200,19 +200,18 @@ public:
                 if (!stk.empty()) {
                     p = stk.top();
                     stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                         if (p->currentNodePrefix.size() != 0) {
                             validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
                         }
                         pre = p;
-                        p = nullptr; 
+                        p = nullptr;
                     } else {
                         stk.push(p);
                         p = p->rightChildNodePtr_;
                     }
                 }
             }
-
         }
         if (validObjectList.size() != 0) {
             return true;
@@ -237,12 +236,12 @@ public:
                 if (!stk.empty()) {
                     p = stk.top();
                     stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                         if (p->currentNodePrefix.size() != 0 && p->isLeafNodeFlag_ == false) {
                             invalidObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
                         }
                         pre = p;
-                        p = nullptr; 
+                        p = nullptr;
                     } else {
                         stk.push(p);
                         p = p->rightChildNodePtr_;
@@ -272,12 +271,12 @@ public:
             if (!stk.empty()) {
                 p = stk.top();
                 stk.pop();
-                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) { 
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                     if (p->currentNodePrefix.size() != 0) {
                         debug_trace("Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
                     }
                     pre = p;
-                    p = nullptr; 
+                    p = nullptr;
                 } else {
                     stk.push(p);
                     p = p->rightChildNodePtr_;
@@ -375,7 +374,6 @@ private:
         currentLevel++;
         if (currentLevel >= maxBitNumber_) {
             debug_error("[ERROR] Reached max bit number during add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
-            exit(-1);
             return false;
         }
         if (bitBasedPrefixStr.at(currentLevel) == '0') {

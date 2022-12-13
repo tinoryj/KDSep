@@ -21,7 +21,8 @@ public:
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
-    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string* value);
+    bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> batchedWriteOperationsMap);
+    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     // threads with job queue support
     void operationWorker();
     bool setJobDone();
@@ -34,14 +35,13 @@ private:
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
     bool enableGCFlag_ = false;
-    bool operationWorkerPutWithCache(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerPutWithoutCahe(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerGetWithCache(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerGetWithoutCache(hashStoreOperationHandler* currentHandlerPtr);
-
-    uint64_t readContentFromFile(hashStoreOperationHandler* opHandler, char* contentBuffer, uint64_t contentSize);
+    bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer);
+    bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
-
+    bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;

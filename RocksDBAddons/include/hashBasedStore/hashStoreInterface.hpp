@@ -25,6 +25,7 @@ public:
 
 private:
     DeltaKVOptions* internalOptionsPtr_;
+    bool shouldUseDirectOperationsFlag_;
     // size information
     uint64_t extractValueSizeThreshold_;
     // get function pointers

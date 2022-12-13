@@ -33,7 +33,7 @@ bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo*
 {
     externalIndexInfo valueLoc;
 
-    STAT_TIME_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc, sync), StatsType::UPDATE);
+    STAT_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), valueStr.c_str(), valueStr.length(), valueLoc, sync), StatsType::UPDATE);
 
     *storageInfoPtr = valueLoc;
     return true;
@@ -57,7 +57,7 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
 
     strcpy(key, keyStr.c_str());
 
-    STAT_TIME_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
+    STAT_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
 
     *valueStrPtr = std::string(value, valueSize);
     debug_trace("get key [%.*s] valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize);

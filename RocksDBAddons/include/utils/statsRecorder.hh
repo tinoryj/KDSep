@@ -1,10 +1,10 @@
 #pragma once
+#include <climits>
+#include <map>
 #include <stdio.h>
 #include <sys/time.h>
-#include <climits>
-#include <unordered_set>
 #include <unordered_map>
-#include <map>
+#include <unordered_set>
 #include <vector>
 
 //#include <hdr_histogram.h>
@@ -30,7 +30,7 @@ enum StatsType {
     DELTAKV_PUT_ROCKSDB,
     DELTAKV_PUT_INDEXSTORE,
     DELTAKV_PREPUT_HASHSTORE,
-    DELTAKV_PUT_HASHSTORE_INTERFACE,
+    DELTAKV_PUT_HASHSTORE,
     DELTAKV_PUT_HASHSTORE_GET_HANDLER,
     DELTAKV_PUT_HASHSTORE_WAIT,
     DELTAKV_PUT_HASHSTORE_WAIT_ANCHOR,
@@ -38,20 +38,19 @@ enum StatsType {
     DELTAKV_PUT_HASHSTORE_QUEUE,
     DELTAKV_PUT_HASHSTORE_QUEUE_ANCHOR,
     DELTAKV_PUT_HASHSTORE_QUEUE_DELTA,
-    DELTAKV_HASHSTORE_WORKER_PUT,
-    DELTAKV_HASHSTORE_WORKER_PUT_LOCK,
-    DELTAKV_HASHSTORE_WORKER_PUT_IO,
-    DELTAKV_HASHSTORE_WORKER_PUT_ANCHOR,
-    DELTAKV_HASHSTORE_WORKER_PUT_DELTA,
-    DELTAKV_HASHSTORE_WORKER_GET,
-    DELTAKV_HASHSTORE_WORKER_GET_CACHE,
-    DELTAKV_HASHSTORE_WORKER_GET_FILE, 
-    DELTAKV_HASHSTORE_WORKER_GET_IO,
+    DELTAKV_HASHSTORE_PUT,
+    DELTAKV_HASHSTORE_PUT_IO_TRAFFIC,
+    DELTAKV_HASHSTORE_GET,
+    DELTAKV_HASHSTORE_GET_CACHE,
+    DELTAKV_HASHSTORE_GET_INSERT_CACHE,
+    DELTAKV_HASHSTORE_GET_FILE,
+    DELTAKV_HASHSTORE_GET_IO_TRAFFIC,
     DELTAKV_HASHSTORE_WORKER_GC,
     DELTAKV_GET,
     DELTAKV_GET_ROCKSDB,
     DELTAKV_GET_INDEXSTORE,
     DELTAKV_GET_HASHSTORE,
+    DELTAKV_GET_HASHSTORE_GET_HANDLER,
     DELTAKV_MERGE,
     DELTAKV_MERGE_ROCKSDB,
     DELTAKV_MERGE_INDEXSTORE,
@@ -133,75 +132,87 @@ enum StatsType {
 };
 
 class StatsRecorder {
- 
-public:
-    static unsigned long long timeAddto(struct timeval &start_time,unsigned long long &resTime);
 
-    static StatsRecorder *getInstance();
+public:
+    static unsigned long long timeAddto(struct timeval& start_time, unsigned long long& resTime);
+
+    static StatsRecorder* getInstance();
     static void DestroyInstance();
 
-#define STAT_TIME_PROCESS(_FUNC_, _TYPE_) \
-    do { \
-        struct timeval startTime; \
-        gettimeofday(&startTime, 0); \
-        _FUNC_; \
+#define STAT_PROCESS(_FUNC_, _TYPE_)                                  \
+    do {                                                              \
+        struct timeval startTime;                                     \
+        gettimeofday(&startTime, 0);                                  \
+        _FUNC_;                                                       \
         StatsRecorder::getInstance()->timeProcess(_TYPE_, startTime); \
-    } while(0);
+    } while (0);
 
-#define STAT_TIME_PROCESS_VS(_FUNC_, _TYPE_, _VS_) \
-    do { \
-        struct timeval startTime; \
-        gettimeofday(&startTime, 0); \
-        _FUNC_; \
+#define STAT_TIME_PROCESS_VS(_FUNC_, _TYPE_, _VS_)                                \
+    do {                                                                          \
+        struct timeval startTime;                                                 \
+        gettimeofday(&startTime, 0);                                              \
+        _FUNC_;                                                                   \
         StatsRecorder::getInstance()->timeProcess(_TYPE_, startTime, 0, 1, _VS_); \
-    } while(0);
+    } while (0);
 
-    bool inline IsGCStart(){
+    bool inline IsGCStart()
+    {
         return startGC;
     }
 
     void totalProcess(StatsType stat, size_t diff, size_t count = 1);
-    unsigned long long timeProcess(StatsType stat, struct timeval &start_time, size_t diff = 0, size_t count = 1, unsigned long long valueSize = 0);
+    unsigned long long timeProcess(StatsType stat, struct timeval& start_time, size_t diff = 0, size_t count = 1, unsigned long long valueSize = 0);
 
-    void inline IOBytesWrite(unsigned int bytes,unsigned int diskId){
-        if (!statisticsOpen) return;
+    void inline IOBytesWrite(unsigned int bytes, unsigned int diskId)
+    {
+        if (!statisticsOpen)
+            return;
         IOBytes[diskId].first += bytes;
     }
 
-    void inline IOBytesRead(unsigned int bytes,unsigned int diskId){
-        if (!statisticsOpen) return;
+    void inline IOBytesRead(unsigned int bytes, unsigned int diskId)
+    {
+        if (!statisticsOpen)
+            return;
         IOBytes[diskId].second += bytes;
     }
 
-    void inline DeltaGcBytesWrite(unsigned int bytes) {
-        if (!statisticsOpen) return;
+    void inline DeltaGcBytesWrite(unsigned int bytes)
+    {
+        if (!statisticsOpen)
+            return;
         DeltaGcBytes.first += bytes;
         DeltaGcTimes.first++;
     }
 
-    void inline DeltaGcBytesRead(unsigned int bytes) {
-        if (!statisticsOpen) return;
+    void inline DeltaGcBytesRead(unsigned int bytes)
+    {
+        if (!statisticsOpen)
+            return;
         DeltaGcBytes.second += bytes;
         DeltaGcTimes.second++;
     }
 
-    void minMaxGCUpdate(unsigned int mn, unsigned int mx) {
-        if (!statisticsOpen) return;
-        if (mn < min[GC_UPDATE_COUNT]) min[GC_UPDATE_COUNT] = mn;
-        if (mx > max[GC_UPDATE_COUNT]) max[GC_UPDATE_COUNT] = mx;
+    void minMaxGCUpdate(unsigned int mn, unsigned int mx)
+    {
+        if (!statisticsOpen)
+            return;
+        if (mn < min[GC_UPDATE_COUNT])
+            min[GC_UPDATE_COUNT] = mn;
+        if (mx > max[GC_UPDATE_COUNT])
+            max[GC_UPDATE_COUNT] = mx;
     }
 
-    void openStatistics(struct timeval &start_time);
-    void printProcess(const char* arg1,unsigned int i);
-
+    void openStatistics(struct timeval& start_time);
+    void printProcess(const char* arg1, unsigned int i);
 
     void putGCGroupStats(unsigned long long validMain, unsigned long long validLog, unsigned long long invalidMain, unsigned long long invalidLog, unsigned long long validLastLog);
-    void putFlushGroupStats(unsigned long long validDataGroups, std::unordered_map<group_id_t, unsigned long long> &counts);
+    void putFlushGroupStats(unsigned long long validDataGroups, std::unordered_map<group_id_t, unsigned long long>& counts);
 
 private:
-    StatsRecorder(); 
+    StatsRecorder();
     ~StatsRecorder();
-  
+
     static StatsRecorder* mInstance;
 
     bool statisticsOpen;
@@ -217,17 +228,16 @@ private:
     unsigned long long lsmLookupTime;
     unsigned long long approximateMemoryUsage;
     std::vector<std::pair<unsigned long long, unsigned long long>> IOBytes; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcBytes = {0, 0}; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcTimes = {0, 0};
+    std::pair<unsigned long long, unsigned long long> DeltaGcBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcTimes = { 0, 0 };
 
-//    struct hdr_histogram *_updateTimeHistogram;
-//    struct hdr_histogram *_getTimeHistogram;
-//    std::map<unsigned long long, struct hdr_histogram*> _getByValueSizeHistogram;
-//    std::map<unsigned long long, struct hdr_histogram*> _updateByValueSizeHistogram;
-
+    //    struct hdr_histogram *_updateTimeHistogram;
+    //    struct hdr_histogram *_getTimeHistogram;
+    //    std::map<unsigned long long, struct hdr_histogram*> _getByValueSizeHistogram;
+    //    std::map<unsigned long long, struct hdr_histogram*> _updateByValueSizeHistogram;
 
     struct Stats {
-        unsigned long long *buckets[2];
+        unsigned long long* buckets[2];
         unsigned long long sum[2];
         unsigned long long count[2];
     };
@@ -250,4 +260,3 @@ private:
 };
 
 }
-

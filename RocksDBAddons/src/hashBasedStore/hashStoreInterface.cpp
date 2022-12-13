@@ -26,6 +26,21 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
+    uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
+    if (totalNumberOfThreadsAllowed > 2) {
+        if (options->enable_deltaStore_garbage_collection == true) {
+            uint64_t totalNumberOfThreadsForOperationAllowed = totalNumberOfThreadsAllowed / 2 + 1;
+            if (totalNumberOfThreadsForOperationAllowed > 1) {
+                shouldUseDirectOperationsFlag_ = false;
+            } else {
+                shouldUseDirectOperationsFlag_ = true;
+            }
+        } else {
+            shouldUseDirectOperationsFlag_ = true;
+        }
+    } else {
+        shouldUseDirectOperationsFlag_ = false;
+    }
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -52,8 +67,7 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-
-    STAT_TIME_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
@@ -64,25 +78,11 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
             }
             return true;
         }
-
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        if (isAnchor) {
-            if (internalOptionsPtr_->enable_batched_operations_ == true) {
-                ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
-            } else {
-                hashStoreFileOperatorPtr_->bufferAnchor(tempFileHandler, keyStr);
-            }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_ANCHOR, tv);
+        if (shouldUseDirectOperationsFlag_ == true) {
+            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, isAnchor);
         } else {
-            if (internalOptionsPtr_->enable_batched_operations_ == true) {
-                ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
-            } else {
-                hashStoreFileOperatorPtr_->put(tempFileHandler, keyStr, valueStr);
-            }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE_DELTA, tv);
+            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_PUT_HASHSTORE_QUEUE, tv);
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
@@ -119,15 +119,21 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
 bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
-    if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler) != true) {
-        debug_error("[ERROR] Could not get file handler for key = %s\n", keyStr.c_str());
+    bool ret;
+    ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler);
+    if (ret != true) {
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
-        if (hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec) != true) {
+        if (shouldUseDirectOperationsFlag_ == true) {
+            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+        } else {
+            ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        }
+        if (ret != true) {
             debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
             return false;
         } else {
-            debug_trace("Get value vec size = %lu\n", valueStrVec->size());
             return true;
         }
     }

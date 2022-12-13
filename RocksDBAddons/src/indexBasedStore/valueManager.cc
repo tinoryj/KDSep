@@ -250,22 +250,22 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     // flush before write, if no more place for updates
     if (!Segment::canFit(_centralizedReservedPool[poolIndex].pool, RECORD_SIZE) && !inPlaceUpdate) {
-//        _GCLock.unlock();
+        //        _GCLock.unlock();
         group_id_t prevGroupId = groupId;
         // printf("Flush before write\n");
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
+            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
         } else {
-            STAT_TIME_PROCESS(flushCentralizedReservedPool(&groupId, /* isUpdate = */ true), StatsType::POOL_FLUSH);
+            STAT_PROCESS(flushCentralizedReservedPool(&groupId, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
         // need the kvserver to search if the location of key may be updated
         if (groupId == INVALID_GROUP && prevGroupId != LSM_GROUP /* not key-values in LSM */) {
             _segmentGroupManager->releaseGroupLock(prevGroupId);
             return valueLoc;
         }
-//        _GCLock.lock();
+        //        _GCLock.lock();
         inPool = false;
         inPlaceUpdate = false;
     }
@@ -325,16 +325,16 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 && sync)) {
-//        _GCLock.unlock();
+        //        _GCLock.unlock();
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &newOffset), StatsType::POOL_FLUSH);
+            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &newOffset), StatsType::POOL_FLUSH);
         } else {
-            STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
+            STAT_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
         }
     } else {
-//        _GCLock.unlock();
+        //        _GCLock.unlock();
     }
 
     _GCLock.unlock();
@@ -867,7 +867,7 @@ void ValueManager::flushCentralizedReservedPool(group_id_t* reportGroupId, bool 
 
                 // gc for some space
                 do {
-//                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
+                    //                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
                     // check if the update now fits into the free space
                     flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
                     isReservedOverflow = !isGCLogOnlyBuffer && outOfReservedSpaceForObject(flushFront, RECORD_SIZE);
@@ -1142,10 +1142,10 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
         }
     }
 
-    //    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
+    //    STAT_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
     // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
     if (ConfigManager::getInstance().persistLogMeta()) {
-        if (ConfigManager::getInstance().getUpdateKVBufferSize() > 0 || flushTimes >= 512) { 
+        if (ConfigManager::getInstance().getUpdateKVBufferSize() > 0 || flushTimes >= 512) {
             _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
             flushTimes = 0;
         } else {
@@ -1202,9 +1202,9 @@ std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment& segme
 
     len_t ret = 0;
     if (ConfigManager::getInstance().segmentAsFile() && _isSlave) {
-        STAT_TIME_PROCESS(ret = _deviceManager->writeDisk(ConfigManager::getInstance().segmentAsSeparateFile() ? ConfigManager::getInstance().getNumSegment() : 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
+        STAT_PROCESS(ret = _deviceManager->writeDisk(ConfigManager::getInstance().segmentAsSeparateFile() ? ConfigManager::getInstance().getNumSegment() : 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
     } else {
-        STAT_TIME_PROCESS(ret = _deviceManager->writeDisk(/* diskId = */ 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
+        STAT_PROCESS(ret = _deviceManager->writeDisk(/* diskId = */ 0, Segment::getData(segment) + flushFront, logOffset, writeLength), StatsType::POOL_FLUSH_NO_GC);
     }
 
     if (ret != writeLength) {
@@ -1265,7 +1265,7 @@ void* ValueManager::flushCentralizedReservedPoolBgWorker(void* arg)
             pthread_mutex_unlock(&instance->_centralizedReservedPoolIndex.queueLock);
             // do the flushing as usual
             // printf("Pull and flush pool %d from queue\n", poolIndex);
-            STAT_TIME_PROCESS(instance->flushCentralizedReservedPool(/* *reportGroupId = */ 0, /* isUpdate = */ true, poolIndex), stats);
+            STAT_PROCESS(instance->flushCentralizedReservedPool(/* *reportGroupId = */ 0, /* isUpdate = */ true, poolIndex), stats);
             instance->_centralizedReservedPoolIndex.flushNext = instance->getNextPoolIndex(instance->_centralizedReservedPoolIndex.flushNext);
             // printf("Complete processing pool %d next %d \n", poolIndex, instance->_centralizedReservedPoolIndex.flushNext);
             //  lock before queue checking
@@ -1413,8 +1413,9 @@ void ValueManager::restoreVLog(std::map<std::string, externalIndexInfo>& keyValu
     debug_info("restore finished: number of key values = %lu\n", keyValues.size());
 }
 
-void ValueManager::scanAllRecords() {
-    offset_t gcFront = INVALID_OFFSET, flushFront; 
+void ValueManager::scanAllRecords()
+{
+    offset_t gcFront = INVALID_OFFSET, flushFront;
     offset_t logTail, keySizeOffset;
     struct timeval tv1, tv2, res;
     key_len_t keySize;
@@ -1445,13 +1446,13 @@ void ValueManager::scanAllRecords() {
 
     offset_t start = gcFront, end = logTail;
 
-//    if (gcFront > logTail) { // Wrapped
-//        end = capacity;
-//    }
+    //    if (gcFront > logTail) { // Wrapped
+    //        end = capacity;
+    //    }
 
     while (start != end) {
         flushFront = Segment::getFlushFront(seg);
-        assert(flushFront != readSize); 
+        assert(flushFront != readSize);
 
         readSize = std::min(gcSize, (end + capacity - start) % capacity);
         _deviceManager->readAhead(/* diskId = */ 0, start + flushFront, readSize - flushFront);
@@ -1462,7 +1463,7 @@ void ValueManager::scanAllRecords() {
             keySizeOffset = readSize - remains;
 
             // change key, keySize, value, valueSize, remains, compactedBytes
-            bool ret = scanKeyValue((char*)readPool, start, readSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize); 
+            bool ret = scanKeyValue((char*)readPool, start, readSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize);
 
             if (!ret) {
                 break;
@@ -1476,22 +1477,22 @@ void ValueManager::scanAllRecords() {
             if (valueLoc.offset == (start + keySizeOffset + capacity) % capacity) {
                 // matched, a valid KV pair.
                 len_t mod = valueLoc.offset % pageSize;
-                debug_trace("[KV] %s %s%s%s%s%s%s%s%s [%.*s] [%.*s] offset %lu\n", 
-                    mod == 0 ? "*" : ".",  
-                    mod > 0 && mod <= pageSize / 8 * 1 ? "*" : ".",  
-                    mod > pageSize / 8 * 1 && mod <= pageSize / 8 * 2 ? "*" : ".",  
-                    mod > pageSize / 8 * 2 && mod <= pageSize / 8 * 3 ? "*" : ".",  
-                    mod > pageSize / 8 * 3 && mod <= pageSize / 8 * 4 ? "*" : ".",  
-                    mod > pageSize / 8 * 4 && mod <= pageSize / 8 * 5 ? "*" : ".",  
-                    mod > pageSize / 8 * 5 && mod <= pageSize / 8 * 6 ? "*" : ".",  
-                    mod > pageSize / 8 * 6 && mod <= pageSize / 8 * 7 ? "*" : ".", 
-                    mod > pageSize / 8 * 7 && mod <= pageSize / 8 * 8 ? "*" : ".", 
-                    std::min((int)keySize, 16), KEY_OFFSET(key), 
-                    std::min((int)valueSize, 16), value, 
+                debug_trace("[KV] %s %s%s%s%s%s%s%s%s [%.*s] [%.*s] offset %lu\n",
+                    mod == 0 ? "*" : ".",
+                    mod > 0 && mod <= pageSize / 8 * 1 ? "*" : ".",
+                    mod > pageSize / 8 * 1 && mod <= pageSize / 8 * 2 ? "*" : ".",
+                    mod > pageSize / 8 * 2 && mod <= pageSize / 8 * 3 ? "*" : ".",
+                    mod > pageSize / 8 * 3 && mod <= pageSize / 8 * 4 ? "*" : ".",
+                    mod > pageSize / 8 * 4 && mod <= pageSize / 8 * 5 ? "*" : ".",
+                    mod > pageSize / 8 * 5 && mod <= pageSize / 8 * 6 ? "*" : ".",
+                    mod > pageSize / 8 * 6 && mod <= pageSize / 8 * 7 ? "*" : ".",
+                    mod > pageSize / 8 * 7 && mod <= pageSize / 8 * 8 ? "*" : ".",
+                    std::min((int)keySize, 16), KEY_OFFSET(key),
+                    std::min((int)valueSize, 16), value,
                     valueLoc.offset);
                 keyNum++;
                 keySizes += keySize;
-                valueSizes += valueSize; 
+                valueSizes += valueSize;
             }
         }
 
@@ -1511,26 +1512,26 @@ void ValueManager::scanAllRecords() {
             debug_error("log corruptted: scanBytes %lu capacity %lu\n", scanBytes, capacity);
             assert(0);
             exit(-1);
-        } 
+        }
 
-//        if (start != end) {
-//            start += readSize - remains;
-//            if (start != end) {
-//                continue;
-//            }
-//        }
-//
-//        if (end != logTail) { // Wrapped
-//            start = 0;
-//            end = logTail;
-//        } else {
-//            break;
-//        }
+        //        if (start != end) {
+        //            start += readSize - remains;
+        //            if (start != end) {
+        //                continue;
+        //            }
+        //        }
+        //
+        //        if (end != logTail) { // Wrapped
+        //            start = 0;
+        //            end = logTail;
+        //        } else {
+        //            break;
+        //        }
     }
 
     len_t total = keySizes + valueSizes + keyNum * (sizeof(key_len_t) + sizeof(len_t));
-    debug_info("keyNum %lu keySizes %lu valueSizes %lu, totally %llu GiB %llu MiB %llu KiB %llu B\n", keyNum, keySizes, valueSizes, 
-        total / (1ull << 30), 
+    debug_info("keyNum %lu keySizes %lu valueSizes %lu, totally %llu GiB %llu MiB %llu KiB %llu B\n", keyNum, keySizes, valueSizes,
+        total / (1ull << 30),
         total / (1ull << 20) % (1ull << 10),
         total / (1ull << 10) % (1ull << 10),
         total % (1ull << 10));
@@ -1672,9 +1673,9 @@ bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
     if (ConfigManager::getInstance().enabledVLogMode() || _isSlave) {
-        STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(), POOL_FLUSH);
+        STAT_PROCESS(flushCentralizedReservedPoolVLog(), POOL_FLUSH);
     } else {
-        STAT_TIME_PROCESS(flushCentralizedReservedPool(), POOL_FLUSH);
+        STAT_PROCESS(flushCentralizedReservedPool(), POOL_FLUSH);
     }
     return true;
 }
