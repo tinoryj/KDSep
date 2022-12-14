@@ -175,12 +175,8 @@ DeltaKV::~DeltaKV()
         delete writeBatchDeque[0];
         delete writeBatchDeque[1];
     }
-    if (notifyWriteBackMQ_) {
-        string* str;
-        while (notifyWriteBackMQ_->pop(str)) {
-            delete str;
-        }
-        delete notifyWriteBackMQ_;
+    if (enableWriteBackOperationsFlag_ == true) {
+        delete writeBackOperationsQueue_;
     }
 }
 
@@ -225,9 +221,11 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         isDeltaStoreInUseFlag_ = true;
-        notifyWriteBackMQ_ = new messageQueue<string*>;
-
-        HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, notifyWriteBackMQ_);
+        if (enableWriteBackOperationsFlag_ == true) {
+            HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, writeBackOperationsQueue_);
+        } else {
+            HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_);
+        }
         // create deltaStore related threads
         // boost::asio::post(*threadpool_, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
         boost::thread* th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));

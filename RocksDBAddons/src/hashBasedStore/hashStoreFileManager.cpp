@@ -4,7 +4,29 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<string*>* notifyWriteBackMQ)
+HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
+{
+    initialTrieBitNumber_ = options->hashStore_init_prefix_bit_number + 1; // reserve one empty level for merge GC
+    maxTrieBitNumber_ = options->hashStore_max_prefix_bit_number;
+    uint64_t singleFileGCThreshold = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
+    uint64_t totalHashStoreFileGCThreshold = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
+    singleFileGCTriggerSize_ = singleFileGCThreshold;
+    singleFileMergeGCUpperBoundSize_ = options->deltaStore_single_file_maximum_size - singleFileGCTriggerSize_;
+    globalGCTriggerSize_ = totalHashStoreFileGCThreshold;
+    workingDir_ = workingDirStr;
+    notifyGCMQ_ = notifyGCMQ;
+    enableWriteBackDuringGCFlag_ = true;
+    writeBackOperationsQueue_ = writeBackOperationsQueue;
+    gcWriteBackDeltaNum_ = options->deltaStore_write_back_during_gc_threshold;
+    fileOperationMethod_ = options->fileOperationMethod_;
+    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
+    operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
+    singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
+    objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxTrieBitNumber_);
+    RetriveHashStoreFileMetaDataList();
+}
+
+HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
 {
     initialTrieBitNumber_ = options->hashStore_init_prefix_bit_number;
     maxTrieBitNumber_ = options->hashStore_max_prefix_bit_number;
@@ -14,7 +36,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     globalGCTriggerSize_ = totalHashStoreFileGCThreshold;
     workingDir_ = workingDirStr;
     notifyGCMQ_ = notifyGCMQ;
-    notifyWriteBackMQ_ = notifyWriteBackMQ;
+    enableWriteBackDuringGCFlag_ = false;
     gcWriteBackDeltaNum_ = options->deltaStore_write_back_during_gc_threshold;
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
@@ -949,7 +971,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
     }
 }
 
-bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID)
+bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2)
 {
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
@@ -960,12 +982,14 @@ bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string pre
     currentFileHandlerPtr->total_object_bytes_ = 0;
     currentFileHandlerPtr->total_on_disk_bytes_ = 0;
     currentFileHandlerPtr->total_object_count_ = 0;
-    currentFileHandlerPtr->previous_file_id_first_ = previousFileID;
+    currentFileHandlerPtr->previous_file_id_first_ = previousFileID1;
+    currentFileHandlerPtr->previous_file_id_second_ = previousFileID2;
     currentFileHandlerPtr->file_create_reason_ = kInternalGCFile;
     // set up new file header for write
     hashStoreFileHeader newFileHeader;
     newFileHeader.current_prefix_used_bit_ = targetPrefixLen;
-    newFileHeader.previous_file_id_first_ = previousFileID;
+    newFileHeader.previous_file_id_first_ = previousFileID1;
+    newFileHeader.previous_file_id_second_ = previousFileID2;
     newFileHeader.file_create_reason_ = kInternalGCFile;
     newFileHeader.file_id_ = currentFileHandlerPtr->target_file_id_;
     char fileHeaderWriteBuffer[sizeof(newFileHeader)];
@@ -995,7 +1019,7 @@ uint64_t HashStoreFileManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, vector<string>>& resultMap)
+pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
 {
     uint64_t processedKeepObjectNumber = 0;
     uint64_t processedTotalObjectNumber = 0;
@@ -1016,8 +1040,9 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
             anchors++;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                processedKeepObjectNumber -= (resultMap.at(currentKeyStr).size()) + 1;
-                resultMap.at(currentKeyStr).clear();
+                processedKeepObjectNumber -= resultMap.at(currentKeyStr).first.size();
+                resultMap.at(currentKeyStr).first.clear();
+                resultMap.at(currentKeyStr).second.clear();
                 resultMap.erase(currentKeyStr);
                 currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
                 continue;
@@ -1034,15 +1059,18 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
                 string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMap.at(currentKeyStr).push_back(currentValueStr);
+                resultMap.at(currentKeyStr).first.push_back(currentValueStr);
+                resultMap.at(currentKeyStr).second.push_back(currentObjectRecordHeader);
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             } else {
                 vector<string> newValuesRelatedToCurrentKeyVec;
+                vector<hashStoreRecordHeader> newRecordRelatedToCurrentKeyVec;
                 currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
                 string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
-                resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+                newRecordRelatedToCurrentKeyVec.push_back(currentObjectRecordHeader);
+                resultMap.insert(make_pair(currentKeyStr, make_pair(newValuesRelatedToCurrentKeyVec, newRecordRelatedToCurrentKeyVec)));
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
                 continue;
             }
@@ -1052,8 +1080,9 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     for (auto& keyIt : savedAnchors) {
         anchors++;
         if (resultMap.find(keyIt.first) != resultMap.end()) {
-            processedKeepObjectNumber -= (resultMap.at(keyIt.first).size() + 1);
-            resultMap.at(keyIt.first).clear();
+            processedKeepObjectNumber -= (resultMap.at(keyIt.first).first.size() + 1);
+            resultMap.at(keyIt.first).first.clear();
+            resultMap.at(keyIt.first).second.clear();
             resultMap.erase(keyIt.first);
         }
     }
@@ -1062,46 +1091,44 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
-bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t targetFileSize)
+bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag)
 {
     // reclaimed space success, rewrite current file to new file
-    if (currentHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
-        currentHandlerPtr->file_operation_func_ptr_->closeFile();
-    }
     debug_trace("Before rewrite size = %lu, rewrite processed size = %lu\n", currentHandlerPtr->total_on_disk_bytes_, targetFileSize);
     char currentWriteBuffer[targetFileSize];
     uint64_t newObjectNumber = 0;
     uint64_t currentProcessLocationIndex = 0;
     hashStoreFileHeader currentFileHeader;
     currentFileHeader.current_prefix_used_bit_ = currentHandlerPtr->current_prefix_used_bit_;
-    currentFileHeader.file_create_reason_ = kInternalGCFile;
+    if (fileContainsReWriteKeysFlag == true) {
+        currentFileHeader.file_create_reason_ = kRewritedObjectFile;
+    } else {
+        currentFileHeader.file_create_reason_ = kInternalGCFile;
+    }
     currentFileHeader.file_id_ = generateNewFileID();
     currentFileHeader.previous_file_id_first_ = currentHandlerPtr->target_file_id_;
     memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentFileHeader, sizeof(hashStoreFileHeader));
     currentProcessLocationIndex += sizeof(currentFileHeader);
     // add file header
     for (auto keyIt : gcResultMap) {
-        for (auto valueIt : keyIt.second) {
+        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
             newObjectNumber++;
-            hashStoreRecordHeader currentObjectRecordHeader;
-            currentObjectRecordHeader.is_anchor_ = false;
-            currentObjectRecordHeader.key_size_ = keyIt.first.size();
-            currentObjectRecordHeader.value_size_ = valueIt.size();
-            memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+            memcpy(currentWriteBuffer + currentProcessLocationIndex, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
             currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
             memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.c_str(), keyIt.first.size());
             currentProcessLocationIndex += keyIt.first.size();
-            memcpy(currentWriteBuffer + currentProcessLocationIndex, valueIt.c_str(), valueIt.size());
-            currentProcessLocationIndex += valueIt.size();
+            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
+            currentProcessLocationIndex += keyIt.second.first[valueAndRecordHeaderIt].size();
         }
     }
     // add gc done flag into bucket file
-    hashStoreRecordHeader currentObjectRecordHeader;
-    currentObjectRecordHeader.is_anchor_ = false;
-    currentObjectRecordHeader.is_gc_done_ = true;
-    currentObjectRecordHeader.key_size_ = 0;
-    currentObjectRecordHeader.value_size_ = 0;
-    memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+    hashStoreRecordHeader currentGCJobDoneRecordHeader;
+    currentGCJobDoneRecordHeader.is_anchor_ = false;
+    currentGCJobDoneRecordHeader.is_gc_done_ = true;
+    currentGCJobDoneRecordHeader.sequence_number_ = 0;
+    currentGCJobDoneRecordHeader.key_size_ = 0;
+    currentGCJobDoneRecordHeader.value_size_ = 0;
+    memcpy(currentWriteBuffer + currentProcessLocationIndex, &currentGCJobDoneRecordHeader, sizeof(hashStoreRecordHeader));
     debug_trace("Rewrite done buffer size = %lu, total target write size = %lu\n", currentProcessLocationIndex, targetFileSize);
     string targetOpenFileName = workingDir_ + "/" + to_string(currentFileHeader.file_id_) + ".delta";
     // create since file not exist
@@ -1140,12 +1167,11 @@ bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* curre
         currentHandlerPtr->gc_result_status_flag_ = kNoGC;
     }
     // remove old file
-    currentHandlerPtr->file_ownership_flag_ = 0;
     debug_info("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu, target file size = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_first_, targetFileSize);
     return true;
 }
 
-bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t targetPrefixBitNumber)
+bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetPrefixBitNumber, bool fileContainsReWriteKeysFlag)
 {
     bool isSplitDoneFlag = true;
     unordered_map<hashStoreFileMetaDataHandler*, string> tempHandlerToPrefixMapForMetadataUpdate;
@@ -1160,7 +1186,7 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
             currentFileHandlerPtr = tempPrefixToHandlerMapForFileSplitGC.at(prefixTempStr.substr(0, targetPrefixBitNumber));
             getFileHandlerStatus = true;
         } else {
-            getFileHandlerStatus = createHashStoreFileHandlerByPrefixStrForGC(prefixTempStr, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_);
+            getFileHandlerStatus = createHashStoreFileHandlerByPrefixStrForGC(prefixTempStr, currentFileHandlerPtr, targetPrefixBitNumber, currentHandlerPtr->target_file_id_, 0);
             // update metadata for currentFileHandler;
             tempHandlerToPrefixMapForMetadataUpdate.insert(make_pair(currentFileHandlerPtr, prefixTempStr));
             tempPrefixToHandlerMapForFileSplitGC.insert(make_pair(prefixTempStr.substr(0, targetPrefixBitNumber), currentFileHandlerPtr));
@@ -1172,31 +1198,29 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
         } else {
             debug_info("Get/Create new bucket for key = %s during split gc, new file ID = %lu, current prefix bit number = %lu\n", keyIt.first.c_str(), currentFileHandlerPtr->target_file_id_, currentFileHandlerPtr->current_prefix_used_bit_);
             uint64_t targetWriteSize = 0;
-            for (auto& valueIt : keyIt.second) {
+            for (auto& valueIt : keyIt.second.first) {
                 targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
             }
             debug_info("Target write size = %lu, for new file ID = %lu\n", targetWriteSize, currentFileHandlerPtr->target_file_id_);
             currentFileHandlerPtr->fileOperationMutex_.lock();
             char currentWriteBuffer[targetWriteSize + sizeof(hashStoreRecordHeader)];
             uint64_t currentWritePos = 0;
-            for (auto& valueIt : keyIt.second) {
-                hashStoreRecordHeader currentObjectRecordHeader;
-                currentObjectRecordHeader.is_anchor_ = false;
-                currentObjectRecordHeader.is_gc_done_ = false;
-                currentObjectRecordHeader.key_size_ = keyIt.first.size();
-                currentObjectRecordHeader.value_size_ = valueIt.size();
-                memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
-                memcpy(currentWriteBuffer + currentWritePos + sizeof(hashStoreRecordHeader), keyIt.first.c_str(), keyIt.first.size());
-                memcpy(currentWriteBuffer + currentWritePos + sizeof(hashStoreRecordHeader) + keyIt.first.size(), valueIt.c_str(), valueIt.size());
-                currentWritePos += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
-                currentFileHandlerPtr->temp_not_flushed_data_bytes_ += (sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
-                currentFileHandlerPtr->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + currentObjectRecordHeader.key_size_ + currentObjectRecordHeader.value_size_);
+            for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
+                memcpy(currentWriteBuffer + currentWritePos, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
+                currentWritePos += sizeof(hashStoreRecordHeader);
+                memcpy(currentWriteBuffer + currentWritePos, keyIt.first.c_str(), keyIt.first.size());
+                currentWritePos += keyIt.first.size();
+                memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
+                currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size();
+                currentFileHandlerPtr->temp_not_flushed_data_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
+                currentFileHandlerPtr->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
                 currentFileHandlerPtr->total_object_count_++;
             }
             // write gc done flag into bucket file
             hashStoreRecordHeader currentObjectRecordHeader;
             currentObjectRecordHeader.is_anchor_ = false;
             currentObjectRecordHeader.is_gc_done_ = true;
+            currentObjectRecordHeader.sequence_number_ = 0;
             currentObjectRecordHeader.key_size_ = 0;
             currentObjectRecordHeader.value_size_ = 0;
             memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
@@ -1220,7 +1244,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
         // update all metadata
         if (tempHandlerToPrefixMapForMetadataUpdate.size() > 2) {
             debug_error("[ERROR] Split file ID = %lu for gc success, but generate more than 2 files, generated file number = %lu\n", currentHandlerPtr->target_file_id_, tempHandlerToPrefixMapForMetadataUpdate.size());
-            currentHandlerPtr->file_ownership_flag_ = 0;
             return false;
         }
         for (auto mapIt : tempHandlerToPrefixMapForMetadataUpdate) {
@@ -1229,7 +1252,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
             if (insertAtLevel == 0) {
                 debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", tempHandler->current_prefix_used_bit_, tempHandler->target_file_id_);
                 debug_error("[ERROR] Split file ID = %lu for gc not success, could not update metadata for file ID = %lu\n", currentHandlerPtr->target_file_id_, tempHandler->target_file_id_);
-                currentHandlerPtr->file_ownership_flag_ = 0;
                 continue;
             } else {
                 if (tempHandler->current_prefix_used_bit_ != insertAtLevel) {
@@ -1243,12 +1265,160 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
             tempHandler->file_ownership_flag_ = 0;
         }
         currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
-        currentHandlerPtr->file_ownership_flag_ = 0;
     } else {
         debug_error("[ERROR] Split file ID = %lu for gc not success, skip this file\n", currentHandlerPtr->target_file_id_);
-        currentHandlerPtr->file_ownership_flag_ = 0;
+        return false;
     }
     return true;
+}
+
+bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* currentHandlerPtr1, hashStoreFileMetaDataHandler* currentHandlerPtr2, string targetPrefixStr)
+{
+    std::scoped_lock<std::shared_mutex> w_lock1(currentHandlerPtr1->fileOperationMutex_);
+    std::scoped_lock<std::shared_mutex> w_lock2(currentHandlerPtr2->fileOperationMutex_);
+    hashStoreFileMetaDataHandler* mergedFileHandler;
+    bool generateFileHandlerStatus = createHashStoreFileHandlerByPrefixStrForGC(targetPrefixStr, mergedFileHandler, targetPrefixStr.size(), currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_);
+    if (generateFileHandlerStatus == false) {
+        debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_);
+        currentHandlerPtr1->file_ownership_flag_ = 0;
+        currentHandlerPtr2->file_ownership_flag_ = 0;
+        return false;
+    }
+    // process file 1
+    char readWriteBuffer1[currentHandlerPtr1->total_object_bytes_];
+    currentHandlerPtr1->file_operation_func_ptr_->flushFile();
+    currentHandlerPtr1->temp_not_flushed_data_bytes_ = 0;
+    STAT_PROCESS(currentHandlerPtr1->file_operation_func_ptr_->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes_);
+    // process GC contents
+    unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap1;
+    pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_, currentHandlerPtr1->bufferedUnFlushedAnchorsVec_, gcResultMap1);
+
+    // process file2
+    char readWriteBuffer2[currentHandlerPtr2->total_object_bytes_];
+    currentHandlerPtr2->file_operation_func_ptr_->flushFile();
+    currentHandlerPtr2->temp_not_flushed_data_bytes_ = 0;
+    STAT_PROCESS(currentHandlerPtr2->file_operation_func_ptr_->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes_);
+    // process GC contents
+    unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap2;
+    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_, currentHandlerPtr2->bufferedUnFlushedAnchorsVec_, gcResultMap2);
+
+    uint64_t targetWriteSize = 0;
+    for (auto& keyIt : gcResultMap1) {
+        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + keyIt.second.first[valueAndRecordHeaderIt].size());
+        }
+    }
+    for (auto& keyIt : gcResultMap2) {
+        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + keyIt.second.first[valueAndRecordHeaderIt].size());
+        }
+    }
+    char currentWriteBuffer[targetWriteSize + sizeof(hashStoreRecordHeader)];
+    uint64_t currentWritePos = 0;
+    for (auto& keyIt : gcResultMap1) {
+        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
+            memcpy(currentWriteBuffer + currentWritePos, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
+            currentWritePos += sizeof(hashStoreRecordHeader);
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.c_str(), keyIt.first.size());
+            currentWritePos += keyIt.first.size();
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
+            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size();
+            mergedFileHandler->temp_not_flushed_data_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
+            mergedFileHandler->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
+            mergedFileHandler->total_object_count_++;
+        }
+    }
+    for (auto& keyIt : gcResultMap2) {
+        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
+            memcpy(currentWriteBuffer + currentWritePos, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
+            currentWritePos += sizeof(hashStoreRecordHeader);
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.c_str(), keyIt.first.size());
+            currentWritePos += keyIt.first.size();
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
+            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size();
+            mergedFileHandler->temp_not_flushed_data_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
+            mergedFileHandler->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
+            mergedFileHandler->total_object_count_++;
+        }
+    }
+    // write gc done flag into bucket file
+    hashStoreRecordHeader currentObjectRecordHeader;
+    currentObjectRecordHeader.is_anchor_ = false;
+    currentObjectRecordHeader.is_gc_done_ = true;
+    currentObjectRecordHeader.sequence_number_ = 0;
+    currentObjectRecordHeader.key_size_ = 0;
+    currentObjectRecordHeader.value_size_ = 0;
+    memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
+    uint64_t onDiskWriteSize;
+    STAT_PROCESS(onDiskWriteSize = mergedFileHandler->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize + sizeof(hashStoreRecordHeader)), StatsType::DELTAKV_GC_WRITE);
+    StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSize);
+    mergedFileHandler->total_object_bytes_ += sizeof(hashStoreRecordHeader);
+    mergedFileHandler->total_on_disk_bytes_ += onDiskWriteSize;
+    mergedFileHandler->total_object_count_++;
+    mergedFileHandler->file_operation_func_ptr_->flushFile();
+    debug_trace("flushed new file to filesystem since merge gc, the new file ID = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n", mergedFileHandler->target_file_id_, currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_);
+    mergedFileHandler->temp_not_flushed_data_bytes_ = 0;
+    mergedFileHandler->fileOperationMutex_.unlock();
+
+    // TODO update metadata
+    return true;
+}
+
+bool HashStoreFileManager::selectFileForMerge(hashStoreFileMetaDataHandler*& currentHandlerPtr1, hashStoreFileMetaDataHandler*& currentHandlerPtr2, string& targetPrefixStr)
+{
+    vector<pair<string, hashStoreFileMetaDataHandler*>> validNodes;
+    bool getValidNodesStatus = objectFileMetaDataTrie_.getCurrentValidNodes(validNodes);
+    if (getValidNodesStatus == false) {
+        debug_error("[ERROR] Could not get valid tree nodes from prefixTree, current validNodes vector size = %lu\n", validNodes.size());
+        return false;
+    } else {
+        unordered_map<string, hashStoreFileMetaDataHandler*> targetFileForMergeMap;
+        for (auto nodeIt : validNodes) {
+            if (nodeIt.second->current_prefix_used_bit_ > initialTrieBitNumber_ && nodeIt.second->total_object_bytes_ <= singleFileMergeGCUpperBoundSize_) {
+                targetFileForMergeMap.insert(nodeIt);
+            }
+        }
+        if (targetFileForMergeMap.size() != 0) {
+            bool selectSuccessFlag = false;
+            while (selectSuccessFlag == false) {
+                for (auto mapIt : targetFileForMergeMap) {
+                    string tempPrefixToFindNodeAtSameLevelStr = mapIt.first;
+                    string tempPrefixToFindAnotherNodeAtSameLevelStr;
+                    if (tempPrefixToFindNodeAtSameLevelStr[tempPrefixToFindNodeAtSameLevelStr.size() - 1]) {
+                        tempPrefixToFindAnotherNodeAtSameLevelStr = tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 2) + "0";
+                    } else {
+                        tempPrefixToFindAnotherNodeAtSameLevelStr = tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 2) + "1";
+                    }
+                    hashStoreFileMetaDataHandler* tempHandler;
+                    if (objectFileMetaDataTrie_.get(tempPrefixToFindAnotherNodeAtSameLevelStr, tempHandler) == true) {
+                        if (mapIt.second->file_ownership_flag_ == 0 && tempHandler->total_object_bytes_ < singleFileGCTriggerSize_) {
+                            std::scoped_lock<std::shared_mutex> w_lock1(mapIt.second->fileOperationMutex_);
+                            mapIt.second->file_ownership_flag_ = -1;
+                            targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 2);
+                            currentHandlerPtr1 = mapIt.second;
+                            while (tempHandler->file_ownership_flag_ != 0) {
+                                asm volatile("");
+                            }
+                            std::scoped_lock<std::shared_mutex> w_lock2(tempHandler->fileOperationMutex_);
+                            tempHandler->file_ownership_flag_ = -1;
+                            currentHandlerPtr2 = tempHandler;
+                            selectSuccessFlag = true;
+                        }
+                    } else {
+                        debug_info("Could not find adjacent node for current node, skip this node, current node prefix = %s, target node prefix = %s\n", tempPrefixToFindNodeAtSameLevelStr.c_str(), tempPrefixToFindAnotherNodeAtSameLevelStr.c_str());
+                        targetFileForMergeMap.erase(mapIt.first);
+                        continue;
+                    }
+                }
+            }
+            return true;
+        } else {
+            debug_error("[ERROR] Could not get could mwerge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
+            return false;
+        }
+    }
 }
 
 // threads workers
@@ -1260,13 +1430,10 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* fileHandler;
         if (notifyGCMQ_->pop(fileHandler)) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
             std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[fileHandler->total_object_bytes_];
-            fileHandler->file_ownership_flag_ = -1;
             fileHandler->file_operation_func_ptr_->flushFile();
             fileHandler->temp_not_flushed_data_bytes_ = 0;
             uint64_t currentObjectBytes = fileHandler->file_operation_func_ptr_->getFileSize();
@@ -1277,43 +1444,48 @@ void HashStoreFileManager::processGCRequestWorker()
             StatsRecorder::getInstance()->DeltaGcBytesRead(fileHandler->total_on_disk_bytes_);
 
             // process GC contents
-            unordered_map<string, vector<string>> gcResultMap;
+            unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, fileHandler->bufferedUnFlushedAnchorsVec_, gcResultMap);
-            fileHandler->bufferedUnFlushedAnchorsVec_.clear();
 
+            bool fileContainsReWriteKeysFlag = false;
             // calculate target file size
-            uint64_t targetFileSize = 0;
+            uint64_t targetValidObjectSize = 0;
             for (auto keyIt : gcResultMap) {
-                if (keyIt.second.size() > gcWriteBackDeltaNum_) {
-                    debug_warn("key %.*s has %d deltas\n", (int)keyIt.first.size(), keyIt.first.c_str(), (int)keyIt.second.size());
-                    // TODO for further optimizations: Write back
-                    string* keyItPtr = new string(keyIt.first);
-                    notifyWriteBackMQ_->push(keyItPtr);
+                if (enableWriteBackDuringGCFlag_ == true) {
+                    debug_info("key = %s has %lu deltas\n", keyIt.first.c_str(), keyIt.second.first.size());
+                    if (keyIt.second.first.size() > gcWriteBackDeltaNum_) {
+                        fileContainsReWriteKeysFlag = true;
+                        writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(keyIt.first, "", 0);
+                        writeBackOperationsQueue_->push(newWriteBackObject);
+                    }
                 }
-                for (auto valueIt : keyIt.second) {
-                    targetFileSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
-                    // debug_info("Rewrite: key = %s, value = %s\n", keyIt.first.c_str(), valueIt.c_str());
+                for (auto valueIt : keyIt.second.first) {
+                    targetValidObjectSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
                 }
             }
-            targetFileSize += (sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader));
+            uint64_t targetFileSize = targetValidObjectSize + sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader);
 
             // count valid object size to determine GC method;
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                exit(-1);
-                //                fileHandler->file_ownership_flag_ = 0;
-                //                fileHandler->fileOperationMutex_.unlock();
-            }
-            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
-                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
-                exit(-1);
+                fileHandler->file_ownership_flag_ = 0;
+                continue;
             }
 
-            // no valid objects, delete the file
-            if (gcResultMap.size() == 0) {
+            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
+                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
+                fileHandler->file_ownership_flag_ = 0;
+                continue;
+            }
+
+            if (remainObjectNumberPair.first == 0 && gcResultMap.size() == 0) {
                 debug_info("File ID = %lu total disk size %lu have no valid objects\n", fileHandler->target_file_id_, fileHandler->total_on_disk_bytes_);
-                singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-            } else if (gcResultMap.size() == 1) {
+                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                fileHandler->file_ownership_flag_ = 0;
+                continue;
+            }
+
+            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 1) {
                 // No invalid objects, cannot save space
                 if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
                     if (fileHandler->gc_result_status_flag_ == kNew) {
@@ -1321,49 +1493,55 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->gc_result_status_flag_ = kMayGC;
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", fileHandler->target_file_id_, gcResultMap.size());
-                        fileHandler->fileOperationMutex_.unlock();
+                        continue;
                     } else if (fileHandler->gc_result_status_flag_ == kMayGC) {
                         // Mark this file as could not GC;
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", fileHandler->target_file_id_, gcResultMap.size());
-                        fileHandler->fileOperationMutex_.unlock();
+                        continue;
                     }
                 } else {
                     // single file rewrite
                     debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                    singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                }
-            } else {
-                if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
-                    // perform split into two buckets via extend prefix bit (+1)
-                    if (targetFileSize <= singleFileSplitGCTriggerSize_) {
-                        singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                    } else {
-                        debug_info("try split for key number = %lu\n", gcResultMap.size());
-                        uint64_t currentUsedPrefixBitNumber = fileHandler->current_prefix_used_bit_;
-                        uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
-                        if (targetPrefixBitNumber > maxTrieBitNumber_) {
-                            if (targetFileSize <= singleFileGCTriggerSize_) {
-                                singleFileRewrite(fileHandler, gcResultMap, targetFileSize);
-                            } else {
-                                debug_info("GC for file ID = %lu, current file gc type = %d, gcResultMap size = %lu, but next prefix bit number will exceed limit, mark as never GC\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
-                                fileHandler->gc_result_status_flag_ = kNoGC;
-                                fileHandler->file_ownership_flag_ = 0;
-                                fileHandler->fileOperationMutex_.unlock();
-                            }
-                        } else {
-                            singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber);
-                        }
-                    }
-                } else {
-                    debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
+                    singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                     fileHandler->file_ownership_flag_ = 0;
-                    fileHandler->fileOperationMutex_.unlock();
+                    continue;
                 }
             }
 
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+            if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
+                // perform split into two buckets via extend prefix bit (+1)
+                if (targetFileSize <= singleFileSplitGCTriggerSize_) {
+                    singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                    fileHandler->file_ownership_flag_ = 0;
+                    continue;
+                } else {
+                    debug_info("try split for key number = %lu\n", gcResultMap.size());
+                    uint64_t currentUsedPrefixBitNumber = fileHandler->current_prefix_used_bit_;
+                    uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
+                    if (targetPrefixBitNumber > maxTrieBitNumber_) {
+                        if (targetFileSize <= singleFileGCTriggerSize_) {
+                            singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                            fileHandler->file_ownership_flag_ = 0;
+                            continue;
+                        } else {
+                            debug_info("GC for file ID = %lu, current file gc type = %d, gcResultMap size = %lu, but next prefix bit number will exceed limit, mark as never GC\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
+                            fileHandler->gc_result_status_flag_ = kNoGC;
+                            fileHandler->file_ownership_flag_ = 0;
+                            continue;
+                        }
+                    } else {
+                        singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber, fileContainsReWriteKeysFlag);
+                        fileHandler->file_ownership_flag_ = 0;
+                        continue;
+                    }
+                }
+            } else {
+                debug_error("[ERROR] GC for file ID = %lu error, not fit, current file gc type = %d, gcResultMap size = %lu\n", fileHandler->target_file_id_, fileHandler->gc_result_status_flag_, gcResultMap.size());
+                fileHandler->file_ownership_flag_ = 0;
+                continue;
+            }
         }
     }
     gcThreadJobDoneFlag_ = true;

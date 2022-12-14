@@ -27,7 +27,8 @@ enum DBOperationType { kPutOp = 0,
 enum hashStoreFileCreateReason { kNewFile = 0,
     kInternalGCFile = 1,
     kSplitFile = 2,
-    kMergeFile = 3 };
+    kMergeFile = 3,
+    kRewritedObjectFile = 4 };
 
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
@@ -107,6 +108,19 @@ typedef struct hashStoreRecordHeader {
     bool is_anchor_;
     bool is_gc_done_ = false; // to mark gc job done
 } hashStoreRecordHeader;
+
+typedef struct writeBackObjectStruct {
+    string key;
+    string value;
+    uint32_t sequenceNumber;
+    writeBackObjectStruct(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+    {
+        key = keyIn;
+        value = valueIn;
+        sequenceNumber = sequenceNumberIn;
+    };
+    writeBackObjectStruct() {};
+} writeBackObjectStruct; // key to value pair fpr write back
 
 // following enums are used for indexStore only
 enum CodingScheme {

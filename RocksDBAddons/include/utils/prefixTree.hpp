@@ -138,7 +138,21 @@ public:
         bool status;
         {
             std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = removePrefixTreeNode(rootNode_, prefixStr, findAtLevelID);
+            status = markPrefixTreeNodeAsNonLeafNode(rootNode_, prefixStr, findAtLevelID);
+        }
+        if (status == true) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool mergeNodesToNewLeafNode(string prefixStr, uint64_t& findAtLevelID)
+    {
+        bool status;
+        {
+            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+            status = markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(rootNode_, prefixStr, findAtLevelID);
         }
         if (status == true) {
             return true;
@@ -547,7 +561,7 @@ private:
         }
     }
 
-    bool removePrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
+    bool markPrefixTreeNodeAsNonLeafNode(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
     {
         uint64_t searchLevelNumber = bitBasedPrefixStr.size();
         findAtLevelID = 0;
@@ -564,6 +578,38 @@ private:
         if (root != nullptr && root->isLeafNodeFlag_ == true) {
             debug_trace("Find leaf node ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             root->isLeafNodeFlag_ = false;
+            return true;
+        } else {
+            if (root != nullptr) {
+                debug_error("[ERROR] Could not delete target node (not leaf) ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+            } else {
+                debug_error("[ERROR] Could not delete target node (not exist) pointer = %p\n", (void*)root);
+            }
+            return false;
+        }
+    }
+
+    bool markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
+    {
+        uint64_t searchLevelNumber = bitBasedPrefixStr.size();
+        findAtLevelID = 0;
+        for (uint64_t currentLevel = 0; currentLevel < searchLevelNumber; currentLevel++) {
+            if (bitBasedPrefixStr.at(currentLevel) == '0') {
+                // go to left if 0
+                root = root->leftChildNodePtr_;
+            } else {
+                // go to right if 1
+                root = root->rightChildNodePtr_;
+            }
+            findAtLevelID++;
+        }
+        if (root != nullptr && root->isLeafNodeFlag_ == false) {
+            debug_trace("Find leaf node ID = %lu, node prefix length = %lu, prefix = %s mark it as leaf now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+            root->isLeafNodeFlag_ = false;
+            delete root->leftChildNodePtr_;
+            delete root->rightChildNodePtr_;
+            root->leftChildNodePtr_ = nullptr;
+            root->rightChildNodePtr_ = nullptr;
             return true;
         } else {
             if (root != nullptr) {

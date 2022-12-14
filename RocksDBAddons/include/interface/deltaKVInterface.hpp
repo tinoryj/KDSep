@@ -69,7 +69,6 @@ private:
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_;
-    messageQueue<string*>* notifyWriteBackMQ_ = nullptr;
 
     enum DBRunningMode { kPlainRocksDB = 0,
         kOnlyValueLog = 1,
@@ -114,18 +113,6 @@ private:
     rocksdb::WriteOptions internalMergeOption_;
     std::shared_mutex batchedBufferOperationMtx_;
 
-    typedef struct writeBackObjectStruct {
-        string key;
-        string value;
-        uint32_t sequenceNumber;
-        writeBackObjectStruct(string keyIn, string valueIn, uint32_t sequenceNumberIn)
-        {
-            key = keyIn;
-            value = valueIn;
-            sequenceNumber = sequenceNumberIn;
-        };
-        writeBackObjectStruct() {};
-    } writeBackObjectStruct; // key to value pair fpr write back
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
