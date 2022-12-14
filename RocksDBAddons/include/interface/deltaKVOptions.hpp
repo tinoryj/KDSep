@@ -79,7 +79,7 @@ public:
     uint64_t hashStore_max_prefix_bit_number = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
     fileOperationType fileOperationMethod_ = kDirectIO;
-    bool enable_write_back_optimization_ = false;
+    bool enable_write_back_optimization_ = true;
     bool enable_batched_operations_ = false;
     bool rocksdb_sync_put = false;
     bool rocksdb_sync_merge = false;

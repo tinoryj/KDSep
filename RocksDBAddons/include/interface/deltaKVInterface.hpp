@@ -64,14 +64,20 @@ public:
 
 private:
     // batched write
-    deque<tuple<DBOperationType, string, string>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
+    deque<tuple<DBOperationType, string, string, uint32_t>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
     unordered_map<string, deque<pair<DBOperationType, string>>> writeBatchMapForSearch_; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber = 3;
-    messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
+    messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_;
     messageQueue<string*>* notifyWriteBackMQ_ = nullptr;
 
-    bool tryWriteBack();
+    enum DBRunningMode { kPlainRocksDB = 0,
+        kOnlyValueLog = 1,
+        kOnlyDeltaLog = 2,
+        kBothValueAndDeltaLog = 3,
+        kBatchedWithBothValueAndDeltaLog = 4 };
+
+    DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
     bool PutWithPlainRocksDB(const string& key, const string& value);
@@ -90,6 +96,8 @@ private:
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
     bool GetWithValueAndDeltaStore(const string& key, string* value);
 
+    bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
+
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
 
@@ -106,19 +114,19 @@ private:
     rocksdb::WriteOptions internalMergeOption_;
     std::shared_mutex batchedBufferOperationMtx_;
 
-    typedef struct writeBackObjectPair {
+    typedef struct writeBackObjectStruct {
         string key;
         string value;
         uint32_t sequenceNumber;
-        writeBackObjectPair(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+        writeBackObjectStruct(string keyIn, string valueIn, uint32_t sequenceNumberIn)
         {
             key = keyIn;
             value = valueIn;
             sequenceNumber = sequenceNumberIn;
         };
-        writeBackObjectPair() {};
-    } writeBackObjectPair; // key to value pair fpr write back
-    messageQueue<writeBackObjectPair*>* writeBackOperationsQueue_;
+        writeBackObjectStruct() {};
+    } writeBackObjectStruct; // key to value pair fpr write back
+    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
 

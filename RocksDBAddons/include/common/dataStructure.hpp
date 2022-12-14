@@ -3,6 +3,7 @@
 #include "boost/thread.hpp"
 #include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
+#include <shared_mutex>
 
 using namespace std;
 
@@ -53,18 +54,20 @@ typedef struct hashStoreFileMetaDataHandler {
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
-    unordered_set<string> bufferedUnFlushedAnchorsVec_;
+    unordered_map<string, uint32_t> bufferedUnFlushedAnchorsVec_;
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {
     string* key_str_;
     string* value_str_;
+    uint32_t sequence_number_;
     bool is_anchor = false;
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
     vector<string>* key_str_vec_ptr_;
     vector<string>* value_str_vec_ptr_;
+    vector<uint32_t>* sequence_number_vec_ptr_;
     vector<bool>* is_anchor_vec_ptr_;
 } hashStoreBatchedWriteOperationHandler;
 

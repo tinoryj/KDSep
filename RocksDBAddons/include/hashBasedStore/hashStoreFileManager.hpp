@@ -72,7 +72,7 @@ private:
     // recovery
     uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_set<string>& savedAnchors, unordered_map<string, vector<string>>& resultMap);
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, vector<string>>& resultMap);
     bool createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID);
     bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t targetFileSize);
     bool singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, vector<string>>& gcResultMap, uint64_t prefixBitNumber);

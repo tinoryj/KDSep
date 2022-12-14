@@ -221,9 +221,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                             currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
                             currentRecoveryFileHandler->total_object_bytes_ = targetFileSize;
                             // open current file for further usage
-                            currentRecoveryFileHandler->fileOperationMutex_.lock();
                             currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt) + ".delta");
-                            currentRecoveryFileHandler->fileOperationMutex_.unlock();
                             // update metadata
                             objectFileMetaDataTrie_.insertWithFixedBitNumber(currentFilePrefix, currentFileHeader.current_prefix_used_bit_, currentRecoveryFileHandler);
                             // update recovery data list
@@ -251,12 +249,10 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
                                     currentRecoveryFileHandler->total_object_bytes_ = targetFileSize;
                                     // open current file for further usage
-                                    currentRecoveryFileHandler->fileOperationMutex_.lock();
                                     if (currentRecoveryFileHandler->file_operation_func_ptr_->isFileOpen() == true) {
                                         currentRecoveryFileHandler->file_operation_func_ptr_->closeFile();
                                     }
                                     currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt) + ".delta");
-                                    currentRecoveryFileHandler->fileOperationMutex_.unlock();
                                     // update metadata
                                     hashStoreFileIDToPrefixMap.at(currentFileHeader.previous_file_id_first_).second->target_file_id_ = fileIDIt;
                                     // update recovery data list
@@ -319,9 +315,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
                                     currentRecoveryFileHandler->total_object_bytes_ = targetFileSize;
                                     // open current file for further usage
-                                    currentRecoveryFileHandler->fileOperationMutex_.lock();
                                     currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt) + ".delta");
-                                    currentRecoveryFileHandler->fileOperationMutex_.unlock();
                                     // update metadata
                                     objectFileMetaDataTrie_.insertWithFixedBitNumber(currentFilePrefix, currentFileHeader.current_prefix_used_bit_, currentRecoveryFileHandler);
                                     // update recovery data list
@@ -351,9 +345,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                         currentRecoveryFileHandler->total_object_count_ = currentFileObjectNumber;
                         currentRecoveryFileHandler->total_object_bytes_ = targetFileSize;
                         // open current file for further usage
-                        currentRecoveryFileHandler->fileOperationMutex_.lock();
                         currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(fileIDIt) + ".delta");
-                        currentRecoveryFileHandler->fileOperationMutex_.unlock();
                         // update metadata
                         string targetRecoveryPrefixStr;
                         generateHashBasedPrefix(currentFileRecoveryMap.begin()->first, targetRecoveryPrefixStr);
@@ -391,7 +383,6 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 // file may append, should recovery
                 debug_trace("target file ID = %lu, file size (system) = %lu != file size (metadata) = %lu, try recovery\n", fileIDIt, onDiskFileSize, currentIDInMetadataFileHandlerPtr->total_object_bytes_);
 
-                currentIDInMetadataFileHandlerPtr->fileOperationMutex_.lock();
                 // start read
                 int targetReadSize = onDiskFileSize;
                 char readBuffer[targetReadSize];
@@ -404,7 +395,6 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 currentIDInMetadataFileHandlerPtr->total_object_count_ += recoveredObjectNumber;
                 currentIDInMetadataFileHandlerPtr->total_object_bytes_ += targetReadSize;
                 currentIDInMetadataFileHandlerPtr->temp_not_flushed_data_bytes_ = 0;
-                currentIDInMetadataFileHandlerPtr->fileOperationMutex_.unlock();
 
             } else {
                 // file size match, skip current file
@@ -453,9 +443,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                 currentRecoveryFileHandler->total_object_count_ = objectNumberCount[i];
                 currentRecoveryFileHandler->total_object_bytes_ = targetFileRealSize[i];
                 // open current file for further usage
-                currentRecoveryFileHandler->fileOperationMutex_.lock();
                 currentRecoveryFileHandler->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(splitFileIt.second[i]) + ".delta");
-                currentRecoveryFileHandler->fileOperationMutex_.unlock();
                 // update metadata
                 string targetRecoveryPrefixStr;
                 generateHashBasedPrefix(currentFileRecoveryMapTemp[i].begin()->first, targetRecoveryPrefixStr);
@@ -569,7 +557,6 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             currentFileHandlerPtr->total_object_count_ = currentFileStoredObjectCount;
             currentFileHandlerPtr->total_object_bytes_ = currentFileStoredBytes;
             // open current file for further usage
-            currentFileHandlerPtr->fileOperationMutex_.lock();
             currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
             uint64_t onDiskFileSize = currentFileHandlerPtr->file_operation_func_ptr_->getFileSize();
             if (onDiskFileSize > currentFileHandlerPtr->total_object_bytes_ && shouldDoRecoveryFlag_ == false) {
@@ -577,7 +564,6 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             } else if (onDiskFileSize < currentFileHandlerPtr->total_object_bytes_ && shouldDoRecoveryFlag_ == false) {
                 debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, currentFileHandlerPtr->total_object_bytes_);
             }
-            currentFileHandlerPtr->fileOperationMutex_.unlock();
             // re-insert into trie and map for build index
             objectFileMetaDataTrie_.insertWithFixedBitNumber(prefixHashStr, currentFileUsedPrefixLength, currentFileHandlerPtr);
         }
@@ -722,10 +708,8 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
                 hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_count_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
-                it.second->fileOperationMutex_.lock();
                 it.second->file_operation_func_ptr_->flushFile();
                 it.second->file_operation_func_ptr_->closeFile();
-                it.second->fileOperationMutex_.unlock();
             }
         }
         hashStoreFileManifestStream.flush();
@@ -987,7 +971,6 @@ bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string pre
     char fileHeaderWriteBuffer[sizeof(newFileHeader)];
     memcpy(fileHeaderWriteBuffer, &newFileHeader, sizeof(newFileHeader));
     // write header to current file
-    currentFileHandlerPtr->fileOperationMutex_.lock();
     debug_trace("Newly created file ID = %lu, target prefix bit number = %lu, prefix = %s\n", currentFileHandlerPtr->target_file_id_, targetPrefixLen, prefixStr.c_str());
     currentFileHandlerPtr->file_operation_func_ptr_->createFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
     if (currentFileHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
@@ -998,7 +981,6 @@ bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string pre
     currentFileHandlerPtr->total_object_bytes_ += sizeof(newFileHeader);
     currentFileHandlerPtr->total_on_disk_bytes_ += onDiskWriteSize;
     currentFileHandlerPtr->temp_not_flushed_data_bytes_ = sizeof(newFileHeader);
-    currentFileHandlerPtr->fileOperationMutex_.unlock();
     // move pointer for return
     fileHandlerPtr = currentFileHandlerPtr;
     return true;
@@ -1013,7 +995,7 @@ uint64_t HashStoreFileManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_set<string>& savedAnchors, unordered_map<string, vector<string>>& resultMap)
+pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, vector<string>>& resultMap)
 {
     uint64_t processedKeepObjectNumber = 0;
     uint64_t processedTotalObjectNumber = 0;
@@ -1069,10 +1051,10 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
 
     for (auto& keyIt : savedAnchors) {
         anchors++;
-        if (resultMap.find(keyIt) != resultMap.end()) {
-            processedKeepObjectNumber -= (resultMap.at(keyIt).size()) + 1;
-            resultMap.at(keyIt).clear();
-            resultMap.erase(keyIt);
+        if (resultMap.find(keyIt.first) != resultMap.end()) {
+            processedKeepObjectNumber -= (resultMap.at(keyIt.first).size() + 1);
+            resultMap.at(keyIt.first).clear();
+            resultMap.erase(keyIt.first);
         }
     }
 
@@ -1157,7 +1139,6 @@ bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* curre
     if (currentHandlerPtr->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
         currentHandlerPtr->gc_result_status_flag_ = kNoGC;
     }
-    currentHandlerPtr->fileOperationMutex_.unlock();
     // remove old file
     currentHandlerPtr->file_ownership_flag_ = 0;
     debug_info("flushed new file to filesystem since single file gc, the new file ID = %lu, corresponding previous file ID = %lu, target file size = %lu\n", currentFileHeader.file_id_, currentFileHeader.previous_file_id_first_, targetFileSize);
@@ -1240,7 +1221,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
         if (tempHandlerToPrefixMapForMetadataUpdate.size() > 2) {
             debug_error("[ERROR] Split file ID = %lu for gc success, but generate more than 2 files, generated file number = %lu\n", currentHandlerPtr->target_file_id_, tempHandlerToPrefixMapForMetadataUpdate.size());
             currentHandlerPtr->file_ownership_flag_ = 0;
-            currentHandlerPtr->fileOperationMutex_.unlock();
             return false;
         }
         for (auto mapIt : tempHandlerToPrefixMapForMetadataUpdate) {
@@ -1250,7 +1230,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
                 debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", tempHandler->current_prefix_used_bit_, tempHandler->target_file_id_);
                 debug_error("[ERROR] Split file ID = %lu for gc not success, could not update metadata for file ID = %lu\n", currentHandlerPtr->target_file_id_, tempHandler->target_file_id_);
                 currentHandlerPtr->file_ownership_flag_ = 0;
-                currentHandlerPtr->fileOperationMutex_.unlock();
                 continue;
             } else {
                 if (tempHandler->current_prefix_used_bit_ != insertAtLevel) {
@@ -1265,11 +1244,9 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
         }
         currentHandlerPtr->gc_result_status_flag_ = kShouldDelete;
         currentHandlerPtr->file_ownership_flag_ = 0;
-        currentHandlerPtr->fileOperationMutex_.unlock();
     } else {
         debug_error("[ERROR] Split file ID = %lu for gc not success, skip this file\n", currentHandlerPtr->target_file_id_);
         currentHandlerPtr->file_ownership_flag_ = 0;
-        currentHandlerPtr->fileOperationMutex_.unlock();
     }
     return true;
 }
@@ -1285,11 +1262,10 @@ void HashStoreFileManager::processGCRequestWorker()
         if (notifyGCMQ_->pop(fileHandler)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-
+            std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[fileHandler->total_object_bytes_];
-            fileHandler->fileOperationMutex_.lock();
             fileHandler->file_ownership_flag_ = -1;
             fileHandler->file_operation_func_ptr_->flushFile();
             fileHandler->temp_not_flushed_data_bytes_ = 0;

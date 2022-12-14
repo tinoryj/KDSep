@@ -5,8 +5,8 @@
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-// #include "utils/trie.hpp"
 #include <bits/stdc++.h>
+#include <shared_mutex>
 
 namespace DELTAKV_NAMESPACE {
 
@@ -15,13 +15,13 @@ public:
     HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
     ~HashStoreFileOperator();
     // file operations with job queue support
-    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
-    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> batchedWriteOperationsMap);
+    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequenceNumber, bool isAnchorStatus);
+    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
     bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     // file operations without job queue support-> only support single operation
-    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
-    bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> batchedWriteOperationsMap);
+    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequemceNumber, bool isAnchorStatus);
+    bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     // threads with job queue support
     void operationWorker();

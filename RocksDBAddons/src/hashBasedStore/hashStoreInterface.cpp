@@ -27,7 +27,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
     uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
-    if (totalNumberOfThreadsAllowed > 2) {
+    if (totalNumberOfThreadsAllowed >= 2) {
         if (options->enable_deltaStore_garbage_collection == true) {
             uint64_t totalNumberOfThreadsForOperationAllowed = totalNumberOfThreadsAllowed / 2 + 1;
             if (totalNumberOfThreadsForOperationAllowed > 1) {
@@ -36,11 +36,12 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
                 shouldUseDirectOperationsFlag_ = true;
             }
         } else {
-            shouldUseDirectOperationsFlag_ = true;
+            shouldUseDirectOperationsFlag_ = false;
         }
     } else {
-        shouldUseDirectOperationsFlag_ = false;
+        shouldUseDirectOperationsFlag_ = true;
     }
+    debug_info("shouldUseDirectOperationsFlag = %d\n", shouldUseDirectOperationsFlag_);
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -63,7 +64,7 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool isAnchor)
+bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
 {
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
@@ -79,9 +80,9 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
             return true;
         }
         if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, isAnchor);
+            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
         } else {
-            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, isAnchor);
+            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
         }
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
@@ -92,9 +93,9 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, bool 
     }
 }
 
-bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<bool> isAnchorVec)
+bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec)
 {
-    unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> tempFileHandlerMap;
+    unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr;
         if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kPut, currentFileHandlerPtr) != true) {
@@ -103,7 +104,8 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
             if (tempFileHandlerMap.find(currentFileHandlerPtr) != tempFileHandlerMap.end()) {
                 std::get<0>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(keyStrVec[i]);
                 std::get<1>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(valueStrPtrVec[i]);
-                std::get<2>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(isAnchorVec[i]);
+                std::get<2>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(sequenceNumberVec[i]);
+                std::get<3>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(isAnchorVec[i]);
             } else {
             }
         }

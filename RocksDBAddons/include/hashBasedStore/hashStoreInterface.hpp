@@ -16,8 +16,8 @@ public:
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(const string& keyStr, const string& valueStr, bool isAnchor);
-    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<bool> isAnchorVec);
+    bool put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor);
+    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec);
     bool get(const string& keyStr, vector<string>*& valueStrVecPtr);
     bool multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();

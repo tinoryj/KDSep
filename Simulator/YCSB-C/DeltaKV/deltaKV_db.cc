@@ -133,9 +133,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     DebugManager::getInstance().setDebugLevel(debugLevel);
     cerr << "debug level set to " << debugLevel << endl;
 
-    options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
-    options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
-
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
     if (directIO == true) {
@@ -183,6 +180,13 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixMaxBitNumber();
         options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
+        options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
+        options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
+        if (options_.deltaStore_write_back_during_reads_threshold == 0 && options_.deltaStore_write_back_during_gc_threshold == 0) {
+            options_.enable_write_back_optimization_ = false;
+        } else {
+            options_.enable_write_back_optimization_ = true;
+        }
         if (enable_gc_flag == true) {
             options_.enable_deltaStore_garbage_collection = true;
             options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
