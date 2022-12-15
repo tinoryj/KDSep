@@ -107,6 +107,7 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
 {
+    debug_info("New OP: put key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
     STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
@@ -161,6 +162,7 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
 
 bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
 {
+    debug_info("New OP: get key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
     ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler);

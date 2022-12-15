@@ -45,9 +45,9 @@ public:
     uint64_t deltaStore_thread_number_limit = 3;
     uint64_t deltaStore_file_flush_buffer_size_limit_ = 4096;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;
-    uint64_t deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = 10000;
+    uint64_t deltaStore_operationNumberForForcedSingleFileGCThreshold_ = 10000;
     float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.8;
-    float deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = 0.4;
+    float deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ = 0.4;
     float deltaStore_garbage_collection_start_total_storage_minimum_occupancy = 0.8;
     float deltaStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;
     float deltaStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
@@ -75,8 +75,7 @@ public:
 
     // common options
     uint64_t deltaKV_thread_number_limit = 4;
-    uint64_t hashStore_init_prefix_bit_number = 8;
-    uint64_t hashStore_max_prefix_bit_number = 16;
+    uint64_t hashStore_max_file_number_ = 16;
     shared_ptr<DeltaKVMergeOperator> deltaKV_merge_operation_ptr;
     fileOperationType fileOperationMethod_ = kDirectIO;
     bool enable_write_back_optimization_ = true;

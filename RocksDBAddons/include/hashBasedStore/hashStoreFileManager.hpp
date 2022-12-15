@@ -4,7 +4,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-#include "utils/prefixTree.hpp"
+#include "utils/prefixTreeForHashStore.hpp"
 #include <bits/stdc++.h>
 #include <filesystem>
 
@@ -33,12 +33,12 @@ public:
 
 private:
     // settings
-    uint64_t initialTrieBitNumber_;
-    uint64_t maxTrieBitNumber_;
-    uint64_t singleFileGCTriggerSize_;
-    uint64_t singleFileMergeGCUpperBoundSize_;
-    uint64_t singleFileSplitGCTriggerSize_;
-    uint64_t globalGCTriggerSize_;
+    uint64_t initialTrieBitNumber_ = 0;
+    uint64_t maxBucketNumber_ = 0;
+    uint64_t singleFileGCTriggerSize_ = 0;
+    uint64_t singleFileMergeGCUpperBoundSize_ = 0;
+    uint64_t singleFileSplitGCTriggerSize_ = 0;
+    uint64_t globalGCTriggerSize_ = 0;
     std::string workingDir_;
     fileOperationType fileOperationMethod_ = kFstream;
     uint64_t operationCounterForMetadataCommit_ = 0;
@@ -46,9 +46,11 @@ private:
     uint64_t gcWriteBackDeltaNum_ = 5;
     bool enableGCFlag_ = true;
     bool enableWriteBackDuringGCFlag_ = true;
+    vector<uint64_t> targetDeleteFileHandlerVec_;
+    std::shared_mutex fileDeleteVecMtx_;
 
     // data structures
-    PrefixTree<hashStoreFileMetaDataHandler*> objectFileMetaDataTrie_; // prefix-hash to object file metadata.
+    PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     deque<uint64_t> targetDelteFileQueue_; // collect need delete files during GC
     // file ID generator
     uint64_t targetNewFileID_ = 0;
@@ -62,6 +64,7 @@ private:
     bool shouldDoRecoveryFlag_ = false;
     bool gcThreadJobDoneFlag_ = false;
 
+    bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
@@ -80,7 +83,7 @@ private:
     bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
     bool singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t prefixBitNumber, bool fileContainsReWriteKeysFlag);
     bool twoAdjacentFileMerge(hashStoreFileMetaDataHandler* currentHandlerPtr1, hashStoreFileMetaDataHandler* currentHandlerPtr2, string targetPrefixStr);
-    bool selectFileForMerge(hashStoreFileMetaDataHandler*& currentHandlerPtr1, hashStoreFileMetaDataHandler*& currentHandlerPtr2, string& targetPrefixStr);
+    bool selectFileForMerge(uint64_t targetFileIDForSplit, hashStoreFileMetaDataHandler*& currentHandlerPtr1, hashStoreFileMetaDataHandler*& currentHandlerPtr2, string& targetPrefixStr);
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/dataStructure.hpp"
 #include "utils/debug.hpp"
 #include "utils/statsRecorder.hh"
 #include <bits/stdc++.h>
@@ -9,28 +10,27 @@ using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
-template <typename dataT>
-class PrefixTree {
+class PrefixTreeForHashStore {
 
 public:
-    PrefixTree(uint64_t initBitNumber, uint64_t maxBitNumber)
+    PrefixTreeForHashStore(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         initBitNumber_ = initBitNumber;
-        maxBitNumber_ = maxBitNumber;
+        maxFileNumber_ = maxFileNumber;
         rootNode_ = new prefixTreeNode;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            createPrefixTree(rootNode_, 0);
-        }
+        createPrefixTree(rootNode_, 0);
     }
 
-    PrefixTree()
+    PrefixTreeForHashStore()
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         rootNode_ = new prefixTreeNode;
     }
 
-    ~PrefixTree()
+    ~PrefixTreeForHashStore()
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         stack<prefixTreeNode*> stk;
         prefixTreeNode *p = rootNode_, *pre = nullptr;
 
@@ -57,26 +57,34 @@ public:
         }
     }
 
-    void init(uint64_t initBitNumber, uint64_t maxBitNumber)
+    void init(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         initBitNumber_ = initBitNumber;
-        maxBitNumber_ = maxBitNumber;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            createPrefixTree(rootNode_, 0);
-        }
+        maxFileNumber_ = maxFileNumber;
+        createPrefixTree(rootNode_, 0);
     }
 
-    uint64_t insert(string prefixStr, dataT& newData)
+    uint64_t getRemainFileNumber()
     {
-        uint64_t insertAtLevel = 0;
-        bool status;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = addPrefixTreeNode(rootNode_, prefixStr, newData, insertAtLevel);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        return maxFileNumber_ - currentFileNumber_;
+    }
+
+    uint64_t insert(string prefixStr, hashStoreFileMetaDataHandler*& newData)
+    {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        if (currentFileNumber_ >= maxFileNumber_) {
+            debug_error("[ERROR] Could note insert new node, since there are too many files, number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
+            printNodeMap();
+            return 0;
         }
+        uint64_t insertAtLevel = 0;
+        bool status = addPrefixTreeNode(rootNode_, prefixStr, newData, insertAtLevel);
         if (status == true) {
-            debug_trace("Insert to new node success at level = %lu, for prefix = %s\n", insertAtLevel, prefixStr.c_str());
+            currentFileNumber_++;
+            debug_trace("Insert to new node success at level = %lu, for prefix = %s, current file number = %lu\n", insertAtLevel, prefixStr.c_str(), currentFileNumber_);
+            printNodeMap();
             return insertAtLevel;
         } else {
             debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %s\n", insertAtLevel, prefixStr.c_str());
@@ -85,16 +93,20 @@ public:
         }
     }
 
-    uint64_t insertWithFixedBitNumber(string prefixStr, uint64_t fixedBitNumber, dataT& newData)
+    uint64_t insertWithFixedBitNumber(string prefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
     {
-        uint64_t insertAtLevel = 0;
-        bool status;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = addPrefixTreeNodeWithFixedBitNumber(rootNode_, prefixStr, fixedBitNumber, newData, insertAtLevel);
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        debug_info("Current file number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
+        if (currentFileNumber_ >= maxFileNumber_) {
+            debug_error("[ERROR] Could note insert new node, since there are too many files, number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
+            printNodeMap();
+            return 0;
         }
+        uint64_t insertAtLevel = 0;
+        bool status = addPrefixTreeNodeWithFixedBitNumber(rootNode_, prefixStr, fixedBitNumber, newData, insertAtLevel);
         if (status == true) {
             debug_trace("Insert to new node with fixed bit number =  %lu, success at level =  %lu, for prefix = %s\n", fixedBitNumber, insertAtLevel, prefixStr.c_str());
+            currentFileNumber_++;
             return insertAtLevel;
         } else {
             debug_error("[ERROR] Insert to new node with fixed bit number =  %lu, fail at level =  %lu, for prefix = %s\n", fixedBitNumber, insertAtLevel, prefixStr.c_str());
@@ -103,14 +115,11 @@ public:
         }
     }
 
-    bool get(string prefixStr, dataT& newData)
+    bool get(string prefixStr, hashStoreFileMetaDataHandler*& newData)
     {
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         uint64_t findAtLevelID = 0;
-        bool status;
-        {
-            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-            status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
-        }
+        bool status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         if (status == true) {
             return true;
         } else {
@@ -120,12 +129,9 @@ public:
 
     bool find(string prefixStr, uint64_t& findAtLevelID)
     {
-        dataT newData;
-        bool status;
-        {
-            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-            status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
-        }
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        hashStoreFileMetaDataHandler* newData;
+        bool status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
         if (status == true) {
             return true;
         } else {
@@ -135,12 +141,10 @@ public:
 
     bool remove(string prefixStr, uint64_t& findAtLevelID)
     {
-        bool status;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = markPrefixTreeNodeAsNonLeafNode(rootNode_, prefixStr, findAtLevelID);
-        }
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        bool status = markPrefixTreeNodeAsNonLeafNode(rootNode_, prefixStr, findAtLevelID);
         if (status == true) {
+            currentFileNumber_--;
             return true;
         } else {
             return false;
@@ -149,11 +153,20 @@ public:
 
     bool mergeNodesToNewLeafNode(string prefixStr, uint64_t& findAtLevelID)
     {
-        bool status;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(rootNode_, prefixStr, findAtLevelID);
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        bool status = markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(rootNode_, prefixStr, findAtLevelID);
+        if (status == true) {
+            currentFileNumber_--;
+            return true;
+        } else {
+            return false;
         }
+    }
+
+    bool updateDataObjectForTargetLeafNode(string bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
+    {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        bool status = updateLeafNodeDataObject(rootNode_, bitBasedPrefixStr, findAtLevelID, newDataObj);
         if (status == true) {
             return true;
         } else {
@@ -161,133 +174,44 @@ public:
         }
     }
 
-    bool updateDataObjectForTargetLeafNode(string bitBasedPrefixStr, uint64_t& findAtLevelID, dataT newDataObj)
-    {
-        bool status;
-        {
-            std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-            status = updateLeafNodeDataObject(rootNode_, bitBasedPrefixStr, findAtLevelID, newDataObj);
-        }
-        if (status == true) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    bool getCurrentValidNodes(vector<pair<string, dataT>>& validObjectList)
-    {
-        {
-            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-
-            prefixTreeNode *p = rootNode_, *pre = nullptr;
-            stack<prefixTreeNode*> stk;
-            while (!stk.empty() || p != nullptr) {
-                while (p != nullptr) {
-                    stk.push(p);
-                    p = p->leftChildNodePtr_;
-                }
-
-                if (!stk.empty()) {
-                    p = stk.top();
-                    stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
-                        if (p->isLeafNodeFlag_ == true) {
-                            validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
-                        }
-                        pre = p;
-                        p = nullptr;
-                    } else {
-                        stk.push(p);
-                        p = p->rightChildNodePtr_;
-                    }
-                }
-            }
-        }
-        if (validObjectList.size() != 0) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    bool getPossibleValidNodes(vector<pair<string, dataT>>& validObjectList)
-    {
-        {
-            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-
-            // post order
-            stack<prefixTreeNode*> stk;
-            prefixTreeNode *p = rootNode_, *pre = nullptr;
-            while (!stk.empty() || p != nullptr) {
-                while (p != nullptr) {
-                    stk.push(p);
-                    p = p->leftChildNodePtr_;
-                }
-
-                if (!stk.empty()) {
-                    p = stk.top();
-                    stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
-                        if (p->currentNodePrefix.size() != 0) {
-                            validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
-                        }
-                        pre = p;
-                        p = nullptr;
-                    } else {
-                        stk.push(p);
-                        p = p->rightChildNodePtr_;
-                    }
-                }
-            }
-        }
-        if (validObjectList.size() != 0) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    bool getInValidNodes(vector<pair<string, dataT>>& invalidObjectList)
-    {
-        {
-            std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-
-            stack<prefixTreeNode*> stk;
-            prefixTreeNode *p = rootNode_, *pre = nullptr;
-            while (!stk.empty() || p != nullptr) {
-                while (p != nullptr) {
-                    stk.push(p);
-                    p = p->leftChildNodePtr_;
-                }
-
-                if (!stk.empty()) {
-                    p = stk.top();
-                    stk.pop();
-                    if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
-                        if (p->currentNodePrefix.size() != 0 && p->isLeafNodeFlag_ == false) {
-                            invalidObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
-                        }
-                        pre = p;
-                        p = nullptr;
-                    } else {
-                        stk.push(p);
-                        p = p->rightChildNodePtr_;
-                    }
-                }
-            }
-        }
-        if (invalidObjectList.size() != 0) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    void printNodeMap()
+    bool getCurrentValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        prefixTreeNode *p = rootNode_, *pre = nullptr;
+        stack<prefixTreeNode*> stk;
+        while (!stk.empty() || p != nullptr) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->leftChildNodePtr_;
+            }
 
+            if (!stk.empty()) {
+                p = stk.top();
+                stk.pop();
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
+                    if (p->isLeafNodeFlag_ == true) {
+                        validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                    }
+                    pre = p;
+                    p = nullptr;
+                } else {
+                    stk.push(p);
+                    p = p->rightChildNodePtr_;
+                }
+            }
+        }
+
+        if (validObjectList.size() != 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool getPossibleValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
+    {
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        // post order
         stack<prefixTreeNode*> stk;
         prefixTreeNode *p = rootNode_, *pre = nullptr;
         while (!stk.empty() || p != nullptr) {
@@ -301,7 +225,73 @@ public:
                 stk.pop();
                 if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                     if (p->currentNodePrefix.size() != 0) {
-                        debug_trace("Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
+                        validObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                    }
+                    pre = p;
+                    p = nullptr;
+                } else {
+                    stk.push(p);
+                    p = p->rightChildNodePtr_;
+                }
+            }
+        }
+        if (validObjectList.size() != 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool getInValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& invalidObjectList)
+    {
+
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        stack<prefixTreeNode*> stk;
+        prefixTreeNode *p = rootNode_, *pre = nullptr;
+        while (!stk.empty() || p != nullptr) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->leftChildNodePtr_;
+            }
+
+            if (!stk.empty()) {
+                p = stk.top();
+                stk.pop();
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
+                    if (p->currentNodePrefix.size() != 0 && p->isLeafNodeFlag_ == false) {
+                        invalidObjectList.push_back(make_pair(p->currentNodePrefix, p->data_));
+                    }
+                    pre = p;
+                    p = nullptr;
+                } else {
+                    stk.push(p);
+                    p = p->rightChildNodePtr_;
+                }
+            }
+        }
+        if (invalidObjectList.size() != 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    void printNodeMap()
+    {
+        stack<prefixTreeNode*> stk;
+        prefixTreeNode *p = rootNode_, *pre = nullptr;
+        while (!stk.empty() || p != nullptr) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->leftChildNodePtr_;
+            }
+
+            if (!stk.empty()) {
+                p = stk.top();
+                stk.pop();
+                if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
+                    if (p->currentNodePrefix.size() != 0) {
+                        fprintf(stderr, "Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
                     }
                     pre = p;
                     p = nullptr;
@@ -321,13 +311,14 @@ private:
         prefixTreeNode* rightChildNodePtr_ = nullptr; // 1
         bool isLeafNodeFlag_ = false;
         string currentNodePrefix;
-        dataT data_;
+        hashStoreFileMetaDataHandler* data_ = nullptr; //
     } prefixTreeNode;
 
     std::shared_mutex nodeOperationMtx_;
     uint64_t nextNodeID_ = 0;
-    uint64_t initBitNumber_;
-    uint64_t maxBitNumber_;
+    uint64_t initBitNumber_ = 0;
+    uint64_t maxFileNumber_ = 0;
+    uint64_t currentFileNumber_ = 0;
     prefixTreeNode* rootNode_;
 
     void createPrefixTree(prefixTreeNode* root, uint64_t currentLevel)
@@ -346,10 +337,10 @@ private:
         }
     }
 
-    bool addPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, dataT newDataObj, uint64_t& insertAtLevelID)
+    bool addPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
-        for (; currentLevel < bitBasedPrefixStr.size() && currentLevel < maxBitNumber_; currentLevel++) {
+        for (; currentLevel < bitBasedPrefixStr.size(); currentLevel++) {
             // cout << "Current level = " << currentLevel << endl;
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
@@ -368,7 +359,8 @@ private:
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        currentFileNumber_--;
+                        debug_warn("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s, currentFilnumber = %lu\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str(), currentFileNumber_);
                         break;
                     } else {
                         continue;
@@ -391,7 +383,8 @@ private:
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        currentFileNumber_--;
+                        debug_warn("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s, currentFilnumber = %lu\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str(), currentFileNumber_);
                         break;
                     } else {
                         continue;
@@ -400,10 +393,6 @@ private:
             }
         }
         currentLevel++;
-        if (currentLevel >= maxBitNumber_) {
-            debug_error("[ERROR] Reached max bit number during add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
-            return false;
-        }
         if (bitBasedPrefixStr.at(currentLevel) == '0') {
             // go to left if 0
             if (root->leftChildNodePtr_ == nullptr) {
@@ -442,7 +431,7 @@ private:
         return false;
     }
 
-    bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t fixedBitNumber, dataT newDataObj, uint64_t& insertAtLevelID)
+    bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
         for (; currentLevel < fixedBitNumber - 1; currentLevel++) {
@@ -486,10 +475,6 @@ private:
             }
         }
         currentLevel++;
-        if (currentLevel >= maxBitNumber_) {
-            debug_error("[ERROR] Reached max bit number during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
-            return false;
-        }
         if (bitBasedPrefixStr.at(fixedBitNumber - 1) == '0') {
             // go to left if 0
             if (root->leftChildNodePtr_ == nullptr) {
@@ -526,10 +511,10 @@ private:
         return false;
     }
 
-    bool findPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, dataT& currentDataTObj, uint64_t& findAtLevelID)
+    bool findPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, hashStoreFileMetaDataHandler*& currentDataTObj, uint64_t& findAtLevelID)
     {
         uint64_t currentLevel = 0;
-        for (; currentLevel < bitBasedPrefixStr.size() && currentLevel < maxBitNumber_; currentLevel++) {
+        for (; currentLevel < bitBasedPrefixStr.size(); currentLevel++) {
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
                 // go to left if 0
                 if (root->isLeafNodeFlag_ == true) {
@@ -636,7 +621,7 @@ private:
         }
     }
 
-    bool updateLeafNodeDataObject(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID, dataT newDataObj)
+    bool updateLeafNodeDataObject(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
     {
         uint64_t searchLevelNumber = bitBasedPrefixStr.size();
         findAtLevelID = 0;

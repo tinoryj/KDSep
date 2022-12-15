@@ -176,9 +176,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
         options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
         options_.deltaStore_thread_number_limit = config.getDeltaLogThreadNumber();
-        options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixMinBitNumber();
-        options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixMaxBitNumber();
-        options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
+        options_.hashStore_max_file_number_ = config.getDeltaLogMaxFileNumber();
+        options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
         options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
         options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
@@ -189,9 +188,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         }
         if (enable_gc_flag == true) {
             options_.enable_deltaStore_garbage_collection = true;
-            options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
-            options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
+            options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
+            options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ = config.getDeltaLogSplitGCThreshold();
             options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
+        } else {
+            options_.enable_deltaStore_garbage_collection = false;
         }
     }
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
