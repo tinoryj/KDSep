@@ -88,6 +88,56 @@ bool FileOperation::openFile(string path)
     }
 }
 
+bool FileOperation::createThenOpenFile(string path)
+{
+    switch (operationType_) {
+    case kFstream:
+        fileStream_.open(path, ios::out);
+        if (fileStream_.is_open() == false) {
+            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
+            return false;
+        } else {
+            fileStream_.close();
+            fileStream_.open(path, ios::in | ios::out | ios::binary);
+            if (fileStream_.is_open() == false) {
+                debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
+                return false;
+            } else {
+                return true;
+            }
+        }
+        return true;
+        break;
+    case kDirectIO:
+        fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0644);
+        if (fileDirect_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        } else {
+            directIOWriteFileSize_ = 0;
+            directIOActualWriteFileSize_ = 0;
+            debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            return true;
+        }
+        break;
+    case kAlignLinuxIO:
+        fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR, 0644);
+        if (fileDirect_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        } else {
+            directIOWriteFileSize_ = 0;
+            directIOActualWriteFileSize_ = 0;
+            debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            return true;
+        }
+        break;
+    default:
+        return false;
+        break;
+    }
+}
+
 bool FileOperation::closeFile()
 {
     if (operationType_ == kFstream) {

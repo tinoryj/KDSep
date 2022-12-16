@@ -93,6 +93,39 @@ public:
         }
     }
 
+    pair<uint64_t, uint64_t> insertPairOfNodes(string prefixStr1, hashStoreFileMetaDataHandler*& newData1, string prefixStr2, hashStoreFileMetaDataHandler*& newData2)
+    {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        if (currentFileNumber_ >= (maxFileNumber_ + 1)) {
+            debug_error("[ERROR] Could note insert new node, since there are too many files, number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
+            printNodeMap();
+            return make_pair(0, 0);
+        }
+        uint64_t insertAtLevel1 = 0;
+        uint64_t insertAtLevel2 = 0;
+        bool status = addPrefixTreeNode(rootNode_, prefixStr1, newData1, insertAtLevel1);
+        if (status == true) {
+            currentFileNumber_++;
+            debug_trace("Insert to first new node success at level = %lu, for prefix = %s, current file number = %lu\n", insertAtLevel1, prefixStr1.c_str(), currentFileNumber_);
+            // add another node
+            status = addPrefixTreeNode(rootNode_, prefixStr2, newData2, insertAtLevel2);
+            if (status == true) {
+                currentFileNumber_++;
+                debug_trace("Insert to second new node success at level = %lu, for prefix = %s, current file number = %lu\n", insertAtLevel2, prefixStr2.c_str(), currentFileNumber_);
+                printNodeMap();
+                return make_pair(insertAtLevel1, insertAtLevel2);
+            } else {
+                debug_error("[ERROR] Insert to second new node fail at level = %lu, for prefix = %s\n", insertAtLevel1, prefixStr1.c_str());
+                printNodeMap();
+                return make_pair(insertAtLevel1, insertAtLevel2);
+            }
+        } else {
+            debug_error("[ERROR] Insert to first new node fail at level = %lu, for prefix = %s\n", insertAtLevel1, prefixStr1.c_str());
+            printNodeMap();
+            return make_pair(insertAtLevel1, insertAtLevel2);
+        }
+    }
+
     uint64_t insertWithFixedBitNumber(string prefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
