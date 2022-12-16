@@ -84,7 +84,6 @@ public:
         if (status == true) {
             currentFileNumber_++;
             debug_trace("Insert to new node success at level = %lu, for prefix = %s, current file number = %lu\n", insertAtLevel, prefixStr.c_str(), currentFileNumber_);
-            printNodeMap();
             return insertAtLevel;
         } else {
             debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %s\n", insertAtLevel, prefixStr.c_str());
@@ -112,7 +111,6 @@ public:
             if (status == true) {
                 currentFileNumber_++;
                 debug_trace("Insert to second new node success at level = %lu, for prefix = %s, current file number = %lu\n", insertAtLevel2, prefixStr2.c_str(), currentFileNumber_);
-                printNodeMap();
                 return make_pair(insertAtLevel1, insertAtLevel2);
             } else {
                 debug_error("[ERROR] Insert to second new node fail at level = %lu, for prefix = %s\n", insertAtLevel1, prefixStr1.c_str());

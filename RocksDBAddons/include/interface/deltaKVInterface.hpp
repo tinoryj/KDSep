@@ -65,37 +65,54 @@ public:
 private:
     // batched write
     deque<tuple<DBOperationType, string, string, uint32_t>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
-    unordered_map<string, deque<pair<DBOperationType, string>>> writeBatchMapForSearch_; // key to <operation type, value>
+    typedef struct writeBatchSearch_t {
+        DBOperationType op_;
+        string value_;
+        uint32_t sequenceNumber_;
+        writeBatchSearch_t(DBOperationType op, string value, uint32_t sequenceNumber)
+        {
+            op_ = op;
+            value_ = value;
+            sequenceNumber_ = sequenceNumber;
+        };
+    } writeBatchSearch_t;
+    unordered_map<string, pair<deque<writeBatchSearch_t>, deque<writeBatchSearch_t>>> writeBatchMapForSearch_; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_;
+    bool oneBufferDuringProcessFlag_ = false;
 
     enum DBRunningMode { kPlainRocksDB = 0,
         kOnlyValueLog = 1,
         kOnlyDeltaLog = 2,
         kBothValueAndDeltaLog = 3,
-        kBatchedWithBothValueAndDeltaLog = 4 };
+        kBatchedWithBothValueAndDeltaLog = 4,
+        kBatchedWithOnlyValueLog = 5,
+        kBatchedWithOnlyDeltaLog = 6,
+        kBatchedWithPlainRocksDB = 7 };
 
     DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
-    bool GetWithPlainRocksDB(const string& key, string* value);
+    bool GetWithPlainRocksDB(const string& key, string* value, uint32_t& maxSequenceNumber);
 
     bool PutWithOnlyValueStore(const string& key, const string& value);
     bool MergeWithOnlyValueStore(const string& key, const string& value);
-    bool GetWithOnlyValueStore(const string& key, string* value);
+    bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber);
 
     bool PutWithOnlyDeltaStore(const string& key, const string& value);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
-    bool GetWithOnlyDeltaStore(const string& key, string* value);
+    bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber);
 
     bool PutWithValueAndDeltaStore(const string& key, const string& value);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
-    bool GetWithValueAndDeltaStore(const string& key, string* value);
+    bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber);
 
     bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
+    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber);
+    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>* operationsQueue);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
@@ -105,6 +122,8 @@ private:
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = true;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
+
+    std::shared_mutex putOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
     std::shared_mutex globalSequenceNumberGeneratorMtx_;
@@ -121,7 +140,7 @@ private:
     vector<boost::thread*> thList_;
     bool deleteExistingThreads();
     // for separated operations
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
     // Storage component for delta store
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
     HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;

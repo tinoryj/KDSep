@@ -140,14 +140,14 @@ AppendAbleLRUCache<keyType, valueType>::~AppendAbleLRUCache()
 template <typename keyType, typename valueType>
 void AppendAbleLRUCache<keyType, valueType>::insertToCache(keyType& cacheKey, valueType& data)
 {
-    std::unique_lock<std::shared_mutex> w_lock(cacheMtx_);
+    std::scoped_lock<std::shared_mutex> w_lock(cacheMtx_);
     Cache_->insert(cacheKey, data);
 }
 
 template <typename keyType, typename valueType>
 bool AppendAbleLRUCache<keyType, valueType>::existsInCache(keyType& cacheKey)
 {
-    std::shared_lock<std::shared_mutex> r_lock(cacheMtx_);
+    std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
     bool status = Cache_->contains(cacheKey);
     if (status == true) {
         return true;
@@ -159,7 +159,7 @@ bool AppendAbleLRUCache<keyType, valueType>::existsInCache(keyType& cacheKey)
 template <typename keyType, typename valueType>
 valueType& AppendAbleLRUCache<keyType, valueType>::getFromCache(keyType& cacheKey)
 {
-    std::shared_lock<std::shared_mutex> r_lock(cacheMtx_);
+    std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
     return Cache_->get(cacheKey);
 }
 
