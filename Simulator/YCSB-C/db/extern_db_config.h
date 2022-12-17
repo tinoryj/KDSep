@@ -60,6 +60,7 @@ class ExternDBConfig {
     bool deltaStore_enable_batch;
     uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
     uint64_t deltaStore_write_back_during_gc_threshold_ = 5;
+    uint64_t deltaKVWriteBatchSize_ = 5;
 
     struct {
         uint64_t level;
@@ -115,6 +116,7 @@ class ExternDBConfig {
         deltaStore_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
         deltaStore_write_back_during_reads_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringReadsThreshold");
         deltaStore_write_back_during_gc_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringGCThreshold");
+        deltaKVWriteBatchSize_ = pt_.get<uint64_t>("config.deltaKVWriteBatchSize");
     }
 
     int getBloomBits() {
@@ -270,6 +272,9 @@ class ExternDBConfig {
 
     uint64_t getDeltaStoreWriteBackDuringGCThreshold() {
         return deltaStore_write_back_during_gc_threshold_;
+    }
+    uint64_t getDeltaKVWriteBatchSize() {
+        return deltaKVWriteBatchSize_;
     }
 };
 }  // namespace ycsbc

@@ -13,8 +13,6 @@ class HashStoreInterface {
 public:
     HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
         HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue);
-    HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-        HashStoreFileOperator*& hashStoreFileOperator);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
@@ -26,15 +24,15 @@ public:
     bool setJobDone();
 
 private:
-    DeltaKVOptions* internalOptionsPtr_;
+    DeltaKVOptions* internalOptionsPtr_ = nullptr;
     bool shouldUseDirectOperationsFlag_;
     // size information
     uint64_t extractValueSizeThreshold_;
     // get function pointers
-    HashStoreFileManager* hashStoreFileManagerPtr_;
-    HashStoreFileOperator* hashStoreFileOperatorPtr_;
+    HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;
+    HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
     // message queues for internal usage
-    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
+    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_ = nullptr;
 };
 
 }

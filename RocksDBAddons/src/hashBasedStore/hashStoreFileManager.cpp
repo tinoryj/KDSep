@@ -66,6 +66,12 @@ HashStoreFileManager::~HashStoreFileManager()
     CloseHashStoreFileMetaDataList();
 }
 
+bool HashStoreFileManager::setJobDone()
+{
+    metadataUpdateShouldExit_ = true;
+    return true;
+}
+
 // Recovery
 /*
 fileContentBuffer start after file header
@@ -846,16 +852,15 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
     if (fileHandlerExistFlag == false && opType == kGet) {
         debug_error("[ERROR] get operation meet not stored buckets, key = %s\n", keyStr.c_str());
         return false;
-    } else if (fileHandlerExistFlag == false && opType == kPut) {
+    } else if (fileHandlerExistFlag == false && (opType == kPut || opType == kMultiPut)) {
         // Anchor: handler does not exist, do not create the file and directly return
         if (getForAnchorWriting) {
             fileHandlerPtr = nullptr;
             return true;
         }
-
         struct timeval tv;
         gettimeofday(&tv, 0);
-        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
+        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP4, tv);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
@@ -868,13 +873,13 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
     } else if (fileHandlerExistFlag == true) {
         while (true) {
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
-            if (!getFileHandlerStatus) {
-                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_, false, 0);
+            if (!getFileHandlerStatus && (opType == kPut || opType == kMultiPut)) {
+                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
                 } else {
-                    debug_info("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
+                    debug_warn("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
                     fileHandlerPtr->file_ownership_flag_ = 1;
                     return true;
                 }
@@ -947,8 +952,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixSt
     }
 }
 
-bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID)
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber)
 {
+    // std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
     uint64_t remainingAvaliableFileNumber = objectFileMetaDataTrie_.getRemainFileNumber();
     if (remainingAvaliableFileNumber == 0) {
         string targetPrefixStr;
@@ -965,23 +971,19 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
                 return false;
             }
         }
+        debug_info("Perform bucket merge before create new file success, target prefix = %s\n", targetPrefixStr.c_str());
     }
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
     currentFileHandlerPtr->current_prefix_used_bit_ = prefixBitNumber;
     currentFileHandlerPtr->target_file_id_ = generateNewFileID();
-    currentFileHandlerPtr->file_ownership_flag_ = 0;
+    currentFileHandlerPtr->file_ownership_flag_ = 1;
     currentFileHandlerPtr->gc_result_status_flag_ = kNew;
     currentFileHandlerPtr->total_object_bytes_ = 0;
     currentFileHandlerPtr->total_on_disk_bytes_ = 0;
     currentFileHandlerPtr->total_object_count_ = 0;
-    if (createByGCFlag == true) {
-        currentFileHandlerPtr->previous_file_id_first_ = previousFileID;
-        currentFileHandlerPtr->file_create_reason_ = kInternalGCFile;
-    } else {
-        currentFileHandlerPtr->previous_file_id_first_ = 0xffffffffffffffff;
-        currentFileHandlerPtr->file_create_reason_ = kNewFile;
-    }
+    currentFileHandlerPtr->previous_file_id_first_ = 0xffffffffffffffff;
+    currentFileHandlerPtr->file_create_reason_ = kNewFile;
     // move pointer for return
     uint64_t finalInsertLevel = objectFileMetaDataTrie_.insert(prefixStr, currentFileHandlerPtr);
     if (finalInsertLevel == 0) {
@@ -1003,6 +1005,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
 
 bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2, hashStoreFileHeader& newFileHeader)
 {
+    // std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
     currentFileHandlerPtr->current_prefix_used_bit_ = targetPrefixLen;
@@ -1022,19 +1025,15 @@ bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string pre
     newFileHeader.file_create_reason_ = kInternalGCFile;
     newFileHeader.file_id_ = currentFileHandlerPtr->target_file_id_;
     // write header to current file
-    debug_trace("Newly created file ID = %lu, target prefix bit number = %lu, prefix = %s, corresponding previous file ID = %lu and %lu\n", currentFileHandlerPtr->target_file_id_, targetPrefixLen, prefixStr.c_str(), previousFileID1, previousFileID2);
     string targetFilePathStr = workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta";
-    // currentFileHandlerPtr->file_operation_func_ptr_->createFile(targetFilePathStr);
-    // if (currentFileHandlerPtr->file_operation_func_ptr_->isFileOpen() == true) {
-    //     currentFileHandlerPtr->file_operation_func_ptr_->closeFile();
-    // }
-    // currentFileHandlerPtr->file_operation_func_ptr_->openFile(targetFilePathStr);
     bool createAndOpenNewFileStatus = currentFileHandlerPtr->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
     if (createAndOpenNewFileStatus == true) {
         // move pointer for return
+        debug_info("Newly created file ID = %lu, target prefix bit number = %lu, prefix = %s, corresponding previous file ID = %lu and %lu\n", currentFileHandlerPtr->target_file_id_, targetPrefixLen, prefixStr.c_str(), previousFileID1, previousFileID2);
         fileHandlerPtr = currentFileHandlerPtr;
         return true;
     } else {
+        debug_error("[ERROR] Could not create file ID = %lu, target prefix bit number = %lu, prefix = %s, corresponding previous file ID = %lu and %lu\n", currentFileHandlerPtr->target_file_id_, targetPrefixLen, prefixStr.c_str(), previousFileID1, previousFileID2);
         return false;
     }
 }
@@ -1611,7 +1610,7 @@ void HashStoreFileManager::processGCRequestWorker()
             for (auto keyIt : gcResultMap) {
                 if (enableWriteBackDuringGCFlag_ == true) {
                     debug_info("key = %s has %lu deltas\n", keyIt.first.c_str(), keyIt.second.first.size());
-                    if (keyIt.second.first.size() > gcWriteBackDeltaNum_) {
+                    if (keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) {
                         fileContainsReWriteKeysFlag = true;
                         writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(keyIt.first, "", 0);
                         writeBackOperationsQueue_->push(newWriteBackObject);
@@ -1751,7 +1750,7 @@ void HashStoreFileManager::scheduleMetadataUpdateWorker()
                 operationCounterMtx_.unlock();
             }
         }
-        if (notifyGCMQ_->done_ == true) {
+        if (metadataUpdateShouldExit_ == true) {
             break;
         }
     }

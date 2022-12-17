@@ -8,14 +8,21 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     perFileFlushBufferSizeLimit_ = options->deltaStore_file_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     singleFileSizeLimit_ = options->deltaStore_single_file_maximum_size;
-    operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
+    uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
+    if (options->enable_deltaStore_garbage_collection == true) {
+        totalNumberOfThreadsAllowed--;
+    }
+    if (totalNumberOfThreadsAllowed > 2) {
+        operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
+        debug_info("Total thread number for operationWorker > 2, use multithread operation%s\n", "");
+    }
+    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     notifyGCToManagerMQ_ = notifyGCToManagerMQ;
     if (options->enable_deltaStore_KDLevel_cache == true) {
         keyToValueListCache_ = new AppendAbleLRUCache<string, vector<string>>(options->deltaStore_KDLevel_cache_item_number);
     }
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
-    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
 }
 
 HashStoreFileOperator::~HashStoreFileOperator()
@@ -23,12 +30,16 @@ HashStoreFileOperator::~HashStoreFileOperator()
     if (keyToValueListCache_) {
         delete keyToValueListCache_;
     }
-    delete operationToWorkerMQ_;
+    if (operationToWorkerMQ_ != nullptr) {
+        delete operationToWorkerMQ_;
+    }
 }
 
 bool HashStoreFileOperator::setJobDone()
 {
-    operationToWorkerMQ_->done_ = true;
+    if (operationToWorkerMQ_ != nullptr) {
+        operationToWorkerMQ_->done_ = true;
+    }
     return true;
 }
 
@@ -477,6 +488,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         newRecordHeader.is_anchor_ = currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i);
         newRecordHeader.key_size_ = currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size();
         newRecordHeader.value_size_ = currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).size();
+        newRecordHeader.sequence_number_ = currentHandlerPtr->batched_write_operation_.sequence_number_vec_ptr_->at(i);
         memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
         currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
         memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).c_str(), newRecordHeader.key_size_);
@@ -573,7 +585,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
     newRecordHeader.key_size_ = key.size();
     newRecordHeader.value_size_ = value.size();
     if (fileHandler->file_operation_func_ptr_->isFileOpen() == false) {
-        // since file not created, shoud not flush anchors
+        // since file not created, shoud not flush anchors, but need to clean up buffered anchors
         // construct file header
         hashStoreFileHeader newFileHeader;
         newFileHeader.current_prefix_used_bit_ = fileHandler->current_prefix_used_bit_;
@@ -592,11 +604,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         debug_info("First open newly created file ID = %lu, target prefix bit number = %lu\n", fileHandler->target_file_id_, fileHandler->current_prefix_used_bit_);
         string targetFilePathStr = workingDir_ + "/" + to_string(fileHandler->target_file_id_) + ".delta";
 
-        fileHandler->file_operation_func_ptr_->createFile(targetFilePathStr);
-        if (fileHandler->file_operation_func_ptr_->isFileOpen() == true) {
-            fileHandler->file_operation_func_ptr_->closeFile();
-        }
-        fileHandler->file_operation_func_ptr_->openFile(targetFilePathStr);
+        fileHandler->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
         // write contents of file
         if (fileHandler->file_operation_func_ptr_->isFileOpen() == true) {
             uint64_t onDiskWriteSize;
@@ -617,6 +625,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
                         keyToValueListCache_->getFromCache(key).push_back(value);
                     }
                 }
+                fileHandler->bufferedUnFlushedAnchorsVec_.clear(); // clean up buffered anchors
                 // try GC if enabled
                 if (enableGCFlag_ == true) {
                     bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(fileHandler);
@@ -654,7 +663,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
             anchorRecordHeader.is_anchor_ = true;
             anchorRecordHeader.key_size_ = keyStrIt.first.size();
             anchorRecordHeader.sequence_number_ = keyStrIt.second;
-            anchorRecordHeader.value_size_ = 0; // not sure.
+            anchorRecordHeader.value_size_ = 0;
             memcpy(writeContentBufferWithAnchor + currentWriteBufferPtrPosition, &anchorRecordHeader, sizeof(anchorRecordHeader));
             memcpy(writeContentBufferWithAnchor + currentWriteBufferPtrPosition + sizeof(anchorRecordHeader), keyStrIt.first.c_str(), keyStrIt.first.size());
             currentWriteBufferPtrPosition += (sizeof(anchorRecordHeader) + keyStrIt.first.size());
@@ -676,7 +685,6 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
                 fileHandler->total_object_bytes_ += targetWriteSizeWithAnchors;
                 fileHandler->total_on_disk_bytes_ += onDiskWriteSize;
                 fileHandler->total_object_count_ += (totalNotFlushedAnchorNumber + 1);
-                fileHandler->bufferedUnFlushedAnchorsVec_.clear(); // clean up flushed anchors
                 // insert to cache if current key exist in cache && cache is enabled
                 if (keyToValueListCache_ != nullptr) {
                     if (keyToValueListCache_->existsInCache(key)) {
@@ -684,6 +692,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
                         keyToValueListCache_->getFromCache(key).push_back(value);
                     }
                 }
+                fileHandler->bufferedUnFlushedAnchorsVec_.clear(); // clean up flushed anchors
                 // try GC if enabled
                 if (enableGCFlag_ == true) {
                     bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(fileHandler);
@@ -706,6 +715,84 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
     }
 }
 
+bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap)
+{
+    for (auto batchIt : batchedWriteOperationsMap) {
+        std::scoped_lock<std::shared_mutex> w_lock(batchIt.first->fileOperationMutex_);
+        uint64_t targetWriteBufferSize = 0;
+        for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
+            targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + std::get<0>(batchIt.second).at(i).size());
+            if (std::get<3>(batchIt.second).at(i) == true) {
+                continue;
+            } else {
+                targetWriteBufferSize += std::get<1>(batchIt.second).at(i).size();
+            }
+        }
+        for (auto& keyIt : batchIt.first->bufferedUnFlushedAnchorsVec_) {
+            targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size());
+        }
+        char writeContentBuffer[targetWriteBufferSize];
+        uint64_t currentProcessedBufferIndex = 0;
+        hashStoreRecordHeader newRecordHeader;
+        for (auto& keyIt : batchIt.first->bufferedUnFlushedAnchorsVec_) {
+            newRecordHeader.is_anchor_ = true;
+            newRecordHeader.key_size_ = keyIt.first.size();
+            newRecordHeader.sequence_number_ = keyIt.second;
+            newRecordHeader.value_size_ = 0;
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
+            currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, keyIt.first.c_str(), keyIt.first.size());
+            currentProcessedBufferIndex += keyIt.first.size();
+        }
+
+        for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
+            newRecordHeader.key_size_ = std::get<0>(batchIt.second).at(i).size();
+            newRecordHeader.value_size_ = std::get<1>(batchIt.second).at(i).size();
+            newRecordHeader.sequence_number_ = std::get<2>(batchIt.second).at(i);
+            newRecordHeader.is_anchor_ = std::get<3>(batchIt.second).at(i);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
+            currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, std::get<0>(batchIt.second).at(i).c_str(), newRecordHeader.key_size_);
+            currentProcessedBufferIndex += newRecordHeader.key_size_;
+            if (newRecordHeader.is_anchor_ == true) {
+                continue;
+            } else {
+                memcpy(writeContentBuffer + currentProcessedBufferIndex, std::get<1>(batchIt.second).at(i).c_str(), newRecordHeader.value_size_);
+                currentProcessedBufferIndex += newRecordHeader.value_size_;
+            }
+        }
+        uint64_t targetObjectNumber = std::get<0>(batchIt.second).size() + batchIt.first->bufferedUnFlushedAnchorsVec_.size();
+        // write content
+        bool writeContentStatus = writeContentToFile(batchIt.first, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
+        if (writeContentStatus == false) {
+            batchIt.first->file_ownership_flag_ = 0;
+            return false;
+        } else {
+            batchIt.first->bufferedUnFlushedAnchorsVec_.clear();
+            // insert to cache if need
+            if (keyToValueListCache_ != nullptr) {
+                for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
+                    if (keyToValueListCache_->existsInCache(std::get<0>(batchIt.second).at(i))) {
+                        if (std::get<3>(batchIt.second).at(i) == true) {
+                            keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).clear();
+                        } else {
+                            keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).push_back(std::get<1>(batchIt.second).at(i));
+                        }
+                    }
+                }
+            }
+            if (enableGCFlag_ == true) {
+                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(batchIt.first);
+                if (putIntoGCJobQueueStatus != true) {
+                    return false;
+                }
+            }
+            batchIt.first->file_ownership_flag_ = 0;
+        }
+    }
+    return true;
+}
+
 bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec)
 {
     std::shared_lock<std::shared_mutex> r_lock(fileHandler->fileOperationMutex_);
@@ -713,11 +800,17 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     if (keyToValueListCache_ != nullptr) {
         if (keyToValueListCache_->existsInCache(key)) {
             vector<string> tempResultVec = keyToValueListCache_->getFromCache(key);
-            debug_trace("read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec.size());
+            debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec.size());
             valueVec->assign(tempResultVec.begin(), tempResultVec.end());
             fileHandler->file_ownership_flag_ = 0;
             return true;
         } else {
+            // check if not flushed anchors exit, return directly.
+            if (fileHandler->bufferedUnFlushedAnchorsVec_.find(key) != fileHandler->bufferedUnFlushedAnchorsVec_.end()) {
+                valueVec->clear();
+                fileHandler->file_ownership_flag_ = 0;
+                return true;
+            }
             // Not exist in cache, find the content in the file
             char readContentBuffer[fileHandler->total_object_bytes_];
             bool readFromFileStatus = readContentFromFile(fileHandler, readContentBuffer);

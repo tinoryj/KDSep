@@ -6,6 +6,7 @@
 #include "utils/murmurHash.hpp"
 #include "utils/prefixTreeForHashStore.hpp"
 #include <bits/stdc++.h>
+#include <boost/atomic.hpp>
 #include <filesystem>
 
 using namespace std;
@@ -27,6 +28,7 @@ public:
     void scheduleMetadataUpdateWorker();
     bool forcedManualGCAllFiles();
     bool forcedManualDelteAllObsoleteFiles();
+    bool setJobDone();
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
@@ -44,10 +46,11 @@ private:
     uint64_t operationCounterForMetadataCommit_ = 0;
     uint64_t operationNumberForMetadataCommitThreshold_ = 0;
     uint64_t gcWriteBackDeltaNum_ = 5;
-    bool enableGCFlag_ = true;
-    bool enableWriteBackDuringGCFlag_ = true;
+    bool enableGCFlag_ = false;
+    bool enableWriteBackDuringGCFlag_ = false;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
+    boost::atomic<bool> metadataUpdateShouldExit_ = false;
 
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
@@ -69,7 +72,9 @@ private:
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber, bool createByGCFlag, uint64_t previousFileID); // previousFileID only used when createByGCFlag == true
+    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber); // previousFileID only used when createByGCFlag == true
+    std::shared_mutex createNewBucketMtx_;
+
     // Manager's metadata management
     bool RetriveHashStoreFileMetaDataList(); // will reopen all existing files
     bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files

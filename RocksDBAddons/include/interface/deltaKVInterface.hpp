@@ -78,8 +78,8 @@ private:
     } writeBatchSearch_t;
     unordered_map<string, pair<deque<writeBatchSearch_t>, deque<writeBatchSearch_t>>> writeBatchMapForSearch_; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
-    uint64_t maxBatchOperationBeforeCommitNumber = 3;
-    messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_;
+    uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
+    messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
     bool oneBufferDuringProcessFlag_ = false;
 
     enum DBRunningMode { kPlainRocksDB = 0,
@@ -96,23 +96,23 @@ private:
     // operations
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
-    bool GetWithPlainRocksDB(const string& key, string* value, uint32_t& maxSequenceNumber);
+    bool GetWithPlainRocksDB(const string& key, string* value);
 
     bool PutWithOnlyValueStore(const string& key, const string& value);
     bool MergeWithOnlyValueStore(const string& key, const string& value);
-    bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber);
+    bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
     bool PutWithOnlyDeltaStore(const string& key, const string& value);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
-    bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber);
+    bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
     bool PutWithValueAndDeltaStore(const string& key, const string& value);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
-    bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber);
+    bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
     bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
-    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber);
-    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>* operationsQueue);
+    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
@@ -120,7 +120,7 @@ private:
     bool isDeltaStoreInUseFlag_ = false;
     bool isValueStoreInUseFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
-    bool enableDeltaStoreWithBackgroundGCFlag_ = true;
+    bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
 
     std::shared_mutex putOperationsMtx_;
@@ -132,7 +132,7 @@ private:
     rocksdb::WriteOptions internalMergeOption_;
     std::shared_mutex batchedBufferOperationMtx_;
 
-    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
+    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
 

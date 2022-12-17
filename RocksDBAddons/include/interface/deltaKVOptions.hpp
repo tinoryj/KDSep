@@ -80,6 +80,7 @@ public:
     fileOperationType fileOperationMethod_ = kDirectIO;
     bool enable_write_back_optimization_ = true;
     bool enable_batched_operations_ = false;
+    uint64_t batched_operations_number_ = 5;
     bool rocksdb_sync_put = false;
     bool rocksdb_sync_merge = false;
     bool rocksdb_sync = false;
