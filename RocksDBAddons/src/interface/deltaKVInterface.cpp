@@ -912,6 +912,7 @@ bool DeltaKV::Put(const string& key, const string& value)
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
+    case kBatchedWithOnlyDeltaLog:
     case kBatchedWithBothValueAndDeltaLog:
         if (PutWithWriteBatch(key, value) == false) {
             return false;
@@ -933,7 +934,6 @@ bool DeltaKV::Put(const string& key, const string& value)
             return true;
         }
         break;
-    case kBatchedWithOnlyDeltaLog:
     case kOnlyDeltaLog:
         if (PutWithOnlyDeltaStore(key, value) == false) {
             return false;
@@ -961,7 +961,7 @@ bool DeltaKV::Get(const string& key, string* value)
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
         if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
             if (currentWriteBatchDequeInUse == 0) {
@@ -1108,6 +1108,7 @@ bool DeltaKV::Merge(const string& key, const string& value)
     // std::scoped_lock<std::shared_mutex> w_lock(putOperationsMtx_);
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
+    case kBatchedWithOnlyValueLog:
     case kBatchedWithOnlyDeltaLog:
     case kBatchedWithBothValueAndDeltaLog:
         if (MergeWithWriteBatch(key, value) == false) {
@@ -1123,7 +1124,6 @@ bool DeltaKV::Merge(const string& key, const string& value)
             return true;
         }
         break;
-    case kBatchedWithOnlyValueLog:
     case kOnlyValueLog:
         if (MergeWithOnlyValueStore(key, value) == false) {
             return false;
@@ -1375,6 +1375,12 @@ bool DeltaKV::SingleDelete(const string& key)
 
 bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
 {
+    if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
+        while (oneBufferDuringProcessFlag_ == true) {
+            // avoid push current buffer when another not yet processed done
+            asm volatile("");
+        }
+    }
     globalSequenceNumberGeneratorMtx_.lock();
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
@@ -1382,10 +1388,6 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, writeBatchDeque[currentWriteBatchDequeInUse]->size());
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
         // flush old one
-        while (oneBufferDuringProcessFlag_ == true) {
-            // avoid push current buffer when another not yet processed done
-            asm volatile("");
-        }
         notifyWriteBatchMQ_->push(writeBatchDeque[currentWriteBatchDequeInUse]);
         debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
         // insert to another deque
@@ -1437,6 +1439,12 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
 
 bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
 {
+    if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
+        while (oneBufferDuringProcessFlag_ == true) {
+            // avoid push current buffer when another not yet processed done
+            asm volatile("");
+        }
+    }
     globalSequenceNumberGeneratorMtx_.lock();
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
@@ -1444,10 +1452,6 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, writeBatchDeque[currentWriteBatchDequeInUse]->size());
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
         // flush old one
-        while (oneBufferDuringProcessFlag_ == true) {
-            // avoid push current buffer when another not yet processed done
-            asm volatile("");
-        }
         notifyWriteBatchMQ_->push(writeBatchDeque[currentWriteBatchDequeInUse]);
         debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
         // insert to another deque
@@ -1503,9 +1507,11 @@ bool DeltaKV::performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, st
     debug_info("PreMerge operations, current queue size = %lu, sequence number at begin = %u\n", operationsQueue->size(), sequenceNumberBegin);
     unordered_map<string, pair<string, vector<string>>> performPreMergeMap;
     for (auto it : *operationsQueue) {
-        if (std::get<0>(it) == kPutOp) {
-            string keyStr = std::get<1>(it);
-            string valueStr = std::get<2>(it);
+        DBOperationType currentOpType = std::get<0>(it);
+        string keyStr = std::get<1>(it);
+        string valueStr = std::get<2>(it);
+        switch (currentOpType) {
+        case kPutOp:
             if (performPreMergeMap.find(keyStr) != performPreMergeMap.end()) {
                 performPreMergeMap.at(keyStr).second.clear(); // find new value, existing deltas are invalid
                 performPreMergeMap.at(keyStr).first = valueStr;
@@ -1513,17 +1519,22 @@ bool DeltaKV::performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, st
                 vector<string> deltas;
                 performPreMergeMap.insert(make_pair(keyStr, make_pair(valueStr, deltas)));
             }
-        } else if (std::get<0>(it) == kMergeOp) {
-            string keyStr = std::get<1>(it);
-            string valueStr = std::get<2>(it);
+            break;
+        case kMergeOp:
             if (performPreMergeMap.find(keyStr) != performPreMergeMap.end()) {
                 performPreMergeMap.at(keyStr).second.push_back(valueStr);
             } else {
                 vector<string> deltas;
+                deltas.push_back(valueStr);
                 performPreMergeMap.insert(make_pair(keyStr, make_pair("", deltas)));
             }
+            break;
+        default:
+            debug_error("[ERROR] get unknown operation type in operation queue, operation type = %d\n", currentOpType);
+            break;
         }
     }
+    debug_info("PerformPreMergeMap include key number = %lu\n", performPreMergeMap.size());
     operationsQueue->clear(); // clear for further usage
     for (auto it : performPreMergeMap) {
         if (it.second.first.size() > 0 && it.second.second.size() > 0) {
@@ -1536,6 +1547,7 @@ bool DeltaKV::performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, st
             it.second.first = finalValue;
             it.second.second.clear(); // merged, clean up
         }
+        debug_trace("PerformPreMergeMap include key = %s, value size = %lu, delta number = %lu\n", it.first.c_str(), it.second.first.size(), it.second.second.size());
     }
     // push back to operation queue
     uint32_t currentSequenceNumber = sequenceNumberBegin;
@@ -1565,7 +1577,7 @@ void DeltaKV::processBatchedOperationsWorker()
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
             bool preMergeStatus = performInBatchedBufferPartialMerge(currentHandler);
             vector<string> keyToValueStoreVec, valueToValueStoreVec, keyToDeltaStoreVec, valueToDeltaStoreVec;
-            vector<uint32_t> sequenceNumberVec;
+            vector<uint32_t> sequenceNumberVec, valueStoreSequenceNumberVec;
             vector<bool> isAnchorFlagToDeltaStoreVec;
             for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
                 if (std::get<0>(*it) == kPutOp) {
@@ -1574,6 +1586,7 @@ void DeltaKV::processBatchedOperationsWorker()
                     keyToDeltaStoreVec.push_back(std::get<1>(*it));
                     valueToDeltaStoreVec.push_back(std::get<2>(*it));
                     sequenceNumberVec.push_back(std::get<3>(*it));
+                    valueStoreSequenceNumberVec.push_back(std::get<3>(*it));
                     isAnchorFlagToDeltaStoreVec.push_back(true);
                 } else if (std::get<0>(*it) == kMergeOp) {
                     keyToDeltaStoreVec.push_back(std::get<1>(*it));
@@ -1588,12 +1601,30 @@ void DeltaKV::processBatchedOperationsWorker()
             case kBatchedWithOnlyDeltaLog:
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, sequenceNumberVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
                 if (putToDeltaStoreStatus == true) {
-                    uint64_t valueIndex = 0;
+                    debug_info("Write underlying rocksdb for %lu keys\n", keyToDeltaStoreVec.size());
                     rocksdb::WriteOptions batchedWriteOperation;
                     batchedWriteOperation.sync = false;
+                    auto valueIndex = 0;
                     for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
+                        debug_info("Write underlying rocksdb for key = %s\n", keyToDeltaStoreVec[index].c_str());
                         if (isAnchorFlagToDeltaStoreVec[index] == true) {
-                            debug_error("[ERROR] Should not find value when using kBatchedWithOnlyDeltaLog mode, key = %s", keyToDeltaStoreVec[index].c_str());
+                            char writeInternalValueBuffer[sizeof(internalValueType) + valueToValueStoreVec[valueIndex].size()];
+                            internalValueType currentInternalValueType;
+                            currentInternalValueType.mergeFlag_ = false;
+                            currentInternalValueType.valueSeparatedFlag_ = false;
+                            currentInternalValueType.rawValueSize_ = valueToValueStoreVec[valueIndex].size();
+                            currentInternalValueType.sequenceNumber_ = valueStoreSequenceNumberVec[valueIndex];
+                            memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                            memcpy(writeInternalValueBuffer + sizeof(internalValueType), valueToValueStoreVec[valueIndex].c_str(), valueToValueStoreVec[valueIndex].size());
+                            string newWriteValueStr(writeInternalValueBuffer, sizeof(internalValueType) + valueToValueStoreVec[valueIndex].size());
+                            rocksdb::Status rocksDBStatus;
+                            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Put(batchedWriteOperation, keyToValueStoreVec[valueIndex], newWriteValueStr), StatsType::DELTAKV_PUT_ROCKSDB);
+                            if (!rocksDBStatus.ok()) {
+                                debug_error("[ERROR] Write underlying rocksdb with added value header fault, key = %s, value = %s, status = %s\n", keyToValueStoreVec[valueIndex].c_str(), valueToValueStoreVec[valueIndex].c_str(), rocksDBStatus.ToString().c_str());
+                            } else {
+                                debug_trace("Write underlying rocksdb with added value header succes, key = %s\n", keyToValueStoreVec[valueIndex].c_str());
+                            }
+                            valueIndex++;
                         } else {
                             char writeInternalValueBuffer[sizeof(internalValueType)];
                             internalValueType currentInternalValueType;
@@ -1607,9 +1638,14 @@ void DeltaKV::processBatchedOperationsWorker()
                             STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, keyToDeltaStoreVec[index], newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
                             if (!rocksDBStatus.ok()) {
                                 debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                            } else {
+                                debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", keyToValueStoreVec[valueIndex].c_str());
                             }
                         }
                     }
+                    debug_info("Write underlying rocksdb for %lu keys done \n", keyToDeltaStoreVec.size());
+                } else {
+                    debug_error("[ERROR] Could not put into delta store via multiput, operations number = %lu\n", keyToDeltaStoreVec.size());
                 }
                 break;
             default:

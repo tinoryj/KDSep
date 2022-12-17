@@ -458,7 +458,36 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
 {
     std::scoped_lock<std::shared_mutex> w_lock(currentHandlerPtr->file_handler_->fileOperationMutex_);
     // prepare write buffer;
+    bool onlyAnchorFlag = true;
+    for (auto index = 0; index < currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->size(); index++) {
+        if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(index) == false) {
+            onlyAnchorFlag = false;
+        }
+    }
+    if (onlyAnchorFlag == true && currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
+        debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", currentHandlerPtr->file_handler_->target_file_id_);
+        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+        return true;
+    }
+
     uint64_t targetWriteBufferSize = 0;
+    hashStoreFileHeader newFileHeader;
+    bool needFlushFileHeader = false;
+    if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
+        string targetFilePath = workingDir_ + "/" + to_string(currentHandlerPtr->file_handler_->target_file_id_) + ".delta";
+        if (std::filesystem::exists(targetFilePath) == false) {
+            currentHandlerPtr->file_handler_->file_operation_func_ptr_->createThenOpenFile(targetFilePath);
+            newFileHeader.current_prefix_used_bit_ = currentHandlerPtr->file_handler_->current_prefix_used_bit_;
+            newFileHeader.file_create_reason_ = currentHandlerPtr->file_handler_->file_create_reason_;
+            newFileHeader.file_id_ = currentHandlerPtr->file_handler_->target_file_id_;
+            newFileHeader.previous_file_id_first_ = currentHandlerPtr->file_handler_->previous_file_id_first_;
+            newFileHeader.previous_file_id_second_ = currentHandlerPtr->file_handler_->previous_file_id_second_;
+            needFlushFileHeader = true;
+            targetWriteBufferSize += sizeof(hashStoreFileHeader);
+        } else {
+            currentHandlerPtr->file_handler_->file_operation_func_ptr_->openFile(targetFilePath);
+        }
+    }
     for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
         targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size());
         if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i) == true) {
@@ -472,6 +501,10 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     }
     char writeContentBuffer[targetWriteBufferSize];
     uint64_t currentProcessedBufferIndex = 0;
+    if (needFlushFileHeader == true) {
+        memcpy(writeContentBuffer, &newFileHeader, sizeof(hashStoreFileHeader));
+        currentProcessedBufferIndex += sizeof(hashStoreFileHeader);
+    }
     hashStoreRecordHeader newRecordHeader;
     for (auto& keyIt : currentHandlerPtr->file_handler_->bufferedUnFlushedAnchorsVec_) {
         newRecordHeader.is_anchor_ = true;
@@ -719,7 +752,36 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
 {
     for (auto batchIt : batchedWriteOperationsMap) {
         std::scoped_lock<std::shared_mutex> w_lock(batchIt.first->fileOperationMutex_);
+        // check file existence, create if not exist
+        bool onlyAnchorFlag = true;
+        for (auto index = 0; index < std::get<3>(batchIt.second).size(); index++) {
+            if (std::get<3>(batchIt.second).at(index) == false) {
+                onlyAnchorFlag = false;
+            }
+        }
+        if (onlyAnchorFlag == true && batchIt.first->file_operation_func_ptr_->isFileOpen() == false) {
+            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", batchIt.first->target_file_id_);
+            batchIt.first->file_ownership_flag_ = 0;
+            continue;
+        }
         uint64_t targetWriteBufferSize = 0;
+        hashStoreFileHeader newFileHeader;
+        bool needFlushFileHeader = false;
+        if (batchIt.first->file_operation_func_ptr_->isFileOpen() == false) {
+            string targetFilePath = workingDir_ + "/" + to_string(batchIt.first->target_file_id_) + ".delta";
+            if (std::filesystem::exists(targetFilePath) == false) {
+                batchIt.first->file_operation_func_ptr_->createThenOpenFile(targetFilePath);
+                newFileHeader.current_prefix_used_bit_ = batchIt.first->current_prefix_used_bit_;
+                newFileHeader.file_create_reason_ = batchIt.first->file_create_reason_;
+                newFileHeader.file_id_ = batchIt.first->target_file_id_;
+                newFileHeader.previous_file_id_first_ = batchIt.first->previous_file_id_first_;
+                newFileHeader.previous_file_id_second_ = batchIt.first->previous_file_id_second_;
+                needFlushFileHeader = true;
+                targetWriteBufferSize += sizeof(hashStoreFileHeader);
+            } else {
+                batchIt.first->file_operation_func_ptr_->openFile(targetFilePath);
+            }
+        }
         for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
             targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + std::get<0>(batchIt.second).at(i).size());
             if (std::get<3>(batchIt.second).at(i) == true) {
@@ -733,6 +795,10 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
         }
         char writeContentBuffer[targetWriteBufferSize];
         uint64_t currentProcessedBufferIndex = 0;
+        if (needFlushFileHeader == true) {
+            memcpy(writeContentBuffer, &newFileHeader, sizeof(hashStoreFileHeader));
+            currentProcessedBufferIndex += sizeof(hashStoreFileHeader);
+        }
         hashStoreRecordHeader newRecordHeader;
         for (auto& keyIt : batchIt.first->bufferedUnFlushedAnchorsVec_) {
             newRecordHeader.is_anchor_ = true;
@@ -784,12 +850,14 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             if (enableGCFlag_ == true) {
                 bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(batchIt.first);
                 if (putIntoGCJobQueueStatus != true) {
-                    return false;
+                    batchIt.first->file_ownership_flag_ = 0;
                 }
+            } else {
+                batchIt.first->file_ownership_flag_ = 0;
             }
-            batchIt.first->file_ownership_flag_ = 0;
         }
     }
+    debug_info("Batched operations processed done by DirectMultiPut, total file handler number = %lu\n", batchedWriteOperationsMap.size());
     return true;
 }
 

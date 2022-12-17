@@ -73,7 +73,7 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
     debug_info("New OP: put delta key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
@@ -103,34 +103,55 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
     debug_info("New OP: put deltas key number = %lu\n", keyStrVec.size());
     unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
-        hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kPut, currentFileHandlerPtr) != true) {
+        hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
+        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, isAnchorVec[i]) != true) {
+            debug_error("[ERROR] Get file handler for key = %s error during multiput\n", keyStrVec[i].c_str());
             return false;
         } else {
+            if (currentFileHandlerPtr == nullptr) {
+                // should skip current key since it is an anchor
+                continue;
+            }
             if (tempFileHandlerMap.find(currentFileHandlerPtr) != tempFileHandlerMap.end()) {
                 std::get<0>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(keyStrVec[i]);
                 std::get<1>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(valueStrPtrVec[i]);
                 std::get<2>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(sequenceNumberVec[i]);
                 std::get<3>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(isAnchorVec[i]);
             } else {
+                vector<string> keyVecTemp;
+                vector<string> valueVecTemp;
+                vector<uint32_t> sequenceNumberVecTemp;
+                vector<bool> anchorFlagVecTemp;
+                keyVecTemp.push_back(keyStrVec[i]);
+                valueVecTemp.push_back(valueStrPtrVec[i]);
+                sequenceNumberVecTemp.push_back(sequenceNumberVec[i]);
+                anchorFlagVecTemp.push_back(isAnchorVec[i]);
+                tempFileHandlerMap.insert(make_pair(currentFileHandlerPtr, make_tuple(keyVecTemp, valueVecTemp, sequenceNumberVecTemp, anchorFlagVecTemp)));
             }
         }
     }
-    if (shouldUseDirectOperationsFlag_ == true) {
-        if (hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap) != true) {
-            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
-            return false;
-        } else {
-            debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", keyStrVec.size());
-            return true;
-        }
+    debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
+    if (tempFileHandlerMap.size() == 0) {
+        return true;
     } else {
-        if (hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap) != true) {
-            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
-            return false;
+        if (shouldUseDirectOperationsFlag_ == true) {
+            bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
+            if (putStatus != true) {
+                debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
+                return false;
+            } else {
+                debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", keyStrVec.size());
+                return true;
+            }
         } else {
-            debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
-            return true;
+            bool putStatus = hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap);
+            if (putStatus != true) {
+                debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
+                return false;
+            } else {
+                debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
+                return true;
+            }
         }
     }
 }
@@ -140,7 +161,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler);
+    ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler, false);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
@@ -164,7 +185,7 @@ bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string
     vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kGet, currentFileHandlerPtr) != true) {
+        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStrVec[i], kGet, currentFileHandlerPtr, false) != true) {
             return false;
         } else {
             tempFileHandlerVec.push_back(currentFileHandlerPtr);

@@ -10,6 +10,7 @@
 #include "utils/debug.hpp"
 #include "utils/messageQueue.hpp"
 #include <bits/stdc++.h>
+#include <boost/atomic.hpp>
 #include <boost/bind/bind.hpp>
 #include <boost/thread/thread.hpp>
 #include <shared_mutex>
@@ -80,7 +81,7 @@ private:
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
-    bool oneBufferDuringProcessFlag_ = false;
+    boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
 
     enum DBRunningMode { kPlainRocksDB = 0,
         kOnlyValueLog = 1,
