@@ -11,9 +11,10 @@ public:
     ~IndexStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr, bool sync = true);
+    bool put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr, uint32_t seqNumber = 0, bool sync = true);
     bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr);
-    bool get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr);
+    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr, vector<uint32_t> seqNumberVec);
+    bool get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr, uint32_t* seqNumberPtr = nullptr);
     bool multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();
     bool restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);

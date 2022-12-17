@@ -314,13 +314,25 @@ public:
         memcpy(str, &valueType, sizeof(internalValueType));
         memcpy(str + sizeof(internalValueType), &indexInfo, sizeof(externalIndexInfo));
 
-        //        str.append((char*) &flength, sizeof(this->length));
-        //        if (this->segmentId == LSM_SEGMENT) {
-        //            str.append(value);
-        //        } else {
-        //            str.append((char*) &foffset, sizeof(this->offset));
-        //        }
         return std::string(str, sizeof(internalValueType) + sizeof(externalIndexInfo));
+    }
+
+    std::string serializeIndexWrite() {
+        char buffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
+        internalValueType valueType;
+        externalIndexInfo indexInfo;
+
+        valueType.mergeFlag_ = false;
+        valueType.rawValueSize_ = this->length;
+        valueType.valueSeparatedFlag_ = true;
+        indexInfo.externalFileID_ = (uint32_t)(this->offset >> 32);
+        indexInfo.externalFileOffset_ = (uint32_t)(this->offset % (1ull << 32));
+        indexInfo.externalContentSize_ = this->length;
+
+        memcpy(buffer, &valueType, sizeof(internalValueType));
+        memcpy(buffer + sizeof(internalValueType), &indexInfo, sizeof(externalIndexInfo));
+
+        return std::string(buffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
     }
 
     bool deserialize(std::string str)

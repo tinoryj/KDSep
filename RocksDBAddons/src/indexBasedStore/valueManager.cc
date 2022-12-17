@@ -94,36 +94,14 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
     // segment for read
     Segment::init(_readBuffer, INVALID_SEGMENT, cm.getMainSegmentSize());
 
-    // thread pool for I/Os
-    //    _iothreads.size_controller().resize(cm.getNumIOThread());
-    //    _flushthreads.size_controller().resize(cm.getNumParallelFlush());
-
-    // thread for background flush
     _started = true;
-    // pthread_mutex_init(&_centralizedReservedPoolIndex.queueLock, 0);
-    // int ret = 0;
-    // pthread_attr_t attr;
-    // ret = pthread_attr_init(&attr);
-    // if (ret != 0) {
-    //     debug_error("failed to init bg flush thread attr (%d)\n", ret);
-    //     assert(0);
-    //     exit(-1);
-    // }
-    // ret = pthread_cond_init(&_needBgFlush, 0);
-    // ret = pthread_cond_init(&_centralizedReservedPoolIndex.flushedBuffer, 0);
-    // if (ret != 0) {
-    //     debug_error("failed to init bg flush cond (%d)\n", ret);
-    //     assert(0);
-    //     exit(-1);
-    // }
-    // ret = pthread_create(&_bgflushThread, &attr, &flushCentralizedReservedPoolBgWorker, (void*)this);
-    // if (ret != 0) {
-    //     debug_error("failed to init bg flush thread (%d)\n", ret);
-    //     assert(0);
-    //     exit(-1);
-    // }
 
     // restore from any log after failure
+    boost::thread::attributes attrs;
+    attrs.set_stack_size(1000 * 1024 * 1024);
+    boost::thread* th = new boost::thread(attrs, boost::bind(&ValueManager::flushCentralizedReservedPoolBgWorker, this));
+    thList_.push_back(th);
+
     if (_logManager) {
         if (ConfigManager::getInstance().enabledVLogMode()) {
             std::map<std::string, externalIndexInfo> keyValues;
@@ -138,12 +116,17 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
 ValueManager::~ValueManager()
 {
     // flush and release segments
+    debug_info("forceSync() %s\n", "");
     forceSync();
+    debug_info("forceSync() %s\n", "");
 
     // allow the bg thread to finish its job first
     _started = false;
-    // pthread_cond_signal(&_needBgFlush);
-    // pthread_join(_bgflushThread, 0);
+    pthread_cond_signal(&_needBgFlush);
+    for (auto thIt : thList_) {
+        thIt->join();
+        delete thIt;
+    }
 
     ConfigManager& cm = ConfigManager::getInstance();
 
@@ -258,7 +241,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         } else if (vlog) {
             STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
         } else {
-            STAT_TIME_PROCESS(flushCentralizedReservedPool(&groupId, /* isUpdate = */ true), StatsType::POOL_FLUSH);
+            debug_error("settings wrong: no pipelined buffer and no vlog %s\n", "");
         }
         // need the kvserver to search if the location of key may be updated
         if (groupId == INVALID_GROUP && prevGroupId != LSM_GROUP /* not key-values in LSM */) {
@@ -299,9 +282,6 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         Segment::appendData(pool, &valueSize, sizeof(len_t));
         if (valueSize > 0) {
             Segment::appendData(pool, valueStr, valueSize);
-            // TODO now we treat each value as a segment. Will change that later
-            // Segment::setWriteFront(pool, Segment::getSize(pool));
-            // Segment::setShouldFlush(pool);
         }
 
         debug_trace("append update to segment %lu len %lu is full %d canfit %d\n", convertedLoc.segmentId, valueSize,
@@ -331,7 +311,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         } else if (vlog) {
             STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &newOffset), StatsType::POOL_FLUSH);
         } else {
-            STAT_TIME_PROCESS(flushCentralizedReservedPool(/* reportGroupId* = */ 0, /* isUpdate = */ true), StatsType::POOL_FLUSH);
+            debug_error("settings wrong: no pipelined buffer and no vlog %s\n", "");
         }
     } else {
 //        _GCLock.unlock();
@@ -446,197 +426,6 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
     return ret;
 }
 
-// caller should lock the centralized reserved pool
-// bool ValueManager::prepareGCGroupInCentralizedPool(group_id_t groupId, bool needsLock) {
-//    return setGroupReservedBufferCP(groupId, needsLock, true, groupId);
-//}
-
-// bool ValueManager::setGroupReservedBufferCP (segment_id_t mainSegmentId, bool needsLock, bool isGC, segment_id_t logSegmentId, bool groupMetaOutDated, std::unordered_map<std::pair<segment_id_t,segment_id_t>, len_t, hashCidPair> *invalidBytes, int poolIndex) {
-//     SegmentBuffer *cb = 0;
-//     segment_id_t segmentId = 0;
-//     bool done = false;
-//
-//     group_id_t groupId = _segmentGroupManager->getGroupBySegmentId(mainSegmentId);
-//     segment_len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
-//
-//     // copy updates back to segment buffers in group for flush
-//
-//     if (groupId == INVALID_GROUP) {
-//         debug_error("Need main group to associate reserved segments of group %lu\n", groupId);
-//         assert(0);
-//         exit(-1);
-//     }
-//
-//     //_segmentReservedSetLock.lock();
-//
-//     if (isGC) debug_info("GC group %lu in centralized Pool\n", groupId);
-//
-//     int numBufferToScan = 1;
-//     if (ConfigManager::getInstance().usePipelinedBuffer() && isGC) {
-//         numBufferToScan = ConfigManager::getInstance().getNumPipelinedBuffer(); //((_centralizedReservedPoolIndex.inUsed - poolIndex + numPipelinedBuffer + 1) % numPipelinedBuffer);
-//     }
-//
-//     // pre-allocate all reserved space buffer in the group, if we distribute updates
-//     size_t updateTotal = 0;
-//
-//     for (int idx = (isGC? _centralizedReservedPoolIndex.flushNext : poolIndex), cnt = numBufferToScan; cnt > 0; idx = getNextPoolIndex(idx), cnt--) {
-//         if (_centralizedReservedPool[idx].groupsInPool.count(groupId) == 0)
-//             continue;
-//         for (auto s : _centralizedReservedPool[idx].groupsInPool.at(groupId)) {
-//             updateTotal += s;
-//         }
-//     }
-//
-//     // no updates at all ..
-//     if (updateTotal == 0) {
-//         //printf("[Group %lu] No updates isGC=%d\n", groupId, isGC);
-//         return true;
-//     } else if (isGC) {
-//         //printf("[Group %lu] updates %lu isGC=%d\n", groupId, updateTotal, isGC);
-//     }
-//
-//
-//     segmentId = logSegmentId;
-//     // get the buffer record
-//     cb = &_segmentReservedInBuf[segmentId];
-//     // determine the reserved space of the segment (min.: original size, max.: flush front + all updates in buffer)
-//     // Todo more accurate space allocation of buffers
-//     // get a segment buffer (with logSegmentId assigned) of necessary size
-//     segment_len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
-//     segment_len_t poolSegmentSize = _segmentReservedPool->getPoolSegmentSize();
-//     segment_len_t needSegmentSize = poolSegmentSize;
-//     offset_t groupFlushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
-//     size_t existingTotal = (getLastSegmentFront(groupFlushFront) % logSegmentSize);
-//     if (existingTotal + updateTotal > poolSegmentSize && isGC) {
-//         needSegmentSize = existingTotal + updateTotal;
-//     } else if (mainSegmentId == logSegmentId) {
-//         needSegmentSize = mainSegmentSize;
-//     }
-//     cb->segment = _segmentReservedPool->allocSegment(logSegmentId, &cb->lock, needSegmentSize);
-//     // check if the allocation of segment buffer is successful
-//     if (Segment::getId(cb->segment) == INVALID_SEGMENT) {
-//         debug_error("Out of reserved space segment from pool for segment %lu\n", segmentId);
-//         //_segmentReservedSetLock.unlock();
-//         return false;
-//     }
-//     //Segment::assignId(cb->segment, logSegmentId);
-//     // set data flush front
-//     Segment::setFlushFront(cb->segment, groupMetaOutDated? 0 : (mainSegmentId == logSegmentId && !isGC? groupFlushFront : (getLastSegmentFront(groupFlushFront) % logSegmentSize)));
-//     // if group in new write buffer not yet flushed
-//     if (_segmentReservedByGroup.count(groupId) == 0) {
-//         INIT_LIST_HEAD(&_segmentReservedByGroup[groupId]);
-//     } else if (ConfigManager::getInstance().getNumParallelFlush() == 1) {
-//         assert(0);
-//     }
-//     INIT_LIST_HEAD(&cb->node);
-//     list_add(&cb->node, &_segmentReservedByGroup.at(groupId));
-//
-//     // assume all updates can fit in first
-//     done = true;
-//     segmentId = mainSegmentId;
-//
-//     std::vector<segment_id_t> logSegments = _segmentGroupManager->getGroupLogSegments(groupId, false);
-//     len_t valueSize = 0;
-//     // copy and align all updates to the segment buffer (reserved space)
-//     // Todo merge the scanning here with that during GC?
-//     size_t osize = 0;
-//     std::unordered_set<len_t> invalidOffsetSet;
-//     for (int idx = (isGC? _centralizedReservedPoolIndex.flushNext : poolIndex), cnt = numBufferToScan; cnt > 0; idx = getNextPoolIndex(idx), cnt--) {
-//         if (_centralizedReservedPool[idx].segmentsInPool.count(segmentId) == 0)
-//             continue;
-//         unsigned char *poolData = Segment::getData(_centralizedReservedPool[idx].pool);
-//         osize += _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.size();
-//         for (auto update = _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.begin();
-//                 update != _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.end();
-//                 update = _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.begin()
-//         ) {
-//             // choose the target buffer if we distribute updates
-//             off_len_t offLen (*update + KEY_SIZE, sizeof(len_t));
-//             Segment::readData(_centralizedReservedPool[idx].pool, &valueSize, offLen);
-//             //assert((valueSize > 0 && valueSize <= segmentSize - RECORD_SIZE) || valueSize == INVALID_LEN);
-//             // always place all data into segment for GC, but not flush
-//             if (Segment::canFit(cb->segment, RECORD_SIZE) == false) {
-//                 if (isGC == false) {
-//                     // leave updates to next reserved segment if cannot fit in
-//                     // (if cannot fit in least-free segment, will not fit in any others)
-//                     break;
-//                 } else {
-//                     // all updates must fit in for GC
-//                     assert(0);
-//                 }
-//             }
-//             // copy data from centralized buffer to (log) segment buffer
-//             Segment::appendData(cb->segment, poolData + *update, KEY_SIZE);
-//             Segment::appendData(cb->segment, &valueSize, sizeof(len_t));
-//             if (valueSize > 0)
-//                 Segment::appendData(cb->segment, poolData + *update + KEY_SIZE + sizeof(len_t), valueSize);
-//             // remove to ensure no duplicated flush of same update
-//             _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.erase(update);
-//         }
-//         // check if all updates are fit for the current data segment
-//         done = _centralizedReservedPool[idx].segmentsInPool.at(segmentId).second.empty() && done;
-//     }
-//
-//     if (isGC && !done) {
-//         debug_error("isGC for segment %lu cannot fit in %lu of %lu updates\n", segmentId, _centralizedReservedPool[poolIndex].segmentsInPool.at(segmentId).second.size(), osize);
-//         assert(0);
-//     }
-//
-//     //_segmentReservedSetLock.unlock();
-//
-//     return done;
-// }
-
-// bool ValueManager::cleanupGCGroupInCentralizedPool(group_id_t groupId, bool isGCDone, bool needsLockPool) {
-//     return releaseGroupReservedBufferCP(groupId, needsLockPool, /* isGC = */ true, isGCDone);
-// }
-
-// bool ValueManager::releaseGroupReservedBufferCP(group_id_t groupId, bool needsLockPool, bool isGC, bool isGCDone, int poolIndex) {
-//     // release the updates in the reserved pool
-//     if (!isGCDone) {
-//         return false;
-//     }
-//
-//     int numBufferToRelease = 1;
-//     if (ConfigManager::getInstance().usePipelinedBuffer() && isGC) {
-//         numBufferToRelease = ConfigManager::getInstance().getNumPipelinedBuffer(); //((_centralizedReservedPoolIndex.inUsed - poolIndex + numPipelinedBuffer) % numPipelinedBuffer) + 1;
-//     }
-//
-//     for (int idx = (isGC? _centralizedReservedPoolIndex.flushNext : poolIndex), cnt = numBufferToRelease; cnt > 0; idx = getNextPoolIndex(idx), cnt--) {
-//         if (needsLockPool) _centralizedReservedPool[idx].lock.lock();
-//         segment_id_t mainSegmentId = _segmentGroupManager->getGroupMainSegment(groupId);
-//         if (_centralizedReservedPool[idx].segmentsInPool.count(mainSegmentId) == 0 ||
-//                 _centralizedReservedPool[idx].segmentsInPool.at(mainSegmentId).second.empty()) {
-//             _centralizedReservedPool[idx].segmentsInPool.erase(mainSegmentId);
-//         }
-//         // GC is group-based, flush is batch of groups and leave to caller to free all at once
-//         if (isGC)
-//             _centralizedReservedPool[idx].groupsInPool.erase(groupId);
-//         if (needsLockPool) _centralizedReservedPool[idx].lock.unlock();
-//     }
-//
-//     // release buffers
-//     if (_segmentReservedByGroup.count(groupId)) {
-//         list_head *ptr, *sptr;
-//         if (!list_empty(&_segmentReservedByGroup.at(groupId))) {
-//             list_for_each_safe(ptr, sptr, &_segmentReservedByGroup.at(groupId)) {
-//                 SegmentBuffer *cb = segment_of(ptr, SegmentBuffer, node);
-//                 segment_id_t logSegmentId = Segment::getId(cb->segment);
-//                 _segmentReservedPool->releaseSegment(logSegmentId);
-//                 // only release segments with reserved space (not main segments)
-//                 if (_segmentReservedInBuf.count(logSegmentId) > 0) {
-//                     list_del(&_segmentReservedInBuf.at(logSegmentId).node);
-//                     _segmentReservedInBuf.erase(logSegmentId);
-//                 }
-//             }
-//         }
-//         // release group
-//         _segmentReservedByGroup.erase(groupId);
-//     }
-//
-//     return true;
-// }
-
 bool ValueManager::outOfReservedSpace(offset_t flushFront, group_id_t groupId, int poolIndex)
 {
     len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
@@ -701,404 +490,6 @@ bool ValueManager::outOfReservedSpaceForObject(offset_t flushFront, len_t object
     return false;
 }
 
-// caller should lock _centralizedReservedPool before-hand
-void ValueManager::flushCentralizedReservedPool(group_id_t* reportGroupId, bool isUpdate, int poolIndex, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey>* oldLocations)
-{
-    debug_info("gropu id %lu poolIndex %d oldlocations %d\n", *reportGroupId, poolIndex, (int)oldLocations->size());
-
-    const int flushingPoolIndex = poolIndex;
-    std::lock_guard<std::mutex>(_centralizedReservedPool[poolIndex].lock);
-
-    // printf("Flush centralized reserved pool %d with %lu groups %lu segments\n", flushingPoolIndex, _centralizedReservedPool[flushingPoolIndex].groupsInPool.size(), _centralizedReservedPool[flushingPoolIndex].segmentsInPool.size());
-    // int hotnessLevel = ConfigManager::getInstance().getHotnessLevel();
-    segment_len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
-    segment_len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
-    // mark which group is in-process, and the group of the upcominig segment
-    // use the last (few?) buffers for flush
-    // int bufferLevel = hotnessLevel + spare - 1;
-
-    // Todo check the sequence of locks
-
-    // for batch update
-    std::unordered_map<segment_id_t, offset_t> metaToUpdate; // group id -> (flush fronts)
-    std::vector<char*> keys, delKeys;
-    std::vector<ValueLocation> values, delValues;
-    std::atomic<int> waitIO;
-    offset_t writeOffset = 0;
-
-    std::unordered_map<group_id_t, unsigned long long> updateCounts;
-    std::vector<Segment> tmpSegments;
-
-    waitIO = 0;
-    writeOffset = INVALID_OFFSET;
-
-    // bool done = false;
-    // bool newReservedStripe = false;
-    group_id_t groupId = INVALID_GROUP;
-    // group_id_t prevGroupId = INVALID_GROUP;
-    segment_id_t mainSegmentId = INVALID_SEGMENT;
-    segment_id_t logSegmentId = INVALID_SEGMENT;
-    struct timeval flushStartTime, keyWriteStartTime;
-    // len_t flushFront = 0;
-
-    len_t batchWriteThreshold = ConfigManager::getInstance().getBatchWriteThreshold(); // write as 4KB chunks
-    int numPipelinedBuffer = ConfigManager::getInstance().getNumPipelinedBuffer();
-    bool isGCLogOnlyBuffer = flushingPoolIndex == numPipelinedBuffer;
-    unsigned char* poolData = Segment::getData(_centralizedReservedPool[flushingPoolIndex].pool);
-
-    bool gcCrashConsistency = !isUpdate && ConfigManager::getInstance().enableCrashConsistency();
-
-    Segment segment;
-    offset_t inSegmentOffset = 0;
-
-#define RESET_SEGMENT_BUFFER()                                                   \
-    do {                                                                         \
-        Segment::init(segment, INVALID_SEGMENT, (unsigned char*)0, INVALID_LEN); \
-    } while (0)
-
-#define FLUSH_SEGMENT_BUFFER(_THRD_)                                                      \
-    do {                                                                                  \
-        if (Segment::getWriteFront(segment) - Segment::getFlushFront(segment) > _THRD_) { \
-            waitIO += 1;                                                                  \
-            boost::asio::post(*_iothreads,                                                \
-                boost::bind(                                                              \
-                    &DeviceManager::writePartialSegmentMt,                                \
-                    _deviceManager,                                                       \
-                    Segment::getId(segment),                                              \
-                    Segment::getFlushFront(segment) + inSegmentOffset,                    \
-                    Segment::getWriteFront(segment) - Segment::getFlushFront(segment),    \
-                    Segment::getData(segment) + Segment::getFlushFront(segment),          \
-                    boost::ref(writeOffset),                                              \
-                    boost::ref(waitIO)));                                                 \
-            /* reset the buffer */                                                        \
-            RESET_SEGMENT_BUFFER();                                                       \
-        }                                                                                 \
-    } while (0)
-
-    gettimeofday(&flushStartTime, 0);
-
-    std::set<group_id_t> modifiedGroups;
-    std::set<segment_id_t> modifiedSegments;
-
-    for (auto group = _centralizedReservedPool[flushingPoolIndex].groupsInPool.begin();
-         !_centralizedReservedPool[flushingPoolIndex].groupsInPool.empty();
-         group = _centralizedReservedPool[flushingPoolIndex].groupsInPool.begin()) {
-
-        groupId = group->first;
-
-        key_len_t keySize = 0;
-        len_t valueSize = INVALID_LEN;
-
-        bool toLSM = groupId == LSM_GROUP;
-        if (toLSM) {
-            mainSegmentId = LSM_SEGMENT;
-        } else {
-            mainSegmentId = _segmentGroupManager->getGroupMainSegment(groupId);
-            modifiedGroups.insert(groupId);
-        }
-
-        // get a copy of the list of segments in group + purge the main segment -> list of log segments
-        std::vector<segment_id_t> logSegments = _segmentGroupManager->getGroupLogSegments(groupId, false);
-
-        offset_t flushFront = INVALID_OFFSET;
-        // get the lastest flush front
-        if (groupId != INVALID_GROUP && groupId != LSM_GROUP)
-            flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
-        // iterator through the updates
-        size_t numUpdates = _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.size();
-        for (auto update = _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.begin();
-             update != _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.end();
-             update = _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.begin()) {
-            ValueLocation valueLoc;
-            // read back the value size
-            off_len_t keyOffLen(*update, sizeof(key_len_t));
-            Segment::readData(_centralizedReservedPool[flushingPoolIndex].pool, &keySize, keyOffLen);
-            off_len_t offLen(*update + KEY_REC_SIZE, sizeof(len_t));
-            Segment::readData(_centralizedReservedPool[flushingPoolIndex].pool, &valueSize, offLen);
-            valueLoc.length = valueSize + sizeof(len_t);
-            assert(valueSize != INVALID_LEN && (valueSize != 0 || (isGCLogOnlyBuffer && ConfigManager::getInstance().useSlave())));
-
-            bool isReservedOverflow = !isGCLogOnlyBuffer && outOfReservedSpaceForObject(flushFront, RECORD_SIZE);
-
-            if (isReservedOverflow) {
-                // let every out to disk first
-                FLUSH_SEGMENT_BUFFER(0);
-                while (waitIO > 0)
-                    ;
-                assert(isUpdate);
-                // consistency log
-                //                if (ConfigManager::getInstance().enableCrashConsistency()) {
-                //                    std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > groups;
-                //                    for (auto g : modifiedGroups) {
-                //                        groups[g] =
-                //                                std::pair<offset_t, std::vector<segment_id_t> > (
-                //                                        _segmentGroupManager->getGroupFlushFront(g, /* needsLock = */ false),
-                //                                        _segmentGroupManager->getGroupSegments(g, /* needsLock = */ false)
-                //                                );
-                //                    }
-                //                    _logManager->setBatchUpdateKeyValue(keys, values, groups);
-                //                }
-                //                // update LSM-tree
-                //                gettimeofday(&keyWriteStartTime, 0);
-                //                if (!keys.empty() && _keyManager->writeKeyBatch(keys, values) == false) {
-                //                    debug_error("Failed to set %lu keys\n", keys.size());
-                //                }
-                //                StatsRecorder::getInstance()->timeProcess(isUpdate? StatsType::UPDATE_KEY_WRITE_LSM : StatsType::UPDATE_KEY_WRITE_LSM_GC, keyWriteStartTime, /* diff = */ 0, /* count = */ keys.size());
-                //                // persist updates of the metadata to LSM-tree
-                //                if (ConfigManager::getInstance().enableCrashConsistency()) {
-                //                    // update persist log metadata
-                //                    logMetaPersist(modifiedSegments, modifiedGroups);
-                //                    modifiedGroups.clear();
-                //                    modifiedSegments.clear();
-                //                    // remove update consistency log
-                //                    _logManager->ackBatchUpdateKeyValue();
-                //                }
-
-                // free all tmp buffers
-                for (auto c : tmpSegments) {
-                    Segment::free(c);
-                }
-                keys.clear();
-                values.clear();
-                tmpSegments.clear();
-                // set the front global, so they are visible to GC
-                _segmentGroupManager->setGroupFlushFront(groupId, flushFront, false);
-                _segmentGroupManager->setGroupWriteFront(groupId, flushFront, false);
-
-                // gc for some space
-                do {
-//                    _gcManager->gcGreedy(/* needsGCLock = */ false, /* needsLockCP = */ false, reportGroupId);
-                    // check if the update now fits into the free space
-                    flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
-                    isReservedOverflow = !isGCLogOnlyBuffer && outOfReservedSpaceForObject(flushFront, RECORD_SIZE);
-                } while (isReservedOverflow);
-
-                break;
-            }
-
-            if (toLSM) { // write whole kv pair into LSM-tree
-                valueLoc.segmentId = LSM_SEGMENT;
-                valueLoc.length = valueSize;
-                valueLoc.value.assign((char*)poolData + *update + KEY_REC_SIZE + sizeof(len_t), valueSize);
-            } else { // write key and location to LSM-tree, values to log
-
-                // write frontier of the segment receiving the updates
-                offset_t logSegmentFront = getLastSegmentFront(flushFront);
-
-                // determine which segment to write the updates
-                // priority for fitting updates
-                // (1) main segment if not sealed,
-                // (2) last log segment that is yet full if sealed
-                // (3) new log segment
-                if (logSegments.empty() /* no log segments */ && flushFront < mainSegmentSize /* main segment not sealed */ && valueSize + KEY_REC_SIZE + sizeof(len_t) + flushFront <= mainSegmentSize /* all updates fit into the main segment */) {
-                    // not yet full log group prompted as main group
-                    // main segment is not yet full, and can receive updates
-                    logSegmentId = mainSegmentId;
-                } else if (flushFront >= mainSegmentSize /* main segment is sealed */ && logSegmentFront % logSegmentSize != 0 /* the last log segment is not yet full */ && valueSize + KEY_REC_SIZE + sizeof(len_t) + logSegmentFront <= logSegmentSize
-                    //_centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(_segmentGroupManager->getGroupMainSegment(groupId)).first + logSegmentFront <= logSegmentSize /* all updates fit into the last log segment */
-                ) {
-                    // assert(metaToUpdate.count(mainSegmentId) == 0);
-                    //  use reserved group allocated if not yet full, and will not overflow
-                    logSegmentId = logSegments.back();
-                } else {
-                    // manual adjust the segment write and flush front to align the boundary
-                    if (flushFront <= mainSegmentSize) {
-                        flushFront = mainSegmentSize;
-                    } else {
-                        flushFront += (logSegmentSize - logSegmentFront);
-                    }
-                    // last log segment is full, allocate new a one to the group
-                    logSegmentId = INVALID_SEGMENT;
-                    if (!_segmentGroupManager->getNewLogSegment(groupId, logSegmentId, false)) {
-                        debug_error("Out of log segments for group %lu? number of log %lu main %lu (isGCBuf = %d) flushFront = %lu RECORD_SIZE = %lu (%lu of %lu left)\n", groupId, _segmentGroupManager->getNumFreeLogSegments(), _segmentGroupManager->getNumFreeMainSegments(), isGCLogOnlyBuffer, flushFront, RECORD_SIZE, _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.size(), numUpdates);
-                        assert(0);
-                        exit(1);
-                    }
-                    assert(logSegmentId != INVALID_SEGMENT);
-                    // keep track of the list of log segments locally
-                    logSegments.push_back(logSegmentId);
-                    // start from the begining of a new log segment
-                    logSegmentFront = 0;
-                }
-
-                // setup the metadata
-                valueLoc.segmentId = logSegmentId;
-                valueLoc.offset = logSegmentFront;
-                if (valueSize > 0) {
-                    valueLoc.length = sizeof(len_t) + valueSize;
-                } else {
-                    valueLoc.length = 0;
-                }
-
-                if (valueSize > batchWriteThreshold && !gcCrashConsistency) {
-                    // flush any data in the buffer first
-                    FLUSH_SEGMENT_BUFFER(0);
-                    // write individually
-                    waitIO += 1;
-                    boost::asio::post(*_iothreads,
-                        boost::bind(
-                            &DeviceManager::writePartialSegmentMt,
-                            _deviceManager,
-                            logSegmentId,
-                            logSegmentFront,
-                            RECORD_SIZE,
-                            poolData + *update,
-                            boost::ref(writeOffset),
-                            boost::ref(waitIO)));
-                } else {
-                    // write in-batch
-                    // flush current buffer if target segment switched
-                    if (Segment::getId(segment) != logSegmentId || !Segment::canFit(segment, RECORD_SIZE)) {
-                        if (gcCrashConsistency) {
-                            tmpSegments.push_back(segment);
-                            RESET_SEGMENT_BUFFER();
-                        } else {
-                            FLUSH_SEGMENT_BUFFER(0);
-                        }
-                    }
-                    // allocate a tmp buffer and track for later free
-                    if (Segment::getId(segment) == INVALID_SEGMENT) {
-                        Segment::init(
-                            segment,
-                            logSegmentId,
-                            gcCrashConsistency ? (logSegmentId == mainSegmentId ? mainSegmentSize : logSegmentSize) : batchWriteThreshold * 2,
-                            /* set zero */ false);
-                        inSegmentOffset = logSegmentFront;
-                        if (!gcCrashConsistency) {
-                            tmpSegments.push_back(segment);
-                        }
-                    }
-                    // append record to buffer
-                    Segment::appendData(segment, poolData + *update, RECORD_SIZE);
-                    if (!gcCrashConsistency) {
-                        FLUSH_SEGMENT_BUFFER(batchWriteThreshold - 1);
-                    }
-                }
-                // keep track of the group flush front locally
-                flushFront += RECORD_SIZE;
-                modifiedSegments.insert(logSegmentId);
-                // update the segment flush front
-                _segmentGroupManager->setSegmentFlushFront(logSegmentId, logSegmentFront + RECORD_SIZE);
-            }
-            if (valueSize > 0) {
-                // put it into the lists for batched put to LSM-tree
-                // but skip tags
-                keys.push_back((char*)poolData + *update);
-                // save values first for gc consistency log
-                if (gcCrashConsistency) {
-                    valueLoc.value = std::string((char*)poolData + *update + sizeof(len_t), valueSize);
-                }
-                values.push_back(valueLoc);
-            }
-            _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.erase(update);
-
-            // do not get the threadpool too busy
-            // while (waitIO > ConfigManager::getInstance().getNumIOThread() * 1.5);
-        }
-
-        if (!gcCrashConsistency) {
-            FLUSH_SEGMENT_BUFFER(0);
-        }
-
-        if (groupId != LSM_GROUP) {
-            // update group metadata
-            _segmentGroupManager->setGroupFlushFront(groupId, flushFront, false);
-            _segmentGroupManager->setGroupWriteFront(groupId, flushFront, false);
-        }
-        // remove the segment and group after processing (except when break after GC)
-        if (_centralizedReservedPool[flushingPoolIndex].segmentsInPool.count(mainSegmentId) == 0 || _centralizedReservedPool[flushingPoolIndex].segmentsInPool.at(mainSegmentId).second.empty()) {
-            _centralizedReservedPool[flushingPoolIndex].segmentsInPool.erase(mainSegmentId);
-            _centralizedReservedPool[flushingPoolIndex].groupsInPool.erase(groupId);
-        }
-    }
-
-    //    if (gcCrashConsistency) {
-    //        offset_t flushFront = _segmentGroupManager->getGroupFlushFront(groupId, false);
-    //        // remove redundant information
-    //        //size_t noneed = 0;
-    //        for (size_t i = 0; i < keys.size(); i++) {
-    //            if (oldLocations->at((unsigned char*) keys.at(i)) >= flushFront) {
-    //                values.at(i).value.clear();
-    //                //noneed ++;
-    //            }
-    //        }
-    //        //printf("%lu keys no need to save %lu\n", keys.size(), noneed);
-    //
-    //        // write the consistency log
-    //        std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > groups;
-    //        for (auto g : modifiedGroups) {
-    //            groups[g] =
-    //                    std::pair<offset_t, std::vector<segment_id_t> > (
-    //                            _segmentGroupManager->getGroupFlushFront(g, /* needsLock = */ false),
-    //                            _segmentGroupManager->getGroupSegments(g, /* needsLock = */ false)
-    //                    );
-    //        }
-    //        _logManager->setBatchGCKeyValue(keys, values, groups);
-    //        // write the data (last segment, other previous segments)
-    //        if (Segment::getId(segment) != INVALID_SEGMENT) {
-    //            tmpSegments.push_back(segment);
-    //        }
-    //        for (auto c : tmpSegments) {
-    //            segment = c;
-    //            inSegmentOffset = 0;
-    //            FLUSH_SEGMENT_BUFFER(0);
-    //        }
-    //    }
-
-    // wait until all data are flushed
-    while (waitIO > 0)
-        ;
-
-    // write update consistency log
-    //    if (isUpdate && ConfigManager::getInstance().enableCrashConsistency()) {
-    //        std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > groups;
-    //        for (auto g : modifiedGroups) {
-    //            groups[g] =
-    //                    std::pair<offset_t, std::vector<segment_id_t> > (
-    //                            _segmentGroupManager->getGroupFlushFront(g, /* needsLock = */ false),
-    //                            _segmentGroupManager->getGroupSegments(g, /* needsLock = */ false)
-    //                    );
-    //        }
-    //        _logManager->setBatchUpdateKeyValue(keys, values, groups);
-    //    }
-
-    // update LSM-tree
-    gettimeofday(&keyWriteStartTime, 0); // TODO update key positions
-    //    if (!keys.empty() && _keyManager->writeKeyBatch(keys, values) == false) {
-    //        debug_error("Failed to set %lu keys\n", keys.size());
-    //    }
-
-    // update persist log metadata
-    //    logMetaPersist(modifiedSegments, modifiedGroups);
-    //
-    //    // remove update consistency log
-    //    if (isUpdate) {
-    //        _logManager->ackBatchUpdateKeyValue();
-    //    } else {
-    //        _logManager->ackBatchGCKeyValue();
-    //    }
-    //
-    //    StatsRecorder::getInstance()->timeProcess(isUpdate? StatsType::UPDATE_KEY_WRITE_LSM : StatsType::UPDATE_KEY_WRITE_LSM_GC, keyWriteStartTime, /* diff = */ 0, /* count = */ keys.size());
-    //    StatsRecorder::getInstance()->timeProcess(StatsType::GROUP_IN_POOL_FLUSH, keyWriteStartTime, /* diff = */ 0, /* count = */ keys.size());
-
-    // free all tmp buffers
-    for (auto c : tmpSegments) {
-        Segment::free(c);
-    }
-
-    _centralizedReservedPool[flushingPoolIndex].keysInPool.clear();
-
-    // should be empty already when all data are flushed (?)
-    assert(_centralizedReservedPool[flushingPoolIndex].groupsInPool.empty());
-    assert(_centralizedReservedPool[flushingPoolIndex].segmentsInPool.empty());
-
-    // not necessary to clean, but reset
-    Segment::resetFronts(_centralizedReservedPool[flushingPoolIndex].pool);
-
-#undef FLUSH_SEGMENT_BUFFER
-#undef RESET_SEGMENT_BUFFER
-}
-
 void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* logOffsetPtr)
 {
     static int flushTimes = 0;
@@ -1142,7 +533,8 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
         }
     }
 
-    //    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
+    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
+
     // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
     if (ConfigManager::getInstance().persistLogMeta()) {
         if (ConfigManager::getInstance().getUpdateKVBufferSize() > 0 || flushTimes >= 512) { 
@@ -1226,57 +618,6 @@ void ValueManager::decrementPoolIndex(int& current)
 {
     int numPipelinedBuffers = ConfigManager::getInstance().getNumPipelinedBuffer();
     current = (current + numPipelinedBuffers - 1) % numPipelinedBuffers;
-}
-
-void ValueManager::flushCentralizedReservedPoolBg(StatsType stats)
-{
-    int nextPoolIndex = getNextPoolIndex(_centralizedReservedPoolIndex.inUsed);
-    // wait until next available buffer is available after flush
-    // (assume multiple core is available)
-    // the buffer into queue for flush
-    while (nextPoolIndex == _centralizedReservedPoolIndex.flushNext) {
-        pthread_cond_wait(&_centralizedReservedPoolIndex.flushedBuffer, &_centralizedReservedPoolIndex.queueLock);
-    }
-    // printf("Put pool %d into queue\n", _centralizedReservedPoolIndex.inUsed);
-    _centralizedReservedPoolIndex.queue.push(std::pair<int, StatsType>(_centralizedReservedPoolIndex.inUsed, stats));
-    pthread_mutex_unlock(&_centralizedReservedPoolIndex.queueLock);
-    // increment the index of pool to use
-    _centralizedReservedPoolIndex.inUsed = nextPoolIndex;
-    // printf("Going to use pool %d\n", _centralizedReservedPoolIndex.inUsed);
-    //  signal the worker to wake and process buffers in queue
-    pthread_cond_signal(&_needBgFlush);
-}
-
-void* ValueManager::flushCentralizedReservedPoolBgWorker(void* arg)
-{
-    ValueManager* instance = (ValueManager*)arg;
-    // loop until valueManager is destoryed
-    // fprintf(stderr, "Bg flush thread starts now, hello\n");
-    while (instance->_started) {
-        // wait for signal after data is put into queue
-        pthread_cond_wait(&instance->_needBgFlush, &instance->_centralizedReservedPoolIndex.queueLock);
-        // lock before queue checking
-        while (!instance->_centralizedReservedPoolIndex.queue.empty()) {
-            int poolIndex;
-            StatsType stats;
-            tie(poolIndex, stats) = instance->_centralizedReservedPoolIndex.queue.front();
-            instance->_centralizedReservedPoolIndex.queue.pop();
-            // unlock to allow producer to push items in while processing the current one
-            pthread_mutex_unlock(&instance->_centralizedReservedPoolIndex.queueLock);
-            // do the flushing as usual
-            // printf("Pull and flush pool %d from queue\n", poolIndex);
-            STAT_TIME_PROCESS(instance->flushCentralizedReservedPool(/* *reportGroupId = */ 0, /* isUpdate = */ true, poolIndex), stats);
-            instance->_centralizedReservedPoolIndex.flushNext = instance->getNextPoolIndex(instance->_centralizedReservedPoolIndex.flushNext);
-            // printf("Complete processing pool %d next %d \n", poolIndex, instance->_centralizedReservedPoolIndex.flushNext);
-            //  lock before queue checking
-            pthread_cond_signal(&instance->_centralizedReservedPoolIndex.flushedBuffer);
-            pthread_mutex_lock(&instance->_centralizedReservedPoolIndex.queueLock);
-        };
-        // leave the mutex to pthread_cond_wait to unlock
-    }
-    // fprintf(stderr, "Bg flush thread exits now, bye\n");
-
-    return (void*)0;
 }
 
 offset_t ValueManager::getLastSegmentFront(offset_t flushFront)
@@ -1668,14 +1009,63 @@ void ValueManager::scanAllRecords() {
 //     }
 // }
 
+void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
+    int nextPoolIndex = getNextPoolIndex(_centralizedReservedPoolIndex.inUsed);
+    // wait until next available buffer is available after flush
+    // (assume multiple core is available)
+    // the buffer into queue for flush
+
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
+    while (nextPoolIndex == _centralizedReservedPoolIndex.flushNext) {
+        pthread_cond_wait(&_centralizedReservedPoolIndex.flushedBuffer, &_centralizedReservedPoolIndex.queueLock);
+    }
+    StatsRecorder::getInstance()->timeProcess(StatsType::POOL_FLUSH_WAIT, tv);
+
+    debug_info("Put pool %d into queue\n", _centralizedReservedPoolIndex.inUsed);
+    _centralizedReservedPoolIndex.queue.push(std::pair<int, StatsType>(_centralizedReservedPoolIndex.inUsed, stats));
+    pthread_mutex_unlock(&_centralizedReservedPoolIndex.queueLock);
+    // increment the index of pool to use
+    _centralizedReservedPoolIndex.inUsed = nextPoolIndex;
+    debug_info("Going to use pool %d\n", _centralizedReservedPoolIndex.inUsed);
+    // signal the worker to wake and process buffers in queue
+    pthread_cond_signal(&_needBgFlush);
+}
+
+void ValueManager::flushCentralizedReservedPoolBgWorker() {
+//    ValueManager *instance = (ValueManager *) arg;
+    // loop until valueManager is destoryed
+    //fprintf(stderr, "Bg flush thread starts now, hello\n");
+    while (_started) {
+        // wait for signal after data is put into queue
+        pthread_cond_wait(&_needBgFlush, &_centralizedReservedPoolIndex.queueLock);
+        // lock before queue checking
+        while (!_centralizedReservedPoolIndex.queue.empty()) {
+            int poolIndex;
+            StatsType stats;
+            tie(poolIndex, stats) = _centralizedReservedPoolIndex.queue.front();
+            _centralizedReservedPoolIndex.queue.pop();
+            // unlock to allow producer to push items in while processing the current one
+            pthread_mutex_unlock(&_centralizedReservedPoolIndex.queueLock);
+            // do the flushing as usual
+            debug_info("Pull and flush pool %d from queue\n", poolIndex);
+            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), stats);
+            _centralizedReservedPoolIndex.flushNext = getNextPoolIndex(_centralizedReservedPoolIndex.flushNext);
+            debug_info("Complete processing pool %d next %d \n", poolIndex, _centralizedReservedPoolIndex.flushNext);
+            // lock before queue checking
+            pthread_cond_signal(&_centralizedReservedPoolIndex.flushedBuffer);
+            pthread_mutex_lock(&_centralizedReservedPoolIndex.queueLock);
+        };
+        // leave the mutex to pthread_cond_wait to unlock
+    }
+    debug_info("Bg flush thread exits now, bye%s\n", "");
+}
+
 bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
-    if (ConfigManager::getInstance().enabledVLogMode() || _isSlave) {
-        STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(), POOL_FLUSH);
-    } else {
-        STAT_TIME_PROCESS(flushCentralizedReservedPool(), POOL_FLUSH);
-    }
+    flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH); 
     return true;
 }
 
@@ -1689,7 +1079,7 @@ void ValueManager::printSlaveStats(FILE* out)
         fprintf(out,
             "Slave capacity: %lu; In-use: %lu; Valid: %lu\n", ConfigManager::getInstance().getColdStorageCapacity(), _slaveValueManager->_slave.writtenBytes, _slaveValueManager->_slave.validBytes);
         _slave.gcm->printStats(out);
-    }
+    } 
 }
 
 }

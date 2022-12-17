@@ -226,6 +226,7 @@ StatsRecorder::~StatsRecorder(){
 
     PRINT_FULL("FlushLog/Group"       , POOL_FLUSH                      , time[UPDATE]);
     PRINT_FULL("- Flush w/o GC"       , POOL_FLUSH_NO_GC                , time[UPDATE]);
+    PRINT_FULL("- Flush wait"         , POOL_FLUSH_WAIT                 , time[UPDATE]);
     PRINT_FULL("- GCTotal"            , GC_TOTAL                        , time[UPDATE]);
 
     PRINT_FULL("LogMeta"              , LOG_TIME                        , time[UPDATE]);

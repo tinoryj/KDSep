@@ -37,14 +37,7 @@ DeviceManager::DeviceManager(const vector<DiskInfo> v_diskInfo, bool isSlave)
 
     // buffer for direct I/O
     _pageSize = sysconf(_SC_PAGE_SIZE);
-    if (ConfigManager::getInstance().useDirectIO()) {
-        int ret = posix_memalign(&_buf, _pageSize, _pageSize * 2);
-        assert(ret == 0);
-        _bufsize = _pageSize * 2;
-    } else {
-        _buf = nullptr;
-        _bufsize = 0;
-    }
+    _directIO = ConfigManager::getInstance().useDirectIO();
 
 #ifdef DISKLBA_OUT
     fp = fopen("disklba.out", "w");
@@ -56,16 +49,13 @@ DeviceManager::~DeviceManager()
     for (auto diskInfo : _diskInfo) {
         delete _diskMutex[diskInfo.first];
     }
-
-    if (_buf) {
-        free(_buf);
-        _buf = 0;
-    }
 }
 
-bool DeviceManager::checkBufferSize(len_t neededSize, offset_t offset)
+void* DeviceManager::checkBufferSize(len_t neededSize, offset_t offset, len_t& bufsize)
 {
     assert(neededSize != 0);
+
+    void* buf;
 
     if (offset == INVALID_OFFSET) {
         neededSize = (neededSize + _pageSize - 1) / _pageSize * _pageSize;
@@ -76,17 +66,11 @@ bool DeviceManager::checkBufferSize(len_t neededSize, offset_t offset)
         neededSize = end - offset;
     }
 
-    if (neededSize > _bufsize) {
-        free(_buf);
-        int ret = posix_memalign(&_buf, _pageSize, neededSize);
-        assert(ret == 0);
-        _bufsize = neededSize;
-        debug_info("Enlarge device buffer to %lu\n", neededSize);
+    int ret = posix_memalign(&buf, _pageSize, neededSize);
+    assert(ret == 0);
+    bufsize = neededSize;
 
-        return true;
-    }
-
-    return false;
+    return buf;
 }
 
 #ifdef DIRECT_LBA_SEGMENT_MAPPING
@@ -168,7 +152,8 @@ bool DeviceManager::isLogSegment(segment_id_t segmentId)
 
 len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t diskOffset, len_t length, bool isWrite)
 {
-    debug_trace("accessDisk offset %lu length %lu write %d\n", diskOffset, length, (int)isWrite);
+    debug_trace("accessDisk offset %lu length %lu write %d [%x%x]\n", diskOffset, length, (int)isWrite, 
+            (isWrite) ? buf[0] : ' ', (isWrite) ? buf[1] : ' ');
 
     // check if disk id is valid
     if (diskId == INVALID_DISK || _diskInfo.count(diskId) < 0) {
@@ -188,15 +173,18 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
     offset_t originalDiskOffset = diskOffset;
     len_t originalLength = length;
 
-    if (_buf) {
-        checkBufferSize(length, diskOffset);
-        memset(_buf, 0, _bufsize);
+    void* directbuf = nullptr;
+    len_t bufsize;
+
+    if (_directIO) {
+        directbuf = checkBufferSize(length, diskOffset, bufsize); 
+        memset(directbuf, 0, bufsize);
         if (isWrite) {
-            memcpy((char*)_buf + diskOffset % _pageSize, buf, length);
+            memcpy((char*)directbuf + diskOffset % _pageSize, buf, length);
         }
         length = ((diskOffset + length + _pageSize - 1) / _pageSize - diskOffset / _pageSize) * _pageSize;
         diskOffset = diskOffset - diskOffset % _pageSize;
-        tempBuf = (char*)_buf;
+        tempBuf = (char*)directbuf;
     }
 
     if (cm.enabledVLogMode() || _isSlave) {
@@ -257,7 +245,7 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
             }
         }
         if (ret < 0 || (size_t)ret != length) {
-            debug_error("Error on p%s buf=%p to disk %d (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), buf, diskId, _diskInfo.at(diskId).fd, diskOffset, length, strerror(errno));
+            debug_error("Error on p%s buf=%p to disk %d (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), tempBuf, diskId, _diskInfo.at(diskId).fd, diskOffset, length, strerror(errno));
             assert(0);
             exit(-1);
         }
@@ -266,7 +254,7 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
     // mark disk as dirty if needed, and update stats
     if (isWrite) {
         StatsRecorder::getInstance()->IOBytesWrite(length, diskId);
-        if (!_buf) {
+        if (!_directIO) {
             if (useFS) {
                 //            fflush(fd);
             } else {
@@ -277,9 +265,13 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
         StatsRecorder::getInstance()->IOBytesRead(length, diskId);
     }
 
-    if (!isWrite && _buf) {
+    if (!isWrite && _directIO) {
         // copy back
-        memcpy(buf, (char*)_buf + originalDiskOffset % _pageSize, originalLength);
+        memcpy(buf, (char*)directbuf + originalDiskOffset % _pageSize, originalLength);
+    }
+
+    if (_directIO) {
+        free(directbuf);
     }
 
     return length;
@@ -413,7 +405,7 @@ len_t DeviceManager::accessSegmentFile(segment_id_t segmentId, unsigned char* bu
     //        // create if file not exists
     //        fd = fopen(fname.c_str(), "w+b");
     //    }
-    if (_buf) {
+    if (_directIO) {
         fd = open(fname.c_str(), O_RDWR | O_DIRECT | O_CREAT, 0755);
     } else {
         fd = open(fname.c_str(), O_RDWR | O_DIRECT, 0755);
@@ -439,18 +431,21 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
     offset_t originalDiskOffset = diskOffset;
     len_t originalLength = length;
 
-    if (_buf && !isLog) {
+    void* directbuf;
+    len_t bufsize;
+
+    if (_directIO && !isLog) {
         if (diskOffset % _pageSize) {
             debug_error("diskOffset not aligned: %lu\n", diskOffset);
         }
-        checkBufferSize(length, diskOffset);
-        memset(_buf, 0, _bufsize);
+        directbuf = (void*)checkBufferSize(length, diskOffset, bufsize);
+        memset(directbuf, 0, bufsize);
         if (isWrite) {
-            memcpy((char*)_buf + diskOffset % _pageSize, buf, length);
+            memcpy((char*)directbuf + diskOffset % _pageSize, buf, length);
             length = ((diskOffset + length + _pageSize - 1) / _pageSize - diskOffset / _pageSize) * _pageSize;
             diskOffset = diskOffset - diskOffset % _pageSize;
         }
-        tempBuf = (char*)_buf;
+        tempBuf = (char*)directbuf;
     }
 
     if (isCircular) {
@@ -473,7 +468,7 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
                 //                ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
             }
             if (ret < 0 || (size_t)ret != len) {
-                debug_error("Error on f%s buf=%p to file (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), buf + inOffset, fd, runningDiskOffset, len, strerror(errno));
+                debug_error("Error on f%s buf=%p to file (fd=%d) at %lu length %lu: %s\n", (isWrite ? "write" : "read"), tempBuf + inOffset, fd, runningDiskOffset, len, strerror(errno));
                 assert(0);
                 exit(-1);
             }
@@ -497,9 +492,13 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
         StatsRecorder::getInstance()->IOBytesRead(accessLength, 0);
     }
 
-    if (!isWrite && _buf && !isLog) {
+    if (!isWrite && _directIO && !isLog) {
         // copy back
-        memcpy(buf, (char*)_buf + originalDiskOffset % _pageSize, originalLength);
+        memcpy(buf, (char*)directbuf + originalDiskOffset % _pageSize, originalLength);
+    }
+
+    if (_directIO) {
+        free(directbuf);
     }
 
     return accessLength;

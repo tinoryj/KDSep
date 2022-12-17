@@ -118,6 +118,7 @@ enum StatsType {
     GROUP_OTHER_FLUSH,
     POOL_FLUSH,
     POOL_FLUSH_NO_GC,
+    POOL_FLUSH_WAIT,
     FLUSH_BYTES,
     /* Metadata consistency */
     LOG_TIME,
