@@ -21,7 +21,6 @@ class ExternDBConfig {
     bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
-    int gcThreads_;
     int maxSortedRuns_;
     int sizeRatio_;
     size_t blockCache_;
@@ -92,7 +91,6 @@ class ExternDBConfig {
         rangeMerge_ = pt_.get<bool>("config.rangeMerge");
         lazyMerge_ = pt_.get<bool>("config.lazyMerge");
         sep_before_flush_ = pt_.get<bool>("config.sepBeforeFlush");
-        gcThreads_ = pt_.get<int>("config.gcThreads");
         maxSortedRuns_ = pt_.get<int>("config.maxSortedRuns");
         GCRatio_ = pt_.get<double>("config.gcRatio");
         blockWriteSize_ = pt_.get<uint64_t>("config.blockWriteSize");
@@ -127,9 +125,6 @@ class ExternDBConfig {
     }
     int getMaxSortedRuns() {
         return maxSortedRuns_;
-    }
-    int getGCThreads() {
-        return gcThreads_;
     }
     bool getSeekCompaction() {
         return seekCompaction_;

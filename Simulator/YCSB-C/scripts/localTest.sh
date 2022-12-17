@@ -2,7 +2,8 @@
 DB_Name="loadedDB"
 Thread_number=1
 ulimit -n 65536
-if [ -d $DB_Name ]; then
+
+if [ -d $path$DB_Name ]; then
     rm -rf $DB_Name
     echo "Deleted old database files"
 fi
