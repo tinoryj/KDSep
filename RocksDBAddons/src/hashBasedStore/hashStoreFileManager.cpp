@@ -1418,9 +1418,9 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
 
 bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* currentHandlerPtr1, hashStoreFileMetaDataHandler* currentHandlerPtr2, string targetPrefixStr)
 {
-    debug_info("Perform merge GC for file ID 1 = %lu, ID 2 = %lu\n", currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_);
     std::scoped_lock<std::shared_mutex> w_lock1(currentHandlerPtr1->fileOperationMutex_);
     std::scoped_lock<std::shared_mutex> w_lock2(currentHandlerPtr2->fileOperationMutex_);
+    debug_info("Perform merge GC for file ID 1 = %lu, ID 2 = %lu\n", currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_);
     hashStoreFileMetaDataHandler* mergedFileHandler;
     hashStoreFileHeader newFileHeaderForMergedFile;
     bool generateFileHandlerStatus = createHashStoreFileHandlerByPrefixStrForGC(targetPrefixStr, mergedFileHandler, targetPrefixStr.size(), currentHandlerPtr1->target_file_id_, currentHandlerPtr2->target_file_id_, newFileHeaderForMergedFile);
@@ -1525,6 +1525,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
             mergedFileHandler->file_operation_func_ptr_->closeFile();
         }
         deleteObslateFileWithFileIDAsInput(mergedFileHandler->target_file_id_);
+        currentHandlerPtr1->file_ownership_flag_ = 0;
+        currentHandlerPtr2->file_ownership_flag_ = 0;
         delete mergedFileHandler->file_operation_func_ptr_;
         delete mergedFileHandler;
         return false;
@@ -1550,6 +1552,10 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
             targetDeleteFileHandlerVec_.push_back(currentHandlerPtr1->target_file_id_);
             targetDeleteFileHandlerVec_.push_back(currentHandlerPtr2->target_file_id_);
             fileDeleteVecMtx_.unlock();
+            currentHandlerPtr1->gc_result_status_flag_ = kShouldDelete;
+            currentHandlerPtr2->gc_result_status_flag_ = kShouldDelete;
+            currentHandlerPtr1->file_ownership_flag_ = 0;
+            currentHandlerPtr2->file_ownership_flag_ = 0;
             if (currentHandlerPtr1->file_operation_func_ptr_->isFileOpen() == true) {
                 currentHandlerPtr1->file_operation_func_ptr_->closeFile();
             }
@@ -1572,6 +1578,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
             deleteObslateFileWithFileIDAsInput(mergedFileHandler->target_file_id_);
             delete mergedFileHandler->file_operation_func_ptr_;
             delete mergedFileHandler;
+            currentHandlerPtr1->file_ownership_flag_ = 0;
+            currentHandlerPtr2->file_ownership_flag_ = 0;
             return false;
         }
     }
@@ -1624,14 +1632,12 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                             asm volatile("");
                         }
                         mapIt.second->file_ownership_flag_ = -1;
-                        std::scoped_lock<std::shared_mutex> w_lock1(mapIt.second->fileOperationMutex_);
                         targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1);
                         currentHandlerPtr1 = mapIt.second;
                         while (tempHandler->file_ownership_flag_ != 0) {
                             asm volatile("");
                         }
                         tempHandler->file_ownership_flag_ = -1;
-                        std::scoped_lock<std::shared_mutex> w_lock2(tempHandler->fileOperationMutex_);
                         currentHandlerPtr2 = tempHandler;
                         debug_info("Find two file for merge GC success, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", currentHandlerPtr1, currentHandlerPtr2, targetPrefixStr.c_str());
                         return true;
@@ -1641,9 +1647,10 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                     continue;
                 }
             }
+            debug_info("Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
             return false;
         } else {
-            debug_info("[ERROR] Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
+            debug_info("Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
             return false;
         }
     }
@@ -1658,8 +1665,9 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* fileHandler;
         if (notifyGCMQ_->pop(fileHandler)) {
+            debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, wait for lock\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
-            debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
+            debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[fileHandler->total_object_bytes_];
             fileHandler->file_operation_func_ptr_->flushFile();

@@ -3,6 +3,7 @@
 #include "boost/thread.hpp"
 #include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
+#include <boost/atomic.hpp>
 #include <shared_mutex>
 
 using namespace std;

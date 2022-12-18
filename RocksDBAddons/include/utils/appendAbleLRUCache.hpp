@@ -160,7 +160,8 @@ template <typename keyType, typename valueType>
 valueType& AppendAbleLRUCache<keyType, valueType>::getFromCache(keyType& cacheKey)
 {
     std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-    return Cache_->get(cacheKey);
+    valueType& newValue = Cache_->get(cacheKey);
+    return newValue;
 }
 
 } // DELTAKV_NAMESPACE

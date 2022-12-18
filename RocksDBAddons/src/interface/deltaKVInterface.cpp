@@ -629,6 +629,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
                         if (index >= deltaValueFromExternalStoreVec->size()) {
                             debug_error("[ERROR] Read external deltaStore number mismatch with requested number (may overflow), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
                             delete deltaValueFromExternalStoreVec;
+                            exit(1);
                             return false;
                         }
                         finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
@@ -641,12 +642,13 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
                 if (index != deltaValueFromExternalStoreVec->size()) {
                     debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
                     delete deltaValueFromExternalStoreVec;
+                    exit(1);
                     return false;
                 } else {
                     debug_trace("Start DeltaKV merge operation, internalRawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", internalRawValueStr.c_str(), finalDeltaOperatorsVec.size());
                     bool mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
                     if (mergeOperationStatus == true) {
-                        if (enableWriteBackOperationsFlag_ == true && index > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                        if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                             writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                             writeBackOperationsQueue_->push(newPair);
                         }
@@ -847,6 +849,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value, uint32
                             if (index >= deltaValueFromExternalStoreVec->size()) {
                                 debug_error("[ERROR] Read external deltaStore number mismatch with requested number (may overflow), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
                                 delete deltaValueFromExternalStoreVec;
+                                exit(1);
                                 return false;
                             }
                             finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec->at(index));
@@ -859,11 +862,12 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value, uint32
                     if (index != deltaValueFromExternalStoreVec->size()) {
                         debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
                         delete deltaValueFromExternalStoreVec;
+                        exit(1);
                         return false;
                     } else {
                         debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                         deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
-                        if (enableWriteBackOperationsFlag_ == true && index > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                        if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                             writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                             writeBackOperationsQueue_->push(newPair);
                         }
@@ -1142,6 +1146,7 @@ bool DeltaKV::Merge(const string& key, const string& value)
 
 bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag)
 {
+    std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
     vector<string> tempNewMergeOperatorsVec;
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
@@ -1932,7 +1937,7 @@ void DeltaKV::processWriteBackOperationsWorker()
             gettimeofday(&tv, 0);
             bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
             if (writeBackStatus == false) {
-                debug_warn("Could not write back target key = %s\n", currentProcessPair->key.c_str());
+                debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
