@@ -245,7 +245,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
             thList_.push_back(th);
             totalNumberOfThreadsAllowed--;
         }
-        if (totalNumberOfThreadsAllowed > 2) {
+        if (totalNumberOfThreadsAllowed >= 2) {
             for (auto threadID = 0; threadID < totalNumberOfThreadsAllowed; threadID++) {
                 th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
                 thList_.push_back(th);
@@ -966,52 +966,30 @@ bool DeltaKV::Get(const string& key, string* value)
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
+        while (oneBufferDuringProcessFlag_ == true) {
+            asm volatile("");
+        }
         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                if (writeBatchMapForSearch_.at(key).first.size() != 0) {
-                    if (writeBatchMapForSearch_.at(key).first.back().op_ == kPutOp) {
-                        value->assign(writeBatchMapForSearch_.at(key).first.back().value_);
-                        debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                        return true;
-                    }
-                }
-            } else {
-                if (writeBatchMapForSearch_.at(key).second.size() != 0) {
-                    if (writeBatchMapForSearch_.at(key).second.back().op_ == kPutOp) {
-                        value->assign(writeBatchMapForSearch_.at(key).second.back().value_);
-                        debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                        return true;
-                    }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).size() != 0) {
+                if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
+                    value->assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
+                    debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+                    return true;
                 }
             }
             string newValueStr;
             bool findNewValueFlag = false;
-            if (currentWriteBatchDequeInUse == 0) {
-                // queue 1 during process, should only search second(1)
-                for (auto it : writeBatchMapForSearch_.at(key).second) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-            } else {
-                // queue 0 during process, should search first(0) first
-                for (auto it : writeBatchMapForSearch_.at(key).first) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
+            for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
+                if (it.op_ == kPutOp) {
+                    newValueStr.assign(it.value_);
+                    tempNewMergeOperatorsVec.clear();
+                    findNewValueFlag = true;
+                } else {
+                    tempNewMergeOperatorsVec.push_back(it.value_);
                 }
             }
-
             if (findNewValueFlag == true) {
                 deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
@@ -1151,70 +1129,31 @@ bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
+        while (oneBufferDuringProcessFlag_ == true) {
+            asm volatile("");
+        }
         std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                if (writeBatchMapForSearch_.at(key).first.back().op_ == kPutOp) {
-                    value->assign(writeBatchMapForSearch_.at(key).first.back().value_);
-                    debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                    maxSequenceNumber = writeBatchMapForSearch_.at(key).first.back().sequenceNumber_;
-                    return true;
-                }
-            } else {
-                if (writeBatchMapForSearch_.at(key).second.back().op_ == kPutOp) {
-                    value->assign(writeBatchMapForSearch_.at(key).second.back().value_);
-                    debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                    maxSequenceNumber = writeBatchMapForSearch_.at(key).first.back().sequenceNumber_;
-                    return true;
-                }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
+                value->assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
+                debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+                maxSequenceNumber = writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().sequenceNumber_;
+                return true;
             }
             string newValueStr;
             bool findNewValueFlag = false;
-            if (currentWriteBatchDequeInUse == 0) {
-                maxSequenceNumber = writeBatchMapForSearch_.at(key).first.back().sequenceNumber_;
-                // queue 1 during process, should search second(1) first
-                for (auto it : writeBatchMapForSearch_.at(key).second) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-                for (auto it : writeBatchMapForSearch_.at(key).first) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-            } else {
-                maxSequenceNumber = writeBatchMapForSearch_.at(key).second.back().sequenceNumber_;
-                // queue 0 during process, should search first(0) first
-                for (auto it : writeBatchMapForSearch_.at(key).first) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-                for (auto it : writeBatchMapForSearch_.at(key).second) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
+            maxSequenceNumber = writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().sequenceNumber_;
+            // queue 1 during process, should search second(1) first
+            for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
+                if (it.op_ == kPutOp) {
+                    newValueStr.assign(it.value_);
+                    tempNewMergeOperatorsVec.clear();
+                    findNewValueFlag = true;
+                } else {
+                    tempNewMergeOperatorsVec.push_back(it.value_);
                 }
             }
-
             if (findNewValueFlag == true) {
                 deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
@@ -1308,62 +1247,25 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     string newValueStr;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
+        while (oneBufferDuringProcessFlag_ == true) {
+            asm volatile("");
+        }
         std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                if (writeBatchMapForSearch_.at(key).first.back().op_ == kPutOp) {
-                    newValueStr.assign(writeBatchMapForSearch_.at(key).first.back().value_);
-                    debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                    findNewValueInBatchedBuffer = true;
-                }
-            } else {
-                if (writeBatchMapForSearch_.at(key).second.back().op_ == kPutOp) {
-                    newValueStr.assign(writeBatchMapForSearch_.at(key).second.back().value_);
-                    debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
-                    findNewValueInBatchedBuffer = true;
-                }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
+                newValueStr.assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
+                debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+                findNewValueInBatchedBuffer = true;
             }
             bool findNewValueFlag = false;
-            if (currentWriteBatchDequeInUse == 0) {
-                // queue 1 during process, should search second(1) first
-                for (auto it : writeBatchMapForSearch_.at(key).second) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-                for (auto it : writeBatchMapForSearch_.at(key).first) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-            } else {
-                // queue 0 during process, should search first(0) first
-                for (auto it : writeBatchMapForSearch_.at(key).first) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
-                }
-                for (auto it : writeBatchMapForSearch_.at(key).second) {
-                    if (it.op_ == kPutOp) {
-                        newValueStr.assign(it.value_);
-                        tempNewMergeOperatorsVec.clear();
-                        findNewValueFlag = true;
-                    } else {
-                        tempNewMergeOperatorsVec.push_back(it.value_);
-                    }
+            for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
+                if (it.op_ == kPutOp) {
+                    newValueStr.assign(it.value_);
+                    tempNewMergeOperatorsVec.clear();
+                    findNewValueFlag = true;
+                } else {
+                    tempNewMergeOperatorsVec.push_back(it.value_);
                 }
             }
 
@@ -1646,41 +1548,23 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
             currentWriteBatchDequeInUse = 1;
         }
         writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kPutOp, key, value, currentSequenceNumber));
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.at(key).first.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            } else {
-                writeBatchMapForSearch_.at(key).second.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
         } else {
             deque<writeBatchSearch_t> tempDeque;
             tempDeque.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            deque<writeBatchSearch_t> tempDequePlaceHolder;
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDeque, tempDequePlaceHolder)));
-            } else {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDequePlaceHolder, tempDeque)));
-            }
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
         return true;
     } else {
         // only insert
         writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kPutOp, key, value, currentSequenceNumber));
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.at(key).first.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            } else {
-                writeBatchMapForSearch_.at(key).second.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
         } else {
             deque<writeBatchSearch_t> tempDeque;
             tempDeque.push_back(writeBatchSearch_t(kPutOp, value, currentSequenceNumber));
-            deque<writeBatchSearch_t> tempDequePlaceHolder;
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDeque, tempDequePlaceHolder)));
-            } else {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDequePlaceHolder, tempDeque)));
-            }
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
         return true;
     }
@@ -1710,41 +1594,23 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
             currentWriteBatchDequeInUse = 1;
         }
         writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kMergeOp, key, value, currentSequenceNumber));
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.at(key).first.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            } else {
-                writeBatchMapForSearch_.at(key).second.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
         } else {
             deque<writeBatchSearch_t> tempDeque;
             tempDeque.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            deque<writeBatchSearch_t> tempDequePlaceHolder;
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDeque, tempDequePlaceHolder)));
-            } else {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDequePlaceHolder, tempDeque)));
-            }
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
         return true;
     } else {
         // only insert
         writeBatchDeque[currentWriteBatchDequeInUse]->push_back(make_tuple(kMergeOp, key, value, currentSequenceNumber));
-        if (writeBatchMapForSearch_.find(key) != writeBatchMapForSearch_.end()) {
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.at(key).first.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            } else {
-                writeBatchMapForSearch_.at(key).second.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            }
+        if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
         } else {
             deque<writeBatchSearch_t> tempDeque;
             tempDeque.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
-            deque<writeBatchSearch_t> tempDequePlaceHolder;
-            if (currentWriteBatchDequeInUse == 0) {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDeque, tempDequePlaceHolder)));
-            } else {
-                writeBatchMapForSearch_.insert(make_pair(key, make_pair(tempDequePlaceHolder, tempDeque)));
-            }
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
         return true;
     }
@@ -1822,6 +1688,7 @@ void DeltaKV::processBatchedOperationsWorker()
         }
         deque<tuple<DBOperationType, string, string, uint32_t>>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
+            std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
             oneBufferDuringProcessFlag_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
             bool preMergeStatus = performInBatchedBufferPartialMerge(currentHandler);
@@ -1829,18 +1696,15 @@ void DeltaKV::processBatchedOperationsWorker()
             vector<uint32_t> sequenceNumberVec, valueStoreSequenceNumberVec;
             vector<bool> isAnchorFlagToDeltaStoreVec;
             for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
+                keyToDeltaStoreVec.push_back(std::get<1>(*it));
+                valueToDeltaStoreVec.push_back(std::get<2>(*it));
+                sequenceNumberVec.push_back(std::get<3>(*it));
                 if (std::get<0>(*it) == kPutOp) {
                     keyToValueStoreVec.push_back(std::get<1>(*it));
                     valueToValueStoreVec.push_back(std::get<2>(*it));
-                    keyToDeltaStoreVec.push_back(std::get<1>(*it));
-                    valueToDeltaStoreVec.push_back(std::get<2>(*it));
-                    sequenceNumberVec.push_back(std::get<3>(*it));
                     valueStoreSequenceNumberVec.push_back(std::get<3>(*it));
                     isAnchorFlagToDeltaStoreVec.push_back(true);
                 } else if (std::get<0>(*it) == kMergeOp) {
-                    keyToDeltaStoreVec.push_back(std::get<1>(*it));
-                    valueToDeltaStoreVec.push_back(std::get<2>(*it));
-                    sequenceNumberVec.push_back(std::get<3>(*it));
                     isAnchorFlagToDeltaStoreVec.push_back(false);
                 }
             }
@@ -1850,12 +1714,12 @@ void DeltaKV::processBatchedOperationsWorker()
             case kBatchedWithOnlyDeltaLog:
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, sequenceNumberVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
                 if (putToDeltaStoreStatus == true) {
-                    debug_info("Write underlying rocksdb for %lu keys\n", keyToDeltaStoreVec.size());
+                    debug_info("Try write underlying rocksdb for %lu keys\n", keyToDeltaStoreVec.size());
                     rocksdb::WriteOptions batchedWriteOperation;
                     batchedWriteOperation.sync = false;
                     auto valueIndex = 0;
                     for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
-                        debug_info("Write underlying rocksdb for key = %s\n", keyToDeltaStoreVec[index].c_str());
+                        debug_info("Try write underlying rocksdb for key = %s\n", keyToDeltaStoreVec[index].c_str());
                         if (isAnchorFlagToDeltaStoreVec[index] == true) {
                             char writeInternalValueBuffer[sizeof(internalValueType) + valueToValueStoreVec[valueIndex].size()];
                             internalValueType currentInternalValueType;
@@ -1875,20 +1739,40 @@ void DeltaKV::processBatchedOperationsWorker()
                             }
                             valueIndex++;
                         } else {
-                            char writeInternalValueBuffer[sizeof(internalValueType)];
-                            internalValueType currentInternalValueType;
-                            currentInternalValueType.mergeFlag_ = false;
-                            currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
-                            currentInternalValueType.valueSeparatedFlag_ = true;
-                            currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
-                            memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-                            string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
-                            rocksdb::Status rocksDBStatus;
-                            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, keyToDeltaStoreVec[index], newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
-                            if (!rocksDBStatus.ok()) {
-                                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                            if (valueToDeltaStoreVec[index].size() >= HashStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
+                                char writeInternalValueBuffer[sizeof(internalValueType)];
+                                internalValueType currentInternalValueType;
+                                currentInternalValueType.mergeFlag_ = false;
+                                currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
+                                currentInternalValueType.valueSeparatedFlag_ = true;
+                                currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
+                                memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
+                                rocksdb::Status rocksDBStatus;
+                                STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, keyToDeltaStoreVec[index], newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+                                if (!rocksDBStatus.ok()) {
+                                    debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                } else {
+                                    debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", keyToDeltaStoreVec[index].c_str());
+                                }
                             } else {
-                                debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", keyToValueStoreVec[valueIndex].c_str());
+                                // not separate
+                                char writeInternalValueBuffer[sizeof(internalValueType) + valueToDeltaStoreVec[index].size()];
+                                internalValueType currentInternalValueType;
+                                currentInternalValueType.mergeFlag_ = false;
+                                currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
+                                currentInternalValueType.valueSeparatedFlag_ = true;
+                                currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
+                                memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                memcpy(writeInternalValueBuffer + sizeof(internalValueType), valueToDeltaStoreVec[index].c_str(), valueToDeltaStoreVec[index].size());
+                                string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + valueToDeltaStoreVec[index].size());
+                                rocksdb::Status rocksDBStatus;
+                                STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, keyToDeltaStoreVec[index], newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+                                if (!rocksDBStatus.ok()) {
+                                    debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                } else {
+                                    debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", keyToDeltaStoreVec[index].c_str());
+                                }
                             }
                         }
                     }
@@ -1902,22 +1786,14 @@ void DeltaKV::processBatchedOperationsWorker()
                 break;
             }
             // update write buffers
-            batchedBufferOperationMtx_.lock(); // lock buffered operations to avoid consistency problem during flush buffer
-            for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
-                if (currentWriteBatchDequeInUse == 0) {
-                    writeBatchMapForSearch_.at(keyToDeltaStoreVec[index]).second.clear();
-                    if (writeBatchMapForSearch_.at(keyToDeltaStoreVec[index]).first.size() == 0) {
-                        writeBatchMapForSearch_.erase(keyToDeltaStoreVec[index]);
-                    }
-                } else {
-                    writeBatchMapForSearch_.at(keyToDeltaStoreVec[index]).first.clear();
-                    if (writeBatchMapForSearch_.at(keyToDeltaStoreVec[index]).second.size() == 0) {
-                        writeBatchMapForSearch_.erase(keyToDeltaStoreVec[index]);
-                    }
-                }
+            debug_info("process batched contents done, start update write buffer's map, target update key number = %lu\n", keyToDeltaStoreVec.size());
+
+            if (currentWriteBatchDequeInUse == 0) {
+                writeBatchMapForSearch_[1].clear();
+            } else {
+                writeBatchMapForSearch_[0].clear();
             }
             currentHandler->clear();
-            batchedBufferOperationMtx_.unlock();
             oneBufferDuringProcessFlag_ = false;
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
         }

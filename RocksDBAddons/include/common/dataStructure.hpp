@@ -67,10 +67,10 @@ typedef struct hashStoreWriteOperationHandler {
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    vector<string>* key_str_vec_ptr_;
-    vector<string>* value_str_vec_ptr_;
-    vector<uint32_t>* sequence_number_vec_ptr_;
-    vector<bool>* is_anchor_vec_ptr_;
+    vector<string> key_str_vec_ptr_;
+    vector<string> value_str_vec_ptr_;
+    vector<uint32_t> sequence_number_vec_ptr_;
+    vector<bool> is_anchor_vec_ptr_;
 } hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {
@@ -88,10 +88,15 @@ typedef struct hashStoreOperationHandler {
     hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
-    hashStoreBatchedWriteOperationHandler batched_write_operation_;
+    hashStoreBatchedWriteOperationHandler* batched_write_operation_;
     hashStoreFileOperationType opType_;
     operationStatus jobDone_ = kNotDone;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler, hashStoreBatchedWriteOperationHandler* batched_write_operation)
+    {
+        file_handler_ = file_handler;
+        batched_write_operation_ = batched_write_operation;
+    };
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {

@@ -30,9 +30,9 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     if (options->enable_deltaStore_garbage_collection == true) {
         totalNumberOfThreadsAllowed--;
     }
-    if (totalNumberOfThreadsAllowed > 2) {
+    if (totalNumberOfThreadsAllowed >= 2) {
         shouldUseDirectOperationsFlag_ = false;
-        debug_info("Total thread number for operationWorker > 2, use multithread operation%s\n", "");
+        debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     } else {
         shouldUseDirectOperationsFlag_ = true;
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
@@ -105,7 +105,7 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
 
 bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec)
 {
-    debug_info("New OP: put deltas key number = %lu\n", keyStrVec.size());
+    debug_info("New OP: put deltas key number = %lu, %lu, %lu, %lu\n", keyStrVec.size(), valueStrPtrVec.size(), sequenceNumberVec.size(), isAnchorVec.size());
     unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
@@ -114,7 +114,7 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
             return false;
         } else {
             if (currentFileHandlerPtr == nullptr) {
-                // should skip current key since it is an anchor
+                // should skip current key since it is only an anchor
                 continue;
             }
             if (tempFileHandlerMap.find(currentFileHandlerPtr) != tempFileHandlerMap.end()) {
@@ -134,6 +134,10 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
                 tempFileHandlerMap.insert(make_pair(currentFileHandlerPtr, make_tuple(keyVecTemp, valueVecTemp, sequenceNumberVecTemp, anchorFlagVecTemp)));
             }
         }
+    }
+    for (auto mapIt : tempFileHandlerMap) {
+        mapIt.first->file_ownership_flag_ = 1;
+        debug_trace("Test: for file ID = %lu, put deltas key number = %lu, %lu, %lu, %lu\n", mapIt.first->target_file_id_, std::get<0>(mapIt.second).size(), std::get<1>(mapIt.second).size(), std::get<2>(mapIt.second).size(), std::get<3>(mapIt.second).size());
     }
     debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
     if (tempFileHandlerMap.size() == 0) {

@@ -938,7 +938,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
             return false;
         } else {
             debug_info("[Insert] Create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
-            fileHandlerPtr->file_ownership_flag_ = 1;
             return true;
         }
     } else if (fileHandlerExistFlag == true) {
@@ -951,13 +950,12 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
                     return false;
                 } else {
                     debug_warn("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
-                    fileHandlerPtr->file_ownership_flag_ = 1;
                     return true;
                 }
             } else {
                 // avoid get file handler which is in GC;
                 debug_trace("Get exist file ID = %lu, for key = %s, waiting for file ownership \n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                while (fileHandlerPtr->file_ownership_flag_ == -1) {
+                while (fileHandlerPtr->file_ownership_flag_ != 0) {
                     asm volatile("");
                     // wait if file is using in gc
                 }
@@ -967,7 +965,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
                     continue;
                 } else {
                     debug_trace("Get exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                    fileHandlerPtr->file_ownership_flag_ = 1;
                     return true;
                 }
             }
@@ -1048,7 +1045,7 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
     currentFileHandlerPtr->current_prefix_used_bit_ = prefixBitNumber;
     currentFileHandlerPtr->target_file_id_ = generateNewFileID();
-    currentFileHandlerPtr->file_ownership_flag_ = 1;
+    currentFileHandlerPtr->file_ownership_flag_ = 0;
     currentFileHandlerPtr->gc_result_status_flag_ = kNew;
     currentFileHandlerPtr->total_object_bytes_ = 0;
     currentFileHandlerPtr->total_on_disk_bytes_ = 0;

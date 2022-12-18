@@ -77,7 +77,7 @@ private:
             sequenceNumber_ = sequenceNumber;
         };
     } writeBatchSearch_t;
-    unordered_map<string, pair<deque<writeBatchSearch_t>, deque<writeBatchSearch_t>>> writeBatchMapForSearch_; // key to <operation type, value>
+    unordered_map<string, deque<writeBatchSearch_t>> writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
