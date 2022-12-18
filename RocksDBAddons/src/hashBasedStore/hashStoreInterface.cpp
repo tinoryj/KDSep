@@ -70,7 +70,12 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
 {
-    debug_info("New OP: put delta key = %s\n", keyStr.c_str());
+    if (isAnchor == true) {
+        debug_info("New OP: put delta key [Anchor] = %s\n", keyStr.c_str());
+    } else {
+        debug_info("New OP: put delta key [Data] = %s\n", keyStr.c_str());
+    }
+
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
     STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);

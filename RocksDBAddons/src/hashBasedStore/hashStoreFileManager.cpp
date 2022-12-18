@@ -1834,7 +1834,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
     objectFileMetaDataTrie_.getCurrentValidNodes(validFilesVec);
     for (auto fileHandlerIt : validFilesVec) {
         if (fileHandlerIt.second->gc_result_status_flag_ == kNoGC) {
-            debug_warn("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_);
+            debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_);
             continue;
         } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
             debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_, fileHandlerIt.second->current_prefix_used_bit_);

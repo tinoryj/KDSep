@@ -368,7 +368,7 @@ private:
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        debug_info("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         break;
                     } else {
                         continue;
@@ -391,7 +391,7 @@ private:
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        debug_info("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         break;
                     } else {
                         continue;
@@ -459,7 +459,7 @@ private:
                     root = root->leftChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (left) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        debug_info("Meet old leaf node (left) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         continue;
                     } else {
                         continue;
@@ -477,7 +477,7 @@ private:
                     root = root->rightChildNodePtr_;
                     if (root->isLeafNodeFlag_ == true) {
                         root->isLeafNodeFlag_ = false;
-                        debug_warn("Meet old leaf node (right) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        debug_info("Meet old leaf node (right) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
                         continue;
                     } else {
                         continue;

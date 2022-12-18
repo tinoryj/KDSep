@@ -113,6 +113,7 @@ private:
 
     bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+    bool GetCurrentValueThenWriteBack(const string& key);
     bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
 
     void processBatchedOperationsWorker();
@@ -124,7 +125,7 @@ private:
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
 
-    std::shared_mutex putOperationsMtx_;
+    std::shared_mutex DeltaKVOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
     std::shared_mutex globalSequenceNumberGeneratorMtx_;
