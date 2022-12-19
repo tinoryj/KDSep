@@ -1,7 +1,7 @@
 #include "indexBasedStore/indexStore.hh"
 #include "indexBasedStore/rocksdbKeyManager.hh"
-#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
+#include "utils/statsRecorder.hh"
 #include "utils/timer.hpp"
 #include <stdlib.h>
 
@@ -118,7 +118,7 @@ retry_update:
     bool inLSM = oldValueLoc.segmentId == LSM_SEGMENT;
     StatsRecorder::getInstance()->timeProcess(StatsType::UPDATE_KEY_LOOKUP, keyLookupStartTime);
     // update the value of the key, get the new location of value
-    STAT_TIME_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc, sync), StatsType::UPDATE_VALUE);
+    STAT_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc, sync), StatsType::UPDATE_VALUE);
 
     debug_trace("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
@@ -188,7 +188,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     }
 
     // get the value's location
-    //    STAT_TIME_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
+    //    STAT_PROCESS(readValueLoc = _keyManager->getKey(key), StatsType::GET_KEY_LOOKUP);
 
     // found for selective key-value separation or disabled key-value separation
     //    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
@@ -207,7 +207,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     // get value using the LRU cache
     std::string valueStr;
     if (_cache.lru) {
-        STAT_TIME_PROCESS(valueStr = _cache.lru->get((unsigned char*)ckey), StatsType::KEY_GET_CACHE);
+        STAT_PROCESS(valueStr = _cache.lru->get((unsigned char*)ckey), StatsType::KEY_GET_CACHE);
         if (valueStr.size() > 0) {
             debug_trace("get from cache key %.*s\n", std::min(16, (int)keySize), key);
             valueSize = valueStr.size();
@@ -228,7 +228,7 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
         StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
 
     if (ret && _cache.lru) {
-        STAT_TIME_PROCESS(_cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize), StatsType::KEY_UPDATE_CACHE);
+        STAT_PROCESS(_cache.lru->insert((unsigned char*)ckey, (unsigned char*)value, valueSize), StatsType::KEY_UPDATE_CACHE);
         debug_trace("insert to cache key %.*s value %.*s\n", std::min(16, (int)keySize), key, std::min(16, (int)valueSize), value);
     }
 
@@ -339,10 +339,10 @@ bool KvServer::flushBuffer()
 
 size_t KvServer::gc(bool all)
 {
-//    if (ConfigManager::getInstance().enabledVLogMode()) {
-        return _gcManager->gcVLog();
-//    }
-//    return (all ? _gcManager->gcAll() : _gcManager->gcGreedy());
+    //    if (ConfigManager::getInstance().enabledVLogMode()) {
+    return _gcManager->gcVLog();
+    //    }
+    //    return (all ? _gcManager->gcAll() : _gcManager->gcGreedy());
 }
 
 void KvServer::printStorageUsage(FILE* out)

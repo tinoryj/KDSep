@@ -88,6 +88,56 @@ bool FileOperation::openFile(string path)
     }
 }
 
+bool FileOperation::createThenOpenFile(string path)
+{
+    switch (operationType_) {
+    case kFstream:
+        fileStream_.open(path, ios::out);
+        if (fileStream_.is_open() == false) {
+            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
+            return false;
+        } else {
+            fileStream_.close();
+            fileStream_.open(path, ios::in | ios::out | ios::binary);
+            if (fileStream_.is_open() == false) {
+                debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
+                return false;
+            } else {
+                return true;
+            }
+        }
+        return true;
+        break;
+    case kDirectIO:
+        fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0644);
+        if (fileDirect_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        } else {
+            directIOWriteFileSize_ = 0;
+            directIOActualWriteFileSize_ = 0;
+            debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            return true;
+        }
+        break;
+    case kAlignLinuxIO:
+        fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR, 0644);
+        if (fileDirect_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            return false;
+        } else {
+            directIOWriteFileSize_ = 0;
+            directIOActualWriteFileSize_ = 0;
+            debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);
+            return true;
+        }
+        break;
+    default:
+        return false;
+        break;
+    }
+}
+
 bool FileOperation::closeFile()
 {
     if (operationType_ == kFstream) {
@@ -197,16 +247,6 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             return false;
         }
-        // uint64_t currentFindDataSize = 0;
-        // for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
-        //     uint32_t currentPageContentSize = 0;
-        //     memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
-        //     currentFindDataSize += currentPageContentSize;
-        // }
-        // if (currentFindDataSize > contentSize) {
-        //     debug_error("[ERROR] Read find data size = %lu, but request size = %lu, may lead to buffer overflow, stop read fuinction\n", currentFindDataSize, contentSize);
-        //     return false;
-        // }
         uint64_t currentReadDoneSize = 0;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;

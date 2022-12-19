@@ -5,8 +5,8 @@
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-// #include "utils/trie.hpp"
 #include <bits/stdc++.h>
+#include <shared_mutex>
 
 namespace DELTAKV_NAMESPACE {
 
@@ -14,35 +14,38 @@ class HashStoreFileOperator {
 public:
     HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
     ~HashStoreFileOperator();
-
-    // file operations
-    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, bool isAnchorStatus);
-    bool putWriteOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<string> valueVec, vector<bool> isAnchorStatusVec);
-    bool putWriteOperationsVectorIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, vector<string> keyVec, vector<string> valueVec, vector<bool> isAnchorStatusVec);
-    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<bool>>> tempFileHandlerMap);
+    // file operations with job queue support
+    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequenceNumber, bool isAnchorStatus);
+    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
     bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
+    // file operations without job queue support-> only support single operation
+    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequemceNumber, bool isAnchorStatus);
+    bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
+    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
+    // threads with job queue support
     void operationWorker();
     bool setJobDone();
-    bool bufferAnchor(hashStoreFileMetaDataHandler* fileHandler, string key);
-    void put(hashStoreFileMetaDataHandler* fileHandler, string key, string value);
 
 private:
+    // settings
+    string workingDir_;
     uint64_t perFileFlushBufferSizeLimit_;
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
     bool enableGCFlag_ = false;
+    bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer);
+    bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap);
-    void operationWorkerGetFromFile(hashStoreFileMetaDataHandler* fileHandler, hashStoreOperationHandler* opHandler, unordered_map<string, vector<string>>& currentFileProcessMap);
-    void operationWorkerPut(hashStoreOperationHandler* currentHandlerPtr);
-
-    void putAnchorsAndWriteBuffer(hashStoreFileMetaDataHandler* fileHandler, char* data, uint64_t size, string openFileName);
+    bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
-    string workingDir_;
 };
 
 } // namespace DELTAKV_NAMESPACE

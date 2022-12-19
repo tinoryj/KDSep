@@ -350,7 +350,7 @@ bool dump(string path)
 
 int main(int argc, char* argv[])
 {
-    //dump(argv[1]);
+    // dump(argv[1]);
     prefixTreeTest();
     return 0;
     // string path = "test.log";
@@ -404,7 +404,6 @@ int main(int argc, char* argv[])
     string dbNameStr = "TempDB";
     bool dbOpenStatus = db_.Open(options_, dbNameStr);
     if (!dbOpenStatus) {
-        exit(0);
     }
     // dump operations
     options_.dumpOptions("TempDB/options.dump");

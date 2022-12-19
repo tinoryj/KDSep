@@ -21,7 +21,6 @@ class ExternDBConfig {
     bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
-    int gcThreads_;
     int maxSortedRuns_;
     int sizeRatio_;
     size_t blockCache_;
@@ -52,8 +51,7 @@ class ExternDBConfig {
     double deltaLog_gc_threshold_;
     double deltaLog_split_gc_threshold_;
     uint64_t deltaLog_cache_object_number_;
-    uint64_t deltaLog_prefix_min_bit_number_;
-    uint64_t deltaLog_prefix_max_bit_number_;
+    uint64_t deltaLog_file_number_;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
     uint64_t deltaStore_operationNumberForForcedGCThreshold_;
     uint64_t deltaStore_thread_number_limit;
@@ -61,6 +59,7 @@ class ExternDBConfig {
     bool deltaStore_enable_batch;
     uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
     uint64_t deltaStore_write_back_during_gc_threshold_ = 5;
+    uint64_t deltaKVWriteBatchSize_ = 5;
 
     struct {
         uint64_t level;
@@ -92,7 +91,6 @@ class ExternDBConfig {
         rangeMerge_ = pt_.get<bool>("config.rangeMerge");
         lazyMerge_ = pt_.get<bool>("config.lazyMerge");
         sep_before_flush_ = pt_.get<bool>("config.sepBeforeFlush");
-        gcThreads_ = pt_.get<int>("config.gcThreads");
         maxSortedRuns_ = pt_.get<int>("config.maxSortedRuns");
         GCRatio_ = pt_.get<double>("config.gcRatio");
         blockWriteSize_ = pt_.get<uint64_t>("config.blockWriteSize");
@@ -107,8 +105,7 @@ class ExternDBConfig {
         deltaLog_gc_threshold_ = pt_.get<double>("config.deltaLogGCThreshold");
         deltaLog_split_gc_threshold_ = pt_.get<double>("config.deltaLogSplitGCThreshold");
         deltaLog_cache_object_number_ = pt_.get<uint64_t>("config.deltaLogCacheObjectNumber");
-        deltaLog_prefix_min_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixMinBitNumber");
-        deltaLog_prefix_max_bit_number_ = pt_.get<uint64_t>("config.deltaLogPrefixMaxBitNumber");
+        deltaLog_file_number_ = pt_.get<uint64_t>("config.deltaLogMaxFileNumber");
         deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForMetadataCommitThreshold_");
         deltaStore_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("config.deltaStore_operationNumberForForcedGCThreshold_");
         deltaStore_thread_number_limit = pt_.get<uint64_t>("config.deltaStore_thread_number_limit_");
@@ -117,6 +114,7 @@ class ExternDBConfig {
         deltaStore_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
         deltaStore_write_back_during_reads_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringReadsThreshold");
         deltaStore_write_back_during_gc_threshold_ = pt_.get<uint64_t>("config.deltaStoreWriteBackDuringGCThreshold");
+        deltaKVWriteBatchSize_ = pt_.get<uint64_t>("config.deltaKVWriteBatchSize");
     }
 
     int getBloomBits() {
@@ -127,9 +125,6 @@ class ExternDBConfig {
     }
     int getMaxSortedRuns() {
         return maxSortedRuns_;
-    }
-    int getGCThreads() {
-        return gcThreads_;
     }
     bool getSeekCompaction() {
         return seekCompaction_;
@@ -238,12 +233,8 @@ class ExternDBConfig {
         return deltaLog_cache_object_number_;
     }
 
-    uint64_t getDeltaLogPrefixMinBitNumber() {
-        return deltaLog_prefix_min_bit_number_;
-    }
-
-    uint64_t getDeltaLogPrefixMaxBitNumber() {
-        return deltaLog_prefix_max_bit_number_;
+    uint64_t getDeltaLogMaxFileNumber() {
+        return deltaLog_file_number_;
     }
 
     uint64_t getDelteLogMetadataCommitLatency() {
@@ -276,6 +267,9 @@ class ExternDBConfig {
 
     uint64_t getDeltaStoreWriteBackDuringGCThreshold() {
         return deltaStore_write_back_during_gc_threshold_;
+    }
+    uint64_t getDeltaKVWriteBatchSize() {
+        return deltaKVWriteBatchSize_;
     }
 };
 }  // namespace ycsbc

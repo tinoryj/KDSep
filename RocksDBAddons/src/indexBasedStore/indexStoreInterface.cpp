@@ -37,7 +37,8 @@ bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo*
     memcpy(buffer, &seqNumber, sizeof(uint32_t));
     std::string str(buffer, sizeof(uint32_t));
     str.append(valueStr);
-    STAT_TIME_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), str.c_str(), str.length(), valueLoc, sync), StatsType::UPDATE);
+    STAT_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), str.c_str(), str.length(), valueLoc, sync), StatsType::UPDATE);
+
 
     *storageInfoPtr = valueLoc;
     return true;
@@ -72,7 +73,7 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
 
     debug_trace("get key [%.*s] offset %x%x valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), storageInfo.externalFileID_, storageInfo.externalFileOffset_, storageInfo.externalContentSize_);
 
-    STAT_TIME_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
+    STAT_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
 
     if (seqNumberPtr != nullptr) {
         memcpy(seqNumberPtr, value, sizeof(uint32_t));

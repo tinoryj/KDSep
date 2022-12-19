@@ -9,11 +9,11 @@
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"
 #include "utils/messageQueue.hpp"
-#include <boost/asio.hpp>
-#include <boost/asio/thread_pool.hpp>
+#include <bits/stdc++.h>
+#include <boost/atomic.hpp>
 #include <boost/bind/bind.hpp>
-#include <boost/thread.hpp>
 #include <boost/thread/thread.hpp>
+#include <shared_mutex>
 
 using namespace std;
 
@@ -53,26 +53,46 @@ public:
 
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
+    bool Get(const string& key, string* value);
     bool PutWithWriteBatch(const string& key, const string& value);
     bool MergeWithWriteBatch(const string& key, const string& value);
-    bool Get(const string& key, string* value);
+    bool GetWithWriteBatch(const string& key, string* value);
+
     vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
     vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
     vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
     bool SingleDelete(const string& key);
 
-    void processBatchedOperationsWorker();
-
 private:
     // batched write
-    deque<tuple<DBOperationType, string, string>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
-    unordered_map<string, deque<pair<DBOperationType, string>>> writeBatchMapForSearch_; // key to <operation type, value>
+    deque<tuple<DBOperationType, string, string, uint32_t>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
+    typedef struct writeBatchSearch_t {
+        DBOperationType op_;
+        string value_;
+        uint32_t sequenceNumber_;
+        writeBatchSearch_t(DBOperationType op, string value, uint32_t sequenceNumber)
+        {
+            op_ = op;
+            value_ = value;
+            sequenceNumber_ = sequenceNumber;
+        };
+    } writeBatchSearch_t;
+    unordered_map<string, deque<writeBatchSearch_t>> writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
-    uint64_t maxBatchOperationBeforeCommitNumber = 3;
-    messageQueue<deque<tuple<DBOperationType, string, string>>*>* notifyWriteBatchMQ_;
-    messageQueue<string*>* notifyWriteBackMQ_ = nullptr;
+    uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
+    messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
+    boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
 
-    bool tryWriteBack();
+    enum DBRunningMode { kPlainRocksDB = 0,
+        kOnlyValueLog = 1,
+        kOnlyDeltaLog = 2,
+        kBothValueAndDeltaLog = 3,
+        kBatchedWithBothValueAndDeltaLog = 4,
+        kBatchedWithOnlyValueLog = 5,
+        kBatchedWithOnlyDeltaLog = 6,
+        kBatchedWithPlainRocksDB = 7 };
+
+    DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
     bool PutWithPlainRocksDB(const string& key, const string& value);
@@ -81,33 +101,48 @@ private:
 
     bool PutWithOnlyValueStore(const string& key, const string& value);
     bool MergeWithOnlyValueStore(const string& key, const string& value);
-    bool GetWithOnlyValueStore(const string& key, string* value);
+    bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithOnlyDeltaStore(const string& key, const string& value, bool sync = true);
+    bool PutWithOnlyDeltaStore(const string& key, const string& value);
     bool MergeWithOnlyDeltaStore(const string& key, const string& value);
-    bool GetWithOnlyDeltaStore(const string& key, string* value);
+    bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithValueAndDeltaStore(const string& key, const string& value, bool sync = true);
+    bool PutWithValueAndDeltaStore(const string& key, const string& value);
     bool MergeWithValueAndDeltaStore(const string& key, const string& value);
-    bool GetWithValueAndDeltaStore(const string& key, string* value);
+    bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool isDeltaStoreInUseFlag = false;
-    bool isValueStoreInUseFlag = false;
-    bool isBatchedOperationsWithBuffer_ = false;
-    bool syncBasedRocksDB_ = false;
-    bool enableDeltaStoreGC_ = true;
-    int writeBackDeltaNum_ = 4;
+    bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
+    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+    bool GetCurrentValueThenWriteBack(const string& key);
+    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
+
+    void processBatchedOperationsWorker();
+    void processWriteBackOperationsWorker();
+
+    bool isDeltaStoreInUseFlag_ = false;
+    bool isValueStoreInUseFlag_ = false;
+    bool isBatchedOperationsWithBufferInUse_ = false;
+    bool enableDeltaStoreWithBackgroundGCFlag_ = false;
+    int writeBackWhenReadDeltaNumerThreshold_ = 4;
+
+    std::shared_mutex DeltaKVOperationsMtx_;
+
+    uint32_t globalSequenceNumber_ = 0;
+    std::shared_mutex globalSequenceNumberGeneratorMtx_;
 
     rocksdb::WriteOptions internalWriteOption_;
     rocksdb::WriteOptions internalMergeOption_;
-    boost::shared_mutex batchedBufferOperationMtx_;
+    std::shared_mutex batchedBufferOperationMtx_;
+
+    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
+    bool enableWriteBackOperationsFlag_ = false;
+    std::shared_mutex writeBackOperationsMtx_;
+
     // thread management
-    boost::asio::thread_pool* threadpool_;
     vector<boost::thread*> thList_;
-    bool launchThreadPool(uint64_t totalThreadNumber);
-    bool deleteThreadPool();
+    bool deleteExistingThreads();
     // for separated operations
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
     // Storage component for delta store
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
     HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;

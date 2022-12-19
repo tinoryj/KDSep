@@ -3,6 +3,8 @@
 #include "boost/thread.hpp"
 #include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
+#include <boost/atomic.hpp>
+#include <shared_mutex>
 
 using namespace std;
 
@@ -10,6 +12,7 @@ namespace DELTAKV_NAMESPACE {
 typedef struct internalValueType {
     bool mergeFlag_; // true if the value request merge.
     bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree
+    uint32_t sequenceNumber_; // global sequence number
     uint32_t rawValueSize_; // store the raw value size, in case some delta are not separated.
 } internalValueType;
 
@@ -23,7 +26,10 @@ enum DBOperationType { kPutOp = 0,
     kMergeOp = 1 };
 
 enum hashStoreFileCreateReason { kNewFile = 0,
-    kGCFile = 1 };
+    kInternalGCFile = 1,
+    kSplitFile = 2,
+    kMergeFile = 3,
+    kRewritedObjectFile = 4 };
 
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
@@ -37,7 +43,8 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
 
 typedef struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_ = 0;
-    uint64_t previous_file_id_ = 0;
+    uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
+    uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
     uint64_t current_prefix_used_bit_ = 0;
     hashStoreFileCreateReason file_create_reason_ = kNewFile;
     uint64_t total_object_count_ = 0;
@@ -49,39 +56,53 @@ typedef struct hashStoreFileMetaDataHandler {
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
-    unordered_set<string> savedAnchors_;
+    unordered_map<string, uint32_t> bufferedUnFlushedAnchorsVec_;
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {
     string* key_str_;
     string* value_str_;
+    uint32_t sequence_number_;
     bool is_anchor = false;
 } hashStoreWriteOperationHandler;
 
-typedef struct hashStoreBaatchedWriteOperationHandler {
-    vector<string>* key_str_vec_ptr_;
-    vector<string>* value_str_vec_ptr_;
-    vector<bool>* is_anchor_vec_ptr_;
-} hashStoreBaatchedWriteOperationHandler;
+typedef struct hashStoreBatchedWriteOperationHandler {
+    vector<string> key_str_vec_ptr_;
+    vector<string> value_str_vec_ptr_;
+    vector<uint32_t> sequence_number_vec_ptr_;
+    vector<bool> is_anchor_vec_ptr_;
+} hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {
     string* key_str_;
     vector<string>* value_str_vec_;
 } hashStoreReadOperationHandler;
 
+enum operationStatus {
+    kDone = 1,
+    kNotDone = 2,
+    kError = 3
+};
+
 typedef struct hashStoreOperationHandler {
     hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
-    hashStoreBaatchedWriteOperationHandler batched_write_operation_;
+    hashStoreBatchedWriteOperationHandler* batched_write_operation_;
     hashStoreFileOperationType opType_;
-    bool jobDone = false;
+    operationStatus jobDone_ = kNotDone;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler, hashStoreBatchedWriteOperationHandler* batched_write_operation)
+    {
+        file_handler_ = file_handler;
+        batched_write_operation_ = batched_write_operation;
+    };
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
     uint64_t file_id_;
-    uint64_t previous_file_id_ = 0xffffffffffffffff; // only used for file create reason == kGCFile
+    uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
+    uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
     uint64_t current_prefix_used_bit_;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
@@ -89,9 +110,23 @@ typedef struct hashStoreFileHeader {
 typedef struct hashStoreRecordHeader {
     uint32_t key_size_;
     uint32_t value_size_;
+    uint32_t sequence_number_;
     bool is_anchor_;
     bool is_gc_done_ = false; // to mark gc job done
 } hashStoreRecordHeader;
+
+typedef struct writeBackObjectStruct {
+    string key;
+    string value;
+    uint32_t sequenceNumber;
+    writeBackObjectStruct(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+    {
+        key = keyIn;
+        value = valueIn;
+        sequenceNumber = sequenceNumberIn;
+    };
+    writeBackObjectStruct() {};
+} writeBackObjectStruct; // key to value pair fpr write back
 
 // following enums are used for indexStore only
 enum CodingScheme {

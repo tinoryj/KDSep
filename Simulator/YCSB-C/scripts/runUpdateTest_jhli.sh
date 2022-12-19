@@ -60,7 +60,7 @@ usekv="false"
 usekd="false"
 usekvkd="false"
 gc="true"
-minbits="16"
+maxFileNumber="16"
 overwrite="0.1"
 reads="0.1"
 
@@ -115,8 +115,8 @@ for param in $*; do
         run_suffix=${run_suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
-    elif [[ `echo $param | grep "minbits" | wc -l` -eq 1 ]]; then
-        minbits=`echo $param | sed 's/minbits//g'`
+    elif [[ `echo $param | grep "maxFileNumber" | wc -l` -eq 1 ]]; then
+        maxFileNumber=`echo $param | sed 's/maxFileNumber//g'`
     elif [[ `echo $param | grep "ow" | wc -l` -eq 1 ]]; then
         overwrite=`echo $param | sed 's/ow//g'`
     elif [[ `echo $param | grep "reads" | wc -l` -eq 1 ]]; then
@@ -179,9 +179,9 @@ if [[ "$gc" == "true" && ("$usekd" == "true" || "$usekvkd" == "true") ]]; then
     run_suffix=${run_suffix}_gc
 fi
 
-sed -i "/deltaLogPrefixMinBitNumber/c\\deltaLogPrefixMinBitNumber = ${minbits}" temp.ini 
-if [[ "$minbits" -ne 16 ]]; then
-  run_suffix=${run_suffix}_minbits${minbits}
+sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = ${maxFileNumber}" temp.ini 
+if [[ "$maxFileNumber" -ne 16 ]]; then
+  run_suffix=${run_suffix}_maxFileNumber${maxFileNumber}
 fi
 
 size="$(( $KVPairsNumber / 1000000 ))M"

@@ -1,6 +1,6 @@
 #include "indexBasedStore/rocksdbKeyManager.hh"
-#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
+#include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
@@ -23,9 +23,9 @@ RocksDBKeyManager::~RocksDBKeyManager()
 //    if (_cache.lru && needCache) {
 //        unsigned char* key = (unsigned char*) keyStr;
 //        if (needCache > 1) {
-//            STAT_TIME_PROCESS(_cache.lru->update(key, valueLoc.segmentId), StatsType::KEY_UPDATE_CACHE);
+//            STAT_PROCESS(_cache.lru->update(key, valueLoc.segmentId), StatsType::KEY_UPDATE_CACHE);
 //        } else {
-//            STAT_TIME_PROCESS(_cache.lru->insert(key, valueLoc.segmentId), StatsType::KEY_SET_CACHE);
+//            STAT_PROCESS(_cache.lru->insert(key, valueLoc.segmentId), StatsType::KEY_SET_CACHE);
 //        }
 //    }
 //
@@ -33,7 +33,7 @@ RocksDBKeyManager::~RocksDBKeyManager()
 //    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
 //
 //    // put the key into LSM-tree
-//    STAT_TIME_PROCESS(ret = _lsm->Put(wopt, rocksdb::Slice(keyStr, KEY_SIZE), rocksdb::Slice(valueLoc.serialize())).ok(), KEY_SET_LSM);
+//    STAT_PROCESS(ret = _lsm->Put(wopt, rocksdb::Slice(keyStr, KEY_SIZE), rocksdb::Slice(valueLoc.serialize())).ok(), KEY_SET_LSM);
 //    return ret;
 //}
 //
@@ -82,7 +82,6 @@ bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<Val
     STAT_TIME_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
     return ret;
 }
-
 
 bool RocksDBKeyManager::writeMeta(const char* keyStr, int keySize, std::string metadata)
 {
@@ -141,7 +140,7 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<char*> keys, std::vector<Value
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
         debug_trace("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
-        STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
+        STAT_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("mergeKeyBatch failed: %s\n", s.ToString().c_str());
             return false;
@@ -172,7 +171,7 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<std::string>& keys, std::vecto
         assert((int)keySize + sizeof(key_len_t) == keys.at(i).length());
         kslice = rocksdb::Slice(keys.at(i).substr(sizeof(key_len_t), (int)keySize));
         vslice = rocksdb::Slice(valueLocs.at(i).serializeIndexUpdate());
-        STAT_TIME_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
+        STAT_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("%s\n", s.ToString().c_str());
             return false;
@@ -188,7 +187,7 @@ ValueLocation RocksDBKeyManager::getKey(const char* keyStr, bool checkExist)
     valueLoc.segmentId = INVALID_SEGMENT;
     // only use cache for checking before SET
     //    if (checkExist && _cache.lru /* cache enabled */) {
-    //        STAT_TIME_PROCESS(valueLoc.segmentId = _cache.lru->get((unsigned char*) keyStr), StatsType::KEY_GET_CACHE);
+    //        STAT_PROCESS(valueLoc.segmentId = _cache.lru->get((unsigned char*) keyStr), StatsType::KEY_GET_CACHE);
     //    }
     // if not in cache, search in the LSM-tree
     if (valueLoc.segmentId == INVALID_SEGMENT) {
@@ -196,7 +195,7 @@ ValueLocation RocksDBKeyManager::getKey(const char* keyStr, bool checkExist)
         memcpy(&keySize, keyStr, sizeof(key_len_t));
         rocksdb::Slice key(KEY_OFFSET(keyStr), (int)keySize);
         rocksdb::Status status;
-        STAT_TIME_PROCESS(status = _lsm->Get(rocksdb::ReadOptions(), key, &value), StatsType::KEY_GET_LSM);
+        STAT_PROCESS(status = _lsm->Get(rocksdb::ReadOptions(), key, &value), StatsType::KEY_GET_LSM);
         // value location found
         if (status.ok()) {
             valueLoc.deserialize(value);

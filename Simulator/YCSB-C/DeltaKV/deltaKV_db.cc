@@ -133,11 +133,9 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     DebugManager::getInstance().setDebugLevel(debugLevel);
     cerr << "debug level set to " << debugLevel << endl;
 
-    options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
-    options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
-
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
+
     if (directIO == true) {
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
@@ -149,18 +147,21 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
+        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize / 8);
         options_.rocksdbRawOptions_.enable_blob_files = true;
         options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
         options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
         options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
-        options_.rocksdbRawOptions_.enable_blob_garbage_collection = false;                            // Default false
+        options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
         options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
         options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
         options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
-        options_.rocksdbRawOptions_.blob_cache = nullptr;                                              // Default nullptr
+        options_.rocksdbRawOptions_.blob_cache = rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
         options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
         assert(!keyValueSeparation);
+    } else {
+        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
@@ -179,18 +180,27 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
         options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
         options_.deltaStore_thread_number_limit = config.getDeltaLogThreadNumber();
-        options_.hashStore_init_prefix_bit_number = config.getDeltaLogPrefixMinBitNumber();
-        options_.hashStore_max_prefix_bit_number = config.getDeltaLogPrefixMaxBitNumber();
-        options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
+        options_.hashStore_max_file_number_ = config.getDeltaLogMaxFileNumber();
+        options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
+        options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
+        options_.deltaStore_write_back_during_gc_threshold = config.getDeltaStoreWriteBackDuringGCThreshold();
+        if (options_.deltaStore_write_back_during_reads_threshold == 0 && options_.deltaStore_write_back_during_gc_threshold == 0) {
+            options_.enable_write_back_optimization_ = false;
+        } else {
+            options_.enable_write_back_optimization_ = true;
+        }
         if (enable_gc_flag == true) {
             options_.enable_deltaStore_garbage_collection = true;
-            options_.deltaStore_operationNumberForFoorcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
-            options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogSplitGCThreshold();
+            options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
+            options_.deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ = config.getDeltaLogSplitGCThreshold();
             options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
+        } else {
+            options_.enable_deltaStore_garbage_collection = false;
         }
     }
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
+    options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
 
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;
@@ -235,7 +245,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (bloomBits > 0) {
         bbto.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloomBits));
     }
-    bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();

@@ -21,8 +21,10 @@ public:
     uint64_t writeFile(char* contentBuffer, uint64_t contentSize);
     bool readFile(char* contentBuffer, uint64_t contentSize);
     bool flushFile();
+
     bool openFile(string path);
     bool createFile(string path);
+    bool createThenOpenFile(string path);
     bool closeFile();
     bool isFileOpen();
     uint64_t getFileSize();

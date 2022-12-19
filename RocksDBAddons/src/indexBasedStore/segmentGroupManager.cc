@@ -1,7 +1,7 @@
 #include "indexBasedStore/segmentGroupManager.hh"
 #include "indexBasedStore/configManager.hh"
-#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
+#include "utils/statsRecorder.hh"
 #include <float.h>
 
 namespace DELTAKV_NAMESPACE {
@@ -414,12 +414,12 @@ len_t SegmentGroupManager::changeBytes(group_id_t groupId, len_t bytes, int type
         break;
     case 1:
         // record the amount of used space (freeable) from reserved area of segments / reserved segments
-        STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
+        STAT_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
         updateGroupWriteBackRatio(groupId);
         break;
     case 0:
         // record the amount of freeable space from data area of segments
-        STAT_TIME_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
+        STAT_PROCESS(_maxSpaceToRelease->update(groupId, 0, bytes), StatsType::GC_INVALID_BYTES_UPDATE);
         updateGroupWriteBackRatio(groupId);
         break;
     default:
