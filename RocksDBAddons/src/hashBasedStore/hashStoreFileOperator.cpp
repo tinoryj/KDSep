@@ -178,9 +178,12 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
     // try extract from cache first
     if (keyToValueListCache_ != nullptr) {
         if (keyToValueListCache_->existsInCache(*currentHandlerPtr->read_operation_.key_str_)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             vector<string> tempResultVec = keyToValueListCache_->getFromCache(*currentHandlerPtr->read_operation_.key_str_);
             debug_trace("read operations from cache, cache hit, key %s, hit vec size = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), tempResultVec.size());
             currentHandlerPtr->read_operation_.value_str_vec_->assign(tempResultVec.begin(), tempResultVec.end());
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
             currentHandlerPtr->jobDone_ = kDone;
             return true;
@@ -214,13 +217,19 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                             string tempInsertCacheKeyStr = mapIt.first;
                             if (currentHandlerPtr->file_handler_->bufferedUnFlushedAnchorsVec_.find(tempInsertCacheKeyStr) != currentHandlerPtr->file_handler_->bufferedUnFlushedAnchorsVec_.end()) {
                                 if (keyToValueListCache_->existsInCache(tempInsertCacheKeyStr) == true) {
+                                    struct timeval tv;
+                                    gettimeofday(&tv, 0);
                                     keyToValueListCache_->getFromCache(tempInsertCacheKeyStr).clear();
+                                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                                     continue;
                                 } else {
                                     continue;
                                 }
                             }
+                            struct timeval tv;
+                            gettimeofday(&tv, 0);
                             keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, mapIt.second);
+                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                             debug_trace("Insert to cache key %s delta num %d\n", tempInsertCacheKeyStr.c_str(), (int)mapIt.second.size());
                         }
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
@@ -275,7 +284,7 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
         fileHandler->temp_not_flushed_data_bytes_ = 0;
     }
     bool readFileStatus;
-    STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO_TRAFFIC);
+    STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
     if (readFileStatus == false) {
         debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", fileHandler->target_file_id_);
         return false;
@@ -286,6 +295,8 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
 
 uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
     hashStoreFileHeader currentFileHeader;
@@ -326,6 +337,7 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
             }
         }
     }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_PROCESS, tv);
     return processedObjectNumber;
 }
 
@@ -370,7 +382,10 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         if (keyToValueListCache_ != nullptr) {
             if (keyToValueListCache_->existsInCache(currentKeyStr)) {
                 // insert into cache only if the key has been read
+                struct timeval tv;
+                gettimeofday(&tv, 0);
                 keyToValueListCache_->getFromCache(currentKeyStr).clear();
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
             }
         }
         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
@@ -420,7 +435,10 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             if (keyToValueListCache_ != nullptr) {
                 if (keyToValueListCache_->existsInCache(*currentHandlerPtr->write_operation_.key_str_)) {
                     // insert into cache only if the key has been read
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
                     keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).push_back(*currentHandlerPtr->write_operation_.value_str_);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                 }
             }
             // try GC if enabled
@@ -479,9 +497,13 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             currentHandlerPtr->file_handler_->bufferedUnFlushedAnchorsVec_.clear(); // clean up flushed anchors
             // insert to cache if current key exist in cache && cache is enabled
             if (keyToValueListCache_ != nullptr) {
+
                 if (keyToValueListCache_->existsInCache(*currentHandlerPtr->write_operation_.key_str_)) {
                     // insert into cache only if the key has been read
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
                     keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).push_back(*currentHandlerPtr->write_operation_.value_str_);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                 }
             }
             // try GC if enabled
@@ -632,9 +654,15 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             for (auto i = 0; i < currentHandlerPtr->batched_write_operation_->key_str_vec_ptr_.size(); i++) {
                 if (keyToValueListCache_->existsInCache(currentHandlerPtr->batched_write_operation_->key_str_vec_ptr_.at(i))) {
                     if (currentHandlerPtr->batched_write_operation_->is_anchor_vec_ptr_.at(i) == true) {
+                        struct timeval tv;
+                        gettimeofday(&tv, 0);
                         keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_->key_str_vec_ptr_.at(i)).clear();
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                     } else {
+                        struct timeval tv;
+                        gettimeofday(&tv, 0);
                         keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_->key_str_vec_ptr_.at(i)).push_back(currentHandlerPtr->batched_write_operation_->value_str_vec_ptr_.at(i));
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                     }
                 }
             }
@@ -701,7 +729,10 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         if (keyToValueListCache_ != nullptr) {
             if (keyToValueListCache_->existsInCache(key)) {
                 // insert into cache only if the key has been read
+                struct timeval tv;
+                gettimeofday(&tv, 0);
                 keyToValueListCache_->getFromCache(key).clear();
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
             }
         }
         fileHandler->file_ownership_flag_ = 0;
@@ -755,7 +786,10 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
             if (keyToValueListCache_ != nullptr) {
                 if (keyToValueListCache_->existsInCache(key)) {
                     // insert into cache only if the key has been read
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
                     keyToValueListCache_->getFromCache(key).push_back(value);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                 }
             }
             fileHandler->bufferedUnFlushedAnchorsVec_.clear(); // clean up buffered anchors
@@ -817,7 +851,10 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
             if (keyToValueListCache_ != nullptr) {
                 if (keyToValueListCache_->existsInCache(key)) {
                     // insert into cache only if the key has been read
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
                     keyToValueListCache_->getFromCache(key).push_back(value);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                 }
             }
             fileHandler->bufferedUnFlushedAnchorsVec_.clear(); // clean up flushed anchors
@@ -931,9 +968,15 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
                 for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
                     if (keyToValueListCache_->existsInCache(std::get<0>(batchIt.second).at(i))) {
                         if (std::get<3>(batchIt.second).at(i) == true) {
+                            struct timeval tv;
+                            gettimeofday(&tv, 0);
                             keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).clear();
+                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                         } else {
+                            struct timeval tv;
+                            gettimeofday(&tv, 0);
                             keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).push_back(std::get<1>(batchIt.second).at(i));
+                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                         }
                     }
                 }
@@ -977,9 +1020,12 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     // try extract from cache first
     if (keyToValueListCache_ != nullptr) {
         if (keyToValueListCache_->existsInCache(key)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             vector<string> tempResultVec = keyToValueListCache_->getFromCache(key);
             debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec.size());
             valueVec->assign(tempResultVec.begin(), tempResultVec.end());
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
             fileHandler->file_ownership_flag_ = 0;
             return true;
         } else {
@@ -1013,12 +1059,17 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             string tempInsertCacheKeyStr = mapIt.first;
                             if (fileHandler->bufferedUnFlushedAnchorsVec_.find(tempInsertCacheKeyStr) != fileHandler->bufferedUnFlushedAnchorsVec_.end()) {
                                 if (keyToValueListCache_->existsInCache(tempInsertCacheKeyStr) == true) {
+                                    struct timeval tv;
+                                    gettimeofday(&tv, 0);
                                     keyToValueListCache_->getFromCache(tempInsertCacheKeyStr).clear();
+                                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                                     continue;
                                 } else {
                                     continue;
                                 }
                             }
+                            struct timeval tv;
+                            gettimeofday(&tv, 0);
                             keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, mapIt.second);
                             debug_trace("Insert to cache key = %s delta num = %lu\n", tempInsertCacheKeyStr.c_str(), mapIt.second.size());
                         }

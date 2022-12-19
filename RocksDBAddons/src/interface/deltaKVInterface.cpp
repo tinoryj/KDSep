@@ -529,7 +529,7 @@ bool DeltaKV::MergeWithOnlyDeltaStore(const string& key, const string& value)
     globalSequenceNumberGeneratorMtx_.unlock();
     if (value.size() >= HashStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
         bool status;
-        STAT_PROCESS(status = HashStoreInterfaceObjPtr_->put(key, value, currentSequenceNumber, false), StatsType::DELTAKV_HASHSTORE_PUT);
+        STAT_PROCESS(status = HashStoreInterfaceObjPtr_->put(key, value, currentSequenceNumber, false), StatsType::DELTAKV_MERGE_HASHSTORE);
         if (status == true) {
             char writeInternalValueBuffer[sizeof(internalValueType)];
             internalValueType currentInternalValueType;
@@ -1784,7 +1784,7 @@ void DeltaKV::processWriteBackOperationsWorker()
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_GC_WRITE_BACK, tv);
             delete currentProcessPair;
         }
     }

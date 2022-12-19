@@ -123,8 +123,9 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-tmp1", DELTAKV_TMP1, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-tmp2", DELTAKV_TMP2, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-tmp3", DELTAKV_TMP3, time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-tmp4", DELTAKV_TMP4, time[DELTAKV_PUT]);
-    PRINT_FULL("DKV-gc-write-back", DELTAKV_WRITE_BACK, 0);
+    PRINT_FULL("DeltaKV-create-new-bucket", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_PUT]);
+    PRINT_FULL("DeltaKV-create-gc-bucket", DELTAKV_HASHSTORE_CREATE_GC_BUCKET, time[DELTAKV_PUT]);
+    PRINT_FULL("DKV-gc-write-back", DELTAKV_GC_WRITE_BACK, 0);
     PRINT_FULL("DKV-get-write-back", DELTAKV_GET_WRITE_BACK, 0);
 
     fprintf(stdout, "------------------------- DELTAKV Request -----------------------------------\n");
@@ -144,15 +145,15 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-merge-dStore", DELTAKV_MERGE_HASHSTORE, time[DELTAKV_MERGE]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
-    PRINT_FULL("worker-put", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
-    PRINT_FULL("- put-file-write", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_HASHSTORE_PUT]);
+    PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
+    PRINT_FULL("worker-put-file-write", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_HASHSTORE_PUT]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Get Breakdown ------------------------------\n");
-    PRINT_FULL("worker-get", DELTAKV_HASHSTORE_GET, (time[DELTAKV_HASHSTORE_GET]));
+    PRINT_FULL("worker-get-file-handler", DELTAKV_HASHSTORE_GET, (time[DELTAKV_HASHSTORE_GET]));
     PRINT_FULL("worker-get-cache", DELTAKV_HASHSTORE_GET_CACHE, (time[DELTAKV_HASHSTORE_GET]));
     PRINT_FULL("worker-insert-cache", DELTAKV_HASHSTORE_GET_INSERT_CACHE, (time[DELTAKV_HASHSTORE_GET]));
-    PRINT_FULL("worker-get-file", DELTAKV_HASHSTORE_GET_FILE, (time[DELTAKV_HASHSTORE_GET]));
-    PRINT_FULL("worker-get-file-io", DELTAKV_HASHSTORE_GET_IO_TRAFFIC, (time[DELTAKV_HASHSTORE_GET]));
+    PRINT_FULL("worker-get-file-process", DELTAKV_HASHSTORE_GET_PROCESS, (time[DELTAKV_HASHSTORE_GET]));
+    PRINT_FULL("worker-get-file-io", DELTAKV_HASHSTORE_GET_IO, (time[DELTAKV_HASHSTORE_GET]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
     PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_GET]));
@@ -204,44 +205,44 @@ StatsRecorder::~StatsRecorder()
     //    fprintf(stderr, "%-24s [%llu] %14ld\n", "Update latency 95-th-%:", h.first, hdr_value_at_percentile(h.second, 95.0));
     //    fprintf(stderr, "%-24s [%llu] %14ld\n", "Update latency 100-th-%:", h.first, hdr_value_at_percentile(h.second, 100.0));
     //}
-    PRINT_FULL("UpdateKeyLookupTime"  , UPDATE_KEY_LOOKUP               , time[UPDATE]);
-    PRINT_FULL("UpdateKeyWriteTime"   , UPDATE_KEY_WRITE                , time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToLSM"     , UPDATE_KEY_WRITE_LSM            , time[UPDATE]);
-    PRINT_FULL("  - KeyToCache"       , KEY_SET_CACHE                   , time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToLSM (GC)", UPDATE_KEY_WRITE_LSM_GC         , time[UPDATE]);
-    PRINT_FULL("- KeyUpdateCache"     , KEY_UPDATE_CACHE                , time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToSW"      , UPDATE_KEY_WRITE_SHADOW         , time[UPDATE]);
-    PRINT_FULL("UpdateValueTime"      , UPDATE_VALUE                    , time[UPDATE]);
-    PRINT_FULL("WBRatioUpdateTime"    , GC_RATIO_UPDATE                 , time[UPDATE]);
-    PRINT_FULL("InvalidUpdateTime"    , GC_INVALID_BYTES_UPDATE         , time[UPDATE]);
+    PRINT_FULL("UpdateKeyLookupTime", UPDATE_KEY_LOOKUP, time[UPDATE]);
+    PRINT_FULL("UpdateKeyWriteTime", UPDATE_KEY_WRITE, time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToLSM", UPDATE_KEY_WRITE_LSM, time[UPDATE]);
+    PRINT_FULL("  - KeyToCache", KEY_SET_CACHE, time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToLSM (GC)", UPDATE_KEY_WRITE_LSM_GC, time[UPDATE]);
+    PRINT_FULL("- KeyUpdateCache", KEY_UPDATE_CACHE, time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToSW", UPDATE_KEY_WRITE_SHADOW, time[UPDATE]);
+    PRINT_FULL("UpdateValueTime", UPDATE_VALUE, time[UPDATE]);
+    PRINT_FULL("WBRatioUpdateTime", GC_RATIO_UPDATE, time[UPDATE]);
+    PRINT_FULL("InvalidUpdateTime", GC_INVALID_BYTES_UPDATE, time[UPDATE]);
 
-    PRINT_FULL("FlushLog/Group"       , POOL_FLUSH                      , time[UPDATE]);
-    PRINT_FULL("- Flush w/o GC"       , POOL_FLUSH_NO_GC                , time[UPDATE]);
-    PRINT_FULL("- Flush wait"         , POOL_FLUSH_WAIT                 , time[UPDATE]);
-    PRINT_FULL("- GCTotal"            , GC_TOTAL                        , time[UPDATE]);
+    PRINT_FULL("FlushLog/Group", POOL_FLUSH, time[UPDATE]);
+    PRINT_FULL("- Flush w/o GC", POOL_FLUSH_NO_GC, time[UPDATE]);
+    PRINT_FULL("- Flush wait", POOL_FLUSH_WAIT, time[UPDATE]);
+    PRINT_FULL("- GCTotal", GC_TOTAL, time[UPDATE]);
 
-    PRINT_FULL("LogMeta"              , LOG_TIME                        , time[UPDATE]);
+    PRINT_FULL("LogMeta", LOG_TIME, time[UPDATE]);
 
-    fprintf(stdout,"-------------------------- GET Request --------------------------------------\n");
-    PRINT_FULL("GetOverall"           , GET                             , time[GET]);
-//    fprintf(stdout, "%-24s %14.3lf\n", "- mean:", hdr_mean(_getTimeHistogram));
-//    fprintf(stdout, "%-24s %14.3lf\n", "- stddev:", hdr_stddev(_getTimeHistogram));
-//    fprintf(stdout, "%-24s %14ld\n", "- min:", hdr_min(_getTimeHistogram));
-//    fprintf(stdout, "%-24s %14ld\n", "- max:", hdr_max(_getTimeHistogram));
-    //fprintf(stdout, "%-24s %14ld\n", "- 25-th-%:", hdr_value_at_percentile(_getTimeHistogram, 25.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 50-th-%:", hdr_value_at_percentile(_getTimeHistogram, 50.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 75-th-%:", hdr_value_at_percentile(_getTimeHistogram, 75.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 90-th-%:", hdr_value_at_percentile(_getTimeHistogram, 90.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 97-th-%:", hdr_value_at_percentile(_getTimeHistogram, 97.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.0));
-    //fprintf(stdout, "%-24s %14ld\n", "- 99.9-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.9));
-    //fprintf(stdout, "%-24s %14ld\n", "- 99.99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.99));
-    //fprintf(stdout, "%-24s %14ld\n", "- 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
-//    fprintf(stderr, "%-24s %14ld\n", "Get latency 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    //fprintf(stderr, "%-24s %14ld\n", "Get latency 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    //fprintf(stderr, "%-24s %14ld\n", "Get latency 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
-    //for (auto h : _getByValueSizeHistogram) {
+    fprintf(stdout, "-------------------------- GET Request --------------------------------------\n");
+    PRINT_FULL("GetOverall", GET, time[GET]);
+    //    fprintf(stdout, "%-24s %14.3lf\n", "- mean:", hdr_mean(_getTimeHistogram));
+    //    fprintf(stdout, "%-24s %14.3lf\n", "- stddev:", hdr_stddev(_getTimeHistogram));
+    //    fprintf(stdout, "%-24s %14ld\n", "- min:", hdr_min(_getTimeHistogram));
+    //    fprintf(stdout, "%-24s %14ld\n", "- max:", hdr_max(_getTimeHistogram));
+    // fprintf(stdout, "%-24s %14ld\n", "- 25-th-%:", hdr_value_at_percentile(_getTimeHistogram, 25.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 50-th-%:", hdr_value_at_percentile(_getTimeHistogram, 50.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 75-th-%:", hdr_value_at_percentile(_getTimeHistogram, 75.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 90-th-%:", hdr_value_at_percentile(_getTimeHistogram, 90.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 97-th-%:", hdr_value_at_percentile(_getTimeHistogram, 97.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.0));
+    // fprintf(stdout, "%-24s %14ld\n", "- 99.9-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.9));
+    // fprintf(stdout, "%-24s %14ld\n", "- 99.99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.99));
+    // fprintf(stdout, "%-24s %14ld\n", "- 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
+    //    fprintf(stderr, "%-24s %14ld\n", "Get latency 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    // fprintf(stderr, "%-24s %14ld\n", "Get latency 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    // fprintf(stderr, "%-24s %14ld\n", "Get latency 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
+    // for (auto h : _getByValueSizeHistogram) {
 
     //    fprintf(stdout, "%-24s %llu:\n", "- Value of size", h.first);
     //    fprintf(stdout, "%-24s %14.3lf\n", "  - mean:", hdr_mean(h.second));

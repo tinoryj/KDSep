@@ -78,7 +78,7 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
 
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_HASHSTORE_PUT);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
@@ -109,7 +109,9 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
     unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
-        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, isAnchorVec[i]) != true) {
+        bool getFileHandlerStatus;
+        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, isAnchorVec[i]), StatsType::DELTAKV_HASHSTORE_PUT);
+        if (getFileHandlerStatus != true) {
             debug_error("[ERROR] Get file handler for key = %s error during multiput\n", keyStrVec[i].c_str());
             return false;
         } else {
@@ -170,7 +172,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler, false);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;

@@ -1010,7 +1010,8 @@ void ValueManager::scanAllRecords()
 //     }
 // }
 
-void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
+void ValueManager::flushCentralizedReservedPoolBg(StatsType stats)
+{
     int nextPoolIndex = getNextPoolIndex(_centralizedReservedPoolIndex.inUsed);
     // wait until next available buffer is available after flush
     // (assume multiple core is available)
@@ -1034,10 +1035,11 @@ void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
     pthread_cond_signal(&_needBgFlush);
 }
 
-void ValueManager::flushCentralizedReservedPoolBgWorker() {
-//    ValueManager *instance = (ValueManager *) arg;
+void ValueManager::flushCentralizedReservedPoolBgWorker()
+{
+    //    ValueManager *instance = (ValueManager *) arg;
     // loop until valueManager is destoryed
-    //fprintf(stderr, "Bg flush thread starts now, hello\n");
+    // fprintf(stderr, "Bg flush thread starts now, hello\n");
     while (_started) {
         // wait for signal after data is put into queue
         pthread_cond_wait(&_needBgFlush, &_centralizedReservedPoolIndex.queueLock);
@@ -1066,7 +1068,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker() {
 bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
-    flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH); 
+    flushCentralizedReservedPoolVLog(StatsType::POOL_FLUSH);
     return true;
 }
 
@@ -1080,7 +1082,7 @@ void ValueManager::printSlaveStats(FILE* out)
         fprintf(out,
             "Slave capacity: %lu; In-use: %lu; Valid: %lu\n", ConfigManager::getInstance().getColdStorageCapacity(), _slaveValueManager->_slave.writtenBytes, _slaveValueManager->_slave.validBytes);
         _slave.gcm->printStats(out);
-    } 
+    }
 }
 
 }

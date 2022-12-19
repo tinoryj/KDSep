@@ -858,10 +858,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             fileHandlerPtr = nullptr;
             return true;
         }
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP4, tv);
+        bool createNewFileHandlerStatus;
+        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -874,7 +872,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
         while (true) {
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
             if (!getFileHandlerStatus && (opType == kPut || opType == kMultiPut)) {
-                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
+                bool createNewFileHandlerStatus;
+                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
@@ -929,10 +928,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
         return true;
     } else if (fileHandlerExistFlag == false && getForAnchorWriting == false) {
         // Anchor: handler does not exist, need create the file
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_TMP4, tv);
+        bool createNewFileHandlerStatus;
+        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -944,7 +941,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
         while (true) {
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
             if (!getFileHandlerStatus) {
-                bool createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_);
+                bool createNewFileHandlerStatus;
+                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
@@ -1504,7 +1502,9 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     currentObjectRecordHeader.value_size_ = 0;
     memcpy(currentWriteBuffer + currentWritePos, &currentObjectRecordHeader, sizeof(hashStoreRecordHeader));
     debug_info("Merge GC processed total write file size = %lu\n", currentWritePos + sizeof(hashStoreRecordHeader));
-    uint64_t onDiskWriteSize = mergedFileHandler->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize);
+    uint64_t onDiskWriteSize;
+    STAT_PROCESS(onDiskWriteSize = mergedFileHandler->file_operation_func_ptr_->writeFile(currentWriteBuffer, targetWriteSize), StatsType::DELTAKV_GC_WRITE);
+    StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSize);
     debug_info("Merge GC write file size = %lu done\n", targetWriteSize);
     mergedFileHandler->total_object_bytes_ += sizeof(hashStoreRecordHeader);
     mergedFileHandler->total_on_disk_bytes_ += onDiskWriteSize;
@@ -1662,6 +1662,8 @@ void HashStoreFileManager::processGCRequestWorker()
         }
         hashStoreFileMetaDataHandler* fileHandler;
         if (notifyGCMQ_->pop(fileHandler)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, wait for lock\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
@@ -1702,12 +1704,14 @@ void HashStoreFileManager::processGCRequestWorker()
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                 fileHandler->file_ownership_flag_ = 0;
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 continue;
             }
 
             if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
                 debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
                 fileHandler->file_ownership_flag_ = 0;
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 continue;
             }
 
@@ -1715,6 +1719,7 @@ void HashStoreFileManager::processGCRequestWorker()
                 debug_info("File ID = %lu total disk size %lu have no valid objects\n", fileHandler->target_file_id_, fileHandler->total_on_disk_bytes_);
                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 continue;
             }
 
@@ -1726,12 +1731,14 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->gc_result_status_flag_ = kMayGC;
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", fileHandler->target_file_id_, gcResultMap.size());
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         continue;
                     } else if (fileHandler->gc_result_status_flag_ == kMayGC) {
                         // Mark this file as could not GC;
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", fileHandler->target_file_id_, gcResultMap.size());
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         continue;
                     }
                 } else {
@@ -1739,6 +1746,7 @@ void HashStoreFileManager::processGCRequestWorker()
                     debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                     singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                     fileHandler->file_ownership_flag_ = 0;
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                     continue;
                 }
             }
@@ -1748,6 +1756,7 @@ void HashStoreFileManager::processGCRequestWorker()
                 debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first, targetFileSize, singleFileSplitGCTriggerSize_);
                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 continue;
             } else {
                 debug_info("try split for key number = %lu\n", gcResultMap.size());
@@ -1763,11 +1772,13 @@ void HashStoreFileManager::processGCRequestWorker()
                         debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         continue;
                     } else {
                         debug_info("Perform split GC for file ID (without merge) = %lu done\n", fileHandler->target_file_id_);
                         fileHandler->gc_result_status_flag_ = kShouldDelete;
                         fileHandler->file_ownership_flag_ = 0;
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         continue;
                     }
                 } else {
@@ -1787,22 +1798,26 @@ void HashStoreFileManager::processGCRequestWorker()
                                 debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
                                 fileHandler->gc_result_status_flag_ = kNoGC;
                                 fileHandler->file_ownership_flag_ = 0;
+                                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                                 continue;
                             } else {
                                 debug_info("Perform split GC for file ID (with merge) = %lu done\n", fileHandler->target_file_id_);
                                 fileHandler->gc_result_status_flag_ = kShouldDelete;
                                 fileHandler->file_ownership_flag_ = 0;
+                                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                                 continue;
                             }
                         } else {
                             debug_error("[ERROR] Could not perform pre merge to reclaim files before perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
                             fileHandler->gc_result_status_flag_ = kNoGC;
                             fileHandler->file_ownership_flag_ = 0;
+                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                             continue;
                         }
                     } else {
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         continue;
                     }
                 }
