@@ -251,6 +251,10 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;
             memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
+            if (currentPageContentSize > (directIOPageSize_ - sizeof(uint32_t))) {
+                debug_error("[ERROR] Read meet wrong current page size, file fd = %d, current page content size = %lu\n", fileDirect_, currentPageContentSize);
+                return false;
+            }
             memcpy(contentBuffer + currentReadDoneSize, readBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), currentPageContentSize);
             currentReadDoneSize += currentPageContentSize;
         }
