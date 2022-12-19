@@ -12,11 +12,11 @@ fi
 # sed -i "30s/NaN/$1/g" temp.ini
 
 echo "<===================== Loading the database start =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase load -configpath deltakv_kv_kd.ini #2>load.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase load -configpath deltakv.ini #2>load.log
 echo "<===================== Loading the database done =====================>"
 
 echo "<===================== Benchmark the database start =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv_kv_kd.ini #2>test.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv.ini #2>test.log
 echo "<===================== Benchmark the database done =====================>"
 
 # -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath deltakv_kv_kd.ini

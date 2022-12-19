@@ -33,8 +33,9 @@ messageQueue<T>::messageQueue()
 template <typename T>
 bool messageQueue<T>::push(T& data)
 {
-    bool status = lockFreeQueue_.bounded_push(data);
-    return status;
+    while (!lockFreeQueue_.push(data))
+        ;
+    return true;
 }
 
 template <typename T>

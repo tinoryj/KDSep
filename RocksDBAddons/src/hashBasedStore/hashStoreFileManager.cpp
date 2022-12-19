@@ -58,9 +58,11 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
 HashStoreFileManager::~HashStoreFileManager()
 {
     if (enableGCFlag_ == true) {
-        while (gcThreadJobDoneFlag_ == false) {
-            asm volatile("");
-            // prevent metadata update before forced gc done;
+        if (gcThreadJobDoneFlag_ == false) {
+            debug_info("Wait for gcThreadJobDoneFlag_ == true to prevent metadata update before forced gc done%s\n", "");
+            while (gcThreadJobDoneFlag_ == false) {
+                asm volatile("");
+            }
         }
     }
     CloseHashStoreFileMetaDataList();
@@ -884,10 +886,12 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
                 }
             } else {
                 // avoid get file handler which is in GC;
-                debug_trace("Get exist file ID = %lu, for key = %s, waiting for file ownership \n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                while (fileHandlerPtr->file_ownership_flag_ != 0) {
-                    asm volatile("");
-                    // wait if file is using in gc
+                if (fileHandlerPtr->file_ownership_flag_ != 0) {
+                    debug_trace("Wait for file ownership, file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    while (fileHandlerPtr->file_ownership_flag_ != 0) {
+                        asm volatile("");
+                        // wait if file is using in gc
+                    }
                 }
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
@@ -906,7 +910,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
     }
 }
 
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting)
+bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting)
 {
     if (opType == kMultiPut) {
         operationCounterMtx_.lock();
@@ -914,7 +918,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
         operationCounterMtx_.unlock();
     }
 
-    string prefixStr;
     bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyStr.c_str());
@@ -952,10 +955,12 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
                 }
             } else {
                 // avoid get file handler which is in GC;
-                debug_trace("Get exist file ID = %lu, for key = %s, waiting for file ownership \n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                while (fileHandlerPtr->file_ownership_flag_ != 0) {
-                    asm volatile("");
-                    // wait if file is using in gc
+                if (fileHandlerPtr->file_ownership_flag_ != 0) {
+                    debug_trace("Wait for file ownership, exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    while (fileHandlerPtr->file_ownership_flag_ != 0) {
+                        asm volatile("");
+                        // wait if file is using in gc
+                    }
                 }
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
@@ -1625,14 +1630,20 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                         continue;
                     }
                     if (tempHandler->total_object_bytes_ < singleFileGCTriggerSize_) {
-                        while (mapIt.second->file_ownership_flag_ != 0) {
-                            asm volatile("");
+                        if (mapIt.second->file_ownership_flag_ != 0) {
+                            debug_trace("Waiting for file ownership for select file ID = %lu\n", mapIt.second->target_file_id_);
+                            while (mapIt.second->file_ownership_flag_ != 0) {
+                                asm volatile("");
+                            }
                         }
                         mapIt.second->file_ownership_flag_ = -1;
                         targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1);
                         currentHandlerPtr1 = mapIt.second;
-                        while (tempHandler->file_ownership_flag_ != 0) {
-                            asm volatile("");
+                        if (tempHandler->file_ownership_flag_ != 0) {
+                            debug_trace("Waiting for file ownership for select file ID = \n", tempHandler->target_file_id_);
+                            while (tempHandler->file_ownership_flag_ != 0) {
+                                asm volatile("");
+                            }
                         }
                         tempHandler->file_ownership_flag_ = -1;
                         currentHandlerPtr2 = tempHandler;
@@ -1865,9 +1876,12 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             }
         }
     }
-    while (notifyGCMQ_->isEmpty() != true) {
-        asm volatile("");
-        // wait for gc job done
+    if (notifyGCMQ_->isEmpty() != true) {
+        debug_trace("Wait for gc job done in forced GC%s\n", "");
+        while (notifyGCMQ_->isEmpty() != true) {
+            asm volatile("");
+            // wait for gc job done
+        }
     }
     return true;
 }

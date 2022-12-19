@@ -22,7 +22,8 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting);
+    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
+    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
 
     // GC manager
     void processGCRequestWorker();
@@ -70,7 +71,6 @@ private:
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
-    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber); // previousFileID only used when createByGCFlag == true

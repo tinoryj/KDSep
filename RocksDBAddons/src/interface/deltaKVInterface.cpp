@@ -933,8 +933,11 @@ bool DeltaKV::Get(const string& key, string* value)
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        while (oneBufferDuringProcessFlag_ == true) {
-            asm volatile("");
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
         }
         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -1096,8 +1099,11 @@ bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        while (oneBufferDuringProcessFlag_ == true) {
-            asm volatile("");
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
         }
         std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -1214,8 +1220,11 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     string newValueStr;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        while (oneBufferDuringProcessFlag_ == true) {
-            asm volatile("");
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
         }
         std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -1494,9 +1503,11 @@ bool DeltaKV::SingleDelete(const string& key)
 bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
 {
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
-        while (oneBufferDuringProcessFlag_ == true) {
-            // avoid push current buffer when another not yet processed done
-            asm volatile("");
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
         }
     }
     globalSequenceNumberGeneratorMtx_.lock();
@@ -1540,9 +1551,11 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
 bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
 {
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
-        while (oneBufferDuringProcessFlag_ == true) {
-            // avoid push current buffer when another not yet processed done
-            asm volatile("");
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
         }
     }
     globalSequenceNumberGeneratorMtx_.lock();
@@ -1754,7 +1767,6 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             // update write buffers
             debug_info("process batched contents done, start update write buffer's map, target update key number = %lu\n", keyToDeltaStoreVec.size());
-
             if (currentWriteBatchDequeInUse == 0) {
                 writeBatchMapForSearch_[1].clear();
             } else {

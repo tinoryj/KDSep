@@ -107,10 +107,12 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
 {
     debug_info("New OP: put deltas key number = %lu, %lu, %lu, %lu\n", keyStrVec.size(), valueStrPtrVec.size(), sequenceNumberVec.size(), isAnchorVec.size());
     unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
+
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
         bool getFileHandlerStatus;
-        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, isAnchorVec[i]), StatsType::DELTAKV_HASHSTORE_PUT);
+        string prefixStr;
+        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, prefixStr, isAnchorVec[i]), StatsType::DELTAKV_HASHSTORE_PUT);
         if (getFileHandlerStatus != true) {
             debug_error("[ERROR] Get file handler for key = %s error during multiput\n", keyStrVec[i].c_str());
             return false;
