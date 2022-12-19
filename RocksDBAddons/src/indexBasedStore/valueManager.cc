@@ -533,7 +533,7 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
         }
     }
 
-    STAT_TIME_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
+    STAT_PROCESS(_keyManager->writeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM);
 
     // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
     if (ConfigManager::getInstance().persistLogMeta()) {
@@ -1051,7 +1051,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker() {
             pthread_mutex_unlock(&_centralizedReservedPoolIndex.queueLock);
             // do the flushing as usual
             debug_info("Pull and flush pool %d from queue\n", poolIndex);
-            STAT_TIME_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), stats);
+            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), stats);
             _centralizedReservedPoolIndex.flushNext = getNextPoolIndex(_centralizedReservedPoolIndex.flushNext);
             debug_info("Complete processing pool %d next %d \n", poolIndex, _centralizedReservedPoolIndex.flushNext);
             // lock before queue checking

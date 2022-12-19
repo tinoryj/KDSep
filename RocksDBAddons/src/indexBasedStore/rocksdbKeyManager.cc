@@ -38,7 +38,8 @@ RocksDBKeyManager::~RocksDBKeyManager()
 //}
 //
 
-bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs) {
+bool RocksDBKeyManager::writeKeyBatch(std::vector<char*> keys, std::vector<ValueLocation> valueLocs)
+{
     bool ret = true;
     assert(keys.size() == valueLocs.size());
     if (keys.empty())
@@ -56,11 +57,12 @@ bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<Val
     rocksdb::WriteOptions wopt;
     wopt.sync = ConfigManager::getInstance().syncAfterWrite();
 
-    STAT_TIME_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
+    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
     return ret;
 }
 
- bool RocksDBKeyManager::writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) {
+bool RocksDBKeyManager::writeKeyBatch(std::vector<std::string>& keys, std::vector<ValueLocation> valueLocs)
+{
     bool ret = true;
     assert(keys.size() == valueLocs.size());
     if (keys.empty())
@@ -79,7 +81,7 @@ bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<Val
     wopt.sync = ConfigManager::getInstance().syncAfterWrite();
 
     // put the keys into LSM-tree
-    STAT_TIME_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
+    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
     return ret;
 }
 
