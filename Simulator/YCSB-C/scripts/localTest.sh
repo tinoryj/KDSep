@@ -19,6 +19,6 @@ echo "<===================== Benchmark the database start =====================>
 ./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv_kv_kd.ini #2>test.log
 echo "<===================== Benchmark the database done =====================>"
 
-# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath temp.ini
-# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase run -configpath temp.ini
+# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath deltakv_kv_kd.ini
+# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase run -configpath deltakv_kv_kd.ini
 # thread apply all bt

@@ -215,6 +215,10 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         return false;
     }
     // Create objects
+    if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
+        isValueStoreInUseFlag_ = true;
+        IndexStoreInterfaceObjPtr_ = new IndexStoreInterface(&options, name, pointerToRawRocksDB_);
+    }
     if (options.enable_batched_operations_ == true) {
         writeBatchDeque[0] = new deque<tuple<DBOperationType, string, string, uint32_t>>;
         writeBatchDeque[1] = new deque<tuple<DBOperationType, string, string, uint32_t>>;
@@ -232,7 +236,6 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processWriteBackOperationsWorker, this));
         thList_.push_back(th);
     }
-
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         isDeltaStoreInUseFlag_ = true;
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, writeBackOperationsQueue_);
@@ -254,10 +257,6 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         } else {
             debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
         }
-    }
-    if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
-        isValueStoreInUseFlag_ = true;
-        IndexStoreInterfaceObjPtr_ = new IndexStoreInterface(&options, name, pointerToRawRocksDB_);
     }
 
     // process runnning mode
@@ -662,7 +661,7 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
     if (value.size() >= IndexStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
         externalIndexInfo currentExternalIndexInfo;
         bool status;
-        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, 0, true), StatsType::DELTAKV_PUT_INDEXSTORE);
+        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, currentSequenceNumber, true), StatsType::DELTAKV_PUT_INDEXSTORE);
         if (status == true) {
             bool updateDeltaStoreWithAnchorFlagstatus;
             STAT_PROCESS(updateDeltaStoreWithAnchorFlagstatus = HashStoreInterfaceObjPtr_->put(key, value, currentSequenceNumber, true), StatsType::DELTAKV_PUT_HASHSTORE);

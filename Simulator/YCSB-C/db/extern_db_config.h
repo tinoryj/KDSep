@@ -31,8 +31,6 @@ class ExternDBConfig {
     bool preheat_;
     int gcLevel_;
     int mergeLevel_;
-    bool runGC_;
-    bool gcWB_;
     bool tiered_;
     bool levelMerge_;
     bool rangeMerge_;
@@ -84,8 +82,6 @@ class ExternDBConfig {
         preheat_ = pt_.get<bool>("config.preheat");
         gcLevel_ = pt_.get<int>("config.gcLevel");
         mergeLevel_ = pt_.get<int>("config.mergeLevel");
-        runGC_ = pt_.get<bool>("config.runGC");
-        gcWB_ = pt_.get<bool>("config.gcWB");
         tiered_ = pt_.get<bool>("config.tiered");
         levelMerge_ = pt_.get<bool>("config.levelMerge");
         rangeMerge_ = pt_.get<bool>("config.rangeMerge");
@@ -173,12 +169,6 @@ class ExternDBConfig {
     }
     int getMergeLevel() {
         return mergeLevel_;
-    }
-    bool getRunGC() {
-        return runGC_;
-    }
-    bool getGCWB() {
-        return gcWB_;
     }
     bool getTiered() {
         return tiered_;
