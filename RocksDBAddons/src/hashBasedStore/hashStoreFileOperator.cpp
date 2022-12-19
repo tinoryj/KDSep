@@ -923,7 +923,7 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
         bool writeContentStatus = writeContentToFile(batchIt.first, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
         if (writeContentStatus == false) {
             batchIt.first->file_ownership_flag_ = 0;
-            return false;
+            break;
         } else {
             batchIt.first->bufferedUnFlushedAnchorsVec_.clear();
             // insert to cache if need
@@ -942,16 +942,26 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
                 bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(batchIt.first);
                 if (putIntoGCJobQueueStatus != true) {
                     batchIt.first->file_ownership_flag_ = 0;
-                } else {
-                    batchIt.first->file_ownership_flag_ = -1;
                 }
             } else {
                 batchIt.first->file_ownership_flag_ = 0;
             }
         }
     }
-    debug_info("Batched operations processed done by DirectMultiPut, total file handler number = %lu\n", batchedWriteOperationsMap.size());
-    return true;
+    bool jobDoneSuccessFlag = true;
+    for (auto batchIt : batchedWriteOperationsMap) {
+        if (batchIt.first->file_ownership_flag_ != 0) {
+            batchIt.first->file_ownership_flag_ = 0;
+            jobDoneSuccessFlag = false;
+        }
+    }
+    if (jobDoneSuccessFlag == true) {
+        debug_info("Batched operations processed done by DirectMultiPut, total file handler number = %lu\n", batchedWriteOperationsMap.size());
+        return true;
+    } else {
+        debug_error("Batched operations processed done by DirectMultiPut, but some operations may not success, total file handler number = %lu\n", batchedWriteOperationsMap.size());
+        return false;
+    }
 }
 
 bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec)

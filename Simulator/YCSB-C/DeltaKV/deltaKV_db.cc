@@ -135,6 +135,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
 
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
+
     if (directIO == true) {
         options_.rocksdbRawOptions_.use_direct_reads = true;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
@@ -146,18 +147,21 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
+        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize / 8);
         options_.rocksdbRawOptions_.enable_blob_files = true;
         options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
         options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
         options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
-        options_.rocksdbRawOptions_.enable_blob_garbage_collection = false;                            // Default false
+        options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
         options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
         options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
         options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
-        options_.rocksdbRawOptions_.blob_cache = nullptr;                                              // Default nullptr
+        options_.rocksdbRawOptions_.blob_cache = rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
         options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
         assert(!keyValueSeparation);
+    } else {
+        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
@@ -241,7 +245,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (bloomBits > 0) {
         bbto.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloomBits));
     }
-    bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
