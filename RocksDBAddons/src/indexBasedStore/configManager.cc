@@ -27,7 +27,7 @@ void ConfigManager::setConfigPath(const char* path)
     // buffer
     _buffer.updateKVBufferSize = readULL("buffer.updateKVBufferSize");
     _buffer.inPlaceUpdate = readBool("buffer.inPlaceUpdate");
-    _buffer.numPipelinedBuffer = 1;
+    _buffer.numPipelinedBuffer = readInt("buffer.numPipelinedBuffer");
     if (_buffer.numPipelinedBuffer > MAX_CP_NUM) {
         _buffer.numPipelinedBuffer = MAX_CP_NUM;
     } else if (_buffer.numPipelinedBuffer < 1) {

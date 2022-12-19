@@ -130,6 +130,7 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     string rightOpStr(right_operand.data(), right_operand.size());
     new_value->assign(leftOpStr);
     new_value->append(rightOpStr);
+
     return true;
 };
 
@@ -359,7 +360,7 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
     if (value.size() >= IndexStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
         externalIndexInfo currentExternalIndexInfo;
         bool status;
-        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo), StatsType::DELTAKV_PUT_INDEXSTORE);
+        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, 0), StatsType::DELTAKV_PUT_INDEXSTORE);
         if (status == true) {
             char writeInternalValueBuffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
             internalValueType currentInternalValueType;
@@ -370,10 +371,11 @@ bool DeltaKV::PutWithOnlyValueStore(const string& key, const string& value)
             memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
             memcpy(writeInternalValueBuffer + sizeof(internalValueType), &currentExternalIndexInfo, sizeof(externalIndexInfo));
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
-            rocksdb::Status rocksDBStatus;
-            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
-            if (!rocksDBStatus.ok()) {
-                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), rocksDBStatus.ToString().c_str());
+            rocksdb::Status s;
+//            STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
+            if (!s.ok()) {
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
+
                 return false;
             } else {
                 return true;
@@ -677,7 +679,8 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
     if (value.size() >= IndexStoreInterfaceObjPtr_->getExtractSizeThreshold()) {
         externalIndexInfo currentExternalIndexInfo;
         bool status;
-        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, true), StatsType::DELTAKV_PUT_INDEXSTORE);
+        STAT_TIME_PROCESS(status = IndexStoreInterfaceObjPtr_->put(key, value, &currentExternalIndexInfo, 0, sync), StatsType::DELTAKV_PUT_INDEXSTORE);
+
         if (status == true) {
             char writeInternalValueBuffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
             internalValueType currentInternalValueType;
@@ -690,9 +693,10 @@ bool DeltaKV::PutWithValueAndDeltaStore(const string& key, const string& value)
             string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
             rocksdb::Status rocksDBStatus;
             // the write option should be not sync here. not touch
-            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
-            if (!rocksDBStatus.ok()) {
-                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), rocksDBStatus.ToString().c_str());
+//            STAT_TIME_PROCESS(s = pointerToRawRocksDB_->Put(internalWriteOption_, key, newWriteValue), StatsType::DELTAKV_PUT_ROCKSDB);
+            if (!s.ok()) {
+                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", key.c_str(), value.c_str(), s.ToString().c_str());
+
                 return false;
             } else {
                 bool updateDeltaStoreWithAnchorFlagstatus;

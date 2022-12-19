@@ -204,43 +204,45 @@ StatsRecorder::~StatsRecorder()
     //    fprintf(stderr, "%-24s [%llu] %14ld\n", "Update latency 95-th-%:", h.first, hdr_value_at_percentile(h.second, 95.0));
     //    fprintf(stderr, "%-24s [%llu] %14ld\n", "Update latency 100-th-%:", h.first, hdr_value_at_percentile(h.second, 100.0));
     //}
-    PRINT_FULL("UpdateKeyLookupTime", UPDATE_KEY_LOOKUP, time[UPDATE]);
-    PRINT_FULL("UpdateKeyWriteTime", UPDATE_KEY_WRITE, time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToLSM", UPDATE_KEY_WRITE_LSM, time[UPDATE]);
-    PRINT_FULL("  - KeyToCache", KEY_SET_CACHE, time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToLSM (GC)", UPDATE_KEY_WRITE_LSM_GC, time[UPDATE]);
-    PRINT_FULL("- KeyUpdateCache", KEY_UPDATE_CACHE, time[UPDATE]);
-    PRINT_FULL("- UpdateKeyToSW", UPDATE_KEY_WRITE_SHADOW, time[UPDATE]);
-    PRINT_FULL("UpdateValueTime", UPDATE_VALUE, time[UPDATE]);
-    PRINT_FULL("WBRatioUpdateTime", GC_RATIO_UPDATE, time[UPDATE]);
-    PRINT_FULL("InvalidUpdateTime", GC_INVALID_BYTES_UPDATE, time[UPDATE]);
+    PRINT_FULL("UpdateKeyLookupTime"  , UPDATE_KEY_LOOKUP               , time[UPDATE]);
+    PRINT_FULL("UpdateKeyWriteTime"   , UPDATE_KEY_WRITE                , time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToLSM"     , UPDATE_KEY_WRITE_LSM            , time[UPDATE]);
+    PRINT_FULL("  - KeyToCache"       , KEY_SET_CACHE                   , time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToLSM (GC)", UPDATE_KEY_WRITE_LSM_GC         , time[UPDATE]);
+    PRINT_FULL("- KeyUpdateCache"     , KEY_UPDATE_CACHE                , time[UPDATE]);
+    PRINT_FULL("- UpdateKeyToSW"      , UPDATE_KEY_WRITE_SHADOW         , time[UPDATE]);
+    PRINT_FULL("UpdateValueTime"      , UPDATE_VALUE                    , time[UPDATE]);
+    PRINT_FULL("WBRatioUpdateTime"    , GC_RATIO_UPDATE                 , time[UPDATE]);
+    PRINT_FULL("InvalidUpdateTime"    , GC_INVALID_BYTES_UPDATE         , time[UPDATE]);
 
-    PRINT_FULL("FlushLog/Group", POOL_FLUSH, time[UPDATE]);
-    PRINT_FULL("- Flush w/o GC", POOL_FLUSH_NO_GC, time[UPDATE]);
-    PRINT_FULL("- GCTotal", GC_TOTAL, time[UPDATE]);
+    PRINT_FULL("FlushLog/Group"       , POOL_FLUSH                      , time[UPDATE]);
+    PRINT_FULL("- Flush w/o GC"       , POOL_FLUSH_NO_GC                , time[UPDATE]);
+    PRINT_FULL("- Flush wait"         , POOL_FLUSH_WAIT                 , time[UPDATE]);
+    PRINT_FULL("- GCTotal"            , GC_TOTAL                        , time[UPDATE]);
 
-    PRINT_FULL("LogMeta", LOG_TIME, time[UPDATE]);
+    PRINT_FULL("LogMeta"              , LOG_TIME                        , time[UPDATE]);
 
-    fprintf(stdout, "-------------------------- GET Request --------------------------------------\n");
-    PRINT_FULL("GetOverall", GET, time[GET]);
-    //    fprintf(stdout, "%-24s %14.3lf\n", "- mean:", hdr_mean(_getTimeHistogram));
-    //    fprintf(stdout, "%-24s %14.3lf\n", "- stddev:", hdr_stddev(_getTimeHistogram));
-    //    fprintf(stdout, "%-24s %14ld\n", "- min:", hdr_min(_getTimeHistogram));
-    //    fprintf(stdout, "%-24s %14ld\n", "- max:", hdr_max(_getTimeHistogram));
-    // fprintf(stdout, "%-24s %14ld\n", "- 25-th-%:", hdr_value_at_percentile(_getTimeHistogram, 25.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 50-th-%:", hdr_value_at_percentile(_getTimeHistogram, 50.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 75-th-%:", hdr_value_at_percentile(_getTimeHistogram, 75.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 90-th-%:", hdr_value_at_percentile(_getTimeHistogram, 90.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 97-th-%:", hdr_value_at_percentile(_getTimeHistogram, 97.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.0));
-    // fprintf(stdout, "%-24s %14ld\n", "- 99.9-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.9));
-    // fprintf(stdout, "%-24s %14ld\n", "- 99.99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.99));
-    // fprintf(stdout, "%-24s %14ld\n", "- 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
-    //    fprintf(stderr, "%-24s %14ld\n", "Get latency 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    // fprintf(stderr, "%-24s %14ld\n", "Get latency 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
-    // fprintf(stderr, "%-24s %14ld\n", "Get latency 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
-    // for (auto h : _getByValueSizeHistogram) {
+    fprintf(stdout,"-------------------------- GET Request --------------------------------------\n");
+    PRINT_FULL("GetOverall"           , GET                             , time[GET]);
+//    fprintf(stdout, "%-24s %14.3lf\n", "- mean:", hdr_mean(_getTimeHistogram));
+//    fprintf(stdout, "%-24s %14.3lf\n", "- stddev:", hdr_stddev(_getTimeHistogram));
+//    fprintf(stdout, "%-24s %14ld\n", "- min:", hdr_min(_getTimeHistogram));
+//    fprintf(stdout, "%-24s %14ld\n", "- max:", hdr_max(_getTimeHistogram));
+    //fprintf(stdout, "%-24s %14ld\n", "- 25-th-%:", hdr_value_at_percentile(_getTimeHistogram, 25.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 50-th-%:", hdr_value_at_percentile(_getTimeHistogram, 50.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 75-th-%:", hdr_value_at_percentile(_getTimeHistogram, 75.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 90-th-%:", hdr_value_at_percentile(_getTimeHistogram, 90.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 97-th-%:", hdr_value_at_percentile(_getTimeHistogram, 97.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.0));
+    //fprintf(stdout, "%-24s %14ld\n", "- 99.9-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.9));
+    //fprintf(stdout, "%-24s %14ld\n", "- 99.99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 99.99));
+    //fprintf(stdout, "%-24s %14ld\n", "- 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
+//    fprintf(stderr, "%-24s %14ld\n", "Get latency 95-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    //fprintf(stderr, "%-24s %14ld\n", "Get latency 99-th-%:", hdr_value_at_percentile(_getTimeHistogram, 95.0));
+    //fprintf(stderr, "%-24s %14ld\n", "Get latency 100-th-%:", hdr_value_at_percentile(_getTimeHistogram, 100.0));
+    //for (auto h : _getByValueSizeHistogram) {
+
     //    fprintf(stdout, "%-24s %llu:\n", "- Value of size", h.first);
     //    fprintf(stdout, "%-24s %14.3lf\n", "  - mean:", hdr_mean(h.second));
     //    fprintf(stdout, "%-24s %14.3lf\n",   "  - stddev:", hdr_stddev(h.second));

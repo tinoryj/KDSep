@@ -24,7 +24,7 @@ public:
     DeviceManager(std::vector<DiskInfo> disks, bool isSlave = false);
     ~DeviceManager();
 
-    bool checkBufferSize(len_t neededSize, offset_t offset = INVALID_OFFSET);
+    void* checkBufferSize(len_t neededSize, offset_t offset, len_t& bufsize);
 
     // mapping between segment and disks
     disk_id_t getDiskBySegmentId(segment_id_t segmentId);
@@ -87,9 +87,8 @@ private:
     std::mutex _diskStatusMutex;
 
     int _numDisks; // the number of all disks
-    void* _buf;
-    int _bufsize;
     int _pageSize;
+    bool _directIO;
 
     bool _isSlave;
 

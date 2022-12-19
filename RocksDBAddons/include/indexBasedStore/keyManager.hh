@@ -38,8 +38,8 @@ public:
 
     // interface to access keys and mappings to values
 //    virtual bool writeKey (char *keyStr, ValueLocation valueLoc, int needCache = 1) = 0;
-//    virtual bool writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs, int needCache = 1) = 0;
-//    virtual bool writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs, int needCache = 1) = 0;
+    virtual bool writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs) = 0;
+    virtual bool writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) = 0;
     virtual bool mergeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs) = 0;
     virtual bool mergeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) = 0;
     virtual ValueLocation getKey (const char *keyStr, bool checkExist = false) = 0;

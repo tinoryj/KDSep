@@ -37,66 +37,51 @@ RocksDBKeyManager::~RocksDBKeyManager()
 //    return ret;
 //}
 //
-// bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs, int needCache) {
-//    bool ret = true;
-//    assert(keys.size() == valueLocs.size());
-//    if (keys.empty())
-//        return ret;
-//
-//    // update to LSM-tree
-//    rocksdb::WriteBatch batch;
-//    for (size_t i = 0; i < keys.size(); i++) {
-//        // update cache if needed
-//        if (_cache.lru && needCache) {
-//            if (needCache > 1) {
-//                STAT_PROCESS(_cache.lru->update((unsigned char*) keys.at(i), valueLocs.at(i).segmentId), StatsType::KEY_UPDATE_CACHE);
-//            } else {
-//                STAT_PROCESS(_cache.lru->insert((unsigned char*) keys.at(i), valueLocs.at(i).segmentId), StatsType::KEY_SET_CACHE);
-//            }
-//        }
-//        // construct the batch for LSM-tree write
-//        batch.Put(rocksdb::Slice(keys.at(i), KEY_SIZE), rocksdb::Slice(valueLocs.at(i).serialize()));
-//
-//    }
-//
-//    rocksdb::WriteOptions wopt;
-//    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
-//
-//    // put the keys into LSM-tree
-//    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::KEY_SET_LSM_BATCH);
-//    return ret;
-//}
-//
-// bool RocksDBKeyManager::writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs, int needCache) {
-//    bool ret = true;
-//    assert(keys.size() == valueLocs.size());
-//    if (keys.empty())
-//        return ret;
-//
-//    // update to LSM-tree
-//    rocksdb::WriteBatch batch;
-//    for (size_t i = 0; i < keys.size(); i++) {
-//        // update cache if needed
-//        if (_cache.lru && needCache) {
-//            if (needCache > 1) {
-//                STAT_PROCESS(_cache.lru->update((unsigned char*) keys.at(i).c_str(), valueLocs.at(i).segmentId), StatsType::KEY_UPDATE_CACHE);
-//            } else {
-//                STAT_PROCESS(_cache.lru->insert((unsigned char*) keys.at(i).c_str(), valueLocs.at(i).segmentId), StatsType::KEY_SET_CACHE);
-//            }
-//        }
-//        // construct the batch for LSM-tree write
-//        batch.Put(rocksdb::Slice(keys.at(i)), rocksdb::Slice(valueLocs.at(i).serialize()));
-//
-//    }
-//
-//    rocksdb::WriteOptions wopt;
-//    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
-//
-//    // put the keys into LSM-tree
-//    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::KEY_SET_LSM_BATCH);
-//    return ret;
-//}
-//
+
+bool RocksDBKeyManager::writeKeyBatch (std::vector<char *> keys, std::vector<ValueLocation> valueLocs) {
+    bool ret = true;
+    assert(keys.size() == valueLocs.size());
+    if (keys.empty())
+        return ret;
+
+    // update to LSM-tree
+    rocksdb::WriteBatch batch;
+    for (size_t i = 0; i < keys.size(); i++) {
+        key_len_t keySize;
+        memcpy(&keySize, keys.at(i), sizeof(key_len_t));
+
+        batch.Put(rocksdb::Slice(keys.at(i) + sizeof(key_len_t), keySize), rocksdb::Slice(valueLocs.at(i).serializeIndexWrite()));
+    }
+
+    rocksdb::WriteOptions wopt;
+    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
+
+    STAT_TIME_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
+    return ret;
+}
+
+ bool RocksDBKeyManager::writeKeyBatch (std::vector<std::string> &keys, std::vector<ValueLocation> valueLocs) {
+    bool ret = true;
+    assert(keys.size() == valueLocs.size());
+    if (keys.empty())
+        return ret;
+
+    // update to LSM-tree
+    rocksdb::WriteBatch batch;
+    for (size_t i = 0; i < keys.size(); i++) {
+        // construct the batch for LSM-tree write
+        key_len_t keySize;
+        memcpy(&keySize, keys.at(i).c_str(), sizeof(key_len_t));
+        batch.Put(rocksdb::Slice(keys.at(i).c_str() + sizeof(key_len_t), (int)keySize), rocksdb::Slice(valueLocs.at(i).serializeIndexWrite()));
+    }
+
+    rocksdb::WriteOptions wopt;
+    wopt.sync = ConfigManager::getInstance().syncAfterWrite();
+
+    // put the keys into LSM-tree
+    STAT_TIME_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
+    return ret;
+}
 
 bool RocksDBKeyManager::writeMeta(const char* keyStr, int keySize, std::string metadata)
 {

@@ -79,6 +79,8 @@ private:
     LogManager* _logManager; // logManager, for logging before metadata updates
     ValueManager* _slaveValueManager; // slave value manager
 
+    vector<boost::thread*> thList_;
+
     struct {
         DeviceManager* dm;
         SegmentGroupManager* cgm;
@@ -133,21 +135,20 @@ private:
     // coding_parm_t inline findSegmentInGroup(const GroupMetaData *smd, segment_id_t segmentId, device_id_t &deviceId, lba_t &lba);
 
     //@parm groupMetaOutDate indicate the flush fronts in group metadata are no longer valid (due to batch metadata update)
-    bool setGroupReservedBufferCP(group_id_t groupId, bool needsLock, bool isGC, group_id_t reservedGroupId = INVALID_GROUP, bool groupMetaOutDated = false, std::unordered_map<std::pair<segment_id_t, segment_id_t>, len_t, hashCidPair>* invalidBytes = 0, int poolIndex = 0);
-    bool releaseGroupReservedBufferCP(group_id_t groupId, bool needsLockPool, bool isGC, bool isGCdone = true, int poolIndex = 0);
+//    bool setGroupReservedBufferCP(group_id_t groupId, bool needsLock, bool isGC, group_id_t reservedGroupId = INVALID_GROUP, bool groupMetaOutDated = false, std::unordered_map<std::pair<segment_id_t, segment_id_t>, len_t, hashCidPair>* invalidBytes = 0, int poolIndex = 0);
+//    bool releaseGroupReservedBufferCP(group_id_t groupId, bool needsLockPool, bool isGC, bool isGCdone = true, int poolIndex = 0);
 
     bool outOfReservedSpace(offset_t flushFront, group_id_t groupId, int poolIndex);
     bool outOfReservedSpaceForObject(offset_t flushFront, len_t objectSize);
 
-    void flushCentralizedReservedPool(group_id_t* reportGroupId = 0, bool isUpdate = false, int poolIndex = 0, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey>* oldLocations = 0);
+//    void flushCentralizedReservedPool(group_id_t* reportGroupId = 0, bool isUpdate = false, int poolIndex = 0, std::unordered_map<unsigned char*, offset_t, hashKey, equalKey>* oldLocations = 0);
     // <group id, total update size>
-    void flushCentralizedReservedPoolBg(StatsType stats);
-    static void* flushCentralizedReservedPoolBgWorker(void* arg);
     int getNextPoolIndex(int current);
     void decrementPoolIndex(int& current);
 
+    void flushCentralizedReservedPoolBg(StatsType stats);
+    void flushCentralizedReservedPoolBgWorker();
     void flushCentralizedReservedPoolVLog(int poolIndex = 0, offset_t* logOffsetPtr = nullptr);
-    void flushVLogCentralizedReservedPool();
 
     std::pair<offset_t, len_t> flushSegmentToWriteFront(Segment& segment, bool isGC = false);
 
