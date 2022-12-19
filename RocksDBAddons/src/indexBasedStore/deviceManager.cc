@@ -431,7 +431,7 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
     offset_t originalDiskOffset = diskOffset;
     len_t originalLength = length;
 
-    void* directbuf;
+    void* directbuf = nullptr;
     len_t bufsize;
 
     if (_directIO && !isLog) {
@@ -497,7 +497,7 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
         memcpy(buf, (char*)directbuf + originalDiskOffset % _pageSize, originalLength);
     }
 
-    if (_directIO) {
+    if (directbuf != nullptr) {
         free(directbuf);
     }
 
