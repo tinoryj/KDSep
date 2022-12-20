@@ -5,9 +5,9 @@
 # scripts/runTest.sh load bkv req10M op10M fc10 fl400 cache1024 threads16 round1
 # scripts/runTest.sh load req10M op10M fc10 fl400 cache1024 threads16 round1
 # exit
+scripts/runTest.sh kvkd req10M op10M fc10 fl400 cache1024 threads12 round1
 scripts/runTest.sh req10M op10M fc10 fl400 cache1024 threads16 round1
 scripts/runTest.sh bkv req10M op10M fc10 fl400 cache1024 threads16 round1
-scripts/runTest.sh kvkd req10M op10M fc10 fl400 cache1024 threads12 round1
 scripts/runTest.sh kv req10M op10M fc10 fl400 cache1024 threads15 round1
 scripts/runTest.sh kd req10M op10M fc10 fl400 cache1024 threads13 round1
 

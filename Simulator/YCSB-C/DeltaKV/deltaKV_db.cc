@@ -80,33 +80,33 @@ class FieldUpdateMergeOperator : public MergeOperator {
         string allOperandListStr = left_operand.ToString();
         allOperandListStr.append(",");
         allOperandListStr.append(right_operand.ToString());
-        unordered_set<int> findIndexSet;
+        // cerr << "Find raw partial merge = " << allOperandListStr << endl
+        //      << endl;
+        unordered_map<int, string> findIndexMap;
         stack<pair<string, string>> finalResultStack;
         vector<string> operandVector = split(allOperandListStr, ",");
-        for (auto i = operandVector.size() - 1; i < 0; i -= 2) {
-            int index = stoi(operandVector[i - 1]);
-            if (findIndexSet.find(index) == findIndexSet.end()) {
-                findIndexSet.insert(index);
-                finalResultStack.push(make_pair(operandVector[i - 1], operandVector[i]));
+        // cerr << "result vec size = " << operandVector.size() << endl;
+        for (auto i = 0; i < operandVector.size(); i += 2) {
+            // cerr << "result vec index = " << i << ", content = " << operandVector[i] << endl;
+            int index = stoi(operandVector[i]);
+            if (findIndexMap.find(index) == findIndexMap.end()) {
+                findIndexMap.insert(make_pair(index, operandVector[i + 1]));
+            } else {
+                findIndexMap.at(index).assign(operandVector[i + 1]);
             }
         }
+        // cerr << "result map size = " << findIndexMap.size() << endl;
         string finalResultStr = "";
-        while (finalResultStack.size() != 1) {
-            finalResultStr.append(finalResultStack.top().first);
+        for (auto it : findIndexMap) {
+            finalResultStr.append(to_string(it.first));
             finalResultStr.append(",");
-            finalResultStr.append(finalResultStack.top().second);
+            finalResultStr.append(it.second);
             finalResultStr.append(",");
-            finalResultStack.pop();
         }
-        finalResultStr.append(finalResultStack.top().first);
-        finalResultStr.append(",");
-        finalResultStr.append(finalResultStack.top().second);
-
+        finalResultStr = finalResultStr.substr(0, finalResultStr.size() - 1);
+        // cerr << "Find partial merge = " << finalResultStr << endl
+        //      << endl;
         new_value->assign(finalResultStr);
-        // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
-        // cout << right_operand.data() << "\n Size=" << right_operand.size() <<
-        // endl; cout << new_value << "\n Size=" << new_value->length() << endl;
-        // new_value->assign(left_operand.data(), left_operand.size());
         return true;
     };
 
