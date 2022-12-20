@@ -59,6 +59,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
         while (currentHandler->jobDone_ == kNotDone) {
             asm volatile("");
         }
+        debug_trace("Wait for write job done%s over\n", "");
     }
     if (currentHandler->jobDone_ == kError) {
         delete currentHandler;
@@ -102,10 +103,10 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(unordered_map<h
         }
     }
     debug_info("Processed job handler number = %lu done, job done counter = %lu\n", currentOperationHandlerVec.size(), jodDoneCounter);
-    // for (auto currentIt : currentOperationHandlerVec) {
-    //     delete currentIt->batched_write_operation_;
-    //     delete currentIt;
-    // }
+    for (auto i = 0; i < currentOperationHandlerVec.size(); i++) {
+        delete currentOperationHandlerVec[i]->batched_write_operation_;
+        delete currentOperationHandlerVec[i];
+    }
     if (jobdDoneAllSuccessFlag == true) {
         return true;
     } else {
@@ -126,6 +127,7 @@ bool HashStoreFileOperator::putReadOperationIntoJobQueue(hashStoreFileMetaDataHa
         while (currentHandler->jobDone_ == kNotDone) {
             asm volatile("");
         }
+        debug_trace("Wait for read job done%s over\n", "");
     }
     if (valueVec->size() == 0 || currentHandler->jobDone_ == kError) {
         delete currentHandler;
@@ -1080,22 +1082,27 @@ void HashStoreFileOperator::operationWorker()
             }
             if (operationTypeCorrectFlag == false) {
                 currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                debug_trace("Process file ID = %lu error\n", currentHandlerPtr->file_handler_->target_file_id_);
                 currentHandlerPtr->jobDone_ = kError;
             } else {
                 if (operationsStatus == false) {
                     currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                    debug_trace("Process file ID = %lu error\n", currentHandlerPtr->file_handler_->target_file_id_);
                     currentHandlerPtr->jobDone_ = kError;
                 } else {
                     if (currentHandlerPtr->opType_ != kGet && enableGCFlag_ == true) {
                         bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(currentHandlerPtr->file_handler_);
                         if (putIntoGCJobQueueStatus == false) {
                             currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                            debug_trace("Process file ID = %lu done\n", currentHandlerPtr->file_handler_->target_file_id_);
                             currentHandlerPtr->jobDone_ = kDone;
                         } else {
+                            debug_trace("Process file ID = %lu done\n", currentHandlerPtr->file_handler_->target_file_id_);
                             currentHandlerPtr->jobDone_ = kDone;
                         }
                     } else {
                         currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
+                        debug_trace("Process file ID = %lu done\n", currentHandlerPtr->file_handler_->target_file_id_);
                         currentHandlerPtr->jobDone_ = kDone;
                     }
                 }

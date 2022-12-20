@@ -11,15 +11,6 @@ using namespace std;
 
 namespace ycsbc {
 
-struct timeval timestartFull;
-struct timeval timeendFull;
-struct timeval timestartPart;
-struct timeval timeendPart;
-uint64_t counter_full = 0;
-double totalTimeFull = 0;
-uint64_t counter_part = 0;
-double totalTimePart = 0;
-
 vector<string> split(string str, string token) {
     vector<string> result;
     while (str.size()) {
@@ -49,8 +40,6 @@ class FieldUpdateMergeOperator : public MergeOperator {
     bool FullMerge(const Slice &key, const Slice *existing_value,
                    const std::deque<std::string> &operand_list,
                    std::string *new_value, Logger *logger) const override {
-        counter_full++;
-        gettimeofday(&timestartFull, NULL);
         // cout << "Do full merge operation in as field update" << endl;
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
@@ -77,9 +66,6 @@ class FieldUpdateMergeOperator : public MergeOperator {
         temp += words[words.size() - 1];
         new_value->assign(temp);
         // cout << new_value->data() << "\n Size=" << new_value->length() <<endl;
-        gettimeofday(&timeendFull, NULL);
-        totalTimeFull += 1000000 * (timeendFull.tv_sec - timestartFull.tv_sec) +
-                         timeendFull.tv_usec - timestartFull.tv_usec;
         return true;
     };
 
@@ -91,14 +77,13 @@ class FieldUpdateMergeOperator : public MergeOperator {
                       const Slice &right_operand, std::string *new_value,
                       Logger *logger) const override {
         // cout << "Do partial merge operation in as field update" << endl;
-        counter_part++;
-        gettimeofday(&timestartPart, NULL);
         string allOperandListStr = left_operand.ToString();
+        allOperandListStr.append(",");
         allOperandListStr.append(right_operand.ToString());
         unordered_set<int> findIndexSet;
         stack<pair<string, string>> finalResultStack;
         vector<string> operandVector = split(allOperandListStr, ",");
-        for (long unsigned int i = operandVector.size(); i != 0; i -= 2) {
+        for (auto i = operandVector.size() - 1; i < 0; i -= 2) {
             int index = stoi(operandVector[i - 1]);
             if (findIndexSet.find(index) == findIndexSet.end()) {
                 findIndexSet.insert(index);
@@ -114,9 +99,6 @@ class FieldUpdateMergeOperator : public MergeOperator {
         }
 
         new_value->assign(finalResultStr);
-        gettimeofday(&timeendPart, NULL);
-        totalTimePart += 1000000 * (timeendPart.tv_sec - timestartPart.tv_sec) +
-                         timeendPart.tv_usec - timestartPart.tv_usec;
         // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
         // cout << right_operand.data() << "\n Size=" << right_operand.size() <<
         // endl; cout << new_value << "\n Size=" << new_value->length() << endl;
@@ -367,6 +349,6 @@ DeltaKVDB::~DeltaKVDB() {
     outputStream_.close();
     db_.Close();
     DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
-    cerr << "Delete DeltaKVDB complete" << endl;
+    cerr << "Close DeltaKVDB complete" << endl;
 }
 }  // namespace ycsbc

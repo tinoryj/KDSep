@@ -29,6 +29,7 @@ generate_file_name() {
 
 pwd
 ulimit -n 1048576 
+ulimit -s 102400
 echo $@
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
 ReadRatioSet=(0.1 0.3 0.5 0.7 0.9)
@@ -37,7 +38,7 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/sn640/Exp2/Running"
+DB_Working_Path="/mnt/sn640/Exp2/RunDB"
 DB_Loaded_Path="/mnt/sn640/Exp2/BackupDB"
 if [ ! -d $DB_Working_Path ]; then
     mkdir -p $DB_Working_Path
@@ -46,7 +47,7 @@ if [ ! -d $DB_Loaded_Path ]; then
     mkdir -p $DB_Loaded_Path
 fi
 DB_Name="loadedDB"
-ResultLogFolder="ResultLogs"
+ResultLogFolder="/mnt/sn640/Exp2/ResultLogs"
 MAXRunTimes=1
 Thread_number=1
 RocksDBThreadNumber=16
@@ -69,9 +70,6 @@ usekd="false"
 usekvkd="false"
 gc="true"
 maxFileNumber="16"
-reads="0.1"
-
-ReadRatioSet=("$reads")
 
 for param in $*; do
     if [[ $param == "kv" ]]; then

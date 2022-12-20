@@ -63,6 +63,7 @@ HashStoreFileManager::~HashStoreFileManager()
             while (gcThreadJobDoneFlag_ == false) {
                 asm volatile("");
             }
+            debug_info("Wait for gcThreadJobDoneFlag_ == true over%s\n", "");
         }
     }
     CloseHashStoreFileMetaDataList();
@@ -892,6 +893,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
                         asm volatile("");
                         // wait if file is using in gc
                     }
+                    debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
                 }
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
@@ -961,6 +963,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
                         asm volatile("");
                         // wait if file is using in gc
                     }
+                    debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
                 }
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
@@ -1025,7 +1028,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixSt
 
 bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber)
 {
-    // std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
     uint64_t remainingAvaliableFileNumber = objectFileMetaDataTrie_.getRemainFileNumber();
     if (remainingAvaliableFileNumber == 0) {
         string targetPrefixStr;
@@ -1076,7 +1078,6 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
 
 bool HashStoreFileManager::createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2, hashStoreFileHeader& newFileHeader)
 {
-    // std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
     currentFileHandlerPtr->current_prefix_used_bit_ = targetPrefixLen;
@@ -1922,6 +1923,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             asm volatile("");
             // wait for gc job done
         }
+        debug_trace("Wait for gc job done in forced GC%s over\n", "");
     }
     return true;
 }
