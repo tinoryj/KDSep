@@ -117,7 +117,7 @@ ValueManager::~ValueManager()
 {
     // flush and release segments
     debug_info("forceSync() %s\n", "");
-    forceSync();
+    // forceSync();
     debug_info("forceSync() %s\n", "");
 
     // allow the bg thread to finish its job first
@@ -304,7 +304,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     offset_t newOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
-    if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 && sync)) {
+    if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 || sync)) {
         //        _GCLock.unlock();
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
