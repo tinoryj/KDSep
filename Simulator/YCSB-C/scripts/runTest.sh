@@ -283,9 +283,5 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             rm -rf workload-temp.spec
             echo "Deleted old workload spec"
         fi
-        if [ -f temp.ini ]; then
-            rm -rf temp.ini
-            echo "Deleted old DeltaKV spec"
-        fi
     done
 done
