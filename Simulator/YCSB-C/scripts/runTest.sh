@@ -30,14 +30,15 @@ generate_file_name() {
 pwd
 ulimit -n 1048576 
 echo $@
-ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
+# ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
+ReadRatioSet=(0.1 0.3 0.5 0.7 0.9)
 OverWriteRatio=0.0
 KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="./loadedDB/Exp"
-DB_Loaded_Path="./loadedDB/backupDB"
+DB_Working_Path="/mnt/sn640/Exp2/Running"
+DB_Loaded_Path="/mnt/sn640/Exp2/BackupDB"
 if [ ! -d $DB_Working_Path ]; then
     mkdir -p $DB_Working_Path
 fi

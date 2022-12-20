@@ -126,13 +126,106 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     const Slice& right_operand, std::string* new_value,
     Logger* logger) const
 {
-    string leftOpStr(left_operand.data(), left_operand.size());
-    string rightOpStr(right_operand.data(), right_operand.size());
-    new_value->assign(leftOpStr);
-    new_value->append(rightOpStr);
-
+    string operandStr;
+    operandStr.assign(left_operand.ToString());
+    operandStr.append(right_operand.ToString());
+    auto deltaOffset = 0;
+    string newValueIndexStr = "";
+    vector<pair<internalValueType, string>> batchedOperandVec;
+    bool findRawDeltaFlag = false;
+    while (deltaOffset < operandStr.size()) {
+        internalValueType tempInternalValueType;
+        memcpy(&tempInternalValueType, operandStr.c_str() + deltaOffset, sizeof(internalValueType));
+        // extract the oprand
+        if (tempInternalValueType.mergeFlag_ == true) {
+            // index update
+            assert(tempInternalValueType.valueSeparatedFlag_ == true && (deltaOffset + sizeof(internalValueType) + sizeof(externalIndexInfo)) <= operandStr.size());
+            newValueIndexStr.assign(operandStr.substr(deltaOffset, sizeof(internalValueType) + sizeof(externalIndexInfo)));
+            deltaOffset += (sizeof(internalValueType) + sizeof(externalIndexInfo));
+            batchedOperandVec.clear(); // clear since new value
+        } else {
+            if (tempInternalValueType.valueSeparatedFlag_ == false) {
+                // raw delta
+                assert(deltaOffset + sizeof(internalValueType) + tempInternalValueType.rawValueSize_ <= operandStr.size());
+                batchedOperandVec.push_back(make_pair(tempInternalValueType, operandStr.substr(deltaOffset + sizeof(internalValueType), tempInternalValueType.rawValueSize_)));
+                deltaOffset += (sizeof(internalValueType) + tempInternalValueType.rawValueSize_);
+                findRawDeltaFlag = true;
+            } else {
+                // separated delta
+                assert(deltaOffset + sizeof(internalValueType) <= operandStr.size());
+                batchedOperandVec.push_back(make_pair(tempInternalValueType, ""));
+                deltaOffset += sizeof(internalValueType);
+            }
+        }
+    }
+    if (findRawDeltaFlag == true) {
+        string finalDeltaListStr = "";
+        PartialMergeFieldUpdates(batchedOperandVec, finalDeltaListStr);
+        if (newValueIndexStr.size() > 0) {
+            new_value->assign(newValueIndexStr);
+            new_value->append(finalDeltaListStr);
+        } else {
+            new_value->assign(finalDeltaListStr);
+        }
+    } else {
+        string finalDeltaListStr;
+        for (auto i = 0; i < batchedOperandVec.size(); i++) {
+            if (batchedOperandVec[i].first.valueSeparatedFlag_ == true) {
+                char buffer[sizeof(internalValueType)];
+                memcpy(buffer, &batchedOperandVec[i].first, sizeof(internalValueType));
+                string headerStr(buffer, sizeof(internalValueType));
+                finalDeltaListStr.append(headerStr);
+            } else {
+                char buffer[sizeof(internalValueType) + batchedOperandVec[i].first.rawValueSize_];
+                memcpy(buffer, &batchedOperandVec[i].first, sizeof(internalValueType));
+                memcpy(buffer + sizeof(internalValueType), batchedOperandVec[i].second.c_str(), batchedOperandVec[i].first.rawValueSize_);
+                string contentStr(buffer, sizeof(internalValueType) + batchedOperandVec[i].first.rawValueSize_);
+                finalDeltaListStr.append(contentStr);
+            }
+        }
+        if (newValueIndexStr.size() > 0) {
+            new_value->assign(newValueIndexStr);
+            new_value->append(finalDeltaListStr);
+        } else {
+            new_value->assign(finalDeltaListStr);
+        }
+    }
     return true;
 };
+
+bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const
+{
+    unordered_set<int> findIndexSet;
+    stack<pair<internalValueType, string>> finalResultStack;
+    for (auto i = batchedOperandVec.size() - 1; i != 0; i--) {
+        if (batchedOperandVec[i].first.valueSeparatedFlag_ == false) {
+            int index = stoi(batchedOperandVec[i].second.substr(0, batchedOperandVec[i].second.find(",")));
+            if (findIndexSet.find(index) == findIndexSet.end()) {
+                findIndexSet.insert(index);
+                finalResultStack.push(batchedOperandVec[i]);
+            }
+        } else {
+            finalResultStack.push(batchedOperandVec[i]);
+        }
+    }
+    debug_info("PartialMerge raw delta number = %lu, valid delta number = %lu", batchedOperandVec.size(), finalResultStack.size());
+    while (finalResultStack.empty() == false) {
+        if (finalResultStack.top().first.valueSeparatedFlag_ == true) {
+            char buffer[sizeof(internalValueType)];
+            memcpy(buffer, &finalResultStack.top().first, sizeof(internalValueType));
+            string headerStr(buffer, sizeof(internalValueType));
+            finalDeltaListStr.append(headerStr);
+        } else {
+            char buffer[sizeof(internalValueType) + finalResultStack.top().first.rawValueSize_];
+            memcpy(buffer, &finalResultStack.top().first, sizeof(internalValueType));
+            memcpy(buffer + sizeof(internalValueType), finalResultStack.top().second.c_str(), finalResultStack.top().first.rawValueSize_);
+            string contentStr(buffer, sizeof(internalValueType) + finalResultStack.top().first.rawValueSize_);
+            finalDeltaListStr.append(contentStr);
+        }
+        finalResultStack.pop();
+    }
+    return true;
+}
 
 bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const
 {

@@ -1640,7 +1640,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                         targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1);
                         currentHandlerPtr1 = mapIt.second;
                         if (tempHandler->file_ownership_flag_ != 0) {
-                            debug_trace("Waiting for file ownership for select file ID = \n", tempHandler->target_file_id_);
+                            debug_trace("Waiting for file ownership for select file ID = %lu\n", tempHandler->target_file_id_);
                             while (tempHandler->file_ownership_flag_ != 0) {
                                 asm volatile("");
                             }
@@ -1695,6 +1695,7 @@ void HashStoreFileManager::processGCRequestWorker()
 
             bool fileContainsReWriteKeysFlag = false;
             // calculate target file size
+            vector<writeBackObjectStruct*> targetWriteBackVec;
             uint64_t targetValidObjectSize = 0;
             for (auto keyIt : gcResultMap) {
                 if (enableWriteBackDuringGCFlag_ == true) {
@@ -1702,7 +1703,7 @@ void HashStoreFileManager::processGCRequestWorker()
                     if (keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) {
                         fileContainsReWriteKeysFlag = true;
                         writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(keyIt.first, "", 0);
-                        writeBackOperationsQueue_->push(newWriteBackObject);
+                        targetWriteBackVec.push_back(newWriteBackObject);
                     }
                 }
                 for (auto valueIt : keyIt.second.first) {
@@ -1716,6 +1717,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                for (auto writeBackIt : targetWriteBackVec) {
+                    writeBackOperationsQueue_->push(writeBackIt);
+                }
                 continue;
             }
 
@@ -1723,6 +1727,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                for (auto writeBackIt : targetWriteBackVec) {
+                    writeBackOperationsQueue_->push(writeBackIt);
+                }
                 continue;
             }
 
@@ -1731,6 +1738,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                for (auto writeBackIt : targetWriteBackVec) {
+                    writeBackOperationsQueue_->push(writeBackIt);
+                }
                 continue;
             }
 
@@ -1743,6 +1753,9 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", fileHandler->target_file_id_, gcResultMap.size());
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                        for (auto writeBackIt : targetWriteBackVec) {
+                            writeBackOperationsQueue_->push(writeBackIt);
+                        }
                         continue;
                     } else if (fileHandler->gc_result_status_flag_ == kMayGC) {
                         // Mark this file as could not GC;
@@ -1750,6 +1763,9 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->file_ownership_flag_ = 0;
                         debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", fileHandler->target_file_id_, gcResultMap.size());
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                        for (auto writeBackIt : targetWriteBackVec) {
+                            writeBackOperationsQueue_->push(writeBackIt);
+                        }
                         continue;
                     }
                 } else {
@@ -1758,6 +1774,9 @@ void HashStoreFileManager::processGCRequestWorker()
                     singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                     fileHandler->file_ownership_flag_ = 0;
                     StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                    for (auto writeBackIt : targetWriteBackVec) {
+                        writeBackOperationsQueue_->push(writeBackIt);
+                    }
                     continue;
                 }
             }
@@ -1768,6 +1787,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                for (auto writeBackIt : targetWriteBackVec) {
+                    writeBackOperationsQueue_->push(writeBackIt);
+                }
                 continue;
             } else {
                 debug_info("try split for key number = %lu\n", gcResultMap.size());
@@ -1784,12 +1806,18 @@ void HashStoreFileManager::processGCRequestWorker()
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                        for (auto writeBackIt : targetWriteBackVec) {
+                            writeBackOperationsQueue_->push(writeBackIt);
+                        }
                         continue;
                     } else {
                         debug_info("Perform split GC for file ID (without merge) = %lu done\n", fileHandler->target_file_id_);
                         fileHandler->gc_result_status_flag_ = kShouldDelete;
                         fileHandler->file_ownership_flag_ = 0;
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                        for (auto writeBackIt : targetWriteBackVec) {
+                            writeBackOperationsQueue_->push(writeBackIt);
+                        }
                         continue;
                     }
                 } else {
@@ -1810,12 +1838,18 @@ void HashStoreFileManager::processGCRequestWorker()
                                 fileHandler->gc_result_status_flag_ = kNoGC;
                                 fileHandler->file_ownership_flag_ = 0;
                                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                                for (auto writeBackIt : targetWriteBackVec) {
+                                    writeBackOperationsQueue_->push(writeBackIt);
+                                }
                                 continue;
                             } else {
                                 debug_info("Perform split GC for file ID (with merge) = %lu done\n", fileHandler->target_file_id_);
                                 fileHandler->gc_result_status_flag_ = kShouldDelete;
                                 fileHandler->file_ownership_flag_ = 0;
                                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                                for (auto writeBackIt : targetWriteBackVec) {
+                                    writeBackOperationsQueue_->push(writeBackIt);
+                                }
                                 continue;
                             }
                         } else {
@@ -1823,12 +1857,18 @@ void HashStoreFileManager::processGCRequestWorker()
                             fileHandler->gc_result_status_flag_ = kNoGC;
                             fileHandler->file_ownership_flag_ = 0;
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                            for (auto writeBackIt : targetWriteBackVec) {
+                                writeBackOperationsQueue_->push(writeBackIt);
+                            }
                             continue;
                         }
                     } else {
                         fileHandler->gc_result_status_flag_ = kNoGC;
                         fileHandler->file_ownership_flag_ = 0;
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                        for (auto writeBackIt : targetWriteBackVec) {
+                            writeBackOperationsQueue_->push(writeBackIt);
+                        }
                         continue;
                     }
                 }

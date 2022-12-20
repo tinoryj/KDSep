@@ -93,7 +93,27 @@ class FieldUpdateMergeOperator : public MergeOperator {
         // cout << "Do partial merge operation in as field update" << endl;
         counter_part++;
         gettimeofday(&timestartPart, NULL);
-        new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
+        string allOperandListStr = left_operand.ToString();
+        allOperandListStr.append(right_operand.ToString());
+        unordered_set<int> findIndexSet;
+        stack<pair<string, string>> finalResultStack;
+        vector<string> operandVector = split(allOperandListStr, ",");
+        for (long unsigned int i = operandVector.size(); i != 0; i -= 2) {
+            int index = stoi(operandVector[i - 1]);
+            if (findIndexSet.find(index) == findIndexSet.end()) {
+                findIndexSet.insert(index);
+                finalResultStack.push(make_pair(operandVector[i - 1], operandVector[i]));
+            }
+        }
+        string finalResultStr = "";
+        while (finalResultStack.empty() == false) {
+            finalResultStr.append(finalResultStack.top().first);
+            finalResultStr.append(",");
+            finalResultStr.append(finalResultStack.top().second);
+            finalResultStack.pop();
+        }
+
+        new_value->assign(finalResultStr);
         gettimeofday(&timeendPart, NULL);
         totalTimePart += 1000000 * (timeendPart.tv_sec - timestartPart.tv_sec) +
                          timeendPart.tv_usec - timestartPart.tv_usec;
