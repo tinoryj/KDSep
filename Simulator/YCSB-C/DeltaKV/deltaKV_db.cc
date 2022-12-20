@@ -86,7 +86,7 @@ class FieldUpdateMergeOperator : public MergeOperator {
         stack<pair<string, string>> finalResultStack;
         vector<string> operandVector = split(allOperandListStr, ",");
         // cerr << "result vec size = " << operandVector.size() << endl;
-        for (auto i = 0; i < operandVector.size(); i += 2) {
+        for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
             // cerr << "result vec index = " << i << ", content = " << operandVector[i] << endl;
             int index = stoi(operandVector[i]);
             if (findIndexMap.find(index) == findIndexMap.end()) {
@@ -149,7 +149,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     }
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
@@ -222,11 +222,9 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdb_sync_merge = !keyDeltaSeparation;
     }
 
-    if (keyValueSeparation == true || keyDeltaSeparation == true) {
-        options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
-    } else {
-        options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
-    }
+    options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
+    options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
+
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     // options_.rocksdbRawOptions_.compaction_pri = rocksdb::kMinOverlappingRatio;
