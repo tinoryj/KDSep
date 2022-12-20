@@ -116,11 +116,12 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
 ValueManager::~ValueManager()
 {
     // flush and release segments
-    debug_info("forceSync() %s\n", "");
+    // debug_info("forceSync() %s\n", "");
     // forceSync();
-    debug_info("forceSync() %s\n", "");
+    // debug_info("forceSync() %s\n", "");
 
     // allow the bg thread to finish its job first
+    cerr << "[valueManager] Try delete threads" << endl;
     _started = false;
     pthread_cond_signal(&_needBgFlush);
     for (auto thIt : thList_) {
@@ -129,11 +130,11 @@ ValueManager::~ValueManager()
     }
 
     ConfigManager& cm = ConfigManager::getInstance();
-
+    cerr << "[valueManager] Try scanAllRecordsUponStop" << endl;
     if (cm.scanAllRecordsUponStop()) {
         scanAllRecords();
     }
-
+    cerr << "[valueManager] Try release buffers" << endl;
     // release buffers
     int hotnessLevel = cm.getHotnessLevel();
     if (cm.enabledVLogMode() || _isSlave) {
@@ -141,6 +142,7 @@ ValueManager::~ValueManager()
     }
     list_head* ptr;
     // spare reserved buffers
+    cerr << "[valueManager] Try spare reserved buffers" << endl;
     for (int i = 0; i < spare; i++) {
         list_for_each(ptr, &_activeSegments[hotnessLevel + i])
         {
@@ -148,6 +150,7 @@ ValueManager::~ValueManager()
         }
     }
     // centralized reserved pool
+    cerr << "[valueManager] Try spare centralized reserved pool" << endl;
     for (int i = 0; i < cm.getNumPipelinedBuffer(); i++) {
         Segment::free(_centralizedReservedPool[i].pool);
     }
@@ -155,20 +158,25 @@ ValueManager::~ValueManager()
     assert(_segmentReservedPool->getUsage().second == 0);
     delete _segmentReservedPool;
     // segment of zeros
+    cerr << "[valueManager] Try segment of zeros" << endl;
     Segment::free(_zeroSegment);
     Segment::free(_readBuffer);
-
+    cerr << "[valueManager] Try persistLogMeta" << endl;
     if (cm.persistLogMeta()) {
         len_t logOffset = _segmentGroupManager->getLogWriteOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
         logOffset = _segmentGroupManager->getLogGCOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), to_string(logOffset));
     }
-
+    cerr << "[valueManager] Try delete _slaveValueManager" << endl;
     delete _slaveValueManager;
+    cerr << "[valueManager] Try delete _slave.gcm" << endl;
     delete _slave.gcm;
+    cerr << "[valueManager] Try delete _slave.cgm" << endl;
     delete _slave.cgm;
+    cerr << "[valueManager] Try delete _slave.dm" << endl;
     delete _slave.dm;
+    cerr << "[valueManager] done" << endl;
 }
 
 ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valueStr, len_t valueSize, const ValueLocation& oldValueLoc, bool sync, int hotness)
