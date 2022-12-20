@@ -91,12 +91,16 @@ class FieldUpdateMergeOperator : public MergeOperator {
             }
         }
         string finalResultStr = "";
-        while (finalResultStack.empty() == false) {
+        while (finalResultStack.size() != 1) {
             finalResultStr.append(finalResultStack.top().first);
             finalResultStr.append(",");
             finalResultStr.append(finalResultStack.top().second);
+            finalResultStr.append(",");
             finalResultStack.pop();
         }
+        finalResultStr.append(finalResultStack.top().first);
+        finalResultStr.append(",");
+        finalResultStr.append(finalResultStack.top().second);
 
         new_value->assign(finalResultStr);
         // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
