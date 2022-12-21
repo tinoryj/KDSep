@@ -586,6 +586,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
 
 bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler)
 {
+    // debug_error("Current file ID = %lu, GC threshold = %lu, current size = %lu, total disk size = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
     // insert into GC job queue if exceed the threshold
     if (fileHandler->total_on_disk_bytes_ >= singleFileSizeLimit_ && fileHandler->gc_result_status_flag_ == kNoGC) {
         fileHandler->no_gc_wait_operation_number_++;

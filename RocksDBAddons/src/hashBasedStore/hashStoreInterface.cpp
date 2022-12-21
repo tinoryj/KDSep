@@ -3,8 +3,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-    HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
+HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager, HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
@@ -14,7 +13,11 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     uint64_t singleFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_single_file_minimum_occupancy * internalOptionsPtr_->deltaStore_single_file_maximum_size;
     uint64_t totalHashStoreFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size;
 
-    hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
+    if (options->enable_write_back_optimization_ == true) {
+        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
+    } else {
+        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_);
+    }
     hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, notifyGCMQ_);
     if (!hashStoreFileManager) {
         debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());

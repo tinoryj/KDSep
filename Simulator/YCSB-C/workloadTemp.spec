@@ -22,4 +22,4 @@ insertproportion=0
 
 requestdistribution=zipfian
 fieldcount=10
-fieldlength=100
+fieldlength=400

@@ -1793,11 +1793,6 @@ void HashStoreFileManager::processGCRequestWorker()
                     // single file rewrite
                     debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                     singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
-                    if (targetFileSize > singleFileGCTriggerSize_) {
-                        fileHandler->gc_result_status_flag_ = kNoGC;
-                    } else {
-                        fileHandler->gc_result_status_flag_ = kMayGC;
-                    }
                     fileHandler->file_ownership_flag_ = 0;
                     StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                     if (enableWriteBackDuringGCFlag_ == true) {
@@ -1810,7 +1805,6 @@ void HashStoreFileManager::processGCRequestWorker()
                     continue;
                 }
             }
-
             // perform split into two buckets via extend prefix bit (+1)
             if (targetFileSize <= singleFileSplitGCTriggerSize_) {
                 debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first, targetFileSize, singleFileSplitGCTriggerSize_);
@@ -1966,10 +1960,16 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             asm volatile("");
         }
         if (fileHandlerIt.second->gc_result_status_flag_ == kNoGC) {
-            debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_);
-            continue;
+            if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
+                debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, but size overflow\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
+                notifyGCMQ_->push(fileHandlerIt.second);
+                continue;
+            } else {
+                debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
+                continue;
+            }
         } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
-            debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_object_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
+            debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
             continue;
         } else {
             if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {

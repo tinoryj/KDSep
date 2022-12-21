@@ -338,6 +338,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processWriteBackOperationsWorker, this));
         thList_.push_back(th);
     }
+
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         isDeltaStoreInUseFlag_ = true;
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, writeBackOperationsQueue_);
@@ -347,11 +348,9 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         uint64_t totalNumberOfThreadsAllowed = options.deltaStore_thread_number_limit - 1;
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-            for (auto threadID = 0; threadID < 4; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-                thList_.push_back(th);
-            }
-            totalNumberOfThreadsAllowed -= 2;
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+            thList_.push_back(th);
+            totalNumberOfThreadsAllowed--;
         }
         if (totalNumberOfThreadsAllowed >= 2) {
             for (auto threadID = 0; threadID < totalNumberOfThreadsAllowed; threadID++) {
@@ -1804,6 +1803,7 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             // bool putToIndexStoreStatus = false;
             bool putToDeltaStoreStatus = false;
+            bool putToValueStoreStatus = false;
             switch (deltaKVRunningMode_) {
             case kBatchedWithPlainRocksDB: {
                 rocksdb::Status rocksDBStatus;
@@ -1830,8 +1830,8 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             case kBatchedWithBothValueAndDeltaLog:
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, sequenceNumberVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
-                STAT_PROCESS(putToDeltaStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(keyToValueStoreVec, valueToValueStoreVec, storageInfoVec, valueStoreSequenceNumberVec), StatsType::DELTAKV_PUT_INDEXSTORE);
-                if (putToDeltaStoreStatus == true) {
+                STAT_PROCESS(putToValueStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(keyToValueStoreVec, valueToValueStoreVec, storageInfoVec, valueStoreSequenceNumberVec), StatsType::DELTAKV_PUT_INDEXSTORE);
+                if (putToDeltaStoreStatus == true && putToValueStoreStatus == true) {
                     debug_info("Try write underlying rocksdb for %lu keys\n", keyToDeltaStoreVec.size());
                     rocksdb::WriteOptions batchedWriteOperation;
                     batchedWriteOperation.sync = false;
@@ -1860,7 +1860,7 @@ void DeltaKV::processBatchedOperationsWorker()
                                 internalValueType currentInternalValueType;
                                 currentInternalValueType.mergeFlag_ = false;
                                 currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
-                                currentInternalValueType.valueSeparatedFlag_ = true;
+                                currentInternalValueType.valueSeparatedFlag_ = false;
                                 currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
                                 memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
                                 memcpy(writeInternalValueBuffer + sizeof(internalValueType), valueToDeltaStoreVec[index].c_str(), valueToDeltaStoreVec[index].size());
@@ -1880,6 +1880,40 @@ void DeltaKV::processBatchedOperationsWorker()
                     debug_error("[ERROR] Could not put into delta store via multiput, operations number = %lu\n", keyToDeltaStoreVec.size());
                 }
                 break;
+            case kBatchedWithOnlyValueLog: {
+                STAT_PROCESS(putToValueStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(keyToValueStoreVec, valueToValueStoreVec, storageInfoVec, valueStoreSequenceNumberVec), StatsType::DELTAKV_PUT_INDEXSTORE);
+                if (putToValueStoreStatus == true) {
+                    rocksdb::Status rocksDBStatus;
+                    rocksdb::WriteOptions batchedWriteOperation;
+                    batchedWriteOperation.sync = false;
+                    auto valueIndex = 0;
+                    for (auto index = 0; index < keyToDeltaStoreVec.size(); index++) {
+                        debug_info("Try write underlying rocksdb for key = %s\n", keyToDeltaStoreVec[index].c_str());
+                        if (isAnchorFlagToDeltaStoreVec[index] == false) {
+                            char writeInternalValueBuffer[sizeof(internalValueType) + valueToDeltaStoreVec[index].size()];
+                            internalValueType currentInternalValueType;
+                            currentInternalValueType.mergeFlag_ = false;
+                            currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
+                            currentInternalValueType.valueSeparatedFlag_ = false;
+                            currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
+                            memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                            memcpy(writeInternalValueBuffer + sizeof(internalValueType), valueToDeltaStoreVec[index].c_str(), valueToDeltaStoreVec[index].size());
+                            string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + valueToDeltaStoreVec[index].size());
+                            rocksdb::Status rocksDBStatus;
+                            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, keyToDeltaStoreVec[index], newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+                            if (!rocksDBStatus.ok()) {
+                                debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                            } else {
+                                debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", keyToDeltaStoreVec[index].c_str());
+                            }
+                        }
+                    }
+                    pointerToRawRocksDB_->FlushWAL(true);
+                } else {
+                    debug_error("[ERROR] Could not put into value store via multiput, operations number = %lu\n", keyToValueStoreVec.size());
+                }
+                break;
+            }
             case kBatchedWithOnlyDeltaLog:
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(keyToDeltaStoreVec, valueToDeltaStoreVec, sequenceNumberVec, isAnchorFlagToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
                 if (putToDeltaStoreStatus == true) {
@@ -1930,7 +1964,7 @@ void DeltaKV::processBatchedOperationsWorker()
                                 internalValueType currentInternalValueType;
                                 currentInternalValueType.mergeFlag_ = false;
                                 currentInternalValueType.rawValueSize_ = valueToDeltaStoreVec[index].size();
-                                currentInternalValueType.valueSeparatedFlag_ = true;
+                                currentInternalValueType.valueSeparatedFlag_ = false;
                                 currentInternalValueType.sequenceNumber_ = sequenceNumberVec[index];
                                 memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
                                 memcpy(writeInternalValueBuffer + sizeof(internalValueType), valueToDeltaStoreVec[index].c_str(), valueToDeltaStoreVec[index].size());
