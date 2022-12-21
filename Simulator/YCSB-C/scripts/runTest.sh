@@ -38,8 +38,8 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/sn640/Exp2/RunDB"
-DB_Loaded_Path="/mnt/sn640/Exp2/BackupDB"
+DB_Working_Path="/mnt/sn640/Exp3/RunDB"
+DB_Loaded_Path="/mnt/sn640/Exp3/BackupDB"
 if [ ! -d $DB_Working_Path ]; then
     mkdir -p $DB_Working_Path
 fi
@@ -47,7 +47,7 @@ if [ ! -d $DB_Loaded_Path ]; then
     mkdir -p $DB_Loaded_Path
 fi
 DB_Name="loadedDB"
-ResultLogFolder="/mnt/sn640/Exp2/ResultLogs"
+ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
 MAXRunTimes=1
 Thread_number=1
 RocksDBThreadNumber=16
