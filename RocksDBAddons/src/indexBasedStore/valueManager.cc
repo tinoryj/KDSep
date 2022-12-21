@@ -99,8 +99,8 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
     // restore from any log after failure
     boost::thread::attributes attrs;
     attrs.set_stack_size(1000 * 1024 * 1024);
-    boost::thread* th = new boost::thread(attrs, boost::bind(&ValueManager::flushCentralizedReservedPoolBgWorker, this));
-    thList_.push_back(th);
+    // boost::thread* th = new boost::thread(attrs, boost::bind(&ValueManager::flushCentralizedReservedPoolBgWorker, this));
+    // thList_.push_back(th);
 
     if (_logManager) {
         if (ConfigManager::getInstance().enabledVLogMode()) {

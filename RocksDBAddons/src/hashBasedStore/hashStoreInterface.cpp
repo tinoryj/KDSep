@@ -148,6 +148,8 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
                 sequenceNumberVecTemp.push_back(sequenceNumberVec[mapIt.second[index]]);
                 anchorFlagVecTemp.push_back(isAnchorVec[mapIt.second[index]]);
             }
+            // mapIt.first->file_ownership_flag_ = 1;
+            mapIt.first->markedByMultiPut_ = false;
             tempFileHandlerMap.insert(make_pair(mapIt.first, make_tuple(keyVecTemp, valueVecTemp, sequenceNumberVecTemp, anchorFlagVecTemp)));
         }
         debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
@@ -166,7 +168,8 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
         vector<bool> anchorFlagVecTemp[fileHandlerToIndexMap.size()];
         auto processedHandlerIndex = 0;
         for (auto mapIt : fileHandlerToIndexMap) {
-            mapIt.first->file_ownership_flag_ = 1;
+            // mapIt.first->file_ownership_flag_ = 1;
+            mapIt.first->markedByMultiPut_ = false;
             hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
             for (auto index = 0; index < mapIt.second.size(); index++) {
                 keyVecTemp[processedHandlerIndex].push_back(keyStrVec[mapIt.second[index]]);

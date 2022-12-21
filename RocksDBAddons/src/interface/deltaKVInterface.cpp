@@ -397,9 +397,18 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 
 bool DeltaKV::Close()
 {
+    if (isDeltaStoreInUseFlag_ == true) {
+        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
+            HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
+            debug_info("Forced GC done%s\n", "");
+        }
+    }
     if (enableWriteBackOperationsFlag_ == true) {
         writeBackOperationsQueue_->done_ = true;
-        debug_info("Mark write back done%s\n", "");
+        while (writeBackOperationsQueue_->isEmpty() == false) {
+            asm volatile("");
+        }
+        debug_info("Write back done%s\n", "");
     }
     if (isBatchedOperationsWithBufferInUse_ == true) {
         for (auto i = 0; i < 2; i++) {
@@ -415,11 +424,8 @@ bool DeltaKV::Close()
         debug_info("Flush write batch done%s\n", "");
     }
     if (isDeltaStoreInUseFlag_ == true) {
-        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
-            HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
-        }
         HashStoreInterfaceObjPtr_->setJobDone();
-        debug_info("Force delta GC done%s\n", "");
+        debug_info("HashStore set job done%s\n", "");
     }
     deleteExistingThreads();
     return true;

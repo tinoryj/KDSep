@@ -41,6 +41,7 @@ private:
     uint64_t maxBucketNumber_ = 0;
     uint64_t singleFileGCTriggerSize_ = 0;
     uint64_t singleFileMergeGCUpperBoundSize_ = 0;
+    uint64_t maxBucketSize_ = 0;
     uint64_t singleFileSplitGCTriggerSize_ = 0;
     uint64_t globalGCTriggerSize_ = 0;
     std::string workingDir_;

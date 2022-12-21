@@ -14,7 +14,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     k = k - 1;
     initialTrieBitNumber_ = k;
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
-    singleFileMergeGCUpperBoundSize_ = options->deltaStore_single_file_maximum_size - singleFileGCTriggerSize_;
+    maxBucketSize_ = options->deltaStore_single_file_maximum_size;
+    singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     globalGCTriggerSize_ = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
     workingDir_ = workingDirStr;
@@ -40,7 +41,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     k = k - 1;
     initialTrieBitNumber_ = k;
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
-    singleFileMergeGCUpperBoundSize_ = options->deltaStore_single_file_maximum_size - singleFileGCTriggerSize_;
+    maxBucketSize_ = options->deltaStore_single_file_maximum_size;
+    singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     globalGCTriggerSize_ = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
     workingDir_ = workingDirStr;
@@ -607,12 +609,15 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
             uint64_t currentFileStoredObjectCount = stoull(currentLineStr);
             getline(hashStoreFileManifestStream, currentLineStr);
             uint64_t currentFileStoredBytes = stoull(currentLineStr);
+            getline(hashStoreFileManifestStream, currentLineStr);
+            uint64_t currentFileStoredPhysicalBytes = stoull(currentLineStr);
             hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
             currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_);
             currentFileHandlerPtr->target_file_id_ = hashStoreFileID;
             currentFileHandlerPtr->current_prefix_used_bit_ = currentFileUsedPrefixLength;
             currentFileHandlerPtr->total_object_count_ = currentFileStoredObjectCount;
             currentFileHandlerPtr->total_object_bytes_ = currentFileStoredBytes;
+            currentFileHandlerPtr->total_on_disk_bytes_ = currentFileStoredPhysicalBytes;
             // open current file for further usage
             currentFileHandlerPtr->file_operation_func_ptr_->openFile(workingDir_ + "/" + to_string(currentFileHandlerPtr->target_file_id_) + ".delta");
             uint64_t onDiskFileSize = currentFileHandlerPtr->file_operation_func_ptr_->getFileSize();
@@ -675,6 +680,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
                 hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_count_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
+                hashStoreFileManifestStream << it.second->total_on_disk_bytes_ << endl;
                 it.second->fileOperationMutex_.lock();
                 it.second->file_operation_func_ptr_->flushFile();
                 debug_trace("flushed file ID = %lu, file correspond prefix = %s\n", it.second->target_file_id_, it.first.c_str());
@@ -753,6 +759,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
                 hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_count_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
+                hashStoreFileManifestStream << it.second->total_on_disk_bytes_ << endl;
                 it.second->file_operation_func_ptr_->flushFile();
                 it.second->file_operation_func_ptr_->closeFile();
             }
@@ -940,6 +947,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
             return false;
         } else {
             debug_info("[Insert] Create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
+            fileHandlerPtr->file_ownership_flag_ = 1;
+            fileHandlerPtr->markedByMultiPut_ = true;
             return true;
         }
     } else if (fileHandlerExistFlag == true) {
@@ -953,24 +962,32 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
                     return false;
                 } else {
                     debug_warn("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", fileHandlerPtr->target_file_id_, keyStr.c_str(), fileHandlerPtr->gc_result_status_flag_, fileHandlerPtr->current_prefix_used_bit_);
+                    fileHandlerPtr->file_ownership_flag_ = 1;
+                    fileHandlerPtr->markedByMultiPut_ = true;
                     return true;
                 }
             } else {
                 // avoid get file handler which is in GC;
-                if (fileHandlerPtr->file_ownership_flag_ != 0) {
-                    debug_trace("Wait for file ownership, exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
-                    while (fileHandlerPtr->file_ownership_flag_ != 0) {
-                        asm volatile("");
-                        // wait if file is using in gc
-                    }
-                    debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                if (fileHandlerPtr->file_ownership_flag_ == 1 && fileHandlerPtr->markedByMultiPut_ == true) {
+                    debug_trace("Get exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    fileHandlerPtr->file_ownership_flag_ = 1;
+                    fileHandlerPtr->markedByMultiPut_ = true;
+                    return true;
                 }
+                debug_trace("Wait for file ownership, exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                while (fileHandlerPtr->file_ownership_flag_ != 0) {
+                    asm volatile("");
+                    // wait if file is using in gc
+                }
+                debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
                 if (fileHandlerPtr->gc_result_status_flag_ == kShouldDelete) {
                     // retry if the file should delete;
                     debug_warn("Get exist file ID = %lu, for key = %s, this file is marked as kShouldDelete\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
                     continue;
                 } else {
                     debug_trace("Get exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, keyStr.c_str());
+                    fileHandlerPtr->file_ownership_flag_ = 1;
+                    fileHandlerPtr->markedByMultiPut_ = true;
                     return true;
                 }
             }
@@ -1563,14 +1580,14 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
                 currentHandlerPtr1->file_operation_func_ptr_->closeFile();
             }
             deleteObslateFileWithFileIDAsInput(currentHandlerPtr1->target_file_id_);
-            delete currentHandlerPtr1->file_operation_func_ptr_;
-            delete currentHandlerPtr1;
+            // delete currentHandlerPtr1->file_operation_func_ptr_;
+            // delete currentHandlerPtr1;
             if (currentHandlerPtr2->file_operation_func_ptr_->isFileOpen() == true) {
                 currentHandlerPtr2->file_operation_func_ptr_->closeFile();
             }
             deleteObslateFileWithFileIDAsInput(currentHandlerPtr2->target_file_id_);
-            delete currentHandlerPtr2->file_operation_func_ptr_;
-            delete currentHandlerPtr2;
+            // delete currentHandlerPtr2->file_operation_func_ptr_;
+            // delete currentHandlerPtr2;
             mergedFileHandler->file_ownership_flag_ = 0;
             return true;
         } else {
@@ -1613,47 +1630,51 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
         }
         debug_info("Selected from file number = %lu for merge GC\n", targetFileForMergeMap.size());
         if (targetFileForMergeMap.size() != 0) {
-            for (auto mapIt : targetFileForMergeMap) {
-                string tempPrefixToFindNodeAtSameLevelStr = mapIt.first;
-                string tempPrefixToFindAnotherNodeAtSameLevelStr;
-                if (tempPrefixToFindNodeAtSameLevelStr[tempPrefixToFindNodeAtSameLevelStr.size() - 1] == '1') {
-                    tempPrefixToFindAnotherNodeAtSameLevelStr.assign(tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1));
-                    tempPrefixToFindAnotherNodeAtSameLevelStr.append("0");
-                } else {
-                    tempPrefixToFindAnotherNodeAtSameLevelStr.assign(tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1));
-                    tempPrefixToFindAnotherNodeAtSameLevelStr.append("1");
-                }
-                debug_info("Search original prefix = %s, target pair prefix = %s\n", tempPrefixToFindNodeAtSameLevelStr.c_str(), tempPrefixToFindAnotherNodeAtSameLevelStr.c_str());
-                hashStoreFileMetaDataHandler* tempHandler;
-                if (objectFileMetaDataTrie_.get(tempPrefixToFindAnotherNodeAtSameLevelStr, tempHandler) == true) {
-                    if (tempHandler->target_file_id_ == targetFileIDForSplit) {
-                        debug_trace("Skip file ID = %lu, prefix bit number = %lu, size = %lu, which is currently during GC\n", tempHandler->target_file_id_, tempHandler->current_prefix_used_bit_, tempHandler->total_object_bytes_);
+            int maxTryNumber = 3;
+            while (maxTryNumber > 0) {
+                maxTryNumber--;
+                for (auto mapIt : targetFileForMergeMap) {
+                    string tempPrefixToFindNodeAtSameLevelStr = mapIt.first;
+                    string tempPrefixToFindAnotherNodeAtSameLevelStr;
+                    if (tempPrefixToFindNodeAtSameLevelStr[tempPrefixToFindNodeAtSameLevelStr.size() - 1] == '1') {
+                        tempPrefixToFindAnotherNodeAtSameLevelStr.assign(tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1));
+                        tempPrefixToFindAnotherNodeAtSameLevelStr.append("0");
+                    } else {
+                        tempPrefixToFindAnotherNodeAtSameLevelStr.assign(tempPrefixToFindNodeAtSameLevelStr.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1));
+                        tempPrefixToFindAnotherNodeAtSameLevelStr.append("1");
+                    }
+                    debug_info("Search original prefix = %s, target pair prefix = %s\n", tempPrefixToFindNodeAtSameLevelStr.c_str(), tempPrefixToFindAnotherNodeAtSameLevelStr.c_str());
+                    hashStoreFileMetaDataHandler* tempHandler;
+                    if (objectFileMetaDataTrie_.get(tempPrefixToFindAnotherNodeAtSameLevelStr, tempHandler) == true) {
+                        if (tempHandler->target_file_id_ == targetFileIDForSplit) {
+                            debug_trace("Skip file ID = %lu, prefix bit number = %lu, size = %lu, which is currently during GC\n", tempHandler->target_file_id_, tempHandler->current_prefix_used_bit_, tempHandler->total_object_bytes_);
+                            continue;
+                        }
+                        if (tempHandler->total_object_bytes_ + mapIt.second->total_object_bytes_ < singleFileGCTriggerSize_) {
+                            if (mapIt.second->file_ownership_flag_ != 0) {
+                                debug_trace("Waiting for file ownership for select file ID = %lu\n", mapIt.second->target_file_id_);
+                                while (mapIt.second->file_ownership_flag_ != 0) {
+                                    asm volatile("");
+                                }
+                            }
+                            mapIt.second->file_ownership_flag_ = -1;
+                            targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1);
+                            currentHandlerPtr1 = mapIt.second;
+                            if (tempHandler->file_ownership_flag_ != 0) {
+                                debug_trace("Waiting for file ownership for select file ID = %lu\n", tempHandler->target_file_id_);
+                                while (tempHandler->file_ownership_flag_ != 0) {
+                                    asm volatile("");
+                                }
+                            }
+                            tempHandler->file_ownership_flag_ = -1;
+                            currentHandlerPtr2 = tempHandler;
+                            debug_info("Find two file for merge GC success, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", currentHandlerPtr1, currentHandlerPtr2, targetPrefixStr.c_str());
+                            return true;
+                        }
+                    } else {
+                        debug_info("Could not find adjacent node for current node, skip this node, current node prefix = %s, target node prefix = %s\n", tempPrefixToFindNodeAtSameLevelStr.c_str(), tempPrefixToFindAnotherNodeAtSameLevelStr.c_str());
                         continue;
                     }
-                    if (tempHandler->total_object_bytes_ < singleFileGCTriggerSize_) {
-                        if (mapIt.second->file_ownership_flag_ != 0) {
-                            debug_trace("Waiting for file ownership for select file ID = %lu\n", mapIt.second->target_file_id_);
-                            while (mapIt.second->file_ownership_flag_ != 0) {
-                                asm volatile("");
-                            }
-                        }
-                        mapIt.second->file_ownership_flag_ = -1;
-                        targetPrefixStr = mapIt.first.substr(0, tempPrefixToFindNodeAtSameLevelStr.size() - 1);
-                        currentHandlerPtr1 = mapIt.second;
-                        if (tempHandler->file_ownership_flag_ != 0) {
-                            debug_trace("Waiting for file ownership for select file ID = %lu\n", tempHandler->target_file_id_);
-                            while (tempHandler->file_ownership_flag_ != 0) {
-                                asm volatile("");
-                            }
-                        }
-                        tempHandler->file_ownership_flag_ = -1;
-                        currentHandlerPtr2 = tempHandler;
-                        debug_info("Find two file for merge GC success, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", currentHandlerPtr1, currentHandlerPtr2, targetPrefixStr.c_str());
-                        return true;
-                    }
-                } else {
-                    debug_info("Could not find adjacent node for current node, skip this node, current node prefix = %s, target node prefix = %s\n", tempPrefixToFindNodeAtSameLevelStr.c_str(), tempPrefixToFindAnotherNodeAtSameLevelStr.c_str());
-                    continue;
                 }
             }
             debug_info("Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
@@ -1826,6 +1847,7 @@ void HashStoreFileManager::processGCRequestWorker()
 
                 uint64_t remainEmptyFileNumber = objectFileMetaDataTrie_.getRemainFileNumber();
                 if (remainEmptyFileNumber > 0) {
+                    // cerr << "Perform split " << endl;
                     debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
                     debug_info("Perform split GC for file ID (without merge) = %lu\n", fileHandler->target_file_id_);
                     bool singleFileGCStatus = singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber, fileContainsReWriteKeysFlag);
@@ -1898,7 +1920,7 @@ void HashStoreFileManager::processGCRequestWorker()
                             }
                         } else {
                             debug_error("[ERROR] Could not perform pre merge to reclaim files before perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
-                            fileHandler->gc_result_status_flag_ = kNoGC;
+                            singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                             fileHandler->file_ownership_flag_ = 0;
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                             if (enableWriteBackDuringGCFlag_ == true) {
@@ -1911,7 +1933,7 @@ void HashStoreFileManager::processGCRequestWorker()
                             continue;
                         }
                     } else {
-                        fileHandler->gc_result_status_flag_ = kNoGC;
+                        singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                         fileHandler->file_ownership_flag_ = 0;
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         if (enableWriteBackDuringGCFlag_ == true) {
@@ -1959,10 +1981,12 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
         while (fileHandlerIt.second->file_ownership_flag_ != 0) {
             asm volatile("");
         }
+        // cerr << "File ID = " << fileHandlerIt.second->target_file_id_ << ", file size on disk = " << fileHandlerIt.second->total_on_disk_bytes_ << endl;
         if (fileHandlerIt.second->gc_result_status_flag_ == kNoGC) {
             if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
                 debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, but size overflow\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
                 notifyGCMQ_->push(fileHandlerIt.second);
+                // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
                 continue;
             } else {
                 debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
@@ -1970,9 +1994,12 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             }
         } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
             debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
+            deleteObslateFileWithFileIDAsInput(fileHandlerIt.second->target_file_id_);
+            // cerr << "Delete file ID = " << fileHandlerIt.second->target_file_id_ << endl;
             continue;
         } else {
             if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
+                // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
                 notifyGCMQ_->push(fileHandlerIt.second);
             }
         }

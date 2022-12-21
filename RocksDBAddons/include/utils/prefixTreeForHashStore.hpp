@@ -55,6 +55,14 @@ public:
                 }
             }
         }
+        for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
+            if (targetDeleteVec[i] != nullptr) {
+                if (targetDeleteVec[i]->file_operation_func_ptr_ != nullptr) {
+                    delete targetDeleteVec[i]->file_operation_func_ptr_;
+                }
+                delete targetDeleteVec[i];
+            }
+        }
     }
 
     void init(uint64_t initBitNumber, uint64_t maxFileNumber)
@@ -344,7 +352,7 @@ private:
         string currentNodePrefix;
         hashStoreFileMetaDataHandler* data_ = nullptr; //
     } prefixTreeNode;
-
+    vector<hashStoreFileMetaDataHandler*> targetDeleteVec;
     std::shared_mutex nodeOperationMtx_;
     uint64_t nextNodeID_ = 0;
     uint64_t initBitNumber_ = 0;
@@ -637,6 +645,12 @@ private:
             debug_trace("Find non leaf node ID = %lu, node prefix length = %lu, prefix = %s mark it as leaf now\n", root->thisNodeID_, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
             root->isLeafNodeFlag_ = true;
             root->currentNodePrefix = bitBasedPrefixStr;
+            if (root->leftChildNodePtr_->data_ != nullptr) {
+                targetDeleteVec.push_back(root->leftChildNodePtr_->data_);
+            }
+            if (root->rightChildNodePtr_->data_ != nullptr) {
+                targetDeleteVec.push_back(root->rightChildNodePtr_->data_);
+            }
             delete root->leftChildNodePtr_;
             delete root->rightChildNodePtr_;
             root->leftChildNodePtr_ = nullptr;
