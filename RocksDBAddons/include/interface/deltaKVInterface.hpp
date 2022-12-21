@@ -34,6 +34,7 @@ public:
 
 private:
     bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
+    bool PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const;
 };
 
 class DeltaKV {
@@ -82,6 +83,7 @@ private:
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
+    boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
     enum DBRunningMode { kPlainRocksDB = 0,
         kOnlyValueLog = 1,

@@ -19,6 +19,10 @@ if [ $1 == "make" ]; then
 fi
 
 targetAnalysisPath=$1
+runningCount=$2
+
+manifestFile=$(ls $targetAnalysisPath/MANIFEST-*)
+./ldb manifest_dump --path=$manifestFile >${runningCount}_manifest.log
 
 sstablesSet=$(ls $targetAnalysisPath/*.sst)
 
@@ -28,12 +32,9 @@ echo $sstablesSet
 for SSTable in ${sstablesSet[@]}; do
     SSTFileName=${SSTable:0-10:6}
     ./sst_dump --file=$SSTable --output_hex --command=scan >>$SSTFileName.log
-    echo "SST ID = "$SSTFileName >>SSTablesAnalysis.log
-    ./countSSTInfo $SSTFileName.log >>SSTablesAnalysis.log
+    echo "SST ID = "$SSTFileName >>${runningCount}_SSTablesAnalysis.log
+    ./countSSTInfo $SSTFileName.log >>${runningCount}_SSTablesAnalysis.log
     rm -rf $SSTFileName.log
 done
 
-manifestFile=$(ls $targetAnalysisPath/MANIFEST-*)
-
-./ldb manifest_dump --path=$manifestFile >manifest.log
-./countSSTInfoLevel manifest.log SSTablesAnalysis.log >levelBasedCount.log
+./countSSTInfoLevel ${runningCount}_manifest.log ${runningCount}_SSTablesAnalysis.log >${runningCount}_levelBasedCount.log

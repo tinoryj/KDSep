@@ -11,15 +11,6 @@ using namespace std;
 
 namespace ycsbc {
 
-struct timeval timestartFull;
-struct timeval timeendFull;
-struct timeval timestartPart;
-struct timeval timeendPart;
-uint64_t counter_full = 0;
-double totalTimeFull = 0;
-uint64_t counter_part = 0;
-double totalTimePart = 0;
-
 vector<string> split(string str, string token) {
     vector<string> result;
     while (str.size()) {
@@ -49,8 +40,6 @@ class FieldUpdateMergeOperator : public MergeOperator {
     bool FullMerge(const Slice &key, const Slice *existing_value,
                    const std::deque<std::string> &operand_list,
                    std::string *new_value, Logger *logger) const override {
-        counter_full++;
-        gettimeofday(&timestartFull, NULL);
         // cout << "Do full merge operation in as field update" << endl;
         // cout << existing_value->data() << "\n Size=" << existing_value->size() << endl;
         // new_value->assign(existing_value->ToString());
@@ -77,9 +66,6 @@ class FieldUpdateMergeOperator : public MergeOperator {
         temp += words[words.size() - 1];
         new_value->assign(temp);
         // cout << new_value->data() << "\n Size=" << new_value->length() <<endl;
-        gettimeofday(&timeendFull, NULL);
-        totalTimeFull += 1000000 * (timeendFull.tv_sec - timestartFull.tv_sec) +
-                         timeendFull.tv_usec - timestartFull.tv_usec;
         return true;
     };
 
@@ -91,16 +77,36 @@ class FieldUpdateMergeOperator : public MergeOperator {
                       const Slice &right_operand, std::string *new_value,
                       Logger *logger) const override {
         // cout << "Do partial merge operation in as field update" << endl;
-        counter_part++;
-        gettimeofday(&timestartPart, NULL);
-        new_value->assign(left_operand.ToString() + "," + right_operand.ToString());
-        gettimeofday(&timeendPart, NULL);
-        totalTimePart += 1000000 * (timeendPart.tv_sec - timestartPart.tv_sec) +
-                         timeendPart.tv_usec - timestartPart.tv_usec;
-        // cout << left_operand.data() << "\n Size=" << left_operand.size() << endl;
-        // cout << right_operand.data() << "\n Size=" << right_operand.size() <<
-        // endl; cout << new_value << "\n Size=" << new_value->length() << endl;
-        // new_value->assign(left_operand.data(), left_operand.size());
+        string allOperandListStr = left_operand.ToString();
+        allOperandListStr.append(",");
+        allOperandListStr.append(right_operand.ToString());
+        // cerr << "Find raw partial merge = " << allOperandListStr << endl
+        //      << endl;
+        unordered_map<int, string> findIndexMap;
+        stack<pair<string, string>> finalResultStack;
+        vector<string> operandVector = split(allOperandListStr, ",");
+        // cerr << "result vec size = " << operandVector.size() << endl;
+        for (long unsigned int i = 0; i < operandVector.size(); i += 2) {
+            // cerr << "result vec index = " << i << ", content = " << operandVector[i] << endl;
+            int index = stoi(operandVector[i]);
+            if (findIndexMap.find(index) == findIndexMap.end()) {
+                findIndexMap.insert(make_pair(index, operandVector[i + 1]));
+            } else {
+                findIndexMap.at(index).assign(operandVector[i + 1]);
+            }
+        }
+        // cerr << "result map size = " << findIndexMap.size() << endl;
+        string finalResultStr = "";
+        for (auto it : findIndexMap) {
+            finalResultStr.append(to_string(it.first));
+            finalResultStr.append(",");
+            finalResultStr.append(it.second);
+            finalResultStr.append(",");
+        }
+        finalResultStr = finalResultStr.substr(0, finalResultStr.size() - 1);
+        // cerr << "Find partial merge = " << finalResultStr << endl
+        //      << endl;
+        new_value->assign(finalResultStr);
         return true;
     };
 
@@ -143,7 +149,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = true;
         options_.rocksdbRawOptions_.allow_mmap_writes = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kFstream;
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     }
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
@@ -216,11 +222,9 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdb_sync_merge = !keyDeltaSeparation;
     }
 
-    if (keyValueSeparation == true || keyDeltaSeparation == true) {
-        options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
-    } else {
-        options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
-    }
+    options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
+    options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
+
     options_.rocksdbRawOptions_.create_if_missing = true;
     options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
     // options_.rocksdbRawOptions_.compaction_pri = rocksdb::kMinOverlappingRatio;
@@ -257,6 +261,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (!dbOpenStatus) {
         cerr << "Can't open DeltaKV " << dbfilename << endl;
         exit(0);
+    } else {
+        rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTime);
+        rocksdb::get_perf_context()->Reset();
+        rocksdb::get_iostats_context()->Reset();
     }
 }
 
@@ -341,12 +349,24 @@ int DeltaKVDB::Delete(const std::string &table, const std::string &key) {
 }
 
 void DeltaKVDB::printStats() {
+    db_.pointerToRawRocksDB_->Flush(rocksdb::FlushOptions());
+    string stats;
+    db_.pointerToRawRocksDB_->GetProperty("rocksdb.stats", &stats);
+    cout << stats << endl;
+    // cout << options_.statistics->ToString() << endl;
+    rocksdb::SetPerfLevel(rocksdb::PerfLevel::kDisable);
+    cout << "Get RocksDB Build-in Perf Context: " << endl;
+    cout << rocksdb::get_perf_context()->ToString() << endl;
+    cout << "Get RocksDB Build-in I/O Stats Context: " << endl;
+    cout << rocksdb::get_iostats_context()->ToString() << endl;
+    cout << "Get RocksDB Build-in Total Stats Context: " << endl;
+    cout << options_.rocksdbRawOptions_.statistics->ToString() << endl;
 }
 
 DeltaKVDB::~DeltaKVDB() {
     outputStream_.close();
     db_.Close();
     DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
-    cerr << "Delete DeltaKVDB complete" << endl;
+    cerr << "Close DeltaKVDB complete" << endl;
 }
 }  // namespace ycsbc

@@ -21,3 +21,5 @@ insertproportion=0
 
 
 requestdistribution=zipfian
+fieldcount=NaN
+fieldlength=NaN

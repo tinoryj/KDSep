@@ -10,13 +10,13 @@ void ConfigManager::setConfigPath(const char* path)
     assert(!_pt.empty());
 
     // basic
-    _basic.mainSegmentSize = readULL("basic.mainSegmentSize");
-    _basic.logSegmentSize = readULL("basic.logSegmentSize");
-    _basic.numMainSegment = readULL("basic.numMainSegment");
-    _basic.numLogSegment = readULL("basic.numLogSegment");
-    _basic.retryMax = readInt("basic.retryMax");
-    _basic.segmentAsFile = readBool("basic.segmentAsFile");
-    _basic.segmentAsSeparateFile = readBool("basic.separateSegmentFile");
+    _basic.mainSegmentSize = readULL("valueStore.mainSegmentSize");
+    _basic.logSegmentSize = readULL("valueStore.logSegmentSize");
+    _basic.numMainSegment = readULL("valueStore.numMainSegment");
+    _basic.numLogSegment = readULL("valueStore.numLogSegment");
+    _basic.retryMax = readInt("valueStore.retryMax");
+    _basic.segmentAsFile = readBool("valueStore.segmentAsFile");
+    _basic.segmentAsSeparateFile = readBool("valueStore.separateSegmentFile");
 
     assert(_basic.mainSegmentSize > 0);
     assert(_basic.logSegmentSize > 0);
@@ -25,62 +25,60 @@ void ConfigManager::setConfigPath(const char* path)
         _basic.retryMax = 0;
 
     // buffer
-    _buffer.updateKVBufferSize = readULL("buffer.updateKVBufferSize");
-    _buffer.inPlaceUpdate = readBool("buffer.inPlaceUpdate");
-    _buffer.numPipelinedBuffer = readInt("buffer.numPipelinedBuffer");
+    _buffer.updateKVBufferSize = readULL("valueStore.updateKVBufferSize");
+    _buffer.inPlaceUpdate = readBool("valueStore.inPlaceUpdate");
+    _buffer.numPipelinedBuffer = readInt("valueStore.numPipelinedBuffer");
     if (_buffer.numPipelinedBuffer > MAX_CP_NUM) {
         _buffer.numPipelinedBuffer = MAX_CP_NUM;
     } else if (_buffer.numPipelinedBuffer < 1) {
         _buffer.numPipelinedBuffer = 1;
     }
-    _buffer.directIO = readBool("buffer.directIO");
-    _buffer.testDirectIO = readBool("buffer.testDirectIO");
-    _buffer.testIODelayUs = readULL("buffer.testIODelayUs");
-    _buffer.valueCacheSize = readULL("buffer.valueCacheSize");
+    _buffer.directIO = readBool("config.directIO");
+    _buffer.testDirectIO = readBool("config.fakeDirectIO");
+    _buffer.testIODelayUs = readULL("valueStore.testIODelayUs");
+    _buffer.valueCacheSize = readULL("valueStore.valueCacheSize");
 
     // hotness
     _hotness.levels = 2;
     // if (_hotness.levels <= 0) _hotness.levels = 1;
-    _hotness.useSlave = readBool("hotness.coldVLog");
-    if (!_hotness.useSlave) {
-        _hotness.coldStorageSize = 0;
-    } else {
-        _hotness.coldStorageSize = readULL("hotness.coldStorageSize");
-        if (_hotness.coldStorageSize == 0) {
-            _hotness.useSlave = false;
-        }
-    }
-    _hotness.coldStorageDevice = readString("hotness.coldStorageDevice");
+    // _hotness.useSlave = readBool("hotness.coldVLog");
+    // if (!_hotness.useSlave) {
+    //     _hotness.coldStorageSize = 0;
+    // } else {
+    //     _hotness.coldStorageSize = readULL("hotness.coldStorageSize");
+    //     if (_hotness.coldStorageSize == 0) {
+    //         _hotness.useSlave = false;
+    //     }
+    // }
+    // _hotness.coldStorageDevice = readString("hotness.coldStorageDevice");
 
-    // key
-    _key.lsmTreeDir = readString("key.lsmTreeDir");
-    _key.locationCacheSize = 0;
-    _key.dbType = readInt("key.useDB");
-    _key.compress = readBool("key.useCompression");
+    _hotness.useSlave = false;
+    _hotness.coldStorageSize = 0;
+    _hotness.coldStorageDevice = "";
 
     // logmeta
-    _logmeta.persist = readBool("logmeta.persist");
+    _logmeta.persist = readBool("valueStore.persist");
 
     // gc
-    _gc.greedyGCSize = readUInt("gc.greedyGCSize");
+    _gc.greedyGCSize = readUInt("valueStore.greedyGCSize");
     if (_gc.greedyGCSize < 0)
         _gc.greedyGCSize = 1;
     _gc.mode = LOG_ONLY;
-    _gc.numReadThread = readUInt("gc.numReadThread");
-    if (_gc.numReadThread < 1) {
-        _gc.numReadThread = 8;
-    }
-
+    // _gc.numReadThread = readUInt("valueStore.numReadThread");
+    // if (_gc.numReadThread < 1) {
+    //     _gc.numReadThread = 8;
+    // }
+    _gc.numReadThread = 8;
     // kv-separation
-    _kvsep.minValueSizeToLog = readUInt("kvsep.minValueSizeToLog");
+    _kvsep.minValueSizeToLog = readUInt("valueStore.minValueSizeToLog");
     if (_kvsep.minValueSizeToLog < 0) {
         _kvsep.minValueSizeToLog = 0;
     }
-    _kvsep.disabled = readBool("kvsep.disabled");
+    _kvsep.disabled = false;
 
     // vlog
-    _vlog.enabled = readBool("vlog.enabled");
-    _vlog.gcSize = readUInt("vlog.gcSize");
+    _vlog.enabled = readBool("valueStore.enabled");
+    _vlog.gcSize = readUInt("valueStore.gcSize");
     if (_vlog.gcSize <= _buffer.updateKVBufferSize) {
         _vlog.gcSize = (_buffer.updateKVBufferSize == 0 ? 4096 : _buffer.updateKVBufferSize);
     }
@@ -96,7 +94,7 @@ void ConfigManager::setConfigPath(const char* path)
     }
 
     // consistency
-    _consistency.crash = readBool("consistency.crashProtected");
+    _consistency.crash = readBool("valueStore.crashProtected");
     if (_consistency.crash && !_basic.segmentAsFile) {
         debug_error("Do not support block device crash consistency (%d, %d)\n", _consistency.crash, _basic.segmentAsFile);
         exit(-1);
@@ -106,24 +104,18 @@ void ConfigManager::setConfigPath(const char* path)
     }
 
     // misc
-    _misc.hashTableDefaultSize = readUInt("misc.hashTableDefaultSize");
-    _misc.hashMethod = readInt("misc.hashMethod");
-    _misc.numParallelFlush = readUInt("misc.numParallelFlush");
-    _misc.numIoThread = readUInt("misc.numIoThread");
+    _misc.numParallelFlush = readUInt("valueStore.numParallelFlush");
+    _misc.numIoThread = readUInt("valueStore.numIoThread");
     _misc.numCPUThread = std::thread::hardware_concurrency();
-    _misc.syncAfterWrite = readBool("misc.syncAfterWrite");
-    _misc.numRangeScanThread = readUInt("misc.numRangeScanThread");
-    _misc.scanReadAhead = readBool("misc.enableScanReadAhead");
-    _misc.batchWriteThreshold = readInt("misc.writeBatchSize");
-    _misc.useMmap = readBool("misc.enableMmap");
-    _misc.maxOpenFiles = readInt("misc.maxOpenFiles");
+    _misc.syncAfterWrite = readBool("valueStore.syncAfterWrite");
+    _misc.numRangeScanThread = readUInt("valueStore.numRangeScanThread");
+    _misc.scanReadAhead = readBool("valueStore.enableScanReadAhead");
+    _misc.batchWriteThreshold = readInt("valueStore.writeBatchSize");
+    _misc.useMmap = readBool("valueStore.enableMmap");
+    _misc.maxOpenFiles = readInt("valueStore.maxOpenFiles");
 
     if (_misc.numParallelFlush == 0)
         _misc.numParallelFlush = 1;
-    if (_misc.hashMethod <= 0)
-        _misc.hashMethod = 0;
-    if (_misc.hashTableDefaultSize == 0)
-        _misc.hashTableDefaultSize = 128 * 1024;
     if (_misc.numIoThread <= 0)
         _misc.numIoThread = 1;
     if (_misc.numCPUThread <= 0) {
@@ -325,24 +317,6 @@ bool ConfigManager::useSeparateColdStorageDevice() const
     return !_hotness.coldStorageDevice.empty();
 }
 
-std::string ConfigManager::getLSMTreeDir() const
-{
-    assert(!_pt.empty());
-    return _key.lsmTreeDir;
-}
-
-segment_len_t ConfigManager::getKVLocationCacheSize() const
-{
-    assert(!_pt.empty());
-    return _key.locationCacheSize;
-}
-
-bool ConfigManager::dbNoCompress() const
-{
-    assert(!_pt.empty());
-    return _key.compress == false;
-}
-
 bool ConfigManager::persistLogMeta() const
 {
     assert(!_pt.empty());
@@ -395,18 +369,6 @@ bool ConfigManager::enableCrashConsistency() const
 {
     assert(!_pt.empty());
     return false; // _consistency.crash;
-}
-
-uint32_t ConfigManager::getHashTableDefaultSize() const
-{
-    assert(!_pt.empty());
-    return _misc.hashTableDefaultSize;
-}
-
-int ConfigManager::getHashTableDefaultHashMethod() const
-{
-    assert(!_pt.empty());
-    return _misc.hashMethod;
 }
 
 uint32_t ConfigManager::getNumParallelFlush() const
@@ -513,13 +475,10 @@ void ConfigManager::printConfig() const
         getNumGCReadThread());
     printf(
         "-------  Keys  ------\n"
-        " Path to DB                  : %s\n"
         " DB Type                     : %s\n"
-        " Cache size                  : %lu records\n"
-        " Disable compression         : %s\n"
         "------ Log Meta -----\n"
         " Persist                     : %s\n",
-        getLSMTreeDir().c_str(), "LevelDB", getKVLocationCacheSize(), dbNoCompress() ? "true" : "false", persistLogMeta() ? "true" : "false");
+        "LevelDB", persistLogMeta() ? "true" : "false");
     printf(
         "--- KV-separation ---\n"
         " Disabled                    : %s\n"
@@ -536,8 +495,6 @@ void ConfigManager::printConfig() const
         enableCrashConsistency() ? "true" : "false");
     printf(
         "-------- Misc -------\n"
-        " Hash table default size     : %d records\n"
-        " Hash table default hash     : %d\n"
         " Use direct IO               : %s\n"
         " Max. no. of I/O threads     : %d\n"
         " Max. no. of CPU threads     : %d\n"
@@ -549,12 +506,9 @@ void ConfigManager::printConfig() const
         "------- Debug  ------\n"
         " Debug Level                 : %d\n"
         " Scan all records upon stop  : %d\n",
-        getHashTableDefaultSize(), getHashTableDefaultHashMethod()
 #ifdef DISK_DIRECT_IO
-                                       ,
         "true"
 #else // ifdef DISK_DIRECT_IO
-                                       ,
         "false"
 #endif // ifdef DISK_DIRECT_IO
         ,

@@ -51,11 +51,6 @@ public:
     std::string getColdStorageDevice() const;
     bool useSeparateColdStorageDevice() const;
 
-    // key management
-    std::string getLSMTreeDir() const;
-    segment_len_t getKVLocationCacheSize() const;
-    bool dbNoCompress() const;
-
     // log metadata
     bool persistLogMeta() const;
 
@@ -76,8 +71,6 @@ public:
     bool enableCrashConsistency() const;
 
     // misc
-    uint32_t getHashTableDefaultSize() const;
-    int getHashTableDefaultHashMethod() const;
     uint32_t getNumParallelFlush() const;
     uint32_t getNumIOThread() const;
     uint32_t getNumCPUThread() const;
@@ -137,13 +130,6 @@ private:
     } _hotness;
 
     struct {
-        std::string lsmTreeDir; // directory for placing LSM-tree
-        segment_len_t locationCacheSize; // max. number of key-value locations to cache
-        int dbType; // type of db to use
-        bool compress; // Whether to use snappy compression
-    } _key;
-
-    struct {
         bool persist; // whether to store log metadata persistently to kv-store
     } _logmeta;
 
@@ -168,8 +154,6 @@ private:
     } _consistency;
 
     struct {
-        uint32_t hashTableDefaultSize; // default total number of free slots in a hash table
-        int hashMethod; // hashing function to use
         uint32_t numParallelFlush; // number of segments to flush in parallel
         uint32_t numIoThread; // max. number of I/O threads to use
         uint32_t numCPUThread; // max. number of CPU threads available
@@ -183,7 +167,7 @@ private:
 
     struct {
         DebugLevel level; // level of debug
-        bool scanAllRecordsUponStop; 
+        bool scanAllRecordsUponStop;
     } _debug;
 };
 

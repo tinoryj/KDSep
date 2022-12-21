@@ -116,11 +116,12 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
 ValueManager::~ValueManager()
 {
     // flush and release segments
-    debug_info("forceSync() %s\n", "");
-    forceSync();
-    debug_info("forceSync() %s\n", "");
+    // debug_info("forceSync() %s\n", "");
+    // forceSync();
+    // debug_info("forceSync() %s\n", "");
 
     // allow the bg thread to finish its job first
+    cerr << "[valueManager] Try delete threads" << endl;
     _started = false;
     pthread_cond_signal(&_needBgFlush);
     for (auto thIt : thList_) {
@@ -129,11 +130,11 @@ ValueManager::~ValueManager()
     }
 
     ConfigManager& cm = ConfigManager::getInstance();
-
+    cerr << "[valueManager] Try scanAllRecordsUponStop" << endl;
     if (cm.scanAllRecordsUponStop()) {
         scanAllRecords();
     }
-
+    cerr << "[valueManager] Try release buffers" << endl;
     // release buffers
     int hotnessLevel = cm.getHotnessLevel();
     if (cm.enabledVLogMode() || _isSlave) {
@@ -141,6 +142,7 @@ ValueManager::~ValueManager()
     }
     list_head* ptr;
     // spare reserved buffers
+    cerr << "[valueManager] Try spare reserved buffers" << endl;
     for (int i = 0; i < spare; i++) {
         list_for_each(ptr, &_activeSegments[hotnessLevel + i])
         {
@@ -148,6 +150,7 @@ ValueManager::~ValueManager()
         }
     }
     // centralized reserved pool
+    cerr << "[valueManager] Try spare centralized reserved pool" << endl;
     for (int i = 0; i < cm.getNumPipelinedBuffer(); i++) {
         Segment::free(_centralizedReservedPool[i].pool);
     }
@@ -155,20 +158,25 @@ ValueManager::~ValueManager()
     assert(_segmentReservedPool->getUsage().second == 0);
     delete _segmentReservedPool;
     // segment of zeros
+    cerr << "[valueManager] Try segment of zeros" << endl;
     Segment::free(_zeroSegment);
     Segment::free(_readBuffer);
-
+    cerr << "[valueManager] Try persistLogMeta" << endl;
     if (cm.persistLogMeta()) {
         len_t logOffset = _segmentGroupManager->getLogWriteOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
         logOffset = _segmentGroupManager->getLogGCOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), to_string(logOffset));
     }
-
+    cerr << "[valueManager] Try delete _slaveValueManager" << endl;
     delete _slaveValueManager;
+    cerr << "[valueManager] Try delete _slave.gcm" << endl;
     delete _slave.gcm;
+    cerr << "[valueManager] Try delete _slave.cgm" << endl;
     delete _slave.cgm;
+    cerr << "[valueManager] Try delete _slave.dm" << endl;
     delete _slave.dm;
+    cerr << "[valueManager] done" << endl;
 }
 
 ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valueStr, len_t valueSize, const ValueLocation& oldValueLoc, bool sync, int hotness)
@@ -304,7 +312,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     offset_t newOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
-    if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 && sync)) {
+    if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 || sync)) {
         //        _GCLock.unlock();
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
@@ -1010,7 +1018,8 @@ void ValueManager::scanAllRecords()
 //     }
 // }
 
-void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
+void ValueManager::flushCentralizedReservedPoolBg(StatsType stats)
+{
     int nextPoolIndex = getNextPoolIndex(_centralizedReservedPoolIndex.inUsed);
     // wait until next available buffer is available after flush
     // (assume multiple core is available)
@@ -1034,10 +1043,11 @@ void ValueManager::flushCentralizedReservedPoolBg(StatsType stats) {
     pthread_cond_signal(&_needBgFlush);
 }
 
-void ValueManager::flushCentralizedReservedPoolBgWorker() {
-//    ValueManager *instance = (ValueManager *) arg;
+void ValueManager::flushCentralizedReservedPoolBgWorker()
+{
+    //    ValueManager *instance = (ValueManager *) arg;
     // loop until valueManager is destoryed
-    //fprintf(stderr, "Bg flush thread starts now, hello\n");
+    // fprintf(stderr, "Bg flush thread starts now, hello\n");
     while (_started) {
         // wait for signal after data is put into queue
         pthread_cond_wait(&_needBgFlush, &_centralizedReservedPoolIndex.queueLock);
@@ -1066,7 +1076,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker() {
 bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
-    flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH); 
+    flushCentralizedReservedPoolVLog(StatsType::POOL_FLUSH);
     return true;
 }
 
@@ -1080,7 +1090,7 @@ void ValueManager::printSlaveStats(FILE* out)
         fprintf(out,
             "Slave capacity: %lu; In-use: %lu; Valid: %lu\n", ConfigManager::getInstance().getColdStorageCapacity(), _slaveValueManager->_slave.writtenBytes, _slaveValueManager->_slave.validBytes);
         _slave.gcm->printStats(out);
-    } 
+    }
 }
 
 }
