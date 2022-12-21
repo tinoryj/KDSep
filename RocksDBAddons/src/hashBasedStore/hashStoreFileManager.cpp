@@ -16,6 +16,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
+    enableBatchedOperations_ = options->enable_batched_operations_;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     globalGCTriggerSize_ = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
     workingDir_ = workingDirStr;
@@ -43,6 +44,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
+    enableBatchedOperations_ = options->enable_batched_operations_;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     globalGCTriggerSize_ = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
     workingDir_ = workingDirStr;
@@ -1651,6 +1653,12 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                             continue;
                         }
                         if (tempHandler->total_object_bytes_ + mapIt.second->total_object_bytes_ < singleFileGCTriggerSize_) {
+                            if (enableBatchedOperations_ == true) {
+                                if (mapIt.second->file_ownership_flag_ != 0 || tempHandler->file_ownership_flag_ != 0) {
+                                    continue;
+                                    // skip wait if batched op
+                                }
+                            }
                             if (mapIt.second->file_ownership_flag_ != 0) {
                                 debug_trace("Waiting for file ownership for select file ID = %lu\n", mapIt.second->target_file_id_);
                                 while (mapIt.second->file_ownership_flag_ != 0) {
@@ -1920,7 +1928,9 @@ void HashStoreFileManager::processGCRequestWorker()
                             }
                         } else {
                             debug_error("[ERROR] Could not perform pre merge to reclaim files before perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
-                            singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                            if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
+                                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                            }
                             fileHandler->file_ownership_flag_ = 0;
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                             if (enableWriteBackDuringGCFlag_ == true) {
@@ -1933,7 +1943,9 @@ void HashStoreFileManager::processGCRequestWorker()
                             continue;
                         }
                     } else {
-                        singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                        if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
+                            singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                        }
                         fileHandler->file_ownership_flag_ = 0;
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                         if (enableWriteBackDuringGCFlag_ == true) {

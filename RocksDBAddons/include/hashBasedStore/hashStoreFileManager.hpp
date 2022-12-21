@@ -51,6 +51,7 @@ private:
     uint64_t gcWriteBackDeltaNum_ = 5;
     bool enableGCFlag_ = false;
     bool enableWriteBackDuringGCFlag_ = false;
+    bool enableBatchedOperations_ = false;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
