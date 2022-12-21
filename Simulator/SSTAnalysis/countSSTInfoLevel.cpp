@@ -61,6 +61,7 @@ bool readManifestLog(ifstream &inputStream, unordered_map<int, vector<int>> &lev
             }
         }
     }
+    return true;
 }
 
 bool readSSTInfoLog(ifstream &inputStream, unordered_map<int, vector<uint64_t>> &SSTIDtoSSTInfoMap) {
@@ -82,6 +83,7 @@ bool readSSTInfoLog(ifstream &inputStream, unordered_map<int, vector<uint64_t>> 
             SSTIDtoSSTInfoMap.insert(make_pair(SSTID, sstInfoVec));
         }
     }
+    return true;
 }
 
 int main(int argc, char **argv) {

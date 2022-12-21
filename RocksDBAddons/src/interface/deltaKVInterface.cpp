@@ -347,9 +347,11 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         uint64_t totalNumberOfThreadsAllowed = options.deltaStore_thread_number_limit - 1;
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
-            thList_.push_back(th);
-            totalNumberOfThreadsAllowed--;
+            for (auto threadID = 0; threadID < 4; threadID++) {
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+                thList_.push_back(th);
+            }
+            totalNumberOfThreadsAllowed -= 2;
         }
         if (totalNumberOfThreadsAllowed >= 2) {
             for (auto threadID = 0; threadID < totalNumberOfThreadsAllowed; threadID++) {

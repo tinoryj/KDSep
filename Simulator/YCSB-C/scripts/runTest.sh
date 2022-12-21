@@ -32,7 +32,7 @@ ulimit -n 1048576
 ulimit -s 102400
 echo $@
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
-ReadRatioSet=(0.1 0.3 0.5 0.7 0.9)
+ReadProportion=0.1
 OverWriteRatio=0.0
 KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
@@ -108,6 +108,8 @@ for param in $*; do
         run_suffix=${run_suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
+    elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
+        ReadProportion=`echo $param | sed 's/readRatio//g'`
     elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
         RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
     elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then
@@ -219,7 +221,6 @@ fi
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
-    for ReadProportion in "${ReadRatioSet[@]}"; do
         # Running Update
 
         if [ -f workload-temp.spec ]; then
@@ -283,5 +284,8 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             rm -rf workload-temp.spec
             echo "Deleted old workload spec"
         fi
-    done
+        if [ -f temp.ini ]; then
+            rm -rf temp.ini
+            echo "Deleted old workload config"
+        fi
 done

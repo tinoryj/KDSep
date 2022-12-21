@@ -171,7 +171,9 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                 return false;
             } else {
                 unordered_map<string, vector<string>> currentFileProcessMap;
-                uint64_t processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
+                currentFileProcessMap.reserve(currentHandlerPtr->file_handler_->total_object_count_);
+                uint64_t processedObjectNumber = 0;
+                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
                 if (processedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
                     debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, currentHandlerPtr->file_handler_->total_object_count_);
                     return false;
@@ -215,7 +217,9 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             return false;
         } else {
             unordered_map<string, vector<string>> currentFileProcessMap;
-            uint64_t processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap);
+            currentFileProcessMap.reserve(currentHandlerPtr->file_handler_->total_object_count_);
+            uint64_t processedObjectNumber = 0;
+            STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
             if (processedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
                 debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, currentHandlerPtr->file_handler_->total_object_count_);
                 return false;
@@ -256,8 +260,6 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
 
 uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
 {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
     hashStoreFileHeader currentFileHeader;
@@ -274,9 +276,6 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 resultMap.at(currentKeyStr).clear();
-                continue;
-            } else {
-                continue;
             }
         } else if (currentObjectRecordHeader.is_gc_done_ == true) {
             continue;
@@ -287,18 +286,15 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 resultMap.at(currentKeyStr).push_back(currentValueStr);
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
-                continue;
             } else {
                 vector<string> newValuesRelatedToCurrentKeyVec;
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
                 resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
-                continue;
             }
         }
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_PROCESS, tv);
     return processedObjectNumber;
 }
 
@@ -949,7 +945,9 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 return false;
             } else {
                 unordered_map<string, vector<string>> currentFileProcessMap;
-                uint64_t processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap);
+                currentFileProcessMap.reserve(fileHandler->total_object_count_);
+                uint64_t processedObjectNumber = 0;
+                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
                 if (processedObjectNumber != fileHandler->total_object_count_) {
                     debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
                     valueVec->clear();
@@ -998,7 +996,9 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             return false;
         } else {
             unordered_map<string, vector<string>> currentFileProcessMap;
-            uint64_t processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap);
+            currentFileProcessMap.reserve(fileHandler->total_object_count_);
+            uint64_t processedObjectNumber = 0;
+            STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
             if (processedObjectNumber != fileHandler->total_object_count_) {
                 debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
                 valueVec->clear();

@@ -261,6 +261,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (!dbOpenStatus) {
         cerr << "Can't open DeltaKV " << dbfilename << endl;
         exit(0);
+    } else {
+        rocksdb::SetPerfLevel(rocksdb::PerfLevel::kEnableTime);
+        rocksdb::get_perf_context()->Reset();
+        rocksdb::get_iostats_context()->Reset();
     }
 }
 
@@ -345,6 +349,18 @@ int DeltaKVDB::Delete(const std::string &table, const std::string &key) {
 }
 
 void DeltaKVDB::printStats() {
+    db_.pointerToRawRocksDB_->Flush(rocksdb::FlushOptions());
+    string stats;
+    db_.pointerToRawRocksDB_->GetProperty("rocksdb.stats", &stats);
+    cout << stats << endl;
+    // cout << options_.statistics->ToString() << endl;
+    rocksdb::SetPerfLevel(rocksdb::PerfLevel::kDisable);
+    cout << "Get RocksDB Build-in Perf Context: " << endl;
+    cout << rocksdb::get_perf_context()->ToString() << endl;
+    cout << "Get RocksDB Build-in I/O Stats Context: " << endl;
+    cout << rocksdb::get_iostats_context()->ToString() << endl;
+    cout << "Get RocksDB Build-in Total Stats Context: " << endl;
+    cout << options_.rocksdbRawOptions_.statistics->ToString() << endl;
 }
 
 DeltaKVDB::~DeltaKVDB() {

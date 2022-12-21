@@ -1793,6 +1793,11 @@ void HashStoreFileManager::processGCRequestWorker()
                     // single file rewrite
                     debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
                     singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
+                    if (targetFileSize > singleFileGCTriggerSize_) {
+                        fileHandler->gc_result_status_flag_ = kNoGC;
+                    } else {
+                        fileHandler->gc_result_status_flag_ = kMayGC;
+                    }
                     fileHandler->file_ownership_flag_ = 0;
                     StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                     if (enableWriteBackDuringGCFlag_ == true) {
