@@ -29,11 +29,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
-    uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
-    if (options->enable_deltaStore_garbage_collection == true) {
-        totalNumberOfThreadsAllowed--;
-    }
-    if (totalNumberOfThreadsAllowed >= 2) {
+    if (options->deltaStore_op_worker_thread_number_limit >= 2) {
         shouldUseDirectOperationsFlag_ = false;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     } else {
@@ -201,11 +197,11 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
-        }
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
         if (ret != true) {
             debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
             return false;

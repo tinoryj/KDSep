@@ -185,7 +185,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_operationNumberForMetadataCommitThreshold_ = config.getDelteLogMetadataCommitLatency();
         options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
         options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
-        options_.deltaStore_thread_number_limit = config.getDeltaLogThreadNumber();
+        options_.deltaStore_op_worker_thread_number_limit = config.getDeltaLogOpWorkerThreadNumber();
         options_.hashStore_max_file_number_ = config.getDeltaLogMaxFileNumber();
         options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();

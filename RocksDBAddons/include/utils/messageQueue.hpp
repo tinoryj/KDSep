@@ -21,7 +21,7 @@ public:
     bool isEmpty();
 
 private:
-    boost::lockfree::queue<T, boost::lockfree::capacity<500>> lockFreeQueue_;
+    boost::lockfree::queue<T, boost::lockfree::capacity<5000>> lockFreeQueue_;
 };
 
 template <typename T>
