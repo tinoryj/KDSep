@@ -88,11 +88,11 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
             }
             return true;
         }
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        }
+        ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // }
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;

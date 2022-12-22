@@ -1047,6 +1047,8 @@ bool DeltaKV::Get(const string& key, string* value)
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
             while (oneBufferDuringProcessFlag_ == true) {
@@ -1054,6 +1056,7 @@ bool DeltaKV::Get(const string& key, string* value)
             }
         }
         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WAIT_BUFFER, tv);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
         if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
             if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).size() != 0) {
@@ -1334,13 +1337,16 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     string newValueStr;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
             while (oneBufferDuringProcessFlag_ == true) {
                 asm volatile("");
             }
         }
-        std::scoped_lock<std::shared_mutex> r_lock(batchedBufferOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WAIT_BUFFER, tv);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
         if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
             if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
@@ -1546,52 +1552,221 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
 
 // TODO: following functions are not complete
 
-vector<bool> DeltaKV::MultiGet(const vector<string>& keys, vector<string>* values)
-{
-    vector<bool> queryStatus;
-    for (auto currentKey : keys) {
-        string tempValue;
-        rocksdb::Status rocksDBStatus = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), currentKey, &tempValue);
-        values->push_back(tempValue);
-        if (!rocksDBStatus.ok()) {
-            debug_error("[ERROR] Read underlying rocksdb fault, key = %s, status = %s\n", currentKey.c_str(), rocksDBStatus.ToString().c_str());
-            queryStatus.push_back(false);
-        } else {
-            queryStatus.push_back(true);
-        }
-    }
-    return queryStatus;
-}
+// bool DeltaKV::RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec)
+// {
+//     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+//     vector<bool> getKsysStatusVec;
+//     vector<string> getKeysVec, getValuesVec;
+//     getKsysStatusVec = GetKeysByTargetNumber(startKey, targetScanNumber, getKeysVec, getValuesVec);
+//     string endKey = getKeysVec.end();
+//     // search write buffer if need =================================================================
+//     vector<string> tempNewMergeOperatorsVec;
+//     bool needMergeWithInBufferOperationsFlag = false;
+//     if (isBatchedOperationsWithBufferInUse_ == true) {
+//         // try read from buffer first;
+//         if (oneBufferDuringProcessFlag_ == true) {
+//             debug_trace("Wait for batched buffer process%s\n", "");
+//             while (oneBufferDuringProcessFlag_ == true) {
+//                 asm volatile("");
+//             }
+//         }
+//         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+//         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
+//         if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+//             if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).size() != 0) {
+//                 if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
+//                     value->assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
+//                     debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+//                     return true;
+//                 }
+//             }
+//             string newValueStr;
+//             bool findNewValueFlag = false;
+//             for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
+//                 if (it.op_ == kPutOp) {
+//                     newValueStr.assign(it.value_);
+//                     tempNewMergeOperatorsVec.clear();
+//                     findNewValueFlag = true;
+//                 } else {
+//                     tempNewMergeOperatorsVec.push_back(it.value_);
+//                 }
+//             }
+//             if (findNewValueFlag == true) {
+//                 deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
+//                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
+//                 return true;
+//             }
+//             if (tempNewMergeOperatorsVec.size() != 0) {
+//                 needMergeWithInBufferOperationsFlag = true;
+//                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsVec.size());
+//             }
+//         }
+//     }
+//     uint32_t maxSequenceNumberPlaceHolder;
+//     switch (deltaKVRunningMode_) {
+//     case kBatchedWithBothValueAndDeltaLog:
+//     case kBothValueAndDeltaLog:
+//         if (GetWithValueAndDeltaStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+//             return false;
+//         } else {
+//             if (needMergeWithInBufferOperationsFlag == true) {
+//                 string tempValueStr;
+//                 tempValueStr.assign(*value);
+//                 value->clear();
+//                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+//                 return true;
+//             } else {
+//                 return true;
+//             }
+//         }
+//         break;
+//     case kBatchedWithOnlyValueLog:
+//     case kOnlyValueLog:
+//         if (GetWithOnlyValueStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+//             return false;
+//         } else {
+//             if (needMergeWithInBufferOperationsFlag == true) {
+//                 string tempValueStr;
+//                 tempValueStr.assign(*value);
+//                 value->clear();
+//                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+//                 return true;
+//             } else {
+//                 return true;
+//             }
+//         }
+//         break;
+//     case kBatchedWithOnlyDeltaLog:
+//     case kOnlyDeltaLog:
+//         if (GetWithOnlyDeltaStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+//             return false;
+//         } else {
+//             if (needMergeWithInBufferOperationsFlag == true) {
+//                 string tempValueStr;
+//                 tempValueStr.assign(*value);
+//                 value->clear();
+//                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+//                 return true;
+//             } else {
+//                 return true;
+//             }
+//         }
+//         break;
+//     case kBatchedWithPlainRocksDB:
+//     case kPlainRocksDB:
+//         if (GetWithPlainRocksDB(key, value) == false) {
+//             return false;
+//         } else {
+//             if (needMergeWithInBufferOperationsFlag == true) {
+//                 string tempValueStr;
+//                 tempValueStr.assign(*value);
+//                 value->clear();
+//                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+//                 return true;
+//             }
+//             return true;
+//         }
+//         break;
+//     default:
+//         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
+//         return false;
+//         break;
+//     }
+//     return false;
+// }
 
-vector<bool> DeltaKV::GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values)
-{
-    auto it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
-    it->Seek(targetKeyPrefix);
-    vector<bool> queryStatus;
-    for (int i = 0; it->Valid(); i++) {
-        string tempKey, tempValue;
-        tempKey = it->key().ToString();
-        tempValue = it->value().ToString();
-        it->Next();
-        keys->push_back(tempKey);
-        values->push_back(tempValue);
-        if (tempValue.empty()) {
-            queryStatus.push_back(false);
-        } else {
-            queryStatus.push_back(true);
-        }
-    }
-    delete it;
-    return queryStatus;
-}
+// vector<bool> DeltaKV::MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values)
+// {
+//     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+//     vector<string> tempNewMergeOperatorsVec;
+//     bool needMergeWithInBufferOperationsFlag = false;
+//     if (isBatchedOperationsWithBufferInUse_ == true) {
+//         // try read from buffer first;
+//         if (oneBufferDuringProcessFlag_ == true) {
+//             debug_trace("Wait for batched buffer process%s\n", "");
+//             while (oneBufferDuringProcessFlag_ == true) {
+//                 asm volatile("");
+//             }
+//         }
+//         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+//         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
+//         if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
+//             if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).size() != 0) {
+//                 if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
+//                     value->assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
+//                     debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+//                     return true;
+//                 }
+//             }
+//             string newValueStr;
+//             bool findNewValueFlag = false;
+//             for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
+//                 if (it.op_ == kPutOp) {
+//                     newValueStr.assign(it.value_);
+//                     tempNewMergeOperatorsVec.clear();
+//                     findNewValueFlag = true;
+//                 } else {
+//                     tempNewMergeOperatorsVec.push_back(it.value_);
+//                 }
+//             }
+//             if (findNewValueFlag == true) {
+//                 deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
+//                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
+//                 return true;
+//             }
+//             if (tempNewMergeOperatorsVec.size() != 0) {
+//                 needMergeWithInBufferOperationsFlag = true;
+//                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsVec.size());
+//             }
+//         }
+//     }
+//     uint32_t maxSequenceNumberPlaceHolder;
+//     if (GetWithValueAndDeltaStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+//         return false;
+//     } else {
+//         if (needMergeWithInBufferOperationsFlag == true) {
+//             string tempValueStr;
+//             tempValueStr.assign(*value);
+//             value->clear();
+//             deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+//             return true;
+//         } else {
+//             return true;
+//         }
+//     }
+//     return true;
+// }
 
-vector<bool> DeltaKV::GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values)
+// vector<bool> DeltaKV::GetByPrefix(const string& targetKeyPrefix, vector<string>& keys, vector<string>& values)
+// {
+//     auto it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
+//     it->Seek(targetKeyPrefix);
+//     vector<bool> queryStatus;
+//     for (int i = 0; it->Valid(); i++) {
+//         string tempKey, tempValue;
+//         tempKey = it->key().ToString();
+//         tempValue = it->value().ToString();
+//         it->Next();
+//         keys->push_back(tempKey);
+//         values->push_back(tempValue);
+//         if (tempValue.empty()) {
+//             queryStatus.push_back(false);
+//         } else {
+//             queryStatus.push_back(true);
+//         }
+//     }
+//     delete it;
+//     return queryStatus;
+// }
+
+vector<bool> DeltaKV::GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values)
 {
     vector<bool> queryStatus;
     rocksdb::Iterator* it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
+    it->Seek(targetStartKey);
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        keys->push_back(it->key().ToString());
-        values->push_back(it->value().ToString());
+        keys.push_back(it->key().ToString());
+        values.push_back(it->value().ToString());
         queryStatus.push_back(true);
     }
     if (queryStatus.size() < targetGetNumber) {
