@@ -40,6 +40,7 @@ fieldlength=400
 fieldcount=10
 DB_Working_Path="/mnt/sn640/Exp3/RunDB"
 DB_Loaded_Path="/mnt/sn640/Exp3/BackupDB"
+ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
 if [ ! -d $DB_Working_Path ]; then
     mkdir -p $DB_Working_Path
 fi
@@ -47,7 +48,6 @@ if [ ! -d $DB_Loaded_Path ]; then
     mkdir -p $DB_Loaded_Path
 fi
 DB_Name="loadedDB"
-ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
 MAXRunTimes=1
 Thread_number=1
 RocksDBThreadNumber=16
@@ -110,6 +110,11 @@ for param in $*; do
         fieldlength=$num
     elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
         ReadProportion=`echo $param | sed 's/readRatio//g'`
+    elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
+        ExpID=`echo $param | sed 's/Exp//g'`
+        DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
+        DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
+        ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
     elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
         RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
     elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then

@@ -39,8 +39,7 @@ bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo*
     str.append(valueStr);
     STAT_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), str.c_str(), str.length(), valueLoc, sync), StatsType::UPDATE);
 
-
-    *storageInfoPtr = valueLoc;
+    // *storageInfoPtr = valueLoc;
     return true;
 }
 
