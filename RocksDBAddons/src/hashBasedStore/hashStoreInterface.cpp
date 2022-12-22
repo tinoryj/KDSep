@@ -92,11 +92,11 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
             }
             return true;
         }
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        }
+        ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // }
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
@@ -201,11 +201,11 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
-        }
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
         if (ret != true) {
             debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
             return false;

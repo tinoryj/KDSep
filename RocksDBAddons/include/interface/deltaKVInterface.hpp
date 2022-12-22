@@ -55,13 +55,7 @@ public:
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
     bool Get(const string& key, string* value);
-    bool PutWithWriteBatch(const string& key, const string& value);
-    bool MergeWithWriteBatch(const string& key, const string& value);
-    bool GetWithWriteBatch(const string& key, string* value);
-
-    vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
-    vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
-    vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
+    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
     bool SingleDelete(const string& key);
 
 private:
@@ -97,6 +91,10 @@ private:
     DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
+    bool PutWithWriteBatch(const string& key, const string& value);
+    bool MergeWithWriteBatch(const string& key, const string& value);
+    bool GetWithWriteBatch(const string& key, string* value);
+
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
     bool GetWithPlainRocksDB(const string& key, string* value);
@@ -117,6 +115,11 @@ private:
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
     bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
+
+    vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
