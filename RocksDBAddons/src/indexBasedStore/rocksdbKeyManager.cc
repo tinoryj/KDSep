@@ -56,9 +56,16 @@ bool RocksDBKeyManager::writeKeyBatch(std::vector<char*> keys, std::vector<Value
 
     rocksdb::WriteOptions wopt;
     wopt.sync = ConfigManager::getInstance().syncAfterWrite();
+    rocksdb::Status s;
 
-    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
-    return ret;
+    STAT_PROCESS(s = _lsm->Write(wopt, &batch), StatsType::DELTAKV_PUT_ROCKSDB);
+    if (!s.ok()) {
+        debug_error("[ERROR] %s\n", s.ToString().c_str());
+        exit(-1);
+    }
+    debug_error("Put keys: %d status %s\n", (int)keys.size(), s.ToString().c_str());
+
+    return s.ok();
 }
 
 bool RocksDBKeyManager::writeKeyBatch(std::vector<std::string>& keys, std::vector<ValueLocation> valueLocs)
@@ -79,10 +86,15 @@ bool RocksDBKeyManager::writeKeyBatch(std::vector<std::string>& keys, std::vecto
 
     rocksdb::WriteOptions wopt;
     wopt.sync = ConfigManager::getInstance().syncAfterWrite();
+    rocksdb::Status s;
 
     // put the keys into LSM-tree
-    STAT_PROCESS(ret = _lsm->Write(wopt, &batch).ok(), StatsType::DELTAKV_PUT_ROCKSDB);
-    return ret;
+    STAT_PROCESS(s = _lsm->Write(wopt, &batch), StatsType::DELTAKV_PUT_ROCKSDB);
+    if (!s.ok()) {
+        debug_error("[ERROR] %s\n", s.ToString().c_str());
+        exit(-1);
+    }
+    return s.ok();
 }
 
 bool RocksDBKeyManager::writeMeta(const char* keyStr, int keySize, std::string metadata)

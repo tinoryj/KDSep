@@ -123,7 +123,7 @@ ValueManager::~ValueManager()
     // allow the bg thread to finish its job first
     cerr << "[valueManager] Try delete threads" << endl;
     _started = false;
-    pthread_cond_signal(&_needBgFlush);
+    //pthread_cond_signal(&_needBgFlush);
     for (auto thIt : thList_) {
         thIt->join();
         delete thIt;
@@ -1076,7 +1076,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker()
 bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
-    flushCentralizedReservedPoolVLog(StatsType::POOL_FLUSH);
+    flushCentralizedReservedPoolVLog();
     return true;
 }
 
