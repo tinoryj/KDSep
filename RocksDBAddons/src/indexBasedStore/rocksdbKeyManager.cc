@@ -63,7 +63,7 @@ bool RocksDBKeyManager::writeKeyBatch(std::vector<char*> keys, std::vector<Value
         debug_error("[ERROR] %s\n", s.ToString().c_str());
         exit(-1);
     }
-    debug_error("Put keys: %d status %s\n", (int)keys.size(), s.ToString().c_str());
+    debug_info("Put keys: %d status %s\n", (int)keys.size(), s.ToString().c_str());
 
     return s.ok();
 }
