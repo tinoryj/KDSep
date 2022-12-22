@@ -284,7 +284,7 @@ int DeltaKVDB::Scan(const std::string &table, const std::string &key, int len,
                     const std::vector<std::string> *fields,
                     std::vector<std::vector<KVPair>> &result) {
     vector<string> keys, values;
-    db_.GetByPrefix(key, &keys, &values);
+    // db_.GetByPrefix(key, &keys, &values);
     return 1;
 }
 
