@@ -17,6 +17,7 @@ enum fileOperationType { kFstream = 0,
 class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
+    FileOperation(fileOperationType operationType, uint64_t fileSize);
     ~FileOperation();
     uint64_t writeFile(char* contentBuffer, uint64_t contentSize);
     bool readFile(char* contentBuffer, uint64_t contentSize);
@@ -38,6 +39,7 @@ private:
     uint64_t directIOWriteFileSize_ = 0;
     uint64_t directIOActualWriteFileSize_ = 0;
     uint64_t newlyCreatedFileFlag_ = false;
+    uint64_t preAllocateFileSize_ = 0;
 };
 
 } // namespace DELTAKV_NAMESPACE

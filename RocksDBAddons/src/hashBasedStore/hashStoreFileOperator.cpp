@@ -19,6 +19,9 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     }
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
+    for (int threadID = 0; threadID < options->deltaStore_op_worker_thread_number_limit_ - 1; threadID++) {
+        workingThreadExitFlagVec_.push_back(false);
+    }
 }
 
 HashStoreFileOperator::~HashStoreFileOperator()
@@ -35,6 +38,17 @@ bool HashStoreFileOperator::setJobDone()
 {
     if (operationToWorkerMQ_ != nullptr) {
         operationToWorkerMQ_->done_ = true;
+        while (true) {
+            bool threadExitFlag = true;
+            for (auto it : workingThreadExitFlagVec_) {
+                threadExitFlag = threadExitFlag && it;
+            }
+            if (threadExitFlag == false) {
+                operationNotifyCV_.notify_all();
+            } else {
+                break;
+            }
+        }
     }
     return true;
 }
@@ -1018,9 +1032,14 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     }
 }
 
-void HashStoreFileOperator::operationWorker()
+void HashStoreFileOperator::operationWorker(int threadID)
 {
+    workingThreadExitFlagVec_[threadID] = false;
     while (true) {
+        {
+            std::unique_lock<std::mutex> lk(operationNotifyMtx_);
+            operationNotifyCV_.wait(lk);
+        }
         hashStoreOperationHandler* currentHandlerPtr;
         if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
             bool operationsStatus;
@@ -1080,6 +1099,20 @@ void HashStoreFileOperator::operationWorker()
         }
     }
     debug_info("Thread of operation worker exit success %p\n", this);
+    workingThreadExitFlagVec_[threadID] = true;
+    return;
+}
+
+void HashStoreFileOperator::notifyOperationWorkerThread()
+{
+    while (true) {
+        if (operationToWorkerMQ_->done_ == true && operationToWorkerMQ_->isEmpty() == true) {
+            break;
+        }
+        if (operationToWorkerMQ_->isEmpty() == false) {
+            operationNotifyCV_.notify_all();
+        }
+    }
     return;
 }
 
