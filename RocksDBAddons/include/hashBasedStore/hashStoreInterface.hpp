@@ -24,6 +24,7 @@ public:
     bool setJobDone();
 
 private:
+    bool anyBucketInitedFlag_ = false;
     DeltaKVOptions* internalOptionsPtr_ = nullptr;
     bool shouldUseDirectOperationsFlag_;
     // size information

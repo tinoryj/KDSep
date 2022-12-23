@@ -330,7 +330,7 @@ public:
                 stk.pop();
                 if (p->rightChildNodePtr_ == nullptr || pre == p->rightChildNodePtr_) {
                     if (p->currentNodePrefix.size() != 0) {
-                        fprintf(stderr, "Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
+                        debug_trace("Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->isLeafNodeFlag_, p->currentNodePrefix.size(), p->currentNodePrefix.c_str());
                     }
                     pre = p;
                     p = nullptr;

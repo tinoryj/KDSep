@@ -347,11 +347,15 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         thList_.push_back(th);
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processGCRequestWorker, hashStoreFileManagerPtr_));
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
             thList_.push_back(th);
+            for (auto threadID = 1; threadID <= options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_));
+                thList_.push_back(th);
+            }
         }
-        if (options.deltaStore_op_worker_thread_number_limit >= 2) {
-            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit; threadID++) {
+        if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
+            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
                 th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
                 thList_.push_back(th);
             }

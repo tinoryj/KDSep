@@ -33,6 +33,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
     singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ * options->deltaStore_single_file_maximum_size;
     objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxBucketNumber_);
+    singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
     RetriveHashStoreFileMetaDataList();
 }
 
@@ -64,20 +65,12 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
     singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ * options->deltaStore_single_file_maximum_size;
     objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxBucketNumber_);
+    singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
     RetriveHashStoreFileMetaDataList();
 }
 
 HashStoreFileManager::~HashStoreFileManager()
 {
-    if (enableGCFlag_ == true) {
-        if (gcThreadJobDoneFlag_ == false) {
-            debug_info("Wait for gcThreadJobDoneFlag_ == true to prevent metadata update before forced gc done%s\n", "");
-            while (gcThreadJobDoneFlag_ == false) {
-                asm volatile("");
-            }
-            debug_info("Wait for gcThreadJobDoneFlag_ == true over%s\n", "");
-        }
-    }
     CloseHashStoreFileMetaDataList();
 }
 
@@ -1166,7 +1159,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
             anchors++;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                processedKeepObjectNumber -= resultMap.at(currentKeyStr).first.size();
+                processedKeepObjectNumber -= (resultMap.at(currentKeyStr).first.size() + 1);
                 resultMap.at(currentKeyStr).first.clear();
                 resultMap.at(currentKeyStr).second.clear();
                 resultMap.erase(currentKeyStr);
@@ -1679,7 +1672,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
                 debug_trace("Skip file ID = %lu, prefix bit number = %lu, size = %lu, which is currently during GC\n", nodeIt.second->target_file_id_, nodeIt.second->current_prefix_used_bit_, nodeIt.second->total_object_bytes_);
                 continue;
             }
-            if (nodeIt.second->total_object_bytes_ <= singleFileMergeGCUpperBoundSize_) {
+            if (nodeIt.second->total_object_bytes_ <= singleFileMergeGCUpperBoundSize_ && nodeIt.second->file_ownership_flag_ != -1) {
                 targetFileForMergeMap.insert(nodeIt);
                 debug_trace("Select file ID = %lu, prefix bit number = %lu, size = %lu, which should not exceed threshould = %lu\n", nodeIt.second->target_file_id_, nodeIt.second->current_prefix_used_bit_, nodeIt.second->total_object_bytes_, singleFileMergeGCUpperBoundSize_);
             } else {
@@ -1690,9 +1683,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
         gettimeofday(&tv, 0);
         debug_info("Selected from file number = %lu for merge GC\n", targetFileForMergeMap.size());
         if (targetFileForMergeMap.size() != 0) {
-            int maxTryNumber = 3;
-            while (maxTryNumber > 0) {
-                maxTryNumber--;
+            while (true) {
                 for (auto mapIt : targetFileForMergeMap) {
                     string tempPrefixToFindNodeAtSameLevelStr = mapIt.first;
                     string tempPrefixToFindAnotherNodeAtSameLevelStr;
@@ -1755,10 +1746,38 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
         }
     }
 }
+void HashStoreFileManager::processMergeGCRequestWorker()
+{
+    // deltaStore_workers_cond.wait();
+    while (true) {
+        if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
+            break;
+        }
+        uint64_t remainEmptyBucketNumber = objectFileMetaDataTrie_.getRemainFileNumber();
+        if (remainEmptyBucketNumber > singleFileGCWorkerThreadsNumebr_) {
+            continue;
+        }
+        debug_info("May reached max file number, need to merge, current remain empty file numebr = %lu\n", remainEmptyBucketNumber);
+        // perfrom merge before split, keep the total file number not changed
+        hashStoreFileMetaDataHandler* targetFileHandler1;
+        hashStoreFileMetaDataHandler* targetFileHandler2;
+        string targetMergedPrefixStr;
+        bool selectFileForMergeStatus = selectFileForMerge(0, targetFileHandler1, targetFileHandler2, targetMergedPrefixStr);
+        if (selectFileForMergeStatus == true) {
+            debug_info("Select two file for merge GC success, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", targetFileHandler1, targetFileHandler2, targetMergedPrefixStr.c_str());
+            bool performFileMergeStatus = twoAdjacentFileMerge(targetFileHandler1, targetFileHandler2, targetMergedPrefixStr);
+            if (performFileMergeStatus != true) {
+                debug_error("[ERROR] Could not merge two files for GC, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", targetFileHandler1, targetFileHandler2, targetMergedPrefixStr.c_str());
+            }
+        }
+    }
+    return;
+}
 
 // threads workers
-void HashStoreFileManager::processGCRequestWorker()
+void HashStoreFileManager::processSingleFileGCRequestWorker()
 {
+    // deltaStore_workers_cond.wait();
     while (true) {
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;
@@ -1807,6 +1826,7 @@ void HashStoreFileManager::processGCRequestWorker()
             // count valid object size to determine GC method;
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 if (enableWriteBackDuringGCFlag_ == true) {
@@ -1819,8 +1839,9 @@ void HashStoreFileManager::processGCRequestWorker()
                 continue;
             }
 
-            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
-                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
+            if (remainObjectNumberPair.first != 0 && gcResultMap.size() == 0) {
+                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero, processed object number = %lu, target keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 if (enableWriteBackDuringGCFlag_ == true) {
@@ -1919,8 +1940,7 @@ void HashStoreFileManager::processGCRequestWorker()
                 uint64_t targetPrefixBitNumber = currentUsedPrefixBitNumber + 1;
 
                 uint64_t remainEmptyFileNumber = objectFileMetaDataTrie_.getRemainFileNumber();
-                if (remainEmptyFileNumber > 0) {
-                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_SPLIT, tv);
+                if (remainEmptyFileNumber >= singleFileGCWorkerThreadsNumebr_) {
                     // cerr << "Perform split " << endl;
                     debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
                     debug_info("Perform split GC for file ID (without merge) = %lu\n", fileHandler->target_file_id_);
@@ -1954,86 +1974,24 @@ void HashStoreFileManager::processGCRequestWorker()
                         continue;
                     }
                 } else {
-                    debug_info("Reached max file number, need to split after merge, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
-                    // perfrom merge before split, keep the total file number not changed
-                    hashStoreFileMetaDataHandler* targetFileHandler1;
-                    hashStoreFileMetaDataHandler* targetFileHandler2;
-                    string targetMergedPrefixStr;
-                    bool selectFileForMergeStatus = selectFileForMerge(fileHandler->target_file_id_, targetFileHandler1, targetFileHandler2, targetMergedPrefixStr);
-                    if (selectFileForMergeStatus == true) {
-                        debug_info("Select two file for merge GC success, fileHandler 1 ptr = %p, fileHandler 2 ptr = %p, target prefix = %s\n", targetFileHandler1, targetFileHandler2, targetMergedPrefixStr.c_str());
-                        bool performFileMergeStatus;
-                        STAT_PROCESS(performFileMergeStatus = twoAdjacentFileMerge(targetFileHandler1, targetFileHandler2, targetMergedPrefixStr), StatsType::MERGE);
-                        if (performFileMergeStatus == true) {
-                            debug_info("Perform split GC for file ID (with merge) = %lu\n", fileHandler->target_file_id_);
-                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_SPLIT, tv);
-                            bool singleFileGCStatus;
-                            STAT_PROCESS(singleFileGCStatus = singleFileSplit(fileHandler, gcResultMap, targetPrefixBitNumber, fileContainsReWriteKeysFlag), StatsType::SPLIT);
-                            if (singleFileGCStatus == false) {
-                                debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
-                                fileHandler->gc_result_status_flag_ = kNoGC;
-                                fileHandler->file_ownership_flag_ = 0;
-                                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
-                                if (enableWriteBackDuringGCFlag_ == true) {
-                                    if (writeBackOperationsQueue_->done_ != true) {
-                                        for (auto writeBackIt : targetWriteBackVec) {
-                                            writeBackOperationsQueue_->push(writeBackIt);
-                                        }
-                                    }
-                                }
-                                continue;
-                            } else {
-                                debug_info("Perform split GC for file ID (with merge) = %lu done\n", fileHandler->target_file_id_);
-                                fileHandler->gc_result_status_flag_ = kShouldDelete;
-                                fileHandler->file_ownership_flag_ = 0;
-                                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
-                                if (enableWriteBackDuringGCFlag_ == true) {
-                                    if (writeBackOperationsQueue_->done_ != true) {
-                                        for (auto writeBackIt : targetWriteBackVec) {
-                                            writeBackOperationsQueue_->push(writeBackIt);
-                                        }
-                                    }
-                                }
-                                continue;
-                            }
-                        } else {
-                            debug_error("[ERROR] Could not perform pre merge to reclaim files before perform split GC for file ID = %lu\n", fileHandler->target_file_id_);
-                            if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
-                                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                                STAT_PROCESS(singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                            }
-                            fileHandler->file_ownership_flag_ = 0;
-                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
-                            if (enableWriteBackDuringGCFlag_ == true) {
-                                if (writeBackOperationsQueue_->done_ != true) {
-                                    for (auto writeBackIt : targetWriteBackVec) {
-                                        writeBackOperationsQueue_->push(writeBackIt);
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                    } else {
-                        if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
-                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                            STAT_PROCESS(singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                        }
-                        fileHandler->file_ownership_flag_ = 0;
-                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
-                        if (enableWriteBackDuringGCFlag_ == true) {
-                            if (writeBackOperationsQueue_->done_ != true) {
-                                for (auto writeBackIt : targetWriteBackVec) {
-                                    writeBackOperationsQueue_->push(writeBackIt);
-                                }
-                            }
-                        }
-                        continue;
+                    if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
+                        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+                        STAT_PROCESS(singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag), StatsType::REWRITE);
                     }
+                    fileHandler->file_ownership_flag_ = 0;
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                    if (enableWriteBackDuringGCFlag_ == true) {
+                        if (writeBackOperationsQueue_->done_ != true) {
+                            for (auto writeBackIt : targetWriteBackVec) {
+                                writeBackOperationsQueue_->push(writeBackIt);
+                            }
+                        }
+                    }
+                    continue;
                 }
             }
         }
     }
-    gcThreadJobDoneFlag_ = true;
     return;
 }
 
@@ -2049,6 +2007,8 @@ void HashStoreFileManager::scheduleMetadataUpdateWorker()
                 operationCounterForMetadataCommit_ = 0;
                 operationCounterMtx_.unlock();
             }
+            int sleepTime = 8 * ceil(operationNumberForMetadataCommitThreshold_ / 1000);
+            sleep(sleepTime);
         }
         if (metadataUpdateShouldExit_ == true) {
             break;

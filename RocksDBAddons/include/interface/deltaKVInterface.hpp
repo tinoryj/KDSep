@@ -129,7 +129,6 @@ private:
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
-
     std::shared_mutex DeltaKVOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
