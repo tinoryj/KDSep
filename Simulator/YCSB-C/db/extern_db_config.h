@@ -39,7 +39,7 @@ class ExternDBConfig {
     uint64_t deltaLog_file_number_;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
     uint64_t deltaStore_operationNumberForForcedGCThreshold_;
-    uint64_t deltaStore_thread_number_limit;
+    uint64_t deltaStore_worker_thread_number_limit;
     bool deltaStore_enable_gc;
     bool deltaKV_enable_batch;
     uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
@@ -78,7 +78,7 @@ class ExternDBConfig {
         deltaLog_file_number_ = pt_.get<uint64_t>("deltaStore.deltaLogMaxFileNumber");
         deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("deltaStore.deltaStore_operationNumberForMetadataCommitThreshold_");
         deltaStore_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("deltaStore.deltaStore_operationNumberForForcedGCThreshold_");
-        deltaStore_thread_number_limit = pt_.get<uint64_t>("deltaStore.deltaStore_thread_number_limit_");
+        deltaStore_worker_thread_number_limit = pt_.get<uint64_t>("deltaStore.deltaStore_worker_thread_number_limit_");
         debug_.level = pt_.get<uint64_t>("debug.level");
         deltaStore_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC");
         deltaKV_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
@@ -170,8 +170,8 @@ class ExternDBConfig {
         return deltaStore_operationNumberForForcedGCThreshold_;
     }
 
-    uint64_t getDeltaLogThreadNumber() {
-        return deltaStore_thread_number_limit;
+    uint64_t getDeltaLogOpWorkerThreadNumber() {
+        return deltaStore_worker_thread_number_limit;
     }
 
     uint64_t getDebugLevel() {

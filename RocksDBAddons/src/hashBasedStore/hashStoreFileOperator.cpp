@@ -8,11 +8,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     perFileFlushBufferSizeLimit_ = options->deltaStore_file_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     singleFileSizeLimit_ = options->deltaStore_single_file_maximum_size;
-    uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
-    if (options->enable_deltaStore_garbage_collection == true) {
-        totalNumberOfThreadsAllowed--;
-    }
-    if (totalNumberOfThreadsAllowed >= 2) {
+    if (options->deltaStore_op_worker_thread_number_limit >= 2) {
         operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }

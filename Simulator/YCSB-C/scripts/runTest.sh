@@ -80,6 +80,8 @@ for param in $*; do
         suffix=${suffix}_kd
         usekd="true"
         sed -i "19s/false/true/g" temp.ini
+    elif [[ $param == "raw" ]]; then
+        suffix=${suffix}_raw
     elif [[ $param == "kvkd" ]]; then
         suffix=${suffix}_kvkd
         usekvkd="true"
