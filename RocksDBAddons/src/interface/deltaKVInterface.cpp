@@ -264,29 +264,29 @@ DeltaKV::DeltaKV()
 
 DeltaKV::~DeltaKV()
 {
-    cerr << "Try delete write batch" << endl;
+    cerr << "3.6 Try delete write batch" << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         delete notifyWriteBatchMQ_;
         delete writeBatchDeque[0];
         delete writeBatchDeque[1];
     }
-    cerr << "Try delete write back" << endl;
+    cerr << "3.7 Try delete write back" << endl;
     if (enableWriteBackOperationsFlag_ == true) {
         delete writeBackOperationsQueue_;
     }
-    cerr << "Try delete HashStore" << endl;
+    cerr << "3.8 Try delete HashStore" << endl;
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         delete HashStoreInterfaceObjPtr_;
         // delete related object pointers
         delete hashStoreFileManagerPtr_;
         delete hashStoreFileOperatorPtr_;
     }
-    cerr << "Try delete IndexStore" << endl;
-    // if (IndexStoreInterfaceObjPtr_ != nullptr) {
-    // delete IndexStoreInterfaceObjPtr_;
-    // delete related object pointers
-    // }
-    cerr << "Try delete RocksDB" << endl;
+    cerr << "3.9 Try delete IndexStore" << endl;
+    if (IndexStoreInterfaceObjPtr_ != nullptr) {
+        delete IndexStoreInterfaceObjPtr_;
+        // delete related object pointers
+    }
+    cerr << "3.10 Try delete RocksDB" << endl;
     if (pointerToRawRocksDB_ != nullptr) {
         delete pointerToRawRocksDB_;
     }
@@ -395,12 +395,14 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 
 bool DeltaKV::Close()
 {
+    cerr << "3.1 Force GC" << endl;
     if (isDeltaStoreInUseFlag_ == true) {
         if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
             HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
             debug_info("Forced GC done%s\n", "");
         }
     }
+    cerr << "3.2 Wait write back" << endl;
     if (enableWriteBackOperationsFlag_ == true) {
         writeBackOperationsQueue_->done_ = true;
         while (writeBackOperationsQueue_->isEmpty() == false) {
@@ -408,6 +410,7 @@ bool DeltaKV::Close()
         }
         debug_info("Write back done%s\n", "");
     }
+    cerr << "3.3 Flush write buffer" << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         for (auto i = 0; i < 2; i++) {
             if (writeBatchDeque[i]->size() != 0) {
@@ -421,10 +424,12 @@ bool DeltaKV::Close()
         }
         debug_info("Flush write batch done%s\n", "");
     }
+    cerr << "3.4 Set job done" << endl;
     if (isDeltaStoreInUseFlag_ == true) {
         HashStoreInterfaceObjPtr_->setJobDone();
         debug_info("HashStore set job done%s\n", "");
     }
+    cerr << "3.5 Delete existing threads" << endl;
     deleteExistingThreads();
     return true;
 }
@@ -1045,10 +1050,10 @@ bool DeltaKV::Get(const string& key, string* value)
     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
     vector<string> tempNewMergeOperatorsVec;
     bool needMergeWithInBufferOperationsFlag = false;
+    struct timeval tvAll;
+    gettimeofday(&tvAll, 0);
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        struct timeval tv;
-        gettimeofday(&tv, 0);
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
             while (oneBufferDuringProcessFlag_ == true) {
@@ -1056,16 +1061,22 @@ bool DeltaKV::Get(const string& key, string* value)
             }
         }
         std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WAIT_BUFFER, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_WAIT_BUFFER, tvAll);
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
         if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].find(key) != writeBatchMapForSearch_[currentWriteBatchDequeInUse].end()) {
             if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).size() != 0) {
                 if (writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().op_ == kPutOp) {
                     value->assign(writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key).back().value_);
                     debug_info("get value from unflushed buffer for key = %s\n", key.c_str());
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_GET_KEY, tv);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
                     return true;
                 }
             }
+            struct timeval tv0;
+            gettimeofday(&tv0, 0);
             string newValueStr;
             bool findNewValueFlag = false;
             for (auto it : writeBatchMapForSearch_[currentWriteBatchDequeInUse].at(key)) {
@@ -1080,19 +1091,29 @@ bool DeltaKV::Get(const string& key, string* value)
             if (findNewValueFlag == true) {
                 deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE, tv0);
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
                 return true;
             }
             if (tempNewMergeOperatorsVec.size() != 0) {
                 needMergeWithInBufferOperationsFlag = true;
                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsVec.size());
             }
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE_ALL, tv0);
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
     }
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     uint32_t maxSequenceNumberPlaceHolder;
+    bool ret;
     switch (deltaKVRunningMode_) {
     case kBatchedWithBothValueAndDeltaLog:
     case kBothValueAndDeltaLog:
-        if (GetWithValueAndDeltaStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+        ret = GetWithValueAndDeltaStore(key, value, maxSequenceNumberPlaceHolder, false);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_STORE, tv);
+        if (ret == false) {
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
             return false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
@@ -1100,15 +1121,20 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
                 return true;
             } else {
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
                 return true;
             }
         }
         break;
     case kBatchedWithOnlyValueLog:
     case kOnlyValueLog:
-        if (GetWithOnlyValueStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+        ret = GetWithOnlyValueStore(key, value, maxSequenceNumberPlaceHolder, false);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_STORE, tv);
+        if (ret == false) {
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
             return false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
@@ -1116,15 +1142,17 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
-            } else {
-                return true;
             }
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
+            return true;
         }
         break;
     case kBatchedWithOnlyDeltaLog:
     case kOnlyDeltaLog:
-        if (GetWithOnlyDeltaStore(key, value, maxSequenceNumberPlaceHolder, false) == false) {
+        ret = GetWithOnlyDeltaStore(key, value, maxSequenceNumberPlaceHolder, false);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_STORE, tv);
+        if (ret == false) {
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
             return false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
@@ -1132,26 +1160,25 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
-            } else {
-                return true;
-            }
+            } 
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
+            return true;
         }
         break;
     case kBatchedWithPlainRocksDB:
     case kPlainRocksDB:
-        if (GetWithPlainRocksDB(key, value) == false) {
-            return false;
-        } else {
+        ret = GetWithPlainRocksDB(key, value);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_STORE, tv);
+        if (ret == true) {
             if (needMergeWithInBufferOperationsFlag == true) {
                 string tempValueStr;
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
             }
-            return true;
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
+        return ret;
         break;
     default:
         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);

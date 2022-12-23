@@ -121,7 +121,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
 
-    struct sigaction sa;
+    struct sigaction sa = {0};
     sa.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sa, 0);
 

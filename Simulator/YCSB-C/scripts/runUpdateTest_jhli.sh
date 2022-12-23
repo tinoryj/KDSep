@@ -28,7 +28,8 @@ generate_file_name() {
 }
 
 pwd
-ulimit -n 1048576 
+ulimit -n 10240 
+#ulimit -n 1048576 
 echo $@
 ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
 OverWriteRatio=0.02
@@ -36,8 +37,8 @@ KVPairsNumber=40000000    #"300000000"
 OperationsNumber=40000000 #"300000000"
 fieldlength=100
 fieldcount=10
-DB_Working_Path="/mnt/sn640/jhli/"
-DB_Loaded_Path="/mnt/sn640"
+DB_Working_Path="/mnt/g/deltakv/working/"
+DB_Loaded_Path="/mnt/g/deltakv"
 DB_Name="loadedDB"
 ResultLogFolder="ResultLogs"
 MAXRunTimes=1
@@ -60,7 +61,7 @@ usekv="false"
 usekd="false"
 usekvkd="false"
 gc="true"
-maxFileNumber="16"
+maxFileNumber="5200"
 overwrite="0.1"
 reads="0.1"
 
@@ -180,7 +181,7 @@ if [[ "$gc" == "true" && ("$usekd" == "true" || "$usekvkd" == "true") ]]; then
 fi
 
 sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = ${maxFileNumber}" temp.ini 
-if [[ "$maxFileNumber" -ne 16 ]]; then
+if [[ "$maxFileNumber" -ne 5200 ]]; then
   run_suffix=${run_suffix}_maxFileNumber${maxFileNumber}
 fi
 
@@ -231,7 +232,7 @@ if [[ "$only_load" == "true" ]]; then
     fi
     output_file=`generate_file_name $ResultLogFolder/LoadDB`
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workloada-temp.spec -phase load -configpath $configPath > ${output_file}
-    echo "output at $output_file"
+    echo "output at $output_file. Copying"
     cp -r ${DB_Working_Path}/$DB_Name $DB_Loaded_Path/ # Copy loaded DB
     exit
 fi
@@ -302,12 +303,14 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >> $output_file
             echo "--------- total delta sizes ------" >> $output_file
             echo "--------- total delta sizes ------" 
-            ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' >> $output_file 
-            ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' 
+            ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >> $output_file 
+            ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' 
             ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' >> $output_file 
             ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' 
             ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' >> $output_file 
             ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' 
+            ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file 
+            ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' 
             echo "----------------------------------" >> $output_file
             cat temp.ini >> $output_file
             echo "output at $output_file"
@@ -362,12 +365,12 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
         output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-${run_suffix}`
         ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/${DB_Name} -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath > $output_file
-        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' >> $output_file 
-        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' 
         cat temp.ini >> $output_file
         echo "output at $output_file"
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"

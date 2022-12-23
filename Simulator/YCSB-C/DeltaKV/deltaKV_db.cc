@@ -364,12 +364,12 @@ void DeltaKVDB::printStats() {
 }
 
 DeltaKVDB::~DeltaKVDB() {
-    cerr << "Close stats recorder" << endl;
+    cerr << "1. Close stats recorder" << endl;
     DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
-    cerr << "Close output stream" << endl;
+    cerr << "2. Close output stream" << endl;
     outputStream_.close();
-    cerr << "Close db" << endl;
+    cerr << "3. Close db" << endl;
     db_.Close();
-    cerr << "Close DeltaKVDB complete" << endl;
+    cerr << "4. Close DeltaKVDB complete" << endl;
 }
 }  // namespace ycsbc

@@ -144,6 +144,15 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-merge-vLog", DELTAKV_MERGE_INDEXSTORE, time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-dStore", DELTAKV_MERGE_HASHSTORE, time[DELTAKV_MERGE]);
 
+    fprintf(stdout, "-------------- DeltaKV Batch Get Breakdown ------------------------------\n");
+    PRINT_FULL("All", DELTAKV_BATCH_READ, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("Buffer-read", DELTAKV_BATCH_READ_NO_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("  Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("Read-store", DELTAKV_BATCH_READ_STORE, time[DELTAKV_BATCH_READ]);
+
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
     PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
     PRINT_FULL("worker-put-file-write", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_HASHSTORE_PUT]);
@@ -157,9 +166,39 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("worker-wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_HASHSTORE_GET]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
-    PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_GET]));
+    PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_HASHSTORE_WORKER_GC]));
+    PRINT_FULL("worker-gc-before-rewrite", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, (time[DELTAKV_HASHSTORE_WORKER_GC]));
+    PRINT_FULL("worker-gc-before-split", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_SPLIT, (time[DELTAKV_HASHSTORE_WORKER_GC]));
     PRINT_FULL("- gc read", DELTAKV_GC_READ, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("- gc write", DELTAKV_GC_WRITE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge", GC_SELECT_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  slmerge-get-nodes", GC_SELECT_MERGE_GET_NODES, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  slmerge-select", GC_SELECT_MERGE_SELECT_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  slmerge-after-select", GC_SELECT_MERGE_AFTER_SELECT, time[DELTAKV_HASHSTORE_WORKER_GC]);
+
+    PRINT_FULL("merge", MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  wait-lock", MERGE_WAIT_LOCK, time[MERGE]);
+    PRINT_FULL("  handler", MERGE_CREATE_HANDLER, time[MERGE]);
+    PRINT_FULL("  wait-lock3", MERGE_WAIT_LOCK3, time[MERGE]);
+    PRINT_FULL("  file1", MERGE_FILE1, time[MERGE]);
+    PRINT_FULL("  file2", MERGE_FILE2, time[MERGE]);
+    PRINT_FULL("  file3", MERGE_FILE3, time[MERGE]);
+    PRINT_FULL("  metadata", MERGE_METADATA, time[MERGE]);
+
+    PRINT_FULL("split", SPLIT, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  handler", SPLIT_HANDLER, time[SPLIT]);
+    PRINT_FULL("  in-memory", SPLIT_IN_MEMORY, time[SPLIT]);
+    PRINT_FULL("  write", SPLIT_WRITE_FILES, time[SPLIT]);
+    PRINT_FULL("  metadata", SPLIT_METADATA, time[SPLIT]);
+
+    PRINT_FULL("rewrite", REWRITE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  file-id", REWRITE_GET_FILE_ID, time[REWRITE]);
+    PRINT_FULL("  add-header", REWRITE_ADD_HEADER, time[REWRITE]);
+    PRINT_FULL("  close-file", REWRITE_CLOSE_FILE, time[REWRITE]);
+    PRINT_FULL("  create-file", REWRITE_CREATE_FILE, time[REWRITE]);
+    PRINT_FULL("  open-file", REWRITE_OPEN_FILE, time[REWRITE]);
+    PRINT_FULL("  write", REWRITE_WRITE, time[REWRITE]);
+    PRINT_FULL("  after-write", REWRITE_AFTER_WRITE, time[REWRITE]);
 
     fprintf(stdout, "-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall", SET, time[SET]);
