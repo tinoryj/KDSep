@@ -50,7 +50,9 @@ RocksDBThreadNumber=16
 rawConfigPath="configDir/deltakv.ini"
 bucketSize="1048576"
 cacheSize="$(( 1024 * 1024 * 1024 ))"
-
+workerThreadNumber=12
+gcThreadNumber=2
+batchSize=2000
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -121,6 +123,13 @@ for param in $*; do
         fi
     elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
         RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
+    elif [[ `echo $param | grep "gcT" | wc -l` -eq 1 ]]; then
+        gcThreadNumber=`echo $param | sed 's/gcT//g'`
+    elif [[ `echo $param | grep "workerT" | wc -l` -eq 1 ]]; then
+        workerThreadNumber=`echo $param | sed 's/workerT//g'`
+    elif [[ `echo $param | grep "batchSize" | wc -l` -eq 1 ]]; then
+        num=`echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g'`
+        batchSize=$num
     elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then
         MAXRunTimes=`echo $param | sed 's/round//g'`
     elif [[ `echo $param | grep "maxFileNumber" | wc -l` -eq 1 ]]; then
@@ -145,6 +154,9 @@ elif [[ "$usekd" == "true" ]]; then
     echo usekd $deltaLogCacheObjectNumber $cacheSize
     sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheObjectNumber" temp.ini 
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
+    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 elif [[ "$usekvkd" == "true" ]]; then
     valueCacheSize=$(( $cacheSize / 8 * 6 / ($fieldcount * $fieldlength + $fieldcount - 1)))
@@ -153,7 +165,9 @@ elif [[ "$usekvkd" == "true" ]]; then
     echo usekvkd $valueCacheSize $deltaLogCacheObjectNumber $cacheSize
     sed -i "/valueCache/c\\valueCacheSize = $valueCacheSize" temp.ini 
     sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheObjectNumber" temp.ini 
-    sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
+    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 else
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
@@ -264,7 +278,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fi
 
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
-        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
+        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
         ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
         echo "-------- smallest deltas ---------" >> $output_file
         echo "-------- smallest deltas ---------" 
@@ -284,6 +298,10 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}'
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}'
         echo "----------------------------------" >> $output_file
         cat temp.ini >> $output_file
         echo "output at $output_file"

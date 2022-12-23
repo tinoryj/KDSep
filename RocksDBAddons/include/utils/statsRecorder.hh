@@ -1,6 +1,7 @@
 #pragma once
 #include <climits>
 #include <map>
+#include <shared_mutex>
 #include <stdio.h>
 #include <sys/time.h>
 #include <unordered_map>
@@ -180,20 +181,76 @@ public:
         IOBytes[diskId].second += bytes;
     }
 
-    void inline DeltaGcBytesWrite(unsigned int bytes)
+    void inline DeltaGcBytesWrite(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
     {
         if (!statisticsOpen)
             return;
-        DeltaGcBytes.first += bytes;
-        DeltaGcTimes.first++;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaGCWriteMtx_);
+            DeltaGcBytes.first += bytes;
+            DeltaGcTimes.first++;
+            DeltaGcLogicalBytes.first += logicalBytes;
+            DeltaGcLogicalTimes.first++;
+        } else {
+            DeltaGcBytes.first += bytes;
+            DeltaGcTimes.first++;
+            DeltaGcLogicalBytes.first += logicalBytes;
+            DeltaGcLogicalTimes.first++;
+        }
     }
 
-    void inline DeltaGcBytesRead(unsigned int bytes)
+    void inline DeltaGcBytesRead(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
     {
         if (!statisticsOpen)
             return;
-        DeltaGcBytes.second += bytes;
-        DeltaGcTimes.second++;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaGCReadMtx_);
+            DeltaGcBytes.second += bytes;
+            DeltaGcTimes.second++;
+            DeltaGcLogicalBytes.second += logicalBytes;
+            DeltaGcLogicalTimes.second++;
+        } else {
+            DeltaGcBytes.second += bytes;
+            DeltaGcTimes.second++;
+            DeltaGcLogicalBytes.second += logicalBytes;
+            DeltaGcLogicalTimes.second++;
+        }
+    }
+
+    void inline DeltaOPBytesWrite(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
+    {
+        if (!statisticsOpen)
+            return;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
+            DeltaOPBytes.first += bytes;
+            DeltaOPTimes.first++;
+            DeltaOPLogicalBytes.first += logicalBytes;
+            DeltaOPLogicalTimes.first++;
+        } else {
+            DeltaOPBytes.first += bytes;
+            DeltaOPTimes.first++;
+            DeltaOPLogicalBytes.first += logicalBytes;
+            DeltaOPLogicalTimes.first++;
+        }
+    }
+
+    void inline DeltaOPBytesRead(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
+    {
+        if (!statisticsOpen)
+            return;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
+            DeltaOPBytes.second += bytes;
+            DeltaOPTimes.second++;
+            DeltaOPLogicalBytes.second += logicalBytes;
+            DeltaOPLogicalTimes.second++;
+        } else {
+            DeltaOPBytes.second += bytes;
+            DeltaOPTimes.second++;
+            DeltaOPLogicalBytes.second += logicalBytes;
+            DeltaOPLogicalTimes.second++;
+        }
     }
 
     void minMaxGCUpdate(unsigned int mn, unsigned int mx)
@@ -233,7 +290,12 @@ private:
     std::vector<std::pair<unsigned long long, unsigned long long>> IOBytes; /* write,read */
     std::pair<unsigned long long, unsigned long long> DeltaGcBytes = { 0, 0 }; /* write,read */
     std::pair<unsigned long long, unsigned long long> DeltaGcTimes = { 0, 0 };
-
+    std::pair<unsigned long long, unsigned long long> DeltaOPBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaOPTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaGcLogicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcLogicalTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaOPLogicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaOPLogicalTimes = { 0, 0 };
     //    struct hdr_histogram *_updateTimeHistogram;
     //    struct hdr_histogram *_getTimeHistogram;
     //    std::map<unsigned long long, struct hdr_histogram*> _getByValueSizeHistogram;
@@ -256,6 +318,7 @@ private:
     struct Stats flushGroupCount;
     int flushGroupCountBucketLen;
 
+    std::shared_mutex deltaGCWriteMtx_, deltaGCReadMtx_, deltaOPWriteMtx_, deltaOPReadMtx_;
     enum {
         MAIN,
         LOG

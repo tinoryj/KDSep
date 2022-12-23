@@ -19,8 +19,11 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     }
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
-    for (int threadID = 0; threadID < options->deltaStore_op_worker_thread_number_limit_ - 1; threadID++) {
-        workingThreadExitFlagVec_.push_back(false);
+    if (options->deltaStore_op_worker_thread_number_limit_ > 2) {
+        syncStatistics_ = true;
+        for (int threadID = 0; threadID < options->deltaStore_op_worker_thread_number_limit_ - 1; threadID++) {
+            workingThreadExitFlagVec_.push_back(false);
+        }
     }
 }
 
@@ -254,12 +257,11 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
         debug_error("[ERROR] Should not read from a not opened file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     }
-    if (fileHandler->temp_not_flushed_data_bytes_ > 0) {
-        fileHandler->file_operation_func_ptr_->flushFile();
-        fileHandler->temp_not_flushed_data_bytes_ = 0;
-    }
+    pair<uint64_t, uint64_t> flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
+    StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.first, flushedSizePair.second, syncStatistics_);
     bool readFileStatus;
     STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
+    StatsRecorder::getInstance()->DeltaOPBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);
     if (readFileStatus == false) {
         debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", fileHandler->target_file_id_);
         return false;
@@ -317,16 +319,11 @@ bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fil
     }
     uint64_t onDiskWriteSize = 0;
     STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(contentBuffer, contentSize), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+    StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, contentSize, syncStatistics_);
     if (onDiskWriteSize == 0) {
         debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     } else {
-        fileHandler->temp_not_flushed_data_bytes_ += contentSize;
-        if (fileHandler->temp_not_flushed_data_bytes_ >= perFileFlushBufferSizeLimit_) {
-            debug_trace("Flushed file ID = %lu, flushed size = %lu\n", fileHandler->target_file_id_, fileHandler->temp_not_flushed_data_bytes_);
-            fileHandler->file_operation_func_ptr_->flushFile();
-            fileHandler->temp_not_flushed_data_bytes_ = 0;
-        }
         // update metadata
         fileHandler->total_object_bytes_ += contentSize;
         fileHandler->total_on_disk_bytes_ += onDiskWriteSize;
@@ -683,6 +680,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
 
         uint64_t onDiskWriteSize;
         STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithoutAnchros, targetWriteSizeWithoutAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, targetWriteSizeWithoutAnchors, syncStatistics_);
         if (onDiskWriteSize == 0) {
             debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
             fileHandler->file_ownership_flag_ = 0;
@@ -748,6 +746,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         // write contents of file
         uint64_t onDiskWriteSize;
         STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithAnchor, targetWriteSizeWithAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, targetWriteSizeWithAnchors, syncStatistics_);
         if (onDiskWriteSize == 0) {
             debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
             fileHandler->file_ownership_flag_ = 0;

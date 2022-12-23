@@ -17,11 +17,11 @@ enum fileOperationType { kFstream = 0,
 class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
-    FileOperation(fileOperationType operationType, uint64_t fileSize);
+    FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize);
     ~FileOperation();
     uint64_t writeFile(char* contentBuffer, uint64_t contentSize);
     bool readFile(char* contentBuffer, uint64_t contentSize);
-    bool flushFile();
+    pair<uint64_t, uint64_t> flushFile();
 
     bool openFile(string path);
     bool createFile(string path);
@@ -40,6 +40,9 @@ private:
     uint64_t directIOActualWriteFileSize_ = 0;
     uint64_t newlyCreatedFileFlag_ = false;
     uint64_t preAllocateFileSize_ = 0;
+    char* globalWriteBuffer_ = nullptr;
+    int bufferUsedSize_ = 0;
+    uint64_t globalBufferSize_ = 0;
 };
 
 } // namespace DELTAKV_NAMESPACE

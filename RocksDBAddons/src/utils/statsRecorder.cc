@@ -299,10 +299,22 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "-------------------- DeltaStore Bytes Counters ------------------------------\n");
 
-    fprintf(stdout, "dStore GC write bytes     : %16llu (average %16llu, %8llu times)\n",
+    fprintf(stdout, "dStore GC Physical write bytes     : %16llu (average %16llu, %8llu times)\n",
         DeltaGcBytes.first, DeltaGcBytes.first / (DeltaGcTimes.first + 1), DeltaGcTimes.first);
-    fprintf(stdout, "dStore GC read bytes      : %16llu (average %16llu, %8llu times)\n",
+    fprintf(stdout, "dStore GC Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
         DeltaGcBytes.second, DeltaGcBytes.second / (DeltaGcTimes.second + 1), DeltaGcTimes.second);
+    fprintf(stdout, "dStore OP Physical write bytes     : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPBytes.first, DeltaOPBytes.first / (DeltaOPTimes.first + 1), DeltaOPTimes.first);
+    fprintf(stdout, "dStore OP Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPBytes.second, DeltaOPBytes.second / (DeltaOPTimes.second + 1), DeltaOPTimes.second);
+    fprintf(stdout, "dStore GC Logical write bytes     : %16llu (average %16llu, %8llu times)\n",
+        DeltaGcLogicalBytes.first, DeltaGcLogicalBytes.first / (DeltaGcLogicalTimes.first + 1), DeltaGcLogicalTimes.first);
+    fprintf(stdout, "dStore GC Logical read bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaGcLogicalBytes.second, DeltaGcLogicalBytes.second / (DeltaGcLogicalTimes.second + 1), DeltaGcLogicalTimes.second);
+    fprintf(stdout, "dStore OP Logical write bytes     : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPLogicalBytes.first, DeltaOPLogicalBytes.first / (DeltaOPLogicalTimes.first + 1), DeltaOPLogicalTimes.first);
+    fprintf(stdout, "dStore OP Logical read bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPLogicalBytes.second, DeltaOPLogicalBytes.second / (DeltaOPLogicalTimes.second + 1), DeltaOPLogicalTimes.second);
 
     fprintf(stdout, "------------------------- Bytes Counters ------------------------------------\n");
     unsigned long long writeIOSum = 0, readIOSum = 0;

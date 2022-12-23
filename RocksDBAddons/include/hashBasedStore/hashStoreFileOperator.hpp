@@ -50,6 +50,7 @@ private:
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     vector<bool> workingThreadExitFlagVec_;
+    bool syncStatistics_;
 };
 
 } // namespace DELTAKV_NAMESPACE

@@ -59,6 +59,7 @@ private:
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
     uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
+    uint64_t singleFileFlushSize_ = 4096;
 
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
@@ -99,6 +100,7 @@ private:
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
+    bool syncStatistics_;
 };
 
 } // namespace DELTAKV_NAMESPACE
