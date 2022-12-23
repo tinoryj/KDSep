@@ -26,7 +26,8 @@ public:
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
 
     // GC manager
-    void processGCRequestWorker();
+    void processSingleFileGCRequestWorker();
+    void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
     bool forcedManualGCAllFiles();
     bool forcedManualDelteAllObsoleteFiles();
@@ -55,6 +56,8 @@ private:
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
+    boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
+    uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
 
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
@@ -69,7 +72,6 @@ private:
     std::shared_mutex operationCounterMtx_;
     // for threads sync
     bool shouldDoRecoveryFlag_ = false;
-    bool gcThreadJobDoneFlag_ = false;
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations

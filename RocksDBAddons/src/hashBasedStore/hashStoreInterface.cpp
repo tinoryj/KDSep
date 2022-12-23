@@ -29,7 +29,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
-    if (options->deltaStore_op_worker_thread_number_limit >= 2) {
+    if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         shouldUseDirectOperationsFlag_ = false;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     } else {
@@ -69,9 +69,11 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
 {
-    if (isAnchor == true) {
+    if (isAnchor == true && anyBucketInitedFlag_ == false) {
+        return true;
         debug_info("New OP: put delta key [Anchor] = %s\n", keyStr.c_str());
     } else {
+        anyBucketInitedFlag_ = true;
         debug_info("New OP: put delta key [Data] = %s\n", keyStr.c_str());
     }
 
@@ -104,6 +106,16 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
 
 bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec)
 {
+    bool allAnchoarsFlag = true;
+    for (auto it : isAnchorVec) {
+        allAnchoarsFlag = allAnchoarsFlag && it;
+    }
+    if (allAnchoarsFlag == true && anyBucketInitedFlag_ == false) {
+        return true;
+    } else {
+        anyBucketInitedFlag_ = true;
+    }
+
     debug_info("New OP: put deltas key number = %lu, %lu, %lu, %lu\n", keyStrVec.size(), valueStrPtrVec.size(), sequenceNumberVec.size(), isAnchorVec.size());
     unordered_map<hashStoreFileMetaDataHandler*, vector<int>> fileHandlerToIndexMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
