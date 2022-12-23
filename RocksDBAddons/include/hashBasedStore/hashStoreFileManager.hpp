@@ -35,6 +35,7 @@ public:
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
+    std::condition_variable deltaStore_workers_cond;
 
 private:
     // settings

@@ -282,10 +282,10 @@ DeltaKV::~DeltaKV()
         delete hashStoreFileOperatorPtr_;
     }
     cerr << "Try delete IndexStore" << endl;
-    // if (IndexStoreInterfaceObjPtr_ != nullptr) {
-    // delete IndexStoreInterfaceObjPtr_;
-    // delete related object pointers
-    // }
+    if (IndexStoreInterfaceObjPtr_ != nullptr) {
+        // delete related object pointers
+        delete IndexStoreInterfaceObjPtr_;
+    }
     cerr << "Try delete RocksDB" << endl;
     if (pointerToRawRocksDB_ != nullptr) {
         delete pointerToRawRocksDB_;

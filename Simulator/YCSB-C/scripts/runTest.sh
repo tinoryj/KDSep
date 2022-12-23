@@ -5,6 +5,8 @@ usage() {
     echo "       kv: use KV separation (vLog)"
     echo "       kd: use KD separation (Delta store)"
     echo "      bkv: use BlobDB"
+    echo "      raw: use RocksDB"
+    echo "     kvkd: use DeltaKV"
     echo "   bs1000: Bucket size 1000"
     echo "    req1m: Totally 1M KV pairs"
     echo "     load: Load the database again"
@@ -41,12 +43,6 @@ fieldcount=10
 DB_Working_Path="/mnt/sn640/Exp3/RunDB"
 DB_Loaded_Path="/mnt/sn640/Exp3/BackupDB"
 ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
-if [ ! -d $DB_Working_Path ]; then
-    mkdir -p $DB_Working_Path
-fi
-if [ ! -d $DB_Loaded_Path ]; then
-    mkdir -p $DB_Loaded_Path
-fi
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
@@ -117,6 +113,12 @@ for param in $*; do
         DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
         DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
         ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
+        if [ ! -d $DB_Working_Path ]; then
+            mkdir -p $DB_Working_Path
+        fi
+        if [ ! -d $DB_Loaded_Path ]; then
+            mkdir -p $DB_Loaded_Path
+        fi
     elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
         RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
     elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then

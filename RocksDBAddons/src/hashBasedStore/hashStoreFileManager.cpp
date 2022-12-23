@@ -1159,7 +1159,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
             anchors++;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                processedKeepObjectNumber -= resultMap.at(currentKeyStr).first.size();
+                processedKeepObjectNumber -= (resultMap.at(currentKeyStr).first.size() + 1);
                 resultMap.at(currentKeyStr).first.clear();
                 resultMap.at(currentKeyStr).second.clear();
                 resultMap.erase(currentKeyStr);
@@ -1693,6 +1693,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
 }
 void HashStoreFileManager::processMergeGCRequestWorker()
 {
+    // deltaStore_workers_cond.wait();
     while (true) {
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;
@@ -1721,6 +1722,7 @@ void HashStoreFileManager::processMergeGCRequestWorker()
 // threads workers
 void HashStoreFileManager::processSingleFileGCRequestWorker()
 {
+    // deltaStore_workers_cond.wait();
     while (true) {
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;
@@ -1769,6 +1771,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker()
             // count valid object size to determine GC method;
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 if (enableWriteBackDuringGCFlag_ == true) {
@@ -1781,8 +1784,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker()
                 continue;
             }
 
-            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 0) {
-                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero\n", fileHandler->target_file_id_);
+            if (remainObjectNumberPair.first != 0 && gcResultMap.size() == 0) {
+                debug_error("[ERROR] File ID = %lu contains valid objects but result map is zero, processed object number = %lu, target keep object number = %lu\n", fileHandler->target_file_id_, remainObjectNumberPair.second, remainObjectNumberPair.first);
+                singleFileRewrite(fileHandler, gcResultMap, targetFileSize, fileContainsReWriteKeysFlag);
                 fileHandler->file_ownership_flag_ = 0;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
                 if (enableWriteBackDuringGCFlag_ == true) {
