@@ -51,7 +51,6 @@ typedef struct hashStoreFileMetaDataHandler {
     uint64_t total_object_bytes_ = 0;
     uint64_t total_on_disk_bytes_ = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
-    uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     bool markedByMultiPut_ = false;
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC

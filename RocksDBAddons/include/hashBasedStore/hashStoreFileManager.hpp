@@ -26,7 +26,7 @@ public:
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
 
     // GC manager
-    void processSingleFileGCRequestWorker();
+    void processSingleFileGCRequestWorker(int threadID);
     void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
     bool forcedManualGCAllFiles();
@@ -59,6 +59,7 @@ private:
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
     uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
+    uint64_t singleFileFlushSize_ = 4096;
 
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
@@ -99,6 +100,10 @@ private:
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
+    std::mutex operationNotifyMtx_;
+    std::condition_variable operationNotifyCV_;
+    vector<bool> workingThreadExitFlagVec_;
+    bool syncStatistics_;
 };
 
 } // namespace DELTAKV_NAMESPACE

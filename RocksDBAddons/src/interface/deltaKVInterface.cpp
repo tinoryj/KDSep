@@ -349,8 +349,8 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
             enableDeltaStoreWithBackgroundGCFlag_ = true;
             th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
             thList_.push_back(th);
-            for (auto threadID = 1; threadID <= options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_));
+            for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_, threadID));
                 thList_.push_back(th);
             }
         }
@@ -405,7 +405,7 @@ bool DeltaKV::Close()
     if (isDeltaStoreInUseFlag_ == true) {
         if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
             HashStoreInterfaceObjPtr_->forcedManualGarbageCollection();
-            debug_info("Forced GC done%s\n", "");
+            cerr << "DeltaStore forced GC done" << endl;
         }
     }
     cerr << "3.2 Wait write back" << endl;

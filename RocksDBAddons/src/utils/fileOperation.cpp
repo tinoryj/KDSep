@@ -9,17 +9,24 @@ FileOperation::FileOperation(fileOperationType operationType)
     operationType_ = operationType;
     fileDirect_ = -1;
     preAllocateFileSize_ = 256 * 1024;
+    globalWriteBuffer_ = new char[directIOPageSize_ - sizeof(uint32_t)];
+    globalBufferSize_ = directIOPageSize_ - sizeof(uint32_t);
+    bufferUsedSize_ = 0;
 }
 
-FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize)
+FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize)
 {
     operationType_ = operationType;
     fileDirect_ = -1;
     preAllocateFileSize_ = fileSize;
+    globalWriteBuffer_ = new char[bufferSize];
+    globalBufferSize_ = bufferSize;
+    bufferUsedSize_ = 0;
 }
 
 FileOperation::~FileOperation()
 {
+    delete globalWriteBuffer_;
 }
 
 bool FileOperation::createFile(string path)
@@ -187,62 +194,129 @@ bool FileOperation::isFileOpen()
     }
 }
 
-uint64_t FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
+uint64_t FileOperation::getFileBufferedSize()
+{
+    return bufferUsedSize_;
+}
+
+fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
 {
     if (operationType_ == kFstream) {
         fileStream_.seekg(0, ios::end);
         fileStream_.seekp(0, ios::end);
         fileStream_.write(contentBuffer, contentSize);
-        return contentSize;
+        fileOperationStatus_t ret(true, contentSize, contentSize, 0);
+        return ret;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        uint64_t targetRequestPageNumber = ceil((double)contentSize / (double)(directIOPageSize_ - sizeof(uint32_t)));
-        uint64_t writeDoneContentSize = 0;
-        // align mem
-        char* writeBuffer;
-        auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
-        auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
-        if (ret) {
-            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-            return 0;
+        if (contentSize + bufferUsedSize_ <= globalBufferSize_) {
+            memcpy(globalWriteBuffer_ + bufferUsedSize_, contentBuffer, contentSize);
+            bufferUsedSize_ += contentSize;
+            fileOperationStatus_t ret(true, 0, 0, contentSize);
+            return ret;
         } else {
-            memset(writeBuffer, 0, writeBufferSize);
-        }
-        uint64_t processedPageNumber = 0;
-        while (writeDoneContentSize != contentSize) {
-            uint32_t currentPageWriteSize;
-            if ((contentSize - writeDoneContentSize) > (directIOPageSize_ - sizeof(uint32_t))) {
-                currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
+            uint64_t targetRequestPageNumber = ceil((double)contentSize + bufferUsedSize_ / (double)(directIOPageSize_ - sizeof(uint32_t)));
+            uint64_t writeDoneContentSize = 0;
+            // align mem
+            char* writeBuffer;
+            auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
+            auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
+            if (ret) {
+                debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+                fileOperationStatus_t ret(false, 0, 0, 0);
+                return ret;
             } else {
-                currentPageWriteSize = contentSize - writeDoneContentSize;
+                memset(writeBuffer, 0, writeBufferSize);
             }
-            memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
-            memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), contentBuffer + writeDoneContentSize, currentPageWriteSize);
-            writeDoneContentSize += currentPageWriteSize;
-            processedPageNumber++;
-        }
-        auto wReturn = pwrite(fileDirect_, writeBuffer, writeBufferSize, directIOWriteFileSize_);
-        if (wReturn != writeBufferSize) {
-            free(writeBuffer);
-            debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
-            return 0;
-        } else {
-            free(writeBuffer);
-            directIOWriteFileSize_ += writeBufferSize;
-            directIOActualWriteFileSize_ += contentSize;
-            return writeBufferSize;
+            uint64_t processedPageNumber = 0;
+            uint64_t targetWriteSize = bufferUsedSize_ + contentSize;
+            if (targetWriteSize != contentSize) {
+                char contentBufferWithExistWriteBuffer[targetWriteSize];
+                memcpy(contentBufferWithExistWriteBuffer, globalWriteBuffer_, bufferUsedSize_);
+                memcpy(contentBufferWithExistWriteBuffer + bufferUsedSize_, contentBuffer, contentSize);
+                int actualNeedWriteSize = 0;
+                while (writeDoneContentSize != targetWriteSize) {
+                    uint32_t currentPageWriteSize;
+                    if ((targetWriteSize - writeDoneContentSize) > (directIOPageSize_ - sizeof(uint32_t))) {
+                        currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
+                        memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                        memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
+                        writeDoneContentSize += currentPageWriteSize;
+                        actualNeedWriteSize += directIOPageSize_;
+                        processedPageNumber++;
+                    } else {
+                        currentPageWriteSize = targetWriteSize - writeDoneContentSize;
+                        memcpy(globalWriteBuffer_, contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
+                        bufferUsedSize_ = currentPageWriteSize;
+                        writeDoneContentSize += currentPageWriteSize;
+                        processedPageNumber++;
+                    }
+                }
+                auto wReturn = pwrite(fileDirect_, writeBuffer, actualNeedWriteSize, directIOWriteFileSize_);
+                if (wReturn != actualNeedWriteSize) {
+                    free(writeBuffer);
+                    debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
+                    fileOperationStatus_t ret(false, 0, 0, 0);
+                    return ret;
+                } else {
+                    free(writeBuffer);
+                    directIOWriteFileSize_ += actualNeedWriteSize;
+                    directIOActualWriteFileSize_ += (contentSize - bufferUsedSize_);
+                    fileOperationStatus_t ret(true, actualNeedWriteSize, contentSize - bufferUsedSize_, bufferUsedSize_);
+                    return ret;
+                }
+            } else {
+                int actualNeedWriteSize = 0;
+                while (writeDoneContentSize != targetWriteSize) {
+                    uint32_t currentPageWriteSize;
+                    if ((targetWriteSize - writeDoneContentSize) > (directIOPageSize_ - sizeof(uint32_t))) {
+                        currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
+                        memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                        memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), contentBuffer + writeDoneContentSize, currentPageWriteSize);
+                        writeDoneContentSize += currentPageWriteSize;
+                        actualNeedWriteSize += directIOPageSize_;
+                        processedPageNumber++;
+                    } else {
+                        currentPageWriteSize = targetWriteSize - writeDoneContentSize;
+                        memcpy(globalWriteBuffer_, contentBuffer + writeDoneContentSize, currentPageWriteSize);
+                        bufferUsedSize_ = currentPageWriteSize;
+                        writeDoneContentSize += currentPageWriteSize;
+                        processedPageNumber++;
+                    }
+                }
+                auto wReturn = pwrite(fileDirect_, writeBuffer, actualNeedWriteSize, directIOWriteFileSize_);
+                if (wReturn != actualNeedWriteSize) {
+                    free(writeBuffer);
+                    debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
+                    fileOperationStatus_t ret(false, 0, 0, 0);
+                    return ret;
+                } else {
+                    free(writeBuffer);
+                    directIOWriteFileSize_ += actualNeedWriteSize;
+                    directIOActualWriteFileSize_ += (contentSize - bufferUsedSize_);
+                    fileOperationStatus_t ret(true, actualNeedWriteSize, contentSize - bufferUsedSize_, bufferUsedSize_);
+                    return ret;
+                }
+            }
         }
     } else {
-        return 0;
+        fileOperationStatus_t ret(false, 0, 0, 0);
+        return ret;
     }
 }
 
-bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
+fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
 {
     if (operationType_ == kFstream) {
         fileStream_.seekg(0, ios::beg);
         fileStream_.read(contentBuffer, contentSize);
-        return true;
+        fileOperationStatus_t ret(true, contentSize, contentSize, 0);
+        return ret;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        if (bufferUsedSize_ != 0) {
+            debug_error("[ERROR] Read when buffer not flushed, size = %d\n", bufferUsedSize_);
+            fileOperationStatus_t ret(false, 0, 0, 0);
+            return ret;
+        }
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         uint64_t readDoneContentSize = 0;
         // align mem
@@ -251,13 +325,15 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         auto ret = posix_memalign((void**)&readBuffer, directIOPageSize_, readBufferSize);
         if (ret) {
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-            return false;
+            fileOperationStatus_t ret(false, 0, 0, 0);
+            return ret;
         }
         auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
-            return false;
+            fileOperationStatus_t ret(false, 0, 0, 0);
+            return ret;
         }
         uint64_t currentReadDoneSize = 0;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
@@ -269,25 +345,81 @@ bool FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current write physical size = %lu, actual size = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber, directIOWriteFileSize_, directIOActualWriteFileSize_);
-            return false;
+            fileOperationStatus_t ret(false, 0, 0, 0);
+            return ret;
         } else {
             free(readBuffer);
-            return true;
+            fileOperationStatus_t ret(true, directIOWriteFileSize_, contentSize, 0);
+            return ret;
         }
     } else {
-        return false;
+        fileOperationStatus_t ret(false, 0, 0, 0);
+        return ret;
     }
 }
 
-bool FileOperation::flushFile()
+fileOperationStatus_t FileOperation::flushFile()
 {
     if (operationType_ == kFstream) {
         fileStream_.flush();
-        return true;
+        fileOperationStatus_t ret(true, 0, 0, 0);
+        return ret;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        return true;
+        if (bufferUsedSize_ != 0) {
+            uint64_t targetRequestPageNumber = ceil((double)bufferUsedSize_ / (double)(directIOPageSize_ - sizeof(uint32_t)));
+            uint64_t writeDoneContentSize = 0;
+            // align mem
+            char* writeBuffer;
+            auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
+            auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
+            if (ret) {
+                debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+                fileOperationStatus_t ret(false, 0, 0, 0);
+                return ret;
+            } else {
+                memset(writeBuffer, 0, writeBufferSize);
+            }
+            uint64_t processedPageNumber = 0;
+            uint64_t targetWriteSize = bufferUsedSize_;
+
+            while (writeDoneContentSize != targetWriteSize) {
+                uint32_t currentPageWriteSize;
+                if ((targetWriteSize - writeDoneContentSize) > (directIOPageSize_ - sizeof(uint32_t))) {
+                    currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
+                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
+                    writeDoneContentSize += currentPageWriteSize;
+                    processedPageNumber++;
+                } else {
+                    currentPageWriteSize = targetWriteSize - writeDoneContentSize;
+                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
+                    writeDoneContentSize += currentPageWriteSize;
+                    processedPageNumber++;
+                }
+            }
+            auto wReturn = pwrite(fileDirect_, writeBuffer, writeBufferSize, directIOWriteFileSize_);
+            if (wReturn != writeBufferSize) {
+                free(writeBuffer);
+                debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
+                fileOperationStatus_t ret(false, 0, 0, 0);
+                return ret;
+            } else {
+                free(writeBuffer);
+                directIOWriteFileSize_ += writeBufferSize;
+                directIOActualWriteFileSize_ += bufferUsedSize_;
+                uint64_t flushedSize = bufferUsedSize_;
+                bufferUsedSize_ = 0;
+                memset(globalWriteBuffer_, 0, directIOPageSize_);
+                fileOperationStatus_t ret(true, writeBufferSize, flushedSize, 0);
+                return ret;
+            }
+        }
+        fileOperationStatus_t ret(true, 0, 0, 0);
+        return ret;
     } else {
-        return false;
+        fileOperationStatus_t ret(false, 0, 0, 0);
+        return ret;
     }
 }
 
