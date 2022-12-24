@@ -237,8 +237,8 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
             memcpy(contentBufferWithExistWriteBuffer, globalWriteBuffer_, previousBufferUsedSize);
             memcpy(contentBufferWithExistWriteBuffer + previousBufferUsedSize, contentBuffer, contentSize);
             int actualNeedWriteSize = 0;
+            uint32_t currentPageWriteSize;
             while (writeDoneContentSize != targetWriteSize) {
-                uint32_t currentPageWriteSize;
                 if ((targetWriteSize - writeDoneContentSize) >= (directIOPageSize_ - sizeof(uint32_t))) {
                     currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
                     memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
@@ -255,6 +255,10 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
                     processedPageNumber++;
                 }
             }
+            if (currentPageWriteSize == directIOPageSize_ - sizeof(uint32_t)) {
+                memset(globalWriteBuffer_, 0, globalBufferSize_);
+                bufferUsedSize_ = 0;
+            }
             auto wReturn = pwrite(fileDirect_, writeBuffer, actualNeedWriteSize, directIOWriteFileSize_);
             if (wReturn != actualNeedWriteSize) {
                 free(writeBuffer);
@@ -265,6 +269,9 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
                 free(writeBuffer);
                 directIOWriteFileSize_ += actualNeedWriteSize;
                 directIOActualWriteFileSize_ += (targetWriteSize - bufferUsedSize_);
+                if (directIOActualWriteFileSize_ == 542115) {
+                    debug_error("targetWriteSize %lu bufferUsedSize_ %lu\n", targetWriteSize, bufferUsedSize_);
+                }
                 // cerr << "Content write size = " << (targetWriteSize - bufferUsedSize_) << ", request write size = " << contentSize << ", buffered size = " << bufferUsedSize_ << endl;
                 fileOperationStatus_t ret(true, actualNeedWriteSize, targetWriteSize - bufferUsedSize_, bufferUsedSize_);
                 return ret;
@@ -309,11 +316,13 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
             return ret;
         }
         uint64_t currentReadDoneSize = 0;
+        vector<uint64_t> vec;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;
             memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
             memcpy(contentBuffer + currentReadDoneSize, readBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), currentPageContentSize);
             currentReadDoneSize += currentPageContentSize;
+            vec.push_back(currentReadDoneSize);
         }
         // if (currentReadDoneSize != contentSize) {
         //     cerr << "Current read done size = " << currentReadDoneSize << ", buffered size = " << bufferUsedSize_ << ", request size = " << contentSize << endl;
@@ -325,6 +334,11 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
         if (currentReadDoneSize != contentSize) {
             free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber, directIOWriteFileSize_, directIOActualWriteFileSize_, bufferUsedSize_);
+            uint64_t last = 0;
+            for (auto& it : vec) {
+                fprintf(stderr, "%lu %lu %lu\n", it, it-last, 4096-(it-last));
+                last = it;
+            }
             fileOperationStatus_t ret(false, 0, 0, 0);
             return ret;
         } else {

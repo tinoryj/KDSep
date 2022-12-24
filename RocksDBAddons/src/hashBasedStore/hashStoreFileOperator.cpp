@@ -1046,18 +1046,18 @@ void HashStoreFileOperator::operationWorker(int threadID)
             case kGet:
                 operationTypeCorrectFlag = true;
                 debug_trace("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentHandlerPtr->file_handler_->target_file_id_);
-                operationsStatus = operationWorkerGetFunction(currentHandlerPtr);
+                STAT_PROCESS(operationsStatus = operationWorkerGetFunction(currentHandlerPtr), StatsType::OP_GET);
                 break;
             case kMultiPut:
                 operationTypeCorrectFlag = true;
                 debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu, %lu, %lu, %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.sequence_number_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->size());
-                operationsStatus = operationWorkerMultiPutFunction(currentHandlerPtr);
+                STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(currentHandlerPtr), StatsType::OP_MULTIPUT);
                 debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size());
                 break;
             case kPut:
                 operationTypeCorrectFlag = true;
                 debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", (*currentHandlerPtr->write_operation_.key_str_).c_str(), currentHandlerPtr->file_handler_->target_file_id_);
-                operationsStatus = operationWorkerPutFunction(currentHandlerPtr);
+                STAT_PROCESS(operationsStatus = operationWorkerPutFunction(currentHandlerPtr), StatsType::OP_PUT);
                 break;
             default:
                 debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->opType_);

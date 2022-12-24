@@ -148,6 +148,12 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-insert-cache-new", DELTAKV_CACHE_INSERT_NEW, time[DELTAKV_CACHE_INSERT_NEW]);
     PRINT_FULL("DeltaKV-insert-cache-merge", DELTAKV_CACHE_INSERT_MERGE, time[DELTAKV_CACHE_INSERT_MERGE]);
 
+    fprintf(stdout, "-------------- DeltaKV Merge request Breakdown ------------------------------\n");
+    PRINT_FULL("All", DELTAKV_MERGE, time[DELTAKV_MERGE]); 
+    PRINT_FULL("  lock", MERGE_LOCK, time[DELTAKV_MERGE]);
+    PRINT_FULL("  postlock-full", MERGE_AFTER_LOCK_FULL, time[DELTAKV_MERGE]);
+    PRINT_FULL("  postlock-not-full", MERGE_AFTER_LOCK_NOT_FULL, time[DELTAKV_MERGE]);
+
     fprintf(stdout, "-------------- DeltaKV Batch Get Breakdown ------------------------------\n");
     PRINT_FULL("All", DELTAKV_BATCH_READ, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);
@@ -156,6 +162,12 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("Read-store", DELTAKV_BATCH_READ_STORE, time[DELTAKV_BATCH_READ]);
+
+    fprintf(stdout, "-------------- DeltaKV Batch OP Breakdown ------------------------------\n");
+    PRINT_FULL("op-read", OP_GET, time[OP_GET]);
+    PRINT_FULL("op-multiput", OP_MULTIPUT, time[OP_MULTIPUT]);
+    PRINT_FULL("op-put", OP_PUT, time[OP_PUT]);
+
 
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
     PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));

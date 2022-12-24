@@ -1921,6 +1921,8 @@ bool DeltaKV::PutWithWriteBatch(const string& key, const string& value)
 
 bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -1933,6 +1935,9 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
     std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK, tv);
+    gettimeofday(&tv, 0);
+
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, writeBatchDeque[currentWriteBatchDequeInUse]->size());
     if (writeBatchDeque[currentWriteBatchDequeInUse]->size() == maxBatchOperationBeforeCommitNumber_) {
         // flush old one
@@ -1952,6 +1957,7 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
             tempDeque.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
         return true;
     } else {
         // only insert
@@ -1963,6 +1969,7 @@ bool DeltaKV::MergeWithWriteBatch(const string& key, const string& value)
             tempDeque.push_back(writeBatchSearch_t(kMergeOp, value, currentSequenceNumber));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse].insert(make_pair(key, tempDeque));
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_NOT_FULL, tv);
         return true;
     }
 }
