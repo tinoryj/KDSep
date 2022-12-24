@@ -1659,7 +1659,8 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit, has
         }
         debug_info("Selected from file number = %lu for merge GC\n", targetFileForMergeMap.size());
         if (targetFileForMergeMap.size() != 0) {
-            while (true) {
+            int maxTryNumber = 100;
+            while (maxTryNumber--) {
                 for (auto mapIt : targetFileForMergeMap) {
                     string tempPrefixToFindNodeAtSameLevelStr = mapIt.first;
                     string tempPrefixToFindAnotherNodeAtSameLevelStr;

@@ -62,7 +62,6 @@ private:
     char* globalWriteBuffer_ = nullptr;
     uint64_t bufferUsedSize_ = 0;
     uint64_t globalBufferSize_ = 0;
-    std::shared_mutex fileLock_;
 };
 
 } // namespace DELTAKV_NAMESPACE
