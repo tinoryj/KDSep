@@ -8,6 +8,14 @@ FileOperation::FileOperation(fileOperationType operationType)
 {
     operationType_ = operationType;
     fileDirect_ = -1;
+    preAllocateFileSize_ = 256 * 1024;
+}
+
+FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize)
+{
+    operationType_ = operationType;
+    fileDirect_ = -1;
+    preAllocateFileSize_ = fileSize;
 }
 
 FileOperation::~FileOperation()
@@ -114,6 +122,10 @@ bool FileOperation::createThenOpenFile(string path)
             debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
             return false;
         } else {
+            int allocateStatus = fallocate(fileDirect_, 0, 0, preAllocateFileSize_);
+            if (allocateStatus != 0) {
+                debug_warn("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
+            }
             directIOWriteFileSize_ = 0;
             directIOActualWriteFileSize_ = 0;
             debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fileDirect_, directIOWriteFileSize_, directIOActualWriteFileSize_);

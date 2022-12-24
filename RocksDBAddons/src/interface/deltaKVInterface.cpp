@@ -355,10 +355,12 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
             }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
-            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_));
+            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_ - 1; threadID++) {
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_, threadID));
                 thList_.push_back(th);
             }
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::notifyOperationWorkerThread, hashStoreFileOperatorPtr_));
+            thList_.push_back(th);
         } else {
             debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
         }
