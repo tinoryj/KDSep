@@ -182,6 +182,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
             options_.enable_deltaStore_KDLevel_cache = true;
             options_.deltaStore_KDLevel_cache_item_number = deltaLogCacheObjectNumber;
         }
+        options_.deltaStore_prefix_tree_initial_bit_number_ = config.getPrefixTreeBitNumber();
         options_.deltaStore_operationNumberForMetadataCommitThreshold_ = config.getDelteLogMetadataCommitLatency();
         options_.deltaStore_single_file_maximum_size = config.getDeltaLogFileSize();
         options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
