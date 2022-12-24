@@ -222,6 +222,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdb_sync_put = !keyValueSeparation;
         options_.rocksdb_sync_merge = !keyDeltaSeparation;
     }
+    options_.enable_key_value_cache_ = config.getDeltaKVCacheEnableStatus();
+    options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
     options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);

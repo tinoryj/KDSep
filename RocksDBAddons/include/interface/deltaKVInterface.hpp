@@ -141,6 +141,8 @@ private:
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
+    bool enableKeyValueCache_ = false;
+    AppendAbleLRUCache<string, string>* keyToValueListCache_ = nullptr;
 
     // thread management
     vector<boost::thread*> thList_;

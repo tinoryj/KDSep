@@ -316,6 +316,10 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
     }
+    if (options.enable_key_value_cache_ == true) {
+        enableKeyValueCache_ = true;
+        keyToValueListCache_ = new AppendAbleLRUCache<string, string>(options.key_value_cache_object_number_);
+    }
     // Create objects
     if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
         isValueStoreInUseFlag_ = true;
@@ -1000,6 +1004,16 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value, uint32
 bool DeltaKV::Put(const string& key, const string& value)
 {
     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+    // insert to cache if is value update
+    if (enableKeyValueCache_ == true) {
+        string cacheKey = key;
+        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            keyToValueListCache_->getFromCache(cacheKey).assign(value);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+        }
+    }
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
@@ -1049,6 +1063,17 @@ bool DeltaKV::Put(const string& key, const string& value)
 bool DeltaKV::Get(const string& key, string* value)
 {
     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+    // search first
+    if (enableKeyValueCache_ == true) {
+        string cacheKey = key;
+        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            value->assign(keyToValueListCache_->getFromCache(cacheKey));
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_GET, tv);
+            return true;
+        }
+    }
     vector<string> tempNewMergeOperatorsVec;
     bool needMergeWithInBufferOperationsFlag = false;
     if (isBatchedOperationsWithBufferInUse_ == true) {
@@ -1106,10 +1131,19 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
-            } else {
-                return true;
             }
+            if (enableKeyValueCache_ == true) {
+                string cacheKey = key;
+                if (keyToValueListCache_->existsInCache(cacheKey) == false) {
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
+                    string cacheValue;
+                    cacheValue.assign(*value);
+                    keyToValueListCache_->insertToCache(cacheKey, cacheValue);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+                }
+            }
+            return true;
         }
         break;
     case kBatchedWithOnlyValueLog:
@@ -1122,10 +1156,19 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
-            } else {
-                return true;
             }
+            if (enableKeyValueCache_ == true) {
+                string cacheKey = key;
+                if (keyToValueListCache_->existsInCache(cacheKey) == false) {
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
+                    string cacheValue;
+                    cacheValue.assign(*value);
+                    keyToValueListCache_->insertToCache(cacheKey, cacheValue);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+                }
+            }
+            return true;
         }
         break;
     case kBatchedWithOnlyDeltaLog:
@@ -1138,10 +1181,19 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
-            } else {
-                return true;
             }
+            if (enableKeyValueCache_ == true) {
+                string cacheKey = key;
+                if (keyToValueListCache_->existsInCache(cacheKey) == false) {
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
+                    string cacheValue;
+                    cacheValue.assign(*value);
+                    keyToValueListCache_->insertToCache(cacheKey, cacheValue);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+                }
+            }
+            return true;
         }
         break;
     case kBatchedWithPlainRocksDB:
@@ -1154,7 +1206,17 @@ bool DeltaKV::Get(const string& key, string* value)
                 tempValueStr.assign(*value);
                 value->clear();
                 deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
-                return true;
+            }
+            if (enableKeyValueCache_ == true) {
+                string cacheKey = key;
+                if (keyToValueListCache_->existsInCache(cacheKey) == false) {
+                    struct timeval tv;
+                    gettimeofday(&tv, 0);
+                    string cacheValue;
+                    cacheValue.assign(*value);
+                    keyToValueListCache_->insertToCache(cacheKey, cacheValue);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+                }
             }
             return true;
         }
@@ -1170,6 +1232,20 @@ bool DeltaKV::Get(const string& key, string* value)
 bool DeltaKV::Merge(const string& key, const string& value)
 {
     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+    if (enableKeyValueCache_ == true) {
+        string cacheKey = key;
+        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            string oldValue = keyToValueListCache_->getFromCache(cacheKey);
+            string finalValue;
+            vector<string> operandListForCacheUpdate;
+            operandListForCacheUpdate.push_back(value);
+            deltaKVMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue);
+            keyToValueListCache_->getFromCache(cacheKey).assign(finalValue);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_MERGE, tv);
+        }
+    }
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
@@ -1385,50 +1461,8 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
         }
     }
     if (findNewValueInBatchedBuffer == true) {
-        debug_info("Get current value done via write buffer, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
-        switch (deltaKVRunningMode_) {
-        case kBatchedWithPlainRocksDB:
-        case kBatchedWithOnlyValueLog:
-        case kBatchedWithOnlyDeltaLog:
-        case kBatchedWithBothValueAndDeltaLog:
-            if (PutWithWriteBatch(key, newValueStr) == false) {
-                return false;
-            } else {
-                return true;
-            }
-            break;
-        case kBothValueAndDeltaLog:
-            if (PutWithValueAndDeltaStore(key, newValueStr) == false) {
-                return false;
-            } else {
-                return true;
-            }
-            break;
-        case kOnlyValueLog:
-            if (PutWithOnlyValueStore(key, newValueStr) == false) {
-                return false;
-            } else {
-                return true;
-            }
-            break;
-        case kOnlyDeltaLog:
-            if (PutWithOnlyDeltaStore(key, newValueStr) == false) {
-                return false;
-            } else {
-                return true;
-            }
-            break;
-        case kPlainRocksDB:
-            if (PutWithPlainRocksDB(key, newValueStr) == false) {
-                return false;
-            } else {
-                return true;
-            }
-            break;
-        default:
-            debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
-            return false;
-        }
+        debug_info("Get current value in write buffer, skip write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
+        return true;
     }
     // get content from underlying DB
     uint32_t maxSequenceNumber = 0;
@@ -1506,6 +1540,15 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     }
     if (getNewValueStrSuccessFlag == true) {
         debug_info("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
+        if (enableKeyValueCache_ == true) {
+            string cacheKey = key;
+            if (keyToValueListCache_->existsInCache(cacheKey) == false) {
+                struct timeval tv;
+                gettimeofday(&tv, 0);
+                keyToValueListCache_->insertToCache(cacheKey, newValueStr);
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
+            }
+        }
         switch (deltaKVRunningMode_) {
         case kBatchedWithPlainRocksDB:
         case kBatchedWithOnlyValueLog:

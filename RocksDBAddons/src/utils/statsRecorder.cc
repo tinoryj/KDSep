@@ -116,7 +116,7 @@ StatsRecorder::~StatsRecorder()
 
 #define PRINT_FULL(_NAME_, _TYPE_, _SUM_)                                                                                                                                                       \
     do {                                                                                                                                                                                        \
-        fprintf(stdout, "%-24s sum:%16llu count:%12llu avg.:%10.2lf per.:%6.2lf%%\n", _NAME_, time[_TYPE_], counts[_TYPE_], time[_TYPE_] * 1.0 / counts[_TYPE_], time[_TYPE_] * 100.0 / _SUM_); \
+        fprintf(stdout, "%-30s sum:%16llu count:%12llu avg.:%10.2lf per.:%6.2lf%%\n", _NAME_, time[_TYPE_], counts[_TYPE_], time[_TYPE_] * 1.0 / counts[_TYPE_], time[_TYPE_] * 100.0 / _SUM_); \
     } while (0);
 
     fprintf(stdout, "------------------------- DELTAKV Temp  -------------------------------------\n");
@@ -125,8 +125,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-tmp3", DELTAKV_TMP3, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-create-new-bucket", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-create-gc-bucket", DELTAKV_HASHSTORE_CREATE_GC_BUCKET, time[DELTAKV_PUT]);
-    PRINT_FULL("DKV-gc-write-back", DELTAKV_GC_WRITE_BACK, 0);
-    PRINT_FULL("DKV-get-write-back", DELTAKV_GET_WRITE_BACK, 0);
+    PRINT_FULL("DKV-gc-write-back", DELTAKV_GC_WRITE_BACK, time[DELTAKV_GC_WRITE_BACK]);
+    PRINT_FULL("DKV-get-write-back", DELTAKV_GET_WRITE_BACK, time[DELTAKV_GET_WRITE_BACK]);
 
     fprintf(stdout, "------------------------- DELTAKV Request -----------------------------------\n");
     PRINT_FULL("DeltaKV-put", DELTAKV_PUT, time[DELTAKV_PUT]);
@@ -143,6 +143,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE_ROCKSDB, time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-vLog", DELTAKV_MERGE_INDEXSTORE, time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-dStore", DELTAKV_MERGE_HASHSTORE, time[DELTAKV_MERGE]);
+    fprintf(stdout, "\n");
+    PRINT_FULL("DeltaKV-get-cache", DELTAKV_CACHE_GET, time[DELTAKV_CACHE_GET]);
+    PRINT_FULL("DeltaKV-insert-cache-new", DELTAKV_CACHE_INSERT_NEW, time[DELTAKV_CACHE_INSERT_NEW]);
+    PRINT_FULL("DeltaKV-insert-cache-merge", DELTAKV_CACHE_INSERT_MERGE, time[DELTAKV_CACHE_INSERT_MERGE]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
     PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));

@@ -7,16 +7,16 @@ namespace DELTAKV_NAMESPACE {
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // if (maxBucketNumber_ > 64) {
-    //     initialTrieBitNumber_ = 6;
-    // } else {
-    uint64_t k = 0;
-    while (pow((double)2, (double)k) <= maxBucketNumber_) {
-        k++;
+    if (maxBucketNumber_ > 64) {
+        initialTrieBitNumber_ = 6;
+    } else {
+        uint64_t k = 0;
+        while (pow((double)2, (double)k) <= maxBucketNumber_) {
+            k++;
+        }
+        k = k - 1;
+        initialTrieBitNumber_ = k;
     }
-    k = k - 1;
-    initialTrieBitNumber_ = k;
-    // }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -45,16 +45,16 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // if (maxBucketNumber_ > 64) {
-    //     initialTrieBitNumber_ = 6;
-    // } else {
-    uint64_t k = 0;
-    while (pow((double)2, (double)k) <= maxBucketNumber_) {
-        k++;
+    if (maxBucketNumber_ > 64) {
+        initialTrieBitNumber_ = 6;
+    } else {
+        uint64_t k = 0;
+        while (pow((double)2, (double)k) <= maxBucketNumber_) {
+            k++;
+        }
+        k = k - 1;
+        initialTrieBitNumber_ = k;
     }
-    k = k - 1;
-    initialTrieBitNumber_ = k;
-    // }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -2012,7 +2012,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
                 continue;
             }
         } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
-            // debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
+            debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
             fileDeleteVecMtx_.lock();
             targetDeleteFileHandlerVec_.push_back(fileHandlerIt.second->target_file_id_);
             fileDeleteVecMtx_.unlock();
