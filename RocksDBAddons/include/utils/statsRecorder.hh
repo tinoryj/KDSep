@@ -187,13 +187,13 @@ public:
             return;
         if (syncStat) {
             std::unique_lock<shared_mutex> w_lock(deltaGCWriteMtx_);
-            DeltaGcBytes.first += bytes;
-            DeltaGcTimes.first++;
+            DeltaGcPhysicalBytes.first += bytes;
+            DeltaGcPhysicalTimes.first++;
             DeltaGcLogicalBytes.first += logicalBytes;
             DeltaGcLogicalTimes.first++;
         } else {
-            DeltaGcBytes.first += bytes;
-            DeltaGcTimes.first++;
+            DeltaGcPhysicalBytes.first += bytes;
+            DeltaGcPhysicalTimes.first++;
             DeltaGcLogicalBytes.first += logicalBytes;
             DeltaGcLogicalTimes.first++;
         }
@@ -205,13 +205,13 @@ public:
             return;
         if (syncStat) {
             std::unique_lock<shared_mutex> w_lock(deltaGCReadMtx_);
-            DeltaGcBytes.second += bytes;
-            DeltaGcTimes.second++;
+            DeltaGcPhysicalBytes.second += bytes;
+            DeltaGcPhysicalTimes.second++;
             DeltaGcLogicalBytes.second += logicalBytes;
             DeltaGcLogicalTimes.second++;
         } else {
-            DeltaGcBytes.second += bytes;
-            DeltaGcTimes.second++;
+            DeltaGcPhysicalBytes.second += bytes;
+            DeltaGcPhysicalTimes.second++;
             DeltaGcLogicalBytes.second += logicalBytes;
             DeltaGcLogicalTimes.second++;
         }
@@ -223,13 +223,13 @@ public:
             return;
         if (syncStat) {
             std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
-            DeltaOPBytes.first += bytes;
-            DeltaOPTimes.first++;
+            DeltaOPPhysicalBytes.first += bytes;
+            DeltaOPPhysicalTimes.first++;
             DeltaOPLogicalBytes.first += logicalBytes;
             DeltaOPLogicalTimes.first++;
         } else {
-            DeltaOPBytes.first += bytes;
-            DeltaOPTimes.first++;
+            DeltaOPPhysicalBytes.first += bytes;
+            DeltaOPPhysicalTimes.first++;
             DeltaOPLogicalBytes.first += logicalBytes;
             DeltaOPLogicalTimes.first++;
         }
@@ -241,13 +241,13 @@ public:
             return;
         if (syncStat) {
             std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
-            DeltaOPBytes.second += bytes;
-            DeltaOPTimes.second++;
+            DeltaOPPhysicalBytes.second += bytes;
+            DeltaOPPhysicalTimes.second++;
             DeltaOPLogicalBytes.second += logicalBytes;
             DeltaOPLogicalTimes.second++;
         } else {
-            DeltaOPBytes.second += bytes;
-            DeltaOPTimes.second++;
+            DeltaOPPhysicalBytes.second += bytes;
+            DeltaOPPhysicalTimes.second++;
             DeltaOPLogicalBytes.second += logicalBytes;
             DeltaOPLogicalTimes.second++;
         }
@@ -288,10 +288,10 @@ private:
     unsigned long long lsmLookupTime;
     unsigned long long approximateMemoryUsage;
     std::vector<std::pair<unsigned long long, unsigned long long>> IOBytes; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcBytes = { 0, 0 }; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcTimes = { 0, 0 };
-    std::pair<unsigned long long, unsigned long long> DeltaOPBytes = { 0, 0 }; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaOPTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaGcPhysicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcPhysicalTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaOPPhysicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaOPPhysicalTimes = { 0, 0 };
     std::pair<unsigned long long, unsigned long long> DeltaGcLogicalBytes = { 0, 0 }; /* write,read */
     std::pair<unsigned long long, unsigned long long> DeltaGcLogicalTimes = { 0, 0 };
     std::pair<unsigned long long, unsigned long long> DeltaOPLogicalBytes = { 0, 0 }; /* write,read */

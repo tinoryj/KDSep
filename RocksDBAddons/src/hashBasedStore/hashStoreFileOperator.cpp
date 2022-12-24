@@ -257,12 +257,13 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
         debug_error("[ERROR] Should not read from a not opened file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     }
-    pair<uint64_t, uint64_t> flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
-    StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.first, flushedSizePair.second, syncStatistics_);
-    bool readFileStatus;
+    fileOperationStatus_t flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
+    StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
+    fileHandler->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
+    fileOperationStatus_t readFileStatus;
     STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
     StatsRecorder::getInstance()->DeltaOPBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);
-    if (readFileStatus == false) {
+    if (readFileStatus.success_ == false) {
         debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     } else {
@@ -317,18 +318,18 @@ bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fil
         debug_error("[ERROR] Could not write to a not opened file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     }
-    uint64_t onDiskWriteSize = 0;
-    STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(contentBuffer, contentSize), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
-    StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, contentSize, syncStatistics_);
-    if (onDiskWriteSize == 0) {
+    fileOperationStatus_t onDiskWriteSizePair;
+    STAT_PROCESS(onDiskWriteSizePair = fileHandler->file_operation_func_ptr_->writeFile(contentBuffer, contentSize), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+    StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
+    if (onDiskWriteSizePair.success_ == false) {
         debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     } else {
         // update metadata
         fileHandler->total_object_bytes_ += contentSize;
-        fileHandler->total_on_disk_bytes_ += onDiskWriteSize;
+        fileHandler->total_on_disk_bytes_ += onDiskWriteSizePair.physicalSize_;
         fileHandler->total_object_count_ += contentObjectNumber;
-        debug_trace("Write content to file ID = %lu done, write to disk size = %lu\n", fileHandler->target_file_id_, onDiskWriteSize);
+        debug_trace("Write content to file ID = %lu done, write to disk size = %lu\n", fileHandler->target_file_id_, onDiskWriteSizePair.physicalSize_);
         return true;
     }
 }
@@ -595,26 +596,26 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
 {
     // debug_error("Current file ID = %lu, GC threshold = %lu, current size = %lu, total disk size = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
     // insert into GC job queue if exceed the threshold
-    if (fileHandler->total_on_disk_bytes_ >= singleFileSizeLimit_ && fileHandler->gc_result_status_flag_ == kNoGC) {
+    if (fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize() >= singleFileSizeLimit_ && fileHandler->gc_result_status_flag_ == kNoGC) {
         fileHandler->no_gc_wait_operation_number_++;
         if (fileHandler->no_gc_wait_operation_number_ % operationNumberThresholdForForcedSingleFileGC_ == 1) {
             fileHandler->file_ownership_flag_ = -1;
             fileHandler->gc_result_status_flag_ = kMayGC;
             notifyGCToManagerMQ_->push(fileHandler);
-            debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+            debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize());
             return true;
         } else {
-            debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, singleFileSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
+            debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, singleFileSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->gc_result_status_flag_);
             return false;
         }
-    } else if (fileHandler->total_on_disk_bytes_ >= perFileGCSizeLimit_) {
+    } else if (fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize() >= perFileGCSizeLimit_) {
         if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
             fileHandler->file_ownership_flag_ = -1;
             notifyGCToManagerMQ_->push(fileHandler);
-            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize());
             return true;
         } else {
-            debug_trace("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
+            debug_trace("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->gc_result_status_flag_);
             return false;
         }
     } else {
@@ -678,17 +679,17 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         }
         // write contents of file
 
-        uint64_t onDiskWriteSize;
-        STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithoutAnchros, targetWriteSizeWithoutAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
-        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, targetWriteSizeWithoutAnchors, syncStatistics_);
-        if (onDiskWriteSize == 0) {
+        fileOperationStatus_t onDiskWriteSizePair;
+        STAT_PROCESS(onDiskWriteSizePair = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithoutAnchros, targetWriteSizeWithoutAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
+        if (onDiskWriteSizePair.success_ == false) {
             debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
             fileHandler->file_ownership_flag_ = 0;
             return false;
         } else {
             // Update metadata
             fileHandler->total_object_bytes_ += targetWriteSizeWithoutAnchors;
-            fileHandler->total_on_disk_bytes_ += onDiskWriteSize;
+            fileHandler->total_on_disk_bytes_ += onDiskWriteSizePair.physicalSize_;
             fileHandler->total_object_count_++;
             // insert to cache if current key exist in cache && cache is enabled
             if (keyToValueListCache_ != nullptr) {
@@ -744,17 +745,17 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         memcpy(writeContentBufferWithAnchor + currentWriteBufferPtrPosition + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
         memcpy(writeContentBufferWithAnchor + currentWriteBufferPtrPosition + sizeof(newRecordHeader) + newRecordHeader.key_size_, value.c_str(), newRecordHeader.value_size_);
         // write contents of file
-        uint64_t onDiskWriteSize;
-        STAT_PROCESS(onDiskWriteSize = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithAnchor, targetWriteSizeWithAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
-        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSize, targetWriteSizeWithAnchors, syncStatistics_);
-        if (onDiskWriteSize == 0) {
+        fileOperationStatus_t onDiskWriteSizePair;
+        STAT_PROCESS(onDiskWriteSizePair = fileHandler->file_operation_func_ptr_->writeFile(writeContentBufferWithAnchor, targetWriteSizeWithAnchors), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+        StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
+        if (onDiskWriteSizePair.success_ == false) {
             debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
             fileHandler->file_ownership_flag_ = 0;
             return false;
         } else {
             // Update metadata
             fileHandler->total_object_bytes_ += targetWriteSizeWithAnchors;
-            fileHandler->total_on_disk_bytes_ += onDiskWriteSize;
+            fileHandler->total_on_disk_bytes_ += onDiskWriteSizePair.physicalSize_;
             fileHandler->total_object_count_ += (totalNotFlushedAnchorNumber + 1);
             // insert to cache if current key exist in cache && cache is enabled
             if (keyToValueListCache_ != nullptr) {

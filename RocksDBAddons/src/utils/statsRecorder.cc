@@ -297,26 +297,33 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("SetKeyLSM (Batch)", KEY_SET_LSM_BATCH, time[KEY_SET_ALL]);
     PRINT_FULL("SetKeyCache", KEY_SET_CACHE, time[KEY_SET_ALL]);
 
-    fprintf(stdout, "-------------------- DeltaStore Bytes Counters ------------------------------\n");
+    fprintf(stdout, "-------------------- DeltaStore GC Bytes Counters ------------------------------\n");
 
     fprintf(stdout, "dStore GC Physical write bytes     : %16llu (average %16llu, %8llu times)\n",
-        DeltaGcBytes.first, DeltaGcBytes.first / (DeltaGcTimes.first + 1), DeltaGcTimes.first);
-    fprintf(stdout, "dStore GC Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
-        DeltaGcBytes.second, DeltaGcBytes.second / (DeltaGcTimes.second + 1), DeltaGcTimes.second);
-    fprintf(stdout, "dStore OP Physical write bytes     : %16llu (average %16llu, %8llu times)\n",
-        DeltaOPBytes.first, DeltaOPBytes.first / (DeltaOPTimes.first + 1), DeltaOPTimes.first);
-    fprintf(stdout, "dStore OP Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
-        DeltaOPBytes.second, DeltaOPBytes.second / (DeltaOPTimes.second + 1), DeltaOPTimes.second);
-    fprintf(stdout, "dStore GC Logical write bytes     : %16llu (average %16llu, %8llu times)\n",
+        DeltaGcPhysicalBytes.first, DeltaGcPhysicalBytes.first / (DeltaGcPhysicalTimes.first + 1), DeltaGcPhysicalTimes.first);
+    fprintf(stdout, "dStore GC Logical write bytes      : %16llu (average %16llu, %8llu times)\n",
         DeltaGcLogicalBytes.first, DeltaGcLogicalBytes.first / (DeltaGcLogicalTimes.first + 1), DeltaGcLogicalTimes.first);
-    fprintf(stdout, "dStore GC Logical read bytes      : %16llu (average %16llu, %8llu times)\n",
+    fprintf(stdout, "dStore GC Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaGcPhysicalBytes.second, DeltaGcPhysicalBytes.second / (DeltaGcPhysicalTimes.second + 1), DeltaGcPhysicalTimes.second);
+    fprintf(stdout, "dStore GC Logical read bytes       : %16llu (average %16llu, %8llu times)\n",
         DeltaGcLogicalBytes.second, DeltaGcLogicalBytes.second / (DeltaGcLogicalTimes.second + 1), DeltaGcLogicalTimes.second);
-    fprintf(stdout, "dStore OP Logical write bytes     : %16llu (average %16llu, %8llu times)\n",
-        DeltaOPLogicalBytes.first, DeltaOPLogicalBytes.first / (DeltaOPLogicalTimes.first + 1), DeltaOPLogicalTimes.first);
-    fprintf(stdout, "dStore OP Logical read bytes      : %16llu (average %16llu, %8llu times)\n",
-        DeltaOPLogicalBytes.second, DeltaOPLogicalBytes.second / (DeltaOPLogicalTimes.second + 1), DeltaOPLogicalTimes.second);
+    fprintf(stdout, "dStore GC read amplification       : %16f\n", (double)DeltaGcPhysicalBytes.second / (DeltaGcLogicalBytes.second));
+    fprintf(stdout, "dStore GC write amplification      : %16f\n", (double)DeltaGcPhysicalBytes.first / (DeltaGcLogicalBytes.first));
 
-    fprintf(stdout, "------------------------- Bytes Counters ------------------------------------\n");
+    fprintf(stdout, "-------------------- DeltaStore OP Bytes Counters ------------------------------\n");
+
+    fprintf(stdout, "dStore OP Physical write bytes     : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPPhysicalBytes.first, DeltaOPPhysicalBytes.first / (DeltaOPPhysicalTimes.first + 1), DeltaOPPhysicalTimes.first);
+    fprintf(stdout, "dStore OP Logical write bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPLogicalBytes.first, DeltaOPLogicalBytes.first / (DeltaOPLogicalTimes.first + 1), DeltaOPLogicalTimes.first);
+    fprintf(stdout, "dStore OP Physical read bytes      : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPPhysicalBytes.second, DeltaOPPhysicalBytes.second / (DeltaOPPhysicalTimes.second + 1), DeltaOPPhysicalTimes.second);
+    fprintf(stdout, "dStore OP Logical read bytes       : %16llu (average %16llu, %8llu times)\n",
+        DeltaOPLogicalBytes.second, DeltaOPLogicalBytes.second / (DeltaOPLogicalTimes.second + 1), DeltaOPLogicalTimes.second);
+    fprintf(stdout, "dStore OP read amplification       : %16f\n", (double)DeltaOPPhysicalBytes.second / (DeltaOPLogicalBytes.second));
+    fprintf(stdout, "dStore OP write amplification      : %16f\n", (double)DeltaOPPhysicalBytes.first / (DeltaOPLogicalBytes.first));
+
+    fprintf(stdout, "------------------------- vLog Bytes Counters ------------------------------------\n");
     unsigned long long writeIOSum = 0, readIOSum = 0;
     for (int i = 0; i < MAX_DISK; i++) {
         fprintf(stdout, "Disk %5d                : (Write) %16llu (Read) %16llu\n", i, IOBytes[i].first, IOBytes[i].second);

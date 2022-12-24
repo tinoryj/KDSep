@@ -26,7 +26,7 @@ public:
     bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
 
     // GC manager
-    void processSingleFileGCRequestWorker();
+    void processSingleFileGCRequestWorker(int threadID);
     void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
     bool forcedManualGCAllFiles();
@@ -100,6 +100,9 @@ private:
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
+    std::mutex operationNotifyMtx_;
+    std::condition_variable operationNotifyCV_;
+    vector<bool> workingThreadExitFlagVec_;
     bool syncStatistics_;
 };
 
