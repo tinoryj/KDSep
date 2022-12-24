@@ -36,6 +36,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         shouldUseDirectOperationsFlag_ = true;
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
     }
+    fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -174,25 +175,47 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
         vector<string> valueVecTemp[fileHandlerToIndexMap.size()];
         vector<uint32_t> sequenceNumberVecTemp[fileHandlerToIndexMap.size()];
         vector<bool> anchorFlagVecTemp[fileHandlerToIndexMap.size()];
+        // for selective putinto job queue
         auto processedHandlerIndex = 0;
+        unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
         for (auto mapIt : fileHandlerToIndexMap) {
             // mapIt.first->file_ownership_flag_ = 1;
-            mapIt.first->markedByMultiPut_ = false;
-            hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
+            uint64_t targetWriteSize = 0;
             for (auto index = 0; index < mapIt.second.size(); index++) {
                 keyVecTemp[processedHandlerIndex].push_back(keyStrVec[mapIt.second[index]]);
                 valueVecTemp[processedHandlerIndex].push_back(valueStrPtrVec[mapIt.second[index]]);
                 sequenceNumberVecTemp[processedHandlerIndex].push_back(sequenceNumberVec[mapIt.second[index]]);
                 anchorFlagVecTemp[processedHandlerIndex].push_back(isAnchorVec[mapIt.second[index]]);
+                if (isAnchorVec[mapIt.second[index]] == true) {
+                    targetWriteSize += (sizeof(hashStoreRecordHeader) + keyStrVec[mapIt.second[index]].size());
+                } else {
+                    targetWriteSize += (sizeof(hashStoreRecordHeader) + keyStrVec[mapIt.second[index]].size() + valueStrPtrVec[mapIt.second[index]].size());
+                }
             }
-            currentOperationHandler->batched_write_operation_.key_str_vec_ptr_ = &keyVecTemp[processedHandlerIndex];
-            currentOperationHandler->batched_write_operation_.value_str_vec_ptr_ = &valueVecTemp[processedHandlerIndex];
-            currentOperationHandler->batched_write_operation_.sequence_number_vec_ptr_ = &sequenceNumberVecTemp[processedHandlerIndex];
-            currentOperationHandler->batched_write_operation_.is_anchor_vec_ptr_ = &anchorFlagVecTemp[processedHandlerIndex];
-            currentOperationHandler->jobDone_ = kNotDone;
-            currentOperationHandler->opType_ = kMultiPut;
-            hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler);
+            if (targetWriteSize + mapIt.first->file_operation_func_ptr_->getFileBufferedSize() < fileFlushThreshold_) {
+                tempFileHandlerMap.insert(make_pair(mapIt.first, make_tuple(keyVecTemp[processedHandlerIndex], valueVecTemp[processedHandlerIndex], sequenceNumberVecTemp[processedHandlerIndex], anchorFlagVecTemp[processedHandlerIndex])));
+            } else {
+                mapIt.first->markedByMultiPut_ = false;
+                hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
+                currentOperationHandler->batched_write_operation_.key_str_vec_ptr_ = &keyVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.value_str_vec_ptr_ = &valueVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.sequence_number_vec_ptr_ = &sequenceNumberVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.is_anchor_vec_ptr_ = &anchorFlagVecTemp[processedHandlerIndex];
+                currentOperationHandler->jobDone_ = kNotDone;
+                currentOperationHandler->opType_ = kMultiPut;
+                hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler);
+            }
             processedHandlerIndex++;
+        }
+        if (tempFileHandlerMap.size() != 0) {
+            bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
+            if (putStatus != true) {
+                debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
+                return false;
+            } else {
+                debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", keyStrVec.size());
+                return true;
+            }
         }
         debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
         return true;

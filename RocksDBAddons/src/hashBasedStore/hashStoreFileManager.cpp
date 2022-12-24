@@ -7,16 +7,12 @@ namespace DELTAKV_NAMESPACE {
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // if (maxBucketNumber_ > 64) {
-    //     initialTrieBitNumber_ = 6;
-    // } else {
     uint64_t k = 0;
     while (pow((double)2, (double)k) <= maxBucketNumber_) {
         k++;
     }
     k = k - 1;
     initialTrieBitNumber_ = k;
-    // }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -45,16 +41,12 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // if (maxBucketNumber_ > 64) {
-    //     initialTrieBitNumber_ = 6;
-    // } else {
     uint64_t k = 0;
     while (pow((double)2, (double)k) <= maxBucketNumber_) {
         k++;
     }
     k = k - 1;
     initialTrieBitNumber_ = k;
-    // }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -699,18 +691,17 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
     if (validObjectVec.size() != 0) {
         for (auto it : validObjectVec) {
             if (it.second->file_operation_func_ptr_->isFileOpen() == true) {
+                std::scoped_lock<std::shared_mutex> flush_lock(it.second->fileOperationMutex_);
                 fileOperationStatus_t flushedSizePair = it.second->file_operation_func_ptr_->flushFile();
                 StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
                 debug_trace("flushed file ID = %lu, file correspond prefix = %s\n", it.second->target_file_id_, it.first.c_str());
                 it.second->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
-                it.second->fileOperationMutex_.unlock();
                 hashStoreFileManifestStream << it.first << endl;
                 hashStoreFileManifestStream << it.second->target_file_id_ << endl;
                 hashStoreFileManifestStream << it.second->current_prefix_used_bit_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_count_ << endl;
                 hashStoreFileManifestStream << it.second->total_object_bytes_ << endl;
                 hashStoreFileManifestStream << it.second->total_on_disk_bytes_ << endl;
-                it.second->fileOperationMutex_.lock();
             }
         }
         hashStoreFileManifestStream.flush();
@@ -780,6 +771,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
     if (validObjectVec.size() != 0) {
         for (auto it : validObjectVec) {
             if (it.second->file_operation_func_ptr_->isFileOpen() == true) {
+                std::scoped_lock<std::shared_mutex> flush_lock(it.second->fileOperationMutex_);
                 fileOperationStatus_t flushedSizePair = it.second->file_operation_func_ptr_->flushFile();
                 StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
                 it.second->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
@@ -1506,7 +1498,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     fileOperationStatus_t flushedSizePair1 = currentHandlerPtr1->file_operation_func_ptr_->flushFile();
     StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair1.physicalSize_, flushedSizePair1.logicalSize_, syncStatistics_);
     currentHandlerPtr1->total_on_disk_bytes_ += flushedSizePair1.physicalSize_;
-    STAT_PROCESS(currentHandlerPtr1->file_operation_func_ptr_->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+    fileOperationStatus_t readStatus1;
+    STAT_PROCESS(readStatus1 = currentHandlerPtr1->file_operation_func_ptr_->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes_, currentHandlerPtr1->total_object_bytes_, syncStatistics_);
     // process GC contents
     unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap1;
@@ -1520,7 +1513,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     fileOperationStatus_t flushedSizePair2 = currentHandlerPtr2->file_operation_func_ptr_->flushFile();
     StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair2.physicalSize_, flushedSizePair2.logicalSize_, syncStatistics_);
     currentHandlerPtr2->total_on_disk_bytes_ += flushedSizePair2.physicalSize_;
-    STAT_PROCESS(currentHandlerPtr2->file_operation_func_ptr_->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+    fileOperationStatus_t readStatus2;
+    STAT_PROCESS(readStatus2 = currentHandlerPtr2->file_operation_func_ptr_->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes_, currentHandlerPtr2->total_object_bytes_, syncStatistics_);
     // process GC contents
     unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap2;
@@ -1816,9 +1810,16 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             fileOperationStatus_t flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
             StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
             fileHandler->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
-            STAT_PROCESS(fileHandler->file_operation_func_ptr_->readFile(readWriteBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_GC_READ);
+            fileOperationStatus_t readFileStatus;
+            STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(readWriteBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_GC_READ);
             StatsRecorder::getInstance()->DeltaGcBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);
-
+            if (readFileStatus.success_ == false || readFileStatus.logicalSize_ != fileHandler->total_object_bytes_) {
+                debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, readFileStatus.logicalSize_);
+                fileHandler->gc_result_status_flag_ = kNoGC;
+                fileHandler->file_ownership_flag_ = 0;
+                StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC, tv);
+                continue;
+            }
             // process GC contents
             unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, fileHandler->bufferedUnFlushedAnchorsVec_, gcResultMap);
@@ -2021,8 +2022,10 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 void HashStoreFileManager::scheduleMetadataUpdateWorker()
 {
     while (true) {
-        if (notifyGCMQ_->isEmpty() == false) {
-            operationNotifyCV_.notify_all();
+        if (enableGCFlag_ == true) {
+            if (notifyGCMQ_->isEmpty() == false) {
+                operationNotifyCV_.notify_all();
+            }
         }
         if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
             if (UpdateHashStoreFileMetaDataList() != true) {
@@ -2051,7 +2054,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
         }
         // cerr << "File ID = " << fileHandlerIt.second->target_file_id_ << ", file size on disk = " << fileHandlerIt.second->total_on_disk_bytes_ << endl;
         if (fileHandlerIt.second->gc_result_status_flag_ == kNoGC) {
-            if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
+            if (fileHandlerIt.second->total_on_disk_bytes_ + fileHandlerIt.second->file_operation_func_ptr_->getFileBufferedSize() > singleFileGCTriggerSize_) {
                 debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, but size overflow\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
                 notifyGCMQ_->push(fileHandlerIt.second);
                 // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
@@ -2061,14 +2064,14 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
                 continue;
             }
         } else if (fileHandlerIt.second->gc_result_status_flag_ == kShouldDelete) {
-            // debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
+            debug_error("[ERROR] During forced GC, should not find file marked as kShouldDelete, file ID = %lu, file size = %lu, prefix bit number = %lu\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_, fileHandlerIt.second->current_prefix_used_bit_);
             fileDeleteVecMtx_.lock();
             targetDeleteFileHandlerVec_.push_back(fileHandlerIt.second->target_file_id_);
             fileDeleteVecMtx_.unlock();
             // cerr << "Delete file ID = " << fileHandlerIt.second->target_file_id_ << endl;
             continue;
         } else {
-            if (fileHandlerIt.second->total_on_disk_bytes_ > singleFileGCTriggerSize_) {
+            if (fileHandlerIt.second->total_on_disk_bytes_ + fileHandlerIt.second->file_operation_func_ptr_->getFileBufferedSize() > singleFileGCTriggerSize_) {
                 // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
                 notifyGCMQ_->push(fileHandlerIt.second);
             }

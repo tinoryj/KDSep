@@ -168,6 +168,11 @@ enum StatsType {
     UPDATE_TO_LOG,
     GC_RATIO_UPDATE,
     GC_INVALID_BYTES_UPDATE,
+    /* DeltaKV Interface */
+    DELTAKV_CACHE_INSERT_NEW,
+    DELTAKV_CACHE_INSERT_MERGE,
+    DELTAKV_CACHE_GET,
+    /* End */
     NUMLENGTH
 };
 
