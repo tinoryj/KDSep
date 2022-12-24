@@ -257,9 +257,6 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
         debug_error("[ERROR] Should not read from a not opened file ID = %lu\n", fileHandler->target_file_id_);
         return false;
     }
-    fileOperationStatus_t flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
-    StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
-    fileHandler->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
     fileOperationStatus_t readFileStatus;
     STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
     StatsRecorder::getInstance()->DeltaOPBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);

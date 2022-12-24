@@ -274,6 +274,10 @@ DeltaKV::~DeltaKV()
     if (enableWriteBackOperationsFlag_ == true) {
         delete writeBackOperationsQueue_;
     }
+    cerr << "[DeltaKV Interface] Try delete Read Cache" << endl;
+    if (enableKeyValueCache_ == true) {
+        delete keyToValueListCache_;
+    }
     cerr << "[DeltaKV Interface] Try delete HashStore" << endl;
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         delete HashStoreInterfaceObjPtr_;
@@ -416,7 +420,7 @@ bool DeltaKV::Close()
         while (writeBackOperationsQueue_->isEmpty() == false) {
             asm volatile("");
         }
-        debug_info("Write back done%s\n", "");
+        cerr << "Write back done" << endl;
     }
     if (isBatchedOperationsWithBufferInUse_ == true) {
         for (auto i = 0; i < 2; i++) {
@@ -425,15 +429,15 @@ bool DeltaKV::Close()
             }
         }
         notifyWriteBatchMQ_->done_ = true;
-        debug_info("Flush write batch%s\n", "");
+        cerr << "Flush write back" << endl;
         while (writeBatchOperationWorkExitFlag == false) {
             asm volatile("");
         }
-        debug_info("Flush write batch done%s\n", "");
+        cerr << "Flush write back done" << endl;
     }
     if (isDeltaStoreInUseFlag_ == true) {
         HashStoreInterfaceObjPtr_->setJobDone();
-        debug_info("HashStore set job done%s\n", "");
+        cerr << "HashStore set job done" << endl;
     }
     deleteExistingThreads();
     return true;

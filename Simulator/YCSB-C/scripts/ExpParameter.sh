@@ -17,3 +17,5 @@ for runMode in "${runModeSet[@]}"; do
         done
     done
 done
+
+scripts/runTest.sh kvkd req40M op5M fc10 fl100 cache1024 threads8 workerT12 gcT2 batchSize2K round1 readRatio0.1 ExpParameters
