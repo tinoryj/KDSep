@@ -164,6 +164,8 @@ bool FileOperation::closeFile()
         fileStream_.close();
         return true;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        memset(globalWriteBuffer_, 0, globalBufferSize_);
+        bufferUsedSize_ = 0;
         debug_info("Close file fd = %d\n", fileDirect_);
         int status = close(fileDirect_);
         if (status == 0) {

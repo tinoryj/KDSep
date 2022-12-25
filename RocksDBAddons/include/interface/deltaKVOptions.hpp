@@ -54,6 +54,7 @@ public:
     float deltaStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
     uint64_t deltaStore_write_back_during_reads_threshold = 5;
     uint64_t deltaStore_write_back_during_gc_threshold = 5;
+    uint64_t deltaStore_prefix_tree_initial_bit_number_ = 2;
 
     // valueStore options
     bool enable_valueStore = false;
