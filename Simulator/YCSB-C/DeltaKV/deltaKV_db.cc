@@ -208,6 +208,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         }
     }
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
+    options_.internalRocksDBBatchedOperation_ = config.getDeltaStoreBatchEnableStatus();
     options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
 
     if (fakeDirectIO) {

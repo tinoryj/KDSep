@@ -88,6 +88,7 @@ public:
     bool rocksdb_sync_put = false;
     bool rocksdb_sync_merge = false;
     bool rocksdb_sync = false;
+    bool internalRocksDBBatchedOperation_ = false;
 
     // dump options
     bool dumpOptions(string dumpPath);

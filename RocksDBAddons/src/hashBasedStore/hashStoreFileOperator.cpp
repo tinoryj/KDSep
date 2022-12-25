@@ -21,7 +21,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
     if (options->deltaStore_op_worker_thread_number_limit_ > 2) {
         syncStatistics_ = true;
-        for (int threadID = 0; threadID < options->deltaStore_op_worker_thread_number_limit_ - 1; threadID++) {
+        for (int threadID = 0; threadID < options->deltaStore_op_worker_thread_number_limit_; threadID++) {
             workingThreadExitFlagVec_.push_back(false);
         }
     }

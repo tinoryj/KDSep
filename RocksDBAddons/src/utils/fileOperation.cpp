@@ -300,7 +300,6 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
             return ret;
         }
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
-        uint64_t readDoneContentSize = 0;
         // align mem
         char* readBuffer;
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
@@ -335,7 +334,7 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber, directIOWriteFileSize_, directIOActualWriteFileSize_, bufferUsedSize_);
             uint64_t last = 0;
             for (auto& it : vec) {
-                fprintf(stderr, "%lu %lu %lu\n", it, it-last, 4096-(it-last));
+                fprintf(stderr, "%lu %lu %lu\n", it, it - last, 4096 - (it - last));
                 last = it;
             }
             fileOperationStatus_t ret(false, 0, 0, 0);

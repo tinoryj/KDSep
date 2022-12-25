@@ -11,7 +11,6 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
     uint64_t singleFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_single_file_minimum_occupancy * internalOptionsPtr_->deltaStore_single_file_maximum_size;
-    uint64_t totalHashStoreFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size;
 
     if (options->enable_write_back_optimization_ == true) {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);

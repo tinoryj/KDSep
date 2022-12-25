@@ -114,7 +114,7 @@ private:
     bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
-    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
+    bool performInBatchedBufferDeduplication(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
 
     vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
@@ -126,6 +126,7 @@ private:
 
     bool isDeltaStoreInUseFlag_ = false;
     bool isValueStoreInUseFlag_ = false;
+    bool useInternalRocksDBBatchOperationsFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;

@@ -7,12 +7,16 @@ namespace DELTAKV_NAMESPACE {
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // uint64_t k = 0;
-    // while (pow((double)2, (double)k) <= maxBucketNumber_) {
-    //     k++;
-    // }
-    // k = k - 1;
-    initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
+    uint64_t k = 0;
+    while (pow((double)2, (double)k) <= maxBucketNumber_) {
+        k++;
+    }
+    k = k - 1;
+    if (options->deltaStore_prefix_tree_initial_bit_number_ > k) {
+        initialTrieBitNumber_ = k;
+    } else {
+        initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
+    }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -41,12 +45,16 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
 HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ)
 {
     maxBucketNumber_ = options->hashStore_max_file_number_;
-    // uint64_t k = 0;
-    // while (pow((double)2, (double)k) <= maxBucketNumber_) {
-    //     k++;
-    // }
-    // k = k - 1;
-    initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
+    uint64_t k = 0;
+    while (pow((double)2, (double)k) <= maxBucketNumber_) {
+        k++;
+    }
+    k = k - 1;
+    if (options->deltaStore_prefix_tree_initial_bit_number_ > k) {
+        initialTrieBitNumber_ = k;
+    } else {
+        initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
+    }
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -288,7 +296,7 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                             // gc flushed done, kGC file should add
                             // generate prefix
                             string currentFilePrefix;
-                            bool generatePrefixStatus = generateHashBasedPrefix(currentFileRecoveryMap.begin()->first, currentFilePrefix);
+                            generateHashBasedPrefix(currentFileRecoveryMap.begin()->first, currentFilePrefix);
                             currentFilePrefix = currentFilePrefix.substr(0, currentFileHeader.current_prefix_used_bit_);
                             // generate file handler
                             hashStoreFileMetaDataHandler* currentRecoveryFileHandler = new hashStoreFileMetaDataHandler;
@@ -771,7 +779,6 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
     if (validObjectVec.size() != 0) {
         for (auto it : validObjectVec) {
             if (it.second->file_operation_func_ptr_->isFileOpen() == true) {
-                std::scoped_lock<std::shared_mutex> flush_lock(it.second->fileOperationMutex_);
                 fileOperationStatus_t flushedSizePair = it.second->file_operation_func_ptr_->flushFile();
                 StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
                 it.second->total_on_disk_bytes_ += flushedSizePair.physicalSize_;

@@ -1,13 +1,18 @@
 #!/bin/bash
-# scripts/runTest.sh load kvkd req10M op10M fc10 fl400 cache1024 threads12 round1
-# scripts/runTest.sh load kd req10M op10M fc10 fl400 cache1024 threads13 round1
-# scripts/runTest.sh load kv req10M op10M fc10 fl400 cache1024 threads15 round1
-# scripts/runTest.sh load bkv req10M op10M fc10 fl400 cache1024 threads16 round1
-# scripts/runTest.sh load req10M op10M fc10 fl400 cache1024 threads16 round1
-# exit
-
-scripts/runTest.sh kvkd req10M op10M fc10 fl400 cache1024 threads15 round1 readRatio0.5
-scripts/runTest.sh kv req10M op10M fc10 fl400 cache1024 threads15 round1 readRatio0.5
-scripts/runTest.sh kd req10M op10M fc10 fl400 cache1024 threads15 round1 readRatio0.5
-scripts/runTest.sh bkv req10M op10M fc10 fl400 cache1024 threads15 round1 readRatio0.5
-scripts/runTest.sh req10M op10M fc10 fl400 cache1024 threads15 round1 readRatio0.5
+ExpName=2
+works=24
+gcs=8
+indexSet=(1 3 5 7 9)
+runModeSet=('kvkd' 'kv' 'kd' 'raw' 'bkv' )
+for runMode in "${runModeSet[@]}"; do
+    threadNumber=45
+    if [[ $runMode == "kvkd" ]]; then
+        threadNumber=8
+    elif [[ $runMode == "kd" ]]; then
+        threadNumber=9
+    fi
+    for index in "${indexSet[@]}"; do
+        bucketNumber=$(echo "( 500000 * (10 - $index) * 138 ) / 262144 / 0.7"|bc)
+        scripts/runTest.sh $runMode req40M op5M fc10 fl100 cache1024 threads$threadNumber workerT$works gcT$gcs batchSize2K round1 readRatio0.$index bucketNum$bucketNumber Exp$ExpName
+    done
+done
