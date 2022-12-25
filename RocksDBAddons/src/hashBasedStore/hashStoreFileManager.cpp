@@ -1495,9 +1495,9 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     gettimeofday(&tv, 0);
     // process file 1
     char readWriteBuffer1[currentHandlerPtr1->total_object_bytes_];
-    fileOperationStatus_t flushedSizePair1 = currentHandlerPtr1->file_operation_func_ptr_->flushFile();
-    StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair1.physicalSize_, flushedSizePair1.logicalSize_, syncStatistics_);
-    currentHandlerPtr1->total_on_disk_bytes_ += flushedSizePair1.physicalSize_;
+//    fileOperationStatus_t flushedSizePair1 = currentHandlerPtr1->file_operation_func_ptr_->flushFile();
+//    StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair1.physicalSize_, flushedSizePair1.logicalSize_, syncStatistics_);
+//    currentHandlerPtr1->total_on_disk_bytes_ += flushedSizePair1.physicalSize_;
     fileOperationStatus_t readStatus1;
     STAT_PROCESS(readStatus1 = currentHandlerPtr1->file_operation_func_ptr_->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes_, currentHandlerPtr1->total_object_bytes_, syncStatistics_);
@@ -1510,9 +1510,9 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
 
     // process file2
     char readWriteBuffer2[currentHandlerPtr2->total_object_bytes_];
-    fileOperationStatus_t flushedSizePair2 = currentHandlerPtr2->file_operation_func_ptr_->flushFile();
-    StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair2.physicalSize_, flushedSizePair2.logicalSize_, syncStatistics_);
-    currentHandlerPtr2->total_on_disk_bytes_ += flushedSizePair2.physicalSize_;
+//    fileOperationStatus_t flushedSizePair2 = currentHandlerPtr2->file_operation_func_ptr_->flushFile();
+//    StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair2.physicalSize_, flushedSizePair2.logicalSize_, syncStatistics_);
+//    currentHandlerPtr2->total_on_disk_bytes_ += flushedSizePair2.physicalSize_;
     fileOperationStatus_t readStatus2;
     STAT_PROCESS(readStatus2 = currentHandlerPtr2->file_operation_func_ptr_->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes_, currentHandlerPtr2->total_object_bytes_, syncStatistics_);
@@ -1808,9 +1808,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_, fileHandler->gc_result_status_flag_);
             // read contents
             char readWriteBuffer[fileHandler->total_object_bytes_];
-            fileOperationStatus_t flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
-            StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
-            fileHandler->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
+//            fileOperationStatus_t flushedSizePair = fileHandler->file_operation_func_ptr_->flushFile();
+//            StatsRecorder::getInstance()->DeltaGcBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
+//            fileHandler->total_on_disk_bytes_ += flushedSizePair.physicalSize_;
             fileOperationStatus_t readFileStatus;
             STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(readWriteBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_GC_READ);
             StatsRecorder::getInstance()->DeltaGcBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);
