@@ -28,25 +28,30 @@ generate_file_name() {
 }
 
 pwd
-ulimit -n 10240 
-#ulimit -n 1048576 
+ulimit -n 1048576 
+ulimit -s 102400
 echo $@
 ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8)
-OverWriteRatio=0.02
+OverWriteRatio=0
 KVPairsNumber=40000000    #"300000000"
 OperationsNumber=40000000 #"300000000"
 fieldlength=100
 fieldcount=10
-DB_Working_Path="/mnt/g/deltakv/working/"
-DB_Loaded_Path="/mnt/g/deltakv"
+DB_Working_Path="/mnt/sn640/jhli/working/"
+DB_Loaded_Path="/mnt/sn640/jhli"
+DB_Loaded_Path="/mnt/sn640/ExpParameters/BackupDB/"
 DB_Name="loadedDB"
 ResultLogFolder="ResultLogs"
 MAXRunTimes=1
 Thread_number=1
+RocksDBThreadNumber=16
 rawConfigPath="configDir/deltakv.ini"
 bucketSize="1048576"
 cacheSize="$(( 1024 * 1024 * 1024 ))"
-
+workerThreadNumber=12
+gcThreadNumber=2
+batchSize=2000
+ReadProportion=0.1
 usage
 
 cp $rawConfigPath ./temp.ini
@@ -62,7 +67,7 @@ usekd="false"
 usekvkd="false"
 gc="true"
 maxFileNumber="5200"
-overwrite="0.1"
+overwrite="0"
 reads="0.1"
 
 only_rmw="false"
@@ -116,26 +121,32 @@ for param in $*; do
         run_suffix=${run_suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
+    elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
+        ReadProportion=`echo $param | sed 's/readRatio//g'`
+    elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
+        ExpID=`echo $param | sed 's/Exp//g'`
+        DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
+        DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
+        ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
+        if [ ! -d $DB_Working_Path ]; then
+            mkdir -p $DB_Working_Path
+        fi
+        if [ ! -d $DB_Loaded_Path ]; then
+            mkdir -p $DB_Loaded_Path
+        fi
+    elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
+        RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
+    elif [[ `echo $param | grep "gcT" | wc -l` -eq 1 ]]; then
+        gcThreadNumber=`echo $param | sed 's/gcT//g'`
+    elif [[ `echo $param | grep "workerT" | wc -l` -eq 1 ]]; then
+        workerThreadNumber=`echo $param | sed 's/workerT//g'`
+    elif [[ `echo $param | grep "batchSize" | wc -l` -eq 1 ]]; then
+        num=`echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g'`
+        batchSize=$num
+    elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then
+        MAXRunTimes=`echo $param | sed 's/round//g'`
     elif [[ `echo $param | grep "maxFileNumber" | wc -l` -eq 1 ]]; then
         maxFileNumber=`echo $param | sed 's/maxFileNumber//g'`
-    elif [[ `echo $param | grep "ow" | wc -l` -eq 1 ]]; then
-        overwrite=`echo $param | sed 's/ow//g'`
-    elif [[ `echo $param | grep "reads" | wc -l` -eq 1 ]]; then
-        reads=`echo $param | sed 's/reads//g'`
-        if [[ "$param" == "0.4" || "$param" == "0.6" || "$param" == "0.8" ]]; then
-            exit
-        fi
-    elif [[ `echo $param | grep "bs" | wc -l` -eq 1 ]]; then
-        bucketSize=`echo $param | sed 's/bs//g'`
-        run_suffix=${run_suffix}_$param
-    elif [[ `echo $param | grep "wbr" | wc -l` -eq 1 ]]; then
-        threshold=`echo $param | sed 's/wbr//g'`
-        sed -i "/deltaStoreWriteBackDuringReadsThreshold/c\\deltaStoreWriteBackDuringReadsThreshold = $threshold" temp.ini
-        run_suffix=${run_suffix}_$param
-    elif [[ `echo $param | grep "wbgc" | wc -l` -eq 1 ]]; then
-        threshold=`echo $param | sed 's/wbgc//g'`
-        sed -i "/deltaStoreWriteBackDuringGCThreshold/c\\deltaStoreWriteBackDuringGCThreshold = $threshold" temp.ini
-        run_suffix=${run_suffix}_$param
     elif [[ `echo $param | grep "cache" | wc -l` -eq 1 ]]; then
         num=`echo $param | sed 's/cache//g'`
         cacheSize=$(( $num * 1024 * 1024 ))
@@ -143,46 +154,42 @@ for param in $*; do
     fi
 done
 
-ReadRatioSet=("$reads")
-
-OverWriteRatio=$overwrite
-sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini 
-
 if [[ "$usekv" == "true" ]]; then
-    valueCacheSize=$(( $cacheSize / 8 * 7 / ($fieldcount * $fieldlength + $fieldcount - 1)))
-    cacheSize=$(( $cacheSize / 8 ))
-    echo usekv $valueCacheSize $cacheSize
-    sed -i "/valueCache/c\\valueCacheSize = $valueCacheSize" temp.ini 
+    deltaKVCacheSize=$(( ($cacheSize / 16) * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
+    cacheSize=$(( $cacheSize / 16 ))
+    echo usekv $deltaKVCacheSize $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
 
 elif [[ "$usekd" == "true" ]]; then
-    deltaLogCacheObjectNumber=$(( $cacheSize / 8 / ($fieldlength + 2)))
-    cacheSize=$(( $cacheSize / 8 * 7 ))
-    echo usekd $deltaLogCacheObjectNumber $cacheSize
-    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheObjectNumber" temp.ini 
+    deltaKVCacheSize=$(( ($cacheSize / 16) * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
+    cacheSize=$(( $cacheSize / 16 ))
+    echo usekd $deltaKVCacheSize $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
+    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
+    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 elif [[ "$usekvkd" == "true" ]]; then
-    valueCacheSize=$(( $cacheSize / 8 * 6 / ($fieldcount * $fieldlength + $fieldcount - 1)))
-    deltaLogCacheObjectNumber=$(( $cacheSize / 8 / ($fieldlength + 2)))
-    cacheSize=$(( $cacheSize / 8 ))
-    echo usekvkd $valueCacheSize $deltaLogCacheObjectNumber $cacheSize
-    sed -i "/valueCache/c\\valueCacheSize = $valueCacheSize" temp.ini 
-    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheObjectNumber" temp.ini 
+    deltaKVCacheSize=$(( ($cacheSize / 16) * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
+    cacheSize=$(( $cacheSize / 16 ))
+    echo usekvkd $deltaKVCacheSize $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
+    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
+    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 else
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 fi
 
-if [[ "$gc" == "true" && ("$usekd" == "true" || "$usekvkd" == "true") ]]; then
-    sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = true" temp.ini 
-    run_suffix=${run_suffix}_gc
-fi
+sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini 
 
 sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = ${maxFileNumber}" temp.ini 
 if [[ "$maxFileNumber" -ne 5200 ]]; then
-  run_suffix=${run_suffix}_maxFileNumber${maxFileNumber}
+  run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
 fi
 
 size="$(( $KVPairsNumber / 1000000 ))M"
@@ -248,9 +255,6 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} ]]; then
 fi
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
-
-    for ReadProportion in "${ReadRatioSet[@]}"; do
-        # Running Update
 
         if [[ "$only_rmw" == "false" ]]; then
 
@@ -365,20 +369,35 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
         output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-RMW-0$RMWProportion-OverWrite-$OverWriteRatio-${run_suffix}`
         ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/${DB_Name} -threads $Thread_number -P workloada-temp.spec -phase run -configpath $configPath > $output_file
+        echo "-------- smallest deltas ---------" >> $output_file
+        echo "-------- smallest deltas ---------" 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | sort -n -k5 | head >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | sort -n -k5 | head 
+        echo "-------- largest deltas ----------" >> $output_file
+        echo "-------- largest deltas ----------" 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | sort -n -k5 | tail >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | sort -n -k5 | tail 
+        echo "-------- delta sizes and counts --" >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >> $output_file
+        echo "--------- total delta sizes ------" >> $output_file
+        echo "--------- total delta sizes ------" 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' >> $output_file 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "blob" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB blob";}' 
-        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file 
-        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' 
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}'
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file
+        ls -lt ${DB_Working_Path}/$DB_Name | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}'
+        echo "----------------------------------" >> $output_file
         cat temp.ini >> $output_file
         echo "output at $output_file"
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
-
         # Cleanup
         if [ -f workloada-temp.spec ]; then
             rm -rf workloada-temp.spec
             echo "Deleted old workload spec"
         fi
-    done
 done
