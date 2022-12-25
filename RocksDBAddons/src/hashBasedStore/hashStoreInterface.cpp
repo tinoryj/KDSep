@@ -117,6 +117,9 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
         anyBucketInitedFlag_ = true;
     }
 
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     debug_info("New OP: put deltas key number = %lu, %lu, %lu, %lu\n", keyStrVec.size(), valueStrPtrVec.size(), sequenceNumberVec.size(), isAnchorVec.size());
     unordered_map<hashStoreFileMetaDataHandler*, vector<int>> fileHandlerToIndexMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
@@ -144,6 +147,8 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
     if (fileHandlerToIndexMap.size() == 0) {
         return true;
     }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
+    gettimeofday(&tv, 0);
     if (shouldUseDirectOperationsFlag_ == true) {
         unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
         for (auto mapIt : fileHandlerToIndexMap) {
@@ -207,6 +212,8 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
             }
             processedHandlerIndex++;
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
+        gettimeofday(&tv, 0);
         if (tempFileHandlerMap.size() != 0) {
             bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
             if (putStatus != true) {
@@ -217,6 +224,7 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
                 return true;
             }
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_DIRECT_OP, tv);
         debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
         return true;
     }

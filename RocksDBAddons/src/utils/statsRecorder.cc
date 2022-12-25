@@ -171,6 +171,9 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
     PRINT_FULL("KV-KD", BATCH_KV_KD, time[BATCH_KV_KD]);
     PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[BATCH_KV_KD]);
+    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[BATCH_KV_KD]);
+    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[BATCH_KV_KD]);
+    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[BATCH_KV_KD]);
     PRINT_FULL("  vLog", DELTAKV_PUT_INDEXSTORE, time[BATCH_KV_KD]);
     PRINT_FULL("  rocksdb", DELTAKV_MERGE_ROCKSDB, time[BATCH_KV_KD]);
 
