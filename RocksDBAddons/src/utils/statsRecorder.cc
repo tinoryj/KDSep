@@ -150,7 +150,8 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "-------------- DeltaKV Merge request Breakdown ------------------------------\n");
     PRINT_FULL("All", DELTAKV_MERGE, time[DELTAKV_MERGE]); 
-    PRINT_FULL("  lock", MERGE_LOCK, time[DELTAKV_MERGE]);
+    PRINT_FULL("  lock-1", MERGE_LOCK_1, time[DELTAKV_MERGE]);
+    PRINT_FULL("  lock-2", MERGE_LOCK_2, time[DELTAKV_MERGE]);
     PRINT_FULL("  postlock-full", MERGE_AFTER_LOCK_FULL, time[DELTAKV_MERGE]);
     PRINT_FULL("  postlock-not-full", MERGE_AFTER_LOCK_NOT_FULL, time[DELTAKV_MERGE]);
 
@@ -162,6 +163,17 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("Read-store", DELTAKV_BATCH_READ_STORE, time[DELTAKV_BATCH_READ]);
+
+    fprintf(stdout, "-------------- DeltaKV Single batch ------------------------------\n");
+    PRINT_FULL("Plain-rocksdb", BATCH_PLAIN_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
+    PRINT_FULL("  put", DELTAKV_PUT_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
+    PRINT_FULL("  merge", DELTAKV_MERGE_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
+    PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
+    PRINT_FULL("KV-KD", BATCH_KV_KD, time[BATCH_KV_KD]);
+    PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[BATCH_KV_KD]);
+    PRINT_FULL("  vLog", DELTAKV_PUT_INDEXSTORE, time[BATCH_KV_KD]);
+    PRINT_FULL("  rocksdb", DELTAKV_MERGE_ROCKSDB, time[BATCH_KV_KD]);
+
 
     fprintf(stdout, "-------------- DeltaKV Batch OP Breakdown ------------------------------\n");
     PRINT_FULL("op-read", OP_GET, time[OP_GET]);

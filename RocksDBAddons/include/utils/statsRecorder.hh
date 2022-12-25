@@ -60,6 +60,7 @@ enum StatsType {
     DELTAKV_MERGE_ROCKSDB,
     DELTAKV_MERGE_INDEXSTORE,
     DELTAKV_MERGE_HASHSTORE,
+    DELTAKV_PUT_MERGE_ROCKSDB,
     /* DeltaKV batch read interface */
     DELTAKV_BATCH_READ,
     DELTAKV_BATCH_READ_WAIT_BUFFER,
@@ -69,9 +70,14 @@ enum StatsType {
     DELTAKV_BATCH_READ_MERGE_ALL,
     DELTAKV_BATCH_READ_STORE, 
     /* merge */
-    MERGE_LOCK,
+    MERGE_LOCK_1,
+    MERGE_LOCK_2,
     MERGE_AFTER_LOCK_FULL,
     MERGE_AFTER_LOCK_NOT_FULL,
+
+    /* batch */
+    BATCH_PLAIN_ROCKSDB,
+    BATCH_KV_KD,
 
     /* op */
     OP_GET,
