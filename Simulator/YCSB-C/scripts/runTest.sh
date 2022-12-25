@@ -146,10 +146,13 @@ done
 
 if [[ "$usekv" == "true" ]]; then
     deltaKVCacheSize=$(( ($cacheSize / 16) * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
+    valueCacheSize=$(( $cacheSize / 16 * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
     cacheSize=$(( $cacheSize / 16 ))
     echo usekv $deltaKVCacheSize $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
+    sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
+    sed -i "/valueCacheSize/c\\valueCacheSize = $valueCacheSize" temp.ini
+    # sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
 
 elif [[ "$usekd" == "true" ]]; then
     deltaKVCacheSize=$(( (($cacheSize / 16) * 15 - $bucketNumber * 4096 ) / ($fieldcount * $fieldlength + $fieldcount - 1) ))
@@ -296,6 +299,10 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >> $output_file
         echo "--------- total delta sizes ------" >> $output_file
         echo "--------- total delta sizes ------" 
+        awk '{if (NR % 6 == 0) s+=$1;} END {print s / 1024 / 1024 " MiB delta";}' ${DB_Working_Path}/$DB_Name/hashStoreFileManifestFile.* >> $output_file 
+        awk '{if (NR % 6 == 0) s+=$1;} END {print s / 1024 / 1024 " MiB delta";}' ${DB_Working_Path}/$DB_Name/hashStoreFileManifestFile.*
+        awk '{if (NR % 6 == 0) mp[$1]++;} END {for (i in mp) print i " " mp[i];}' ${DB_Working_Path}/$DB_Name/hashStoreFileManifestFile.* | sort -n -k1 >> $output_file 
+        awk '{if (NR % 6 == 0) mp[$1]++;} END {for (i in mp) print i " " mp[i];}' ${DB_Working_Path}/$DB_Name/hashStoreFileManifestFile.* | sort -n -k1
         ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' >> $output_file 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "delta" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB delta";}' 
         ls -lt ${DB_Working_Path}/$DB_Name | grep "sst" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB sst";}' >> $output_file 

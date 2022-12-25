@@ -49,6 +49,7 @@ class ExternDBConfig {
     bool enableDeltaKVCache_ = false;
     uint64_t deltaKVCacheObjectNumber_;
     uint64_t prefixTreeBitNumber_;
+    bool enableRawRocksDBBatch_;
 
     struct {
         uint64_t level;
@@ -93,6 +94,7 @@ class ExternDBConfig {
         enableDeltaKVCache_ = pt_.get<bool>("config.enableDeltaKVCache");
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
+        enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
     }
 
     int getBloomBits() {
@@ -219,6 +221,10 @@ class ExternDBConfig {
 
     uint64_t getPrefixTreeBitNumber() {
         return prefixTreeBitNumber_;
+    }
+
+    bool getEnableRoaRocksDBBatch() {
+        return enableDeltaKVCache_;
     }
 };
 }  // namespace ycsbc

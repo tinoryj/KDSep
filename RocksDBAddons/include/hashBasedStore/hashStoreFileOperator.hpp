@@ -49,7 +49,8 @@ private:
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
-    vector<bool> workingThreadExitFlagVec_;
+    boost::atomic<uint64_t> workingThreadExitFlagVec_;
+    uint64_t workerThreadNumber_ = 0;
     bool syncStatistics_;
 };
 

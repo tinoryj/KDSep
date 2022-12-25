@@ -34,9 +34,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ * options->deltaStore_single_file_maximum_size;
     objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxBucketNumber_);
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
-    for (int threadID = 0; threadID < singleFileGCWorkerThreadsNumebr_; threadID++) {
-        workingThreadExitFlagVec_.push_back(false);
-    }
+    workingThreadExitFlagVec_ = 0;
     syncStatistics_ = true;
     singleFileFlushSize_ = options->deltaStore_file_flush_buffer_size_limit_;
     RetriveHashStoreFileMetaDataList();
@@ -71,9 +69,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ * options->deltaStore_single_file_maximum_size;
     objectFileMetaDataTrie_.init(initialTrieBitNumber_, maxBucketNumber_);
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
-    for (int threadID = 0; threadID < singleFileGCWorkerThreadsNumebr_; threadID++) {
-        workingThreadExitFlagVec_.push_back(false);
-    }
+    workingThreadExitFlagVec_ = 0;
     syncStatistics_ = true;
     RetriveHashStoreFileMetaDataList();
 }
@@ -88,16 +84,8 @@ bool HashStoreFileManager::setJobDone()
     metadataUpdateShouldExit_ = true;
     if (enableGCFlag_ == true) {
         notifyGCMQ_->done_ = true;
-        while (true) {
-            bool threadExitFlag = true;
-            for (auto it : workingThreadExitFlagVec_) {
-                threadExitFlag = threadExitFlag && it;
-            }
-            if (threadExitFlag == false) {
-                operationNotifyCV_.notify_all();
-            } else {
-                break;
-            }
+        while (workingThreadExitFlagVec_ != singleFileGCWorkerThreadsNumebr_) {
+            operationNotifyCV_.notify_all();
         }
     }
     return true;
@@ -618,7 +606,7 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
         }
     }
     ifstream hashStoreFileManifestStream;
-    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + currentPointerStr, ios::in);
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifestFile." + currentPointerStr, ios::in);
     string currentLineStr;
     if (hashStoreFileManifestStream.is_open()) {
         getline(hashStoreFileManifestStream, currentLineStr);
@@ -694,7 +682,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
     }
     hashStoreFileManifestPointerStream.close();
     ofstream hashStoreFileManifestStream;
-    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt), ios::out);
     hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
     if (validObjectVec.size() != 0) {
         for (auto it : validObjectVec) {
@@ -723,7 +711,7 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         hashStoreFileManifestPointerUpdateStream << currentPointerInt;
         hashStoreFileManifestPointerUpdateStream.flush();
         hashStoreFileManifestPointerUpdateStream.close();
-        string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
+        string targetRemoveFileName = workingDir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt - 1);
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
@@ -770,7 +758,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
     }
     hashStoreFileManifestPointerStream.close();
     ofstream hashStoreFileManifestStream;
-    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
+    hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt), ios::out);
     hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
     vector<uint64_t> targetDeleteFileIDVec;
     vector<pair<string, hashStoreFileMetaDataHandler*>> validObjectVec;
@@ -804,7 +792,7 @@ bool HashStoreFileManager::CloseHashStoreFileMetaDataList()
         hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
         hashStoreFileManifestPointerUpdateStream.flush();
         hashStoreFileManifestPointerUpdateStream.close();
-        string targetRemoveFileName = workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt - 1);
+        string targetRemoveFileName = workingDir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt - 1);
         if (filesystem::exists(targetRemoveFileName) != false) {
             auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
             if (removeOldManifestStatus == -1) {
@@ -857,7 +845,7 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
         hashStoreFileManifestPointerStream.flush();
         hashStoreFileManifestPointerStream.close();
         ofstream hashStoreFileManifestStream;
-        hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifest." + to_string(currentPointerInt), ios::out);
+        hashStoreFileManifestStream.open(workingDir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt), ios::out);
         hashStoreFileManifestStream << targetNewFileID_ << endl; // flush nextFileIDInfo
         hashStoreFileManifestStream.flush();
         hashStoreFileManifestStream.close();
@@ -1794,11 +1782,13 @@ void HashStoreFileManager::processMergeGCRequestWorker()
 // threads workers
 void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 {
-    workingThreadExitFlagVec_[threadID] = false;
     while (true) {
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
             operationNotifyCV_.wait(lk);
+        }
+        if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
+            break;
         }
         hashStoreFileMetaDataHandler* fileHandler;
         if (notifyGCMQ_->pop(fileHandler)) {
@@ -2010,11 +2000,8 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 }
             }
         }
-        if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
-            break;
-        }
     }
-    workingThreadExitFlagVec_[threadID] = true;
+    workingThreadExitFlagVec_ += 1;
     return;
 }
 

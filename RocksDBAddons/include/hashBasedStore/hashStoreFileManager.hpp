@@ -102,7 +102,7 @@ private:
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
-    vector<bool> workingThreadExitFlagVec_;
+    boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
 };
 
