@@ -320,9 +320,11 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
     }
-    if (options.enable_key_value_cache_ == true) {
+    if (options.enable_key_value_cache_ == true && options.key_value_cache_object_number_ != 0) {
         enableKeyValueCache_ = true;
         keyToValueListCache_ = new AppendAbleLRUCache<string, string>(options.key_value_cache_object_number_);
+    } else {
+        enableKeyValueCache_ = false;
     }
     // Create objects
     if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {

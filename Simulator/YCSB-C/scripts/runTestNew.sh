@@ -58,7 +58,6 @@ batchSize=2000
 
 cp $rawConfigPath ./temp.ini
 
-echo "Usage: $0 [kv] [kd] [bkv]"
 suffix=""
 run_suffix=""
 only_copy=""
@@ -67,6 +66,7 @@ only_load=""
 usekv="false"
 usekd="false"
 usekvkd="false"
+usebkvkd="false"
 gc="true"
 maxFileNumber="16"
 
@@ -88,6 +88,11 @@ for param in $*; do
         sed -i "19s/false/true/g" temp.ini
     elif [[ $param == "bkv" ]]; then
         suffix=${suffix}_bkv
+        sed -i "20s/false/true/g" temp.ini
+    elif [[ $param == "bkvkd" ]]; then
+        suffix=${suffix}_bkvkd
+        usebkvkd="true"
+        sed -i "19s/false/true/g" temp.ini
         sed -i "20s/false/true/g" temp.ini
     elif [[ $param == "copy" ]]; then
         only_copy="true"
@@ -144,17 +149,7 @@ for param in $*; do
     fi
 done
 
-if [[ "$usekv" == "true" ]]; then
-    deltaKVCacheSize=$(( ($cacheSize / 16) * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
-    valueCacheSize=$(( $cacheSize / 16 * 15 / ($fieldcount * $fieldlength + $fieldcount - 1)))
-    cacheSize=$(( $cacheSize / 16 ))
-    echo usekv $deltaKVCacheSize $cacheSize
-    sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
-    sed -i "/valueCacheSize/c\\valueCacheSize = $valueCacheSize" temp.ini
-    # sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
-
-elif [[ "$usekd" == "true" ]]; then
+if [[ "$usekd" == "true" ]]; then
     deltaKVCacheSize=$(( (($cacheSize / 16) * 15 - $bucketNumber * 4096 ) / ($fieldcount * $fieldlength + $fieldcount - 1) ))
     cacheSize=$(( $cacheSize / 16 ))
     echo usekd $deltaKVCacheSize $cacheSize
@@ -164,28 +159,32 @@ elif [[ "$usekd" == "true" ]]; then
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
-elif [[ "$usekvkd" == "true" ]]; then
+elif [[ "$usebkvkd" == "true" ]]; then
     deltaKVCacheSize=$(( (($cacheSize / 16) * 15 - $bucketNumber * 4096 ) / ($fieldcount * $fieldlength + $fieldcount - 1) ))
     cacheSize=$(( $cacheSize / 16 ))
-    echo usekvkd $deltaKVCacheSize $cacheSize
+    echo usekd $deltaKVCacheSize $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = true" temp.ini
     sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = 0" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 else
+    deltaKVCacheSize=$(( (($cacheSize / 16) * 15) / ($fieldcount * $fieldlength + $fieldcount - 1) ))
+    cacheSize=$(( $cacheSize / 16 ))
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
+    sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = true" temp.ini
+    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
 fi
 
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini 
 
-# sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = ${maxFileNumber}" temp.ini 
 if [[ "$maxFileNumber" -ne 16 ]]; then
   run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
 fi
