@@ -34,6 +34,7 @@ public:
 
 private:
     bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
+    bool PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const;
 };
 
 class DeltaKV {
@@ -54,13 +55,7 @@ public:
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
     bool Get(const string& key, string* value);
-    bool PutWithWriteBatch(const string& key, const string& value);
-    bool MergeWithWriteBatch(const string& key, const string& value);
-    bool GetWithWriteBatch(const string& key, string* value);
-
-    vector<bool> MultiGet(const vector<string>& keys, vector<string>* values);
-    vector<bool> GetByPrefix(const string& targetKeyPrefix, vector<string>* keys, vector<string>* values);
-    vector<bool> GetByTargetNumber(const uint64_t& targetGetNumber, vector<string>* keys, vector<string>* values);
+    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
     bool SingleDelete(const string& key);
 
 private:
@@ -82,6 +77,7 @@ private:
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
+    boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
     enum DBRunningMode { kPlainRocksDB = 0,
         kOnlyValueLog = 1,
@@ -95,6 +91,10 @@ private:
     DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
+    bool PutWithWriteBatch(const string& key, const string& value);
+    bool MergeWithWriteBatch(const string& key, const string& value);
+    bool GetWithWriteBatch(const string& key, string* value);
+
     bool PutWithPlainRocksDB(const string& key, const string& value);
     bool MergeWithPlainRocksDB(const string& key, const string& value);
     bool GetWithPlainRocksDB(const string& key, string* value);
@@ -114,17 +114,22 @@ private:
     bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
-    bool performInBatchedBufferPartialMerge(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
+    bool performInBatchedBufferDeduplication(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
+
+    vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
+    vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
 
     bool isDeltaStoreInUseFlag_ = false;
     bool isValueStoreInUseFlag_ = false;
+    bool useInternalRocksDBBatchOperationsFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
-
     std::shared_mutex DeltaKVOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
@@ -137,6 +142,8 @@ private:
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
+    bool enableKeyValueCache_ = false;
+    AppendAbleLRUCache<string, string>* keyToValueListCache_ = nullptr;
 
     // thread management
     vector<boost::thread*> thList_;

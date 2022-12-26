@@ -20,8 +20,11 @@ IndexStoreInterface::IndexStoreInterface(DeltaKVOptions* options, string working
 
 IndexStoreInterface::~IndexStoreInterface()
 {
+    cerr << "Delete kv server ..." << endl;
     delete kvServer_;
+    cerr << "Delete devices ..." << endl;
     delete devices_;
+    cerr << "Delete IndexStoreInterface complete ..." << endl;
 }
 
 uint64_t IndexStoreInterface::getExtractSizeThreshold()
@@ -39,8 +42,7 @@ bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo*
     str.append(valueStr);
     STAT_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), str.c_str(), str.length(), valueLoc, sync), StatsType::UPDATE);
 
-
-    *storageInfoPtr = valueLoc;
+    // *storageInfoPtr = valueLoc;
     return true;
 }
 

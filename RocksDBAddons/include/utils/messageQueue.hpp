@@ -21,7 +21,7 @@ public:
     bool isEmpty();
 
 private:
-    boost::lockfree::queue<T, boost::lockfree::capacity<500>> lockFreeQueue_;
+    boost::lockfree::queue<T, boost::lockfree::capacity<5000>> lockFreeQueue_;
 };
 
 template <typename T>
@@ -33,8 +33,9 @@ messageQueue<T>::messageQueue()
 template <typename T>
 bool messageQueue<T>::push(T& data)
 {
-    bool status = lockFreeQueue_.bounded_push(data);
-    return status;
+    while (!lockFreeQueue_.push(data))
+        ;
+    return true;
 }
 
 template <typename T>

@@ -22,10 +22,12 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting);
+    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
+    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
 
     // GC manager
-    void processGCRequestWorker();
+    void processSingleFileGCRequestWorker(int threadID);
+    void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
     bool forcedManualGCAllFiles();
     bool forcedManualDelteAllObsoleteFiles();
@@ -33,6 +35,7 @@ public:
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
+    std::condition_variable deltaStore_workers_cond;
 
 private:
     // settings
@@ -40,6 +43,7 @@ private:
     uint64_t maxBucketNumber_ = 0;
     uint64_t singleFileGCTriggerSize_ = 0;
     uint64_t singleFileMergeGCUpperBoundSize_ = 0;
+    uint64_t maxBucketSize_ = 0;
     uint64_t singleFileSplitGCTriggerSize_ = 0;
     uint64_t globalGCTriggerSize_ = 0;
     std::string workingDir_;
@@ -49,9 +53,13 @@ private:
     uint64_t gcWriteBackDeltaNum_ = 5;
     bool enableGCFlag_ = false;
     bool enableWriteBackDuringGCFlag_ = false;
+    bool enableBatchedOperations_ = false;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
+    boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
+    uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
+    uint64_t singleFileFlushSize_ = 4096;
 
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
@@ -66,11 +74,9 @@ private:
     std::shared_mutex operationCounterMtx_;
     // for threads sync
     bool shouldDoRecoveryFlag_ = false;
-    bool gcThreadJobDoneFlag_ = false;
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
-    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber); // previousFileID only used when createByGCFlag == true
@@ -94,6 +100,10 @@ private:
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
+    std::mutex operationNotifyMtx_;
+    std::condition_variable operationNotifyCV_;
+    boost::atomic<uint64_t> workingThreadExitFlagVec_;
+    bool syncStatistics_;
 };
 
 } // namespace DELTAKV_NAMESPACE

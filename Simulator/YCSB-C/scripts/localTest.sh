@@ -1,7 +1,8 @@
 #!/bin/bash
 DB_Name="loadedDB"
 Thread_number=1
-ulimit -n 65536
+ulimit -n 1048576
+ulimit -s 102400
 
 if [ -d $path$DB_Name ]; then
     rm -rf $DB_Name
@@ -12,13 +13,13 @@ fi
 # sed -i "30s/NaN/$1/g" temp.ini
 
 echo "<===================== Loading the database start =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase load -configpath deltakv_kv_kd.ini #2>load.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase load -configpath deltakv.ini #2>load.log
 echo "<===================== Loading the database done =====================>"
-
+# exit
 echo "<===================== Benchmark the database start =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv_kv_kd.ini #2>test.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv.ini #2>test.log
 echo "<===================== Benchmark the database done =====================>"
 
-# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath temp.ini
-# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase run -configpath temp.ini
+# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath deltakv.ini
+# -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase run -configpath deltakv.ini
 # thread apply all bt

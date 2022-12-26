@@ -16,7 +16,7 @@ public:
     ~HashStoreFileOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequenceNumber, bool isAnchorStatus);
-    bool putWriteOperationsVectorIntoJobQueue(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
+    bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler);
     bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     // file operations without job queue support-> only support single operation
@@ -24,8 +24,9 @@ public:
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     // threads with job queue support
-    void operationWorker();
+    void operationWorker(int threadID);
     bool setJobDone();
+    void notifyOperationWorkerThread();
 
 private:
     // settings
@@ -46,6 +47,11 @@ private:
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
+    std::mutex operationNotifyMtx_;
+    std::condition_variable operationNotifyCV_;
+    boost::atomic<uint64_t> workingThreadExitFlagVec_;
+    uint64_t workerThreadNumber_ = 0;
+    bool syncStatistics_;
 };
 
 } // namespace DELTAKV_NAMESPACE

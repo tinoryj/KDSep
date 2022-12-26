@@ -6,6 +6,8 @@
 //  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
 //
 
+#include <signal.h>
+
 #include <atomic>
 #include <cstring>
 #include <future>
@@ -13,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "DeltaKV/deltaKV_db.h"
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "core/histogram.h"
@@ -22,6 +25,12 @@
 #include "unistd.h"
 
 using namespace std;
+
+void CTRLC(int s) {
+    cerr << "Server exit with keyboard interrupt" << endl;
+    DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
+    exit(0);
+}
 
 #define OUTPUT_MAP_HISTOGRAM(histogram)                                           \
     {                                                                             \
@@ -111,6 +120,14 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
+
+    struct sigaction sa = {0};
+    sa.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sa, 0);
+
+    sa.sa_handler = CTRLC;
+    sigaction(SIGKILL, &sa, 0);
+    sigaction(SIGINT, &sa, 0);
 
     utils::Properties props;
     string file_name = ParseCommandLine(argc, argv, props);

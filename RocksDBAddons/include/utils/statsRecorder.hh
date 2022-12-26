@@ -1,6 +1,7 @@
 #pragma once
 #include <climits>
 #include <map>
+#include <shared_mutex>
 #include <stdio.h>
 #include <sys/time.h>
 #include <unordered_map>
@@ -20,10 +21,11 @@ enum StatsType {
     DELTAKV_TMP1,
     DELTAKV_TMP2,
     DELTAKV_TMP3,
-    DELTAKV_TMP4,
+    DELTAKV_HASHSTORE_CREATE_NEW_BUCKET,
+    DELTAKV_HASHSTORE_CREATE_GC_BUCKET,
     DELTAKV_GC_READ,
     DELTAKV_GC_WRITE,
-    DELTAKV_WRITE_BACK,
+    DELTAKV_GC_WRITE_BACK,
     DELTAKV_GET_WRITE_BACK,
     /* DeltaKV interface */
     DELTAKV_PUT,
@@ -31,6 +33,10 @@ enum StatsType {
     DELTAKV_PUT_INDEXSTORE,
     DELTAKV_PREPUT_HASHSTORE,
     DELTAKV_PUT_HASHSTORE,
+    DS_MULTIPUT_GET_HANDLER,
+    DS_MULTIPUT_PUT_TO_JOB_QUEUE,
+    DS_MULTIPUT_DIRECT_OP,
+    DELTAKV_HASHSTORE_WAIT_BUFFER,
     DELTAKV_PUT_HASHSTORE_GET_HANDLER,
     DELTAKV_PUT_HASHSTORE_WAIT,
     DELTAKV_PUT_HASHSTORE_WAIT_ANCHOR,
@@ -43,9 +49,11 @@ enum StatsType {
     DELTAKV_HASHSTORE_GET,
     DELTAKV_HASHSTORE_GET_CACHE,
     DELTAKV_HASHSTORE_GET_INSERT_CACHE,
-    DELTAKV_HASHSTORE_GET_FILE,
-    DELTAKV_HASHSTORE_GET_IO_TRAFFIC,
+    DELTAKV_HASHSTORE_GET_PROCESS,
+    DELTAKV_HASHSTORE_GET_IO,
     DELTAKV_HASHSTORE_WORKER_GC,
+    DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE,
+    DELTAKV_HASHSTORE_WORKER_GC_BEFORE_SPLIT,
     DELTAKV_GET,
     DELTAKV_GET_ROCKSDB,
     DELTAKV_GET_INDEXSTORE,
@@ -55,6 +63,55 @@ enum StatsType {
     DELTAKV_MERGE_ROCKSDB,
     DELTAKV_MERGE_INDEXSTORE,
     DELTAKV_MERGE_HASHSTORE,
+    DELTAKV_PUT_MERGE_ROCKSDB,
+    /* DeltaKV batch read interface */
+    DELTAKV_BATCH_READ,
+    DELTAKV_BATCH_READ_WAIT_BUFFER,
+    DELTAKV_BATCH_READ_NO_WAIT_BUFFER,
+    DELTAKV_BATCH_READ_GET_KEY, 
+    DELTAKV_BATCH_READ_MERGE, 
+    DELTAKV_BATCH_READ_MERGE_ALL,
+    DELTAKV_BATCH_READ_STORE, 
+    /* merge */
+    MERGE_LOCK_1,
+    MERGE_LOCK_2,
+    MERGE_AFTER_LOCK_FULL,
+    MERGE_AFTER_LOCK_NOT_FULL,
+
+    /* batch */
+    BATCH_PLAIN_ROCKSDB,
+    BATCH_KV_KD,
+
+    /* op */
+    OP_GET,
+    OP_MULTIPUT,
+    OP_PUT,
+    GC_SELECT_MERGE,
+    GC_SELECT_MERGE_GET_NODES,
+    GC_SELECT_MERGE_SELECT_MERGE,
+    GC_SELECT_MERGE_AFTER_SELECT,
+    MERGE,
+    MERGE_WAIT_LOCK,
+    MERGE_CREATE_HANDLER,
+    MERGE_WAIT_LOCK3,
+    MERGE_FILE1,
+    MERGE_FILE2,
+    MERGE_FILE3,
+    MERGE_METADATA,
+    SPLIT,
+    SPLIT_HANDLER,
+    SPLIT_IN_MEMORY,
+    SPLIT_WRITE_FILES,
+    SPLIT_METADATA,
+    REWRITE,
+    REWRITE_GET_FILE_ID,
+    REWRITE_ADD_HEADER,
+    REWRITE_CLOSE_FILE,
+    REWRITE_CREATE_FILE,
+    REWRITE_OPEN_FILE,
+    REWRITE_BEFORE_WRITE,
+    REWRITE_WRITE,
+    REWRITE_AFTER_WRITE,
     /* Set */
     SET,
     SET_KEY_LOOKUP,
@@ -129,6 +186,11 @@ enum StatsType {
     UPDATE_TO_LOG,
     GC_RATIO_UPDATE,
     GC_INVALID_BYTES_UPDATE,
+    /* DeltaKV Interface */
+    DELTAKV_CACHE_INSERT_NEW,
+    DELTAKV_CACHE_INSERT_MERGE,
+    DELTAKV_CACHE_GET,
+    /* End */
     NUMLENGTH
 };
 
@@ -178,20 +240,76 @@ public:
         IOBytes[diskId].second += bytes;
     }
 
-    void inline DeltaGcBytesWrite(unsigned int bytes)
+    void inline DeltaGcBytesWrite(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
     {
         if (!statisticsOpen)
             return;
-        DeltaGcBytes.first += bytes;
-        DeltaGcTimes.first++;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaGCWriteMtx_);
+            DeltaGcPhysicalBytes.first += bytes;
+            DeltaGcPhysicalTimes.first++;
+            DeltaGcLogicalBytes.first += logicalBytes;
+            DeltaGcLogicalTimes.first++;
+        } else {
+            DeltaGcPhysicalBytes.first += bytes;
+            DeltaGcPhysicalTimes.first++;
+            DeltaGcLogicalBytes.first += logicalBytes;
+            DeltaGcLogicalTimes.first++;
+        }
     }
 
-    void inline DeltaGcBytesRead(unsigned int bytes)
+    void inline DeltaGcBytesRead(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
     {
         if (!statisticsOpen)
             return;
-        DeltaGcBytes.second += bytes;
-        DeltaGcTimes.second++;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaGCReadMtx_);
+            DeltaGcPhysicalBytes.second += bytes;
+            DeltaGcPhysicalTimes.second++;
+            DeltaGcLogicalBytes.second += logicalBytes;
+            DeltaGcLogicalTimes.second++;
+        } else {
+            DeltaGcPhysicalBytes.second += bytes;
+            DeltaGcPhysicalTimes.second++;
+            DeltaGcLogicalBytes.second += logicalBytes;
+            DeltaGcLogicalTimes.second++;
+        }
+    }
+
+    void inline DeltaOPBytesWrite(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
+    {
+        if (!statisticsOpen)
+            return;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
+            DeltaOPPhysicalBytes.first += bytes;
+            DeltaOPPhysicalTimes.first++;
+            DeltaOPLogicalBytes.first += logicalBytes;
+            DeltaOPLogicalTimes.first++;
+        } else {
+            DeltaOPPhysicalBytes.first += bytes;
+            DeltaOPPhysicalTimes.first++;
+            DeltaOPLogicalBytes.first += logicalBytes;
+            DeltaOPLogicalTimes.first++;
+        }
+    }
+
+    void inline DeltaOPBytesRead(unsigned int bytes, unsigned int logicalBytes, bool syncStat)
+    {
+        if (!statisticsOpen)
+            return;
+        if (syncStat) {
+            std::unique_lock<shared_mutex> w_lock(deltaOPWriteMtx_);
+            DeltaOPPhysicalBytes.second += bytes;
+            DeltaOPPhysicalTimes.second++;
+            DeltaOPLogicalBytes.second += logicalBytes;
+            DeltaOPLogicalTimes.second++;
+        } else {
+            DeltaOPPhysicalBytes.second += bytes;
+            DeltaOPPhysicalTimes.second++;
+            DeltaOPLogicalBytes.second += logicalBytes;
+            DeltaOPLogicalTimes.second++;
+        }
     }
 
     void minMaxGCUpdate(unsigned int mn, unsigned int mx)
@@ -229,9 +347,14 @@ private:
     unsigned long long lsmLookupTime;
     unsigned long long approximateMemoryUsage;
     std::vector<std::pair<unsigned long long, unsigned long long>> IOBytes; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcBytes = { 0, 0 }; /* write,read */
-    std::pair<unsigned long long, unsigned long long> DeltaGcTimes = { 0, 0 };
-
+    std::pair<unsigned long long, unsigned long long> DeltaGcPhysicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcPhysicalTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaOPPhysicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaOPPhysicalTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaGcLogicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaGcLogicalTimes = { 0, 0 };
+    std::pair<unsigned long long, unsigned long long> DeltaOPLogicalBytes = { 0, 0 }; /* write,read */
+    std::pair<unsigned long long, unsigned long long> DeltaOPLogicalTimes = { 0, 0 };
     //    struct hdr_histogram *_updateTimeHistogram;
     //    struct hdr_histogram *_getTimeHistogram;
     //    std::map<unsigned long long, struct hdr_histogram*> _getByValueSizeHistogram;
@@ -254,6 +377,7 @@ private:
     struct Stats flushGroupCount;
     int flushGroupCountBucketLen;
 
+    std::shared_mutex deltaGCWriteMtx_, deltaGCReadMtx_, deltaOPWriteMtx_, deltaOPReadMtx_;
     enum {
         MAIN,
         LOG

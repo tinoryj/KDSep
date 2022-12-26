@@ -3,8 +3,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-    HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
+HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager, HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
@@ -12,9 +11,12 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
     uint64_t singleFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_single_file_minimum_occupancy * internalOptionsPtr_->deltaStore_single_file_maximum_size;
-    uint64_t totalHashStoreFileGCThreshold = internalOptionsPtr_->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * internalOptionsPtr_->deltaStore_total_storage_maximum_size;
 
-    hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
+    if (options->enable_write_back_optimization_ == true) {
+        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
+    } else {
+        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_);
+    }
     hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, notifyGCMQ_);
     if (!hashStoreFileManager) {
         debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());
@@ -26,17 +28,14 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     hashStoreFileOperatorPtr_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
     hashStoreFileManagerPtr_->recoveryFromFailure(targetListForRedo);
-    uint64_t totalNumberOfThreadsAllowed = options->deltaStore_thread_number_limit - 1;
-    if (options->enable_deltaStore_garbage_collection == true) {
-        totalNumberOfThreadsAllowed--;
-    }
-    if (totalNumberOfThreadsAllowed >= 2) {
+    if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         shouldUseDirectOperationsFlag_ = false;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     } else {
         shouldUseDirectOperationsFlag_ = true;
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
     }
+    fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -70,15 +69,17 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
 
 bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
 {
-    if (isAnchor == true) {
+    if (isAnchor == true && anyBucketInitedFlag_ == false) {
+        return true;
         debug_info("New OP: put delta key [Anchor] = %s\n", keyStr.c_str());
     } else {
+        anyBucketInitedFlag_ = true;
         debug_info("New OP: put delta key [Data] = %s\n", keyStr.c_str());
     }
 
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_PUT_HASHSTORE_GET_HANDLER);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_HASHSTORE_PUT);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
@@ -89,11 +90,11 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
             }
             return true;
         }
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        }
+        ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
+        // }
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;
@@ -105,11 +106,27 @@ bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint3
 
 bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec)
 {
+    bool allAnchoarsFlag = true;
+    for (auto it : isAnchorVec) {
+        allAnchoarsFlag = allAnchoarsFlag && it;
+    }
+    if (allAnchoarsFlag == true && anyBucketInitedFlag_ == false) {
+        return true;
+    } else {
+        anyBucketInitedFlag_ = true;
+    }
+
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     debug_info("New OP: put deltas key number = %lu, %lu, %lu, %lu\n", keyStrVec.size(), valueStrPtrVec.size(), sequenceNumberVec.size(), isAnchorVec.size());
-    unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
+    unordered_map<hashStoreFileMetaDataHandler*, vector<int>> fileHandlerToIndexMap;
     for (auto i = 0; i < keyStrVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
-        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, isAnchorVec[i]) != true) {
+        bool getFileHandlerStatus;
+        string prefixStr;
+        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(keyStrVec[i], kPut, currentFileHandlerPtr, prefixStr, isAnchorVec[i]), StatsType::DELTAKV_HASHSTORE_PUT);
+        if (getFileHandlerStatus != true) {
             debug_error("[ERROR] Get file handler for key = %s error during multiput\n", keyStrVec[i].c_str());
             return false;
         } else {
@@ -117,33 +134,86 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
                 // should skip current key since it is only an anchor
                 continue;
             }
-            if (tempFileHandlerMap.find(currentFileHandlerPtr) != tempFileHandlerMap.end()) {
-                std::get<0>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(keyStrVec[i]);
-                std::get<1>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(valueStrPtrVec[i]);
-                std::get<2>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(sequenceNumberVec[i]);
-                std::get<3>(tempFileHandlerMap.at(currentFileHandlerPtr)).push_back(isAnchorVec[i]);
+            if (fileHandlerToIndexMap.find(currentFileHandlerPtr) != fileHandlerToIndexMap.end()) {
+                fileHandlerToIndexMap.at(currentFileHandlerPtr).push_back(i);
             } else {
-                vector<string> keyVecTemp;
-                vector<string> valueVecTemp;
-                vector<uint32_t> sequenceNumberVecTemp;
-                vector<bool> anchorFlagVecTemp;
-                keyVecTemp.push_back(keyStrVec[i]);
-                valueVecTemp.push_back(valueStrPtrVec[i]);
-                sequenceNumberVecTemp.push_back(sequenceNumberVec[i]);
-                anchorFlagVecTemp.push_back(isAnchorVec[i]);
-                tempFileHandlerMap.insert(make_pair(currentFileHandlerPtr, make_tuple(keyVecTemp, valueVecTemp, sequenceNumberVecTemp, anchorFlagVecTemp)));
+                vector<int> indexVec;
+                indexVec.push_back(i);
+                fileHandlerToIndexMap.insert(make_pair(currentFileHandlerPtr, indexVec));
             }
         }
     }
-    for (auto mapIt : tempFileHandlerMap) {
-        mapIt.first->file_ownership_flag_ = 1;
-        debug_trace("Test: for file ID = %lu, put deltas key number = %lu, %lu, %lu, %lu\n", mapIt.first->target_file_id_, std::get<0>(mapIt.second).size(), std::get<1>(mapIt.second).size(), std::get<2>(mapIt.second).size(), std::get<3>(mapIt.second).size());
-    }
-    debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
-    if (tempFileHandlerMap.size() == 0) {
+    if (fileHandlerToIndexMap.size() == 0) {
         return true;
+    }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
+    gettimeofday(&tv, 0);
+    if (shouldUseDirectOperationsFlag_ == true) {
+        unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
+        for (auto mapIt : fileHandlerToIndexMap) {
+            vector<string> keyVecTemp;
+            vector<string> valueVecTemp;
+            vector<uint32_t> sequenceNumberVecTemp;
+            vector<bool> anchorFlagVecTemp;
+            for (auto index = 0; index < mapIt.second.size(); index++) {
+                keyVecTemp.push_back(keyStrVec[mapIt.second[index]]);
+                valueVecTemp.push_back(valueStrPtrVec[mapIt.second[index]]);
+                sequenceNumberVecTemp.push_back(sequenceNumberVec[mapIt.second[index]]);
+                anchorFlagVecTemp.push_back(isAnchorVec[mapIt.second[index]]);
+            }
+            // mapIt.first->file_ownership_flag_ = 1;
+            mapIt.first->markedByMultiPut_ = false;
+            tempFileHandlerMap.insert(make_pair(mapIt.first, make_tuple(keyVecTemp, valueVecTemp, sequenceNumberVecTemp, anchorFlagVecTemp)));
+        }
+        debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
+        bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
+        if (putStatus != true) {
+            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
+            return false;
+        } else {
+            debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", keyStrVec.size());
+            return true;
+        }
     } else {
-        if (shouldUseDirectOperationsFlag_ == true) {
+        vector<string> keyVecTemp[fileHandlerToIndexMap.size()];
+        vector<string> valueVecTemp[fileHandlerToIndexMap.size()];
+        vector<uint32_t> sequenceNumberVecTemp[fileHandlerToIndexMap.size()];
+        vector<bool> anchorFlagVecTemp[fileHandlerToIndexMap.size()];
+        // for selective putinto job queue
+        auto processedHandlerIndex = 0;
+        unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> tempFileHandlerMap;
+        for (auto mapIt : fileHandlerToIndexMap) {
+            // mapIt.first->file_ownership_flag_ = 1;
+            uint64_t targetWriteSize = 0;
+            for (auto index = 0; index < mapIt.second.size(); index++) {
+                keyVecTemp[processedHandlerIndex].push_back(keyStrVec[mapIt.second[index]]);
+                valueVecTemp[processedHandlerIndex].push_back(valueStrPtrVec[mapIt.second[index]]);
+                sequenceNumberVecTemp[processedHandlerIndex].push_back(sequenceNumberVec[mapIt.second[index]]);
+                anchorFlagVecTemp[processedHandlerIndex].push_back(isAnchorVec[mapIt.second[index]]);
+                if (isAnchorVec[mapIt.second[index]] == true) {
+                    targetWriteSize += (sizeof(hashStoreRecordHeader) + keyStrVec[mapIt.second[index]].size());
+                } else {
+                    targetWriteSize += (sizeof(hashStoreRecordHeader) + keyStrVec[mapIt.second[index]].size() + valueStrPtrVec[mapIt.second[index]].size());
+                }
+            }
+            if (targetWriteSize + mapIt.first->file_operation_func_ptr_->getFileBufferedSize() < fileFlushThreshold_) {
+                tempFileHandlerMap.insert(make_pair(mapIt.first, make_tuple(keyVecTemp[processedHandlerIndex], valueVecTemp[processedHandlerIndex], sequenceNumberVecTemp[processedHandlerIndex], anchorFlagVecTemp[processedHandlerIndex])));
+            } else {
+                mapIt.first->markedByMultiPut_ = false;
+                hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
+                currentOperationHandler->batched_write_operation_.key_str_vec_ptr_ = &keyVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.value_str_vec_ptr_ = &valueVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.sequence_number_vec_ptr_ = &sequenceNumberVecTemp[processedHandlerIndex];
+                currentOperationHandler->batched_write_operation_.is_anchor_vec_ptr_ = &anchorFlagVecTemp[processedHandlerIndex];
+                currentOperationHandler->jobDone_ = kNotDone;
+                currentOperationHandler->opType_ = kMultiPut;
+                hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler);
+            }
+            processedHandlerIndex++;
+        }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
+        gettimeofday(&tv, 0);
+        if (tempFileHandlerMap.size() != 0) {
             bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
             if (putStatus != true) {
                 debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
@@ -152,16 +222,10 @@ bool HashStoreInterface::multiPut(vector<string> keyStrVec, vector<string> value
                 debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", keyStrVec.size());
                 return true;
             }
-        } else {
-            bool putStatus = hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(tempFileHandlerMap);
-            if (putStatus != true) {
-                debug_error("[ERROR] write to dLog error for keys, number = %lu\n", keyStrVec.size());
-                return false;
-            } else {
-                debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
-                return true;
-            }
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_DIRECT_OP, tv);
+        debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", keyStrVec.size());
+        return true;
     }
 }
 
@@ -170,16 +234,16 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler, false);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
         return false;
     } else {
-        if (shouldUseDirectOperationsFlag_ == true) {
-            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
-        } else {
-            ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
-        }
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
         if (ret != true) {
             debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
             return false;

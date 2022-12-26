@@ -53,3 +53,6 @@ __pycache__
 #vscode cache
 .vscode
 loadedDB
+
+temp.ini
+workloada-temp.spec

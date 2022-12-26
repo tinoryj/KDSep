@@ -24,7 +24,9 @@ public:
     bool setJobDone();
 
 private:
+    bool anyBucketInitedFlag_ = false;
     DeltaKVOptions* internalOptionsPtr_ = nullptr;
+    uint64_t fileFlushThreshold_ = 0;
     bool shouldUseDirectOperationsFlag_;
     // size information
     uint64_t extractValueSizeThreshold_;

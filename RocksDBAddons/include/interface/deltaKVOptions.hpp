@@ -42,7 +42,8 @@ public:
     uint64_t extract_to_deltaStore_size_upper_bound = 0x3f3f3f;
     uint64_t deltaStore_single_file_maximum_size = 1 * 1024 * 1024;
     uint64_t deltaStore_total_storage_maximum_size = 64 * 1024 * deltaStore_single_file_maximum_size;
-    uint64_t deltaStore_thread_number_limit = 3;
+    uint64_t deltaStore_op_worker_thread_number_limit_ = 4;
+    uint64_t deltaStore_gc_worker_thread_number_limit_ = 1;
     uint64_t deltaStore_file_flush_buffer_size_limit_ = 4096;
     uint64_t deltaStore_operationNumberForMetadataCommitThreshold_ = 10000;
     uint64_t deltaStore_operationNumberForForcedSingleFileGCThreshold_ = 10000;
@@ -53,6 +54,7 @@ public:
     float deltaStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
     uint64_t deltaStore_write_back_during_reads_threshold = 5;
     uint64_t deltaStore_write_back_during_gc_threshold = 5;
+    uint64_t deltaStore_prefix_tree_initial_bit_number_ = 2;
 
     // valueStore options
     bool enable_valueStore = false;
@@ -80,10 +82,13 @@ public:
     fileOperationType fileOperationMethod_ = kDirectIO;
     bool enable_write_back_optimization_ = true;
     bool enable_batched_operations_ = false;
+    bool enable_key_value_cache_ = false;
+    uint64_t key_value_cache_object_number_ = 1000;
     uint64_t batched_operations_number_ = 5;
     bool rocksdb_sync_put = false;
     bool rocksdb_sync_merge = false;
     bool rocksdb_sync = false;
+    bool internalRocksDBBatchedOperation_ = false;
 
     // dump options
     bool dumpOptions(string dumpPath);

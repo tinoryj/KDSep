@@ -51,9 +51,9 @@ typedef struct hashStoreFileMetaDataHandler {
     uint64_t total_object_bytes_ = 0;
     uint64_t total_on_disk_bytes_ = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
-    uint64_t temp_not_flushed_data_bytes_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
-    int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to user, -1->file belongs to GC
+    bool markedByMultiPut_ = false;
+    int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
     unordered_map<string, uint32_t> bufferedUnFlushedAnchorsVec_;
@@ -67,10 +67,10 @@ typedef struct hashStoreWriteOperationHandler {
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    vector<string> key_str_vec_ptr_;
-    vector<string> value_str_vec_ptr_;
-    vector<uint32_t> sequence_number_vec_ptr_;
-    vector<bool> is_anchor_vec_ptr_;
+    vector<string>* key_str_vec_ptr_;
+    vector<string>* value_str_vec_ptr_;
+    vector<uint32_t>* sequence_number_vec_ptr_;
+    vector<bool>* is_anchor_vec_ptr_;
 } hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {
@@ -88,15 +88,10 @@ typedef struct hashStoreOperationHandler {
     hashStoreFileMetaDataHandler* file_handler_;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
-    hashStoreBatchedWriteOperationHandler* batched_write_operation_;
+    hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
     operationStatus jobDone_ = kNotDone;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler, hashStoreBatchedWriteOperationHandler* batched_write_operation)
-    {
-        file_handler_ = file_handler;
-        batched_write_operation_ = batched_write_operation;
-    };
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
