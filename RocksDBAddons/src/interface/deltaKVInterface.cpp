@@ -2026,6 +2026,15 @@ bool DeltaKV::performInBatchedBufferDeduplication(deque<tuple<DBOperationType, s
             }
             it.second.first = finalValue;
             it.second.second.clear(); // merged, clean up
+        } else if (it.second.first.size() == 0 && it.second.second.size() > 0) {
+            vector<string> newDeltas;
+            bool mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(it.second.second, newDeltas);
+            if (mergeStatus == false) {
+                debug_error("[ERROR] COuld not partial merge for key = %s, delta number = %lu\n", it.first.c_str(), it.second.second.size());
+            } else {
+                it.second.second.clear();
+                it.second.second.assign(newDeltas.begin(), newDeltas.end());
+            }
         }
         debug_trace("PerformPreMergeMap include key = %s, value size = %lu, delta number = %lu\n", it.first.c_str(), it.second.first.size(), it.second.second.size());
     }

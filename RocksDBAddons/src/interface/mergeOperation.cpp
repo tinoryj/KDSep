@@ -26,7 +26,7 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
     for (auto q : operandList) {
         string indexStr = q.substr(0, q.find(","));
         int index = stoi(indexStr);
-        string updateContentStr = q.substr(q.find(",") + 1, q.size());
+        string updateContentStr = q.substr(q.find(",") + 1);
         // debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
         rawValueFieldsVec[index].assign(updateContentStr);
     }
@@ -37,6 +37,26 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
         finalValue->append(",");
     }
     finalValue->append(rawValueFieldsVec[rawValueFieldsVec.size() - 1]);
+    return true;
+}
+
+bool DeltaKVFieldUpdateMergeOperator::PartialMerge(vector<string> operandList, vector<string>& finalOperandList)
+{
+    unordered_map<int, string> operandMap;
+    for (auto it : operandList) {
+        string indexStr = it.substr(0, it.find(","));
+        int index = stoi(indexStr);
+        string updateContentStr = it.substr(it.find(",") + 1);
+        if (operandMap.find(index) != operandMap.end()) {
+            operandMap.at(index).assign(updateContentStr);
+        } else {
+            operandMap.insert(make_pair(index, updateContentStr));
+        }
+    }
+    for (auto it : operandMap) {
+        string finalOperator = to_string(it.first) + "," + it.second;
+        finalOperandList.push_back(finalOperator);
+    }
     return true;
 }
 
