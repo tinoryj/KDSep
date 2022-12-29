@@ -6,7 +6,7 @@
 #include <string>
 
 #include "core/db.h"
-//#include "leveldb/db.h"
+// #include "leveldb/db.h"
 
 using std::string;
 
@@ -224,7 +224,7 @@ class ExternDBConfig {
     }
 
     bool getEnableRoaRocksDBBatch() {
-        return enableDeltaKVCache_;
+        return enableRawRocksDBBatch_;
     }
 };
 }  // namespace ycsbc

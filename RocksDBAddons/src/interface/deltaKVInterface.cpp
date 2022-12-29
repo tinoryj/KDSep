@@ -31,24 +31,24 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 
         while (deltaOffset < operandListIt.size()) {
             internalValueType tempInternalValueType;
-            memcpy(&tempInternalValueType, operandListIt.substr(deltaOffset).c_str(), headerSize);
+            memcpy(&tempInternalValueType, operandListIt.c_str() + deltaOffset, headerSize);
 
             // extract the oprand
             if (tempInternalValueType.mergeFlag_ == true) {
                 // index update
                 assert(tempInternalValueType.valueSeparatedFlag_ == true && deltaOffset + headerSize + valueIndexSize <= operandListIt.size());
-                operand.assign(operandListIt.substr(deltaOffset, headerSize + valueIndexSize));
+                operand.assign(operandListIt.c_str() + deltaOffset, headerSize + valueIndexSize);
                 deltaOffset += headerSize + valueIndexSize;
             } else {
                 if (tempInternalValueType.valueSeparatedFlag_ == false) {
                     // raw delta
                     assert(deltaOffset + headerSize + tempInternalValueType.rawValueSize_ <= operandListIt.size());
-                    operand.assign(operandListIt.substr(deltaOffset, headerSize + tempInternalValueType.rawValueSize_));
+                    operand.assign(operandListIt.c_str() + deltaOffset, headerSize + tempInternalValueType.rawValueSize_);
                     deltaOffset += headerSize + tempInternalValueType.rawValueSize_;
                 } else {
                     // separated delta
                     assert(deltaOffset + headerSize <= operandListIt.size());
-                    operand.assign(operandListIt.substr(deltaOffset, headerSize));
+                    operand.assign(operandListIt.c_str() + deltaOffset, headerSize);
                     deltaOffset += headerSize;
                 }
             }
@@ -101,13 +101,14 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 
     // Step 3.2 Prepare the value, if some merges on raw deltas can be performed
     string mergedValueWithoutValueType;
+    string rawValue(existing_value->data_ + headerSize, existing_value->size_ - headerSize);
     if (!leadingRawDeltas.empty()) {
-        FullMergeFieldUpdates(existing_value->ToString().substr(headerSize), leadingRawDeltas, &mergedValueWithoutValueType);
+        FullMergeFieldUpdates(rawValue, leadingRawDeltas, &mergedValueWithoutValueType);
         if (mergedValueWithoutValueType.size() != existingValueType.rawValueSize_) {
             debug_error("[ERROR] value size differs after merging: %lu v.rocksDBStatus. %u\n", mergedValueWithoutValueType.size(), existingValueType.rawValueSize_);
         }
     } else {
-        mergedValueWithoutValueType.assign(existing_value->ToString().substr(headerSize));
+        mergedValueWithoutValueType.assign(rawValue);
     }
 
     // Step 3.3 Prepare the following deltas (whether raw or not raw)

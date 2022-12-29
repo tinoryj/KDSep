@@ -46,6 +46,7 @@ add_library(DeltaKV STATIC
       utils/timer.cpp
       utils/debug.cpp
       utils/fileOperation.cpp
+      utils/mempool.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

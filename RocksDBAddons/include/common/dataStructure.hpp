@@ -2,6 +2,7 @@
 
 #include "boost/thread.hpp"
 #include "utils/fileOperation.hpp"
+#include "utils/mempool.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
 #include <shared_mutex>
@@ -124,36 +125,10 @@ typedef struct writeBackObjectStruct {
 } writeBackObjectStruct; // key to value pair fpr write back
 
 // following enums are used for indexStore only
-enum CodingScheme {
-    RAID0,
-    REPLICATION,
-    RAID5,
-    RDP,
-    EVENODD,
-    CAUCHY,
-    DEFAULT
-};
-
 enum DataType {
     KEY,
     VALUE,
     META
-};
-
-enum DiskType {
-    DATA,
-    LOG,
-    MIXED
-};
-
-enum RequestType {
-    READ = 0x00,
-    WRITE = 0x01,
-    FLUSH = 0x10,
-    COMMIT = 0x20,
-    WIRTE_KEY = 0x03,
-    READ_VALUE = 0x04,
-    WIRTE_VALUE = 0x05,
 };
 
 enum class DebugLevel : int {

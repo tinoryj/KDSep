@@ -3,6 +3,7 @@
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
 #include "interface/deltaKVOptions.hpp"
+#include "utils/mempool.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -35,6 +36,8 @@ private:
     HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
     // message queues for internal usage
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_ = nullptr;
+
+    KeyValueMemPool* objectMemPool_ = nullptr;
 };
 
 }

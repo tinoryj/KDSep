@@ -35,6 +35,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         shouldUseDirectOperationsFlag_ = true;
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
     }
+    objectMemPool_ = new KeyValueMemPool(options->deltaStore_mem_pool_object_number_, options->deltaStore_mem_pool_object_size_);
     fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
 }
 
