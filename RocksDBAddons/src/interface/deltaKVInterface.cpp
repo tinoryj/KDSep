@@ -594,7 +594,6 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value, uint32_t& 
             }
         }
         vector<string> finalDeltaOperatorsVec;
-        auto index = 0;
         for (auto i = 0; i < deltaInfoVec.size(); i++) {
             if (deltaInfoVec[i].first == true) {
                 debug_error("[ERROR] Request external deltaStore when no KD separation enabled (Internal value error), index = %d\n", i);

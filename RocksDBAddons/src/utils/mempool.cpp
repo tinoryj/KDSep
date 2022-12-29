@@ -1,5 +1,3 @@
-#pragma once
-
 #include "utils/mempool.hpp"
 
 using namespace std;

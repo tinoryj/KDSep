@@ -73,7 +73,6 @@ size_t GCManager::gcVLog()
     len_t capacity = ConfigManager::getInstance().getSystemEffectiveCapacity();
     len_t len = INVALID_LEN;
     offset_t logOffset = INVALID_OFFSET, gcFront = INVALID_OFFSET, flushFront = 0;
-    len_t zeroLen = 0;
 
     size_t remains = 0;
     bool ret = false;

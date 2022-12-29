@@ -587,7 +587,6 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
     string currentPointerStr;
     if (hashStoreFileManifestPointerStream.is_open()) {
         getline(hashStoreFileManifestPointerStream, currentPointerStr);
-        uint64_t currentPointerInt = stoull(currentPointerStr);
         string closeFlagStr;
         getline(hashStoreFileManifestPointerStream, closeFlagStr);
         if (closeFlagStr.size() == 0) {
@@ -1308,7 +1307,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
-    bool isSplitDoneFlag = true;
     string previousPrefixStr;
     generateHashBasedPrefix(gcResultMap.begin()->first, previousPrefixStr);
     previousPrefixStr = previousPrefixStr.substr(0, targetPrefixBitNumber - 1);
@@ -1592,7 +1590,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
         return false;
     } else {
         hashStoreFileMetaDataHandler* tempHandler = nullptr;
-        bool getPreviousHandlerStatus = objectFileMetaDataTrie_.get(targetPrefixStr, tempHandler);
+        objectFileMetaDataTrie_.get(targetPrefixStr, tempHandler);
         if (tempHandler != nullptr) {
             // delete old handler;
             debug_info("Find exist data handler = %p\n", tempHandler);

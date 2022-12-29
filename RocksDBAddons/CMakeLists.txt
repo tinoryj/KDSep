@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.22)
+set(CMAKE_C_COMPILER               "/opt/intel/oneapi/compiler/latest/linux/bin/icx")
+set(CMAKE_CXX_COMPILER             "/opt/intel/oneapi/compiler/latest/linux/bin/icpx")
+
 project(DeltaKV)
 
 set(CMAKE_CXX_STANDARD 17)

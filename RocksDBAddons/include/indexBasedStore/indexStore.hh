@@ -49,7 +49,7 @@ private:
     GCManager* _gcManager;
     SegmentGroupManager* _segmentGroupManager;
 
-    boost::asio::thread_pool*  _scanthreads;
+    // boost::asio::thread_pool*  _scanthreads;
 
     struct {
         LruList* lru;
