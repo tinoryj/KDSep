@@ -150,8 +150,6 @@ bool HashStoreFileOperator::putReadOperationsVectorIntoJobQueue(vector<hashStore
 
 bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr)
 {
-    // check if not flushed anchors exit, return directly.
-    string currentKeyStr = *currentHandlerPtr->read_operation_.key_str_;
     // try extract from cache first
     if (keyToValueListCache_ != nullptr) {
         if (keyToValueListCache_->existsInCache(*currentHandlerPtr->read_operation_.key_str_)) {
@@ -239,42 +237,90 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
     }
 }
 
+// uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
+// {
+//     uint64_t currentProcessLocationIndex = 0;
+//     // skip file header
+//     hashStoreFileHeader currentFileHeader;
+//     memcpy(&currentFileHeader, contentBuffer, sizeof(currentFileHeader));
+//     currentProcessLocationIndex += sizeof(currentFileHeader);
+//     uint64_t processedObjectNumber = 0;
+//     while (currentProcessLocationIndex != contentSize) {
+//         processedObjectNumber++;
+//         hashStoreRecordHeader currentObjectRecordHeader;
+//         memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
+//         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
+//         if (currentObjectRecordHeader.is_anchor_ == true) {
+//             string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+//             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+//             if (resultMap.find(currentKeyStr) != resultMap.end()) {
+//                 resultMap.at(currentKeyStr).clear();
+//             }
+//         } else if (currentObjectRecordHeader.is_gc_done_ == true) {
+//             continue;
+//         } else {
+//             string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+//             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+//             if (resultMap.find(currentKeyStr) != resultMap.end()) {
+//                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+//                 resultMap.at(currentKeyStr).push_back(currentValueStr);
+//                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
+//             } else {
+//                 vector<string> newValuesRelatedToCurrentKeyVec;
+//                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+//                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
+//                 resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+//                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
+//             }
+//         }
+//     }
+//     return processedObjectNumber;
+// }
+
 uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
 {
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
-    hashStoreFileHeader currentFileHeader;
-    memcpy(&currentFileHeader, contentBuffer, sizeof(currentFileHeader));
-    currentProcessLocationIndex += sizeof(currentFileHeader);
+    currentProcessLocationIndex += sizeof(hashStoreFileHeader);
     uint64_t processedObjectNumber = 0;
+    hashStoreRecordHeader currentObjectRecordHeader;
+    unordered_map<str_t, vector<string>, mapHashKeyForStr_t, mapEqualKeForStr_t> resultMapInternal;
     while (currentProcessLocationIndex != contentSize) {
         processedObjectNumber++;
-        hashStoreRecordHeader currentObjectRecordHeader;
-        memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
-        currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
+        memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(hashStoreRecordHeader));
+        currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
         if (currentObjectRecordHeader.is_anchor_ == true) {
-            string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
+            str_t currentKey;
+            currentKey.data_ = contentBuffer + currentProcessLocationIndex;
+            cerr << currentKey.data_ << endl;
+            currentKey.size_ = currentObjectRecordHeader.key_size_;
             currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-            if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                resultMap.at(currentKeyStr).clear();
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                resultMapInternal.at(currentKey).clear();
             }
         } else if (currentObjectRecordHeader.is_gc_done_ == true) {
             continue;
         } else {
-            string currentKeyStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
-            currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-            if (resultMap.find(currentKeyStr) != resultMap.end()) {
+            str_t currentKey;
+            currentKey.data_ = contentBuffer + currentProcessLocationIndex;
+            currentKey.size_ = currentObjectRecordHeader.key_size_;
+            cerr << currentKey.data_ << endl;
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMap.at(currentKeyStr).push_back(currentValueStr);
+                resultMapInternal.at(currentKey).push_back(currentValueStr);
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
             } else {
                 vector<string> newValuesRelatedToCurrentKeyVec;
                 string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
-                resultMap.insert(make_pair(currentKeyStr, newValuesRelatedToCurrentKeyVec));
+                resultMapInternal.insert(make_pair(currentKey, newValuesRelatedToCurrentKeyVec));
                 currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
             }
         }
+    }
+    for (auto mapIt : resultMapInternal) {
+        string currentKey(mapIt.first.data_, mapIt.first.size_);
+        resultMap.insert(make_pair(currentKey, mapIt.second));
     }
     return processedObjectNumber;
 }
@@ -301,7 +347,6 @@ bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fil
 bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr)
 {
     string currentKeyStr = *currentHandlerPtr->write_operation_.key_str_;
-    uint32_t currentSequenceNumber = currentHandlerPtr->write_operation_.sequence_number_;
     // construct record header
     hashStoreRecordHeader newRecordHeader;
     newRecordHeader.is_anchor_ = currentHandlerPtr->write_operation_.is_anchor;

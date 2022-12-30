@@ -121,7 +121,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
 
-    struct sigaction sa = {0};
+    struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sa, 0);
 
@@ -241,6 +241,7 @@ int main(const int argc, const char *argv[]) {
             sum += n.get();
         }
         double duration = timer.End();
+        cout << "# Running operations:\t" << sum << endl;
         cout << "# Transaction throughput (KTPS)" << endl;
         cout << props["dbname"] << '\t' << file_name << '\t' << num_threads << '\t';
         cout << total_ops / (duration / 1000000) / 1000 << endl;

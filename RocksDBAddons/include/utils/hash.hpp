@@ -53,16 +53,4 @@ public:
         return hash ^ hardener;
     }
 };
-
-template <class K, class V, class KV>
-class HashTable {
-public:
-    HashTable() {};
-    virtual ~HashTable() {};
-    virtual bool addKey(KV kv) = 0;
-    virtual V getValue(K key, len_t keySize, len_t& valueSize) = 0;
-    virtual V removeKey(K key, len_t keySize, len_t& valueSize) = 0;
-    virtual void listKeys() = 0;
-};
-
 }

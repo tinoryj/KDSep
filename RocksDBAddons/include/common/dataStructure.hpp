@@ -10,6 +10,41 @@
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
+
+typedef struct str_t {
+    char* data_;
+    uint32_t size_;
+} str_t;
+
+struct mapEqualKeForStr_t {
+    bool operator()(str_t const& a, str_t const& b) const
+    {
+        return (memcmp(a.data_, b.data_, a.size_) == 0);
+    }
+};
+
+static unsigned int charBasedHashFunc(char* data, uint32_t n)
+{
+    unsigned int hash = 388650013;
+    unsigned int scale = 388650179;
+    unsigned int hardener = 1176845762;
+    char buffer[n];
+    memcpy(buffer, data, n);
+    for (uint32_t i = 0; i < n; i++) {
+        hash *= scale;
+        hash += buffer++;
+        n--;
+    }
+    return hash ^ hardener;
+}
+
+struct mapHashKeyForStr_t {
+    size_t operator()(str_t const& s) const
+    {
+        return charBasedHashFunc(s.data_, s.size_);
+    }
+};
+
 typedef struct internalValueType {
     bool mergeFlag_; // true if the value request merge.
     bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree

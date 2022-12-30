@@ -1130,7 +1130,6 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     uint64_t processedTotalObjectNumber = 0;
 
     uint64_t currentProcessLocationIndex = 0;
-    uint64_t anchors = 0;
     // skip file header
     hashStoreFileHeader currentFileHeader;
     memcpy(&currentFileHeader, fileContentBuffer, sizeof(currentFileHeader));
@@ -1143,7 +1142,6 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         if (currentObjectRecordHeader.is_anchor_ == true) {
             string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
-            anchors++;
             if (resultMap.find(currentKeyStr) != resultMap.end()) {
                 processedKeepObjectNumber -= (resultMap.at(currentKeyStr).first.size() + 1);
                 resultMap.at(currentKeyStr).first.clear();
