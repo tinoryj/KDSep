@@ -16,28 +16,17 @@ set(ROCKSDB_LIBRARY_OBJ lz4 z snappy bz2 zstd uring)
 
 set(LINK_OBJ ${ROCKSDB_LIBRARY_OBJ} ${BOOST_LIBRARY_OBJ} ${SYSTEM_LIBRARY_OBJ})
 
-#-fno-builtin-memset
-
 set (CMAKE_SYSTEM_NAME Linux )
 if (NOT CMAKE_BUILD_TYPE)
    set (CMAKE_BUILD_TYPE "Release")
    message (
       STATUS "No CMAKE_BUILD_TYPE selected, defaulting to ${CMAKE_BUILD_TYPE}"
    )
+   add_compile_options(-std=c++17 -fPIC -frtti -g) 
+else()
+   message (STATUS "CMAKE_BUILD_TYPE as Debug selected")
+   add_compile_options(-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak) 
 endif ()
-
-set(CMAKE_C_FLAGS_DEBUG "-Wall -std=c17 -fPIC -frtti -g -ggdb -g2") 
-set(CMAKE_CXX_FLAGS_DEBUG "-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak")
-set(CMAKE_C_FLAGS_RELEASE "-O3 -std=c17 -fPIC -frtti -g") 
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -std=c++17 -fPIC -frtti -g")
-
-SET (CMAKE_C_COMPILER               "/usr/bin/clang")
-SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
-SET (CMAKE_AR                       "/usr/bin/llvm-ar")
-SET (CMAKE_LINKER                   "/usr/bin/llvm-ld")
-SET (CMAKE_NM                       "/usr/bin/llvm-nm")
-SET (CMAKE_OBJDUMP                  "/usr/bin/llvm-objdump")
-SET (CMAKE_RANLIB                   "/usr/bin/llvm-ranlib")
 
 add_library(DeltaKV STATIC 
       utils/murmurHash.cpp
