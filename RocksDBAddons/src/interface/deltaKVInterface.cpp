@@ -2136,7 +2136,7 @@ void DeltaKV::processBatchedOperationsWorker()
                     }
                     STAT_PROCESS(pointerToRawRocksDB_->Write(batchedWriteOperation, &batch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
                 }
-                pointerToRawRocksDB_->FlushWAL(true);
+		STAT_PROCESS(pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL); 
                 StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_PLAIN_ROCKSDB, tv);
                 break;
             }
@@ -2442,7 +2442,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         }
                         STAT_PROCESS(pointerToRawRocksDB_->Write(batchedWriteOperation, &batch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
                     }
-                    pointerToRawRocksDB_->FlushWAL(true);
+                    STAT_PROCESS(pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
                     debug_info("Write underlying rocksdb for %lu keys done \n", keyToDeltaStoreVec.size());
                 } else {
                     debug_error("[ERROR] Could not put into delta store via multiput, operations number = %lu\n", keyToDeltaStoreVec.size());

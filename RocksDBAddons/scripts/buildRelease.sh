@@ -2,7 +2,7 @@
 cpuMaxThreadNumber=$(cat /proc/cpuinfo | grep processor | wc -l)
 echo -e "\033[1m\033[32mDetect $cpuMaxThreadNumber cpu core on this machine, use all cores for compile\033[0m"
 
-if [ ! -d "/opt/rocksdb-7.7.3" ]; then
+if [[ ! -d "/opt/rocksdb-7.7.3" || ! -f "/opt/rocksdb-7.7.3/librocksdb.a" ]]; then
     echo "Not found rocksdb-7.7.3 in /opt"
     if [ ! -f "../rocksdb-7.7.3/librocksdb.a" ]; then
         echo "Not found librocksdb.a in ../rocksdb-7.7.3 start build"
@@ -15,6 +15,17 @@ if [ ! -d "/opt/rocksdb-7.7.3" ]; then
     sudo mkdir -p /opt/rocksdb-7.7.3
     sudo cp -r ../rocksdb-7.7.3/include /opt/rocksdb-7.7.3
     sudo cp ../rocksdb-7.7.3/librocksdb.a /opt/rocksdb-7.7.3
+else
+    librocksdb="../rocksdb-7.7.3/librocksdb.a"
+    md5value=`md5sum $librocksdb`
+    make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+    md5value2=`md5sum $librocksdb`
+    if [[ "$md5value" != "$md5value2" ]]; then
+	echo "Copy rocksdb static lib to /opt"
+	sudo mkdir -p /opt/rocksdb-7.7.3
+	sudo cp -r ../rocksdb-7.7.3/include /opt/rocksdb-7.7.3
+	sudo cp ../rocksdb-7.7.3/librocksdb.a /opt/rocksdb-7.7.3
+    fi
 fi
 
 ./scripts/cleanup.sh

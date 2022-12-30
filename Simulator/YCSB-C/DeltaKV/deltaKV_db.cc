@@ -127,6 +127,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     ExternDBConfig config = ExternDBConfig(config_file_path);
     int bloomBits = config.getBloomBits();
     size_t blockCacheSize = config.getBlockCache();
+    size_t blobCacheSize = config.getBlobCacheSize();
     // bool seekCompaction = config.getSeekCompaction();
     bool compression = config.getCompression();
     bool directIO = config.getDirectIO();
@@ -153,7 +154,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
-        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize / 8);
+        bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
         options_.rocksdbRawOptions_.enable_blob_files = true;
         options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
         options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
@@ -163,12 +164,14 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
         options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
-        options_.rocksdbRawOptions_.blob_cache = rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
+        options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
         options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
         assert(!keyValueSeparation);
     } else {
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
+    bbto.block_size = config.getBlockSize();
+
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
         options_.enable_valueStore = true;

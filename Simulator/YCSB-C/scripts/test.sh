@@ -1,71 +1,44 @@
 #!/bin/bash
+ExpName=2
+works=24
+gcs=8
+indexSet=(1 3 5 7 9 10)
+indexSet=(10)
+runModeSet=('raw' 'bkv')
 
-#scripts/runUpdateTest_jhli.sh req10M op10M fc1 fl4000
-#scripts/runUpdateTest_jhli.sh kv req10M op10M fc1 fl4000
-#scripts/runUpdateTest_jhli.sh kd req10M op10M fc1 fl4000
-#scripts/runUpdateTest_jhli.sh kvkd req10M op10M fc1 fl4000
-#scripts/runUpdateTest_jhli.sh req5M op1M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kv req5M op1M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kd req5M op1M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kvkd req5M op1M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh req5M op2M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kv req5M op2M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kd req5M op2M fc2 fl4000
-#scripts/runUpdateTest_jhli.sh kvkd req5M op2M fc2 fl4000
+blocksizes=(16384 8192 4096 2048 1024)
+flengths=(800 400 200 100)
+reqs=("10M" "20M" "40M" "80M")
+batchSize=10K
+cacheSizes=(8192 4096 2048 1024)
 
-#scripts/runUpdateTest_jhli.sh req10M op2M fc8 fl500
-#scripts/runUpdateTest_jhli.sh kv req10M op2M fc8 fl500
-#scripts/runUpdateTest_jhli.sh kd req1M op2M fc8 fl500 load
-#scripts/runUpdateTest_jhli.sh kd req100k op2M fc8 fl500 load
-#scripts/runUpdateTest_jhli.sh req1M op2M fc8 fl500 load
+for bs in "${blocksizes[@]}"; do
+    for ((j=0; j<${#flengths[@]}; j++)); do
+	for runMode in "${runModeSet[@]}"; do
+	    threadNumber=45
+	    if [[ $runMode == "bkvkd" ]]; then
+		threadNumber=9
+	    elif [[ $runMode == "kd" ]]; then
+		threadNumber=9
+	    fi
 
-req=("10M" "5M" "2500K" "1250K" "10M" "5M" "2500K" "1250K")
-ops=("10M" "5M" "2500K" "1250K" "10M" "5M" "2500K" "1250K")
-fcs=("8" "8" "8" "8" "4" "4" "4" "4")
-fls=("500" "1000" "2000" "4000" "1000" "2000" "4000" "8000")
-
-req=("10M" "5M" "2500K" "1250K" "10M" "5M" "2500K" "1250K")
-ops=("2M" "2M" "2M" "1M" "2M" "2M" "2M" "1M")
-fcs=("8" "8" "8" "8" "4" "4" "4" "4")
-fls=("500" "1000" "2000" "4000" "1000" "2000" "4000" "8000")
-
-wbrs=("5" "10" "15" "20" "25" "30" "1000")
-wbrs=("1000")
-scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc4 fl1000 load 
-exit
-for ((i=0; i<${#wbrs[@]}; i++)); do
-    scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc4 fl1000 ow0.01 wbr5 # ${wbrs[$i]}
+	    fl=${flengths[$j]}
+	    req=${reqs[$j]}
+	    scripts/run.sh $runMode req${req} op5M fc10 fl${fl} cache8192 threads$threadNumber workerT$works gcT$gcs batchSize$batchSize round1 Exp$ExpName blockSize${bs} load
+	    for cacheSize in "${cacheSizes[@]}"; do
+		for index in "${indexSet[@]}"; do
+		    bucketNumber=$(echo "( 500000 * (10 - $index) * 138 ) / 262144 / 0.5"|bc)
+		    ratio="0.$index"
+		    if [[ $index -eq 10 ]]; then
+			ratio="1"
+		    fi
+		    if [[ $bs -eq 16384 && $fl -eq 800 && $cacheSize -eq 4096 ]]; then
+			continue
+		    fi
+		    scripts/run.sh $runMode req${req} op5M fc10 fl${fl} cache$cacheSize threads$threadNumber workerT$works gcT$gcs batchSize$batchSize round1 readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs}
+		done
+	    done
+	    scripts/run.sh $runMode req${req} op5M fc10 fl${fl} cache8192 threads$threadNumber workerT$works gcT$gcs batchSize$batchSize round1 Exp$ExpName blockSize${bs} clean 
+	done
+    done
 done
-exit
-
-for ((i=4; i<8; i++)); do
-    scripts/runUpdateTest_jhli.sh req${req[$i]} op${ops[$i]} fc${fcs[$i]} fl${fls[$i]} 
-    scripts/runUpdateTest_jhli.sh kv req${req[$i]} op${ops[$i]} fc${fcs[$i]} fl${fls[$i]} 
-    scripts/runUpdateTest_jhli.sh kd req${req[$i]} op${ops[$i]} fc${fcs[$i]} fl${fls[$i]} gc
-    scripts/runUpdateTest_jhli.sh kvkd req${req[$i]} op${ops[$i]} fc${fcs[$i]} fl${fls[$i]} gc
-done
-exit
-
-#scripts/runUpdateTest_jhli.sh kd req10M op2M fc4 fl1000
-
-#scripts/runUpdateTest_jhli.sh bkv req10M op2M fc4 fl1000 
-
-bs=("512" "256" "128" "64")
-
-for ((i=0; i<${#bs[@]}; i++)); do
-    scripts/runUpdateTest_jhli.sh kvkd req10M op10M fc4 fl1000 bs$(( ${bs[$i]} * 1024 ))
-    exit
-done
-exit
-
-scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc4 fl1000
-scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc4 fl1000
-
-#scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc4 fl1000 ow0.01
-#scripts/runUpdateTest_jhli.sh kd req10M op2M fc4 fl1000 ow0.01 
-#scripts/runUpdateTest_jhli.sh kv req10M op2M fc4 fl1000 ow0.01
-#scripts/runUpdateTest_jhli.sh req10M op2M fc4 fl1000 ow0.01
-
-#scripts/runUpdateTest_jhli.sh kd req5M op2M fc8 fl500 load
-#scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc8 fl500 load
-#scripts/runUpdateTest_jhli.sh kvkd req10M op2M fc8 fl500 

@@ -22,6 +22,7 @@ class ExternDBConfig {
     bool noCompaction_;
     int numThreads_;
     size_t blockCache_;
+    size_t blobCacheSize;
     size_t gcSize_;
     size_t memtable_;
     bool tiered_;
@@ -50,6 +51,7 @@ class ExternDBConfig {
     uint64_t deltaKVCacheObjectNumber_;
     uint64_t prefixTreeBitNumber_;
     bool enableRawRocksDBBatch_;
+    uint64_t blockSize;
 
     struct {
         uint64_t level;
@@ -64,6 +66,7 @@ class ExternDBConfig {
         directIO_ = pt_.get<bool>("config.directIO");
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
+        blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
         gcSize_ = pt_.get<size_t>("config.gcSize");
         memtable_ = pt_.get<size_t>("config.memtable");
         noCompaction_ = pt_.get<bool>("config.noCompaction");
@@ -95,6 +98,7 @@ class ExternDBConfig {
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
+	blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
     }
 
     int getBloomBits() {
@@ -117,6 +121,9 @@ class ExternDBConfig {
     }
     size_t getBlockCache() {
         return blockCache_;
+    }
+    size_t getBlobCacheSize() {
+        return blobCacheSize;
     }
     size_t getGcSize() {
         return gcSize_;
@@ -224,7 +231,10 @@ class ExternDBConfig {
     }
 
     bool getEnableRoaRocksDBBatch() {
-        return enableDeltaKVCache_;
+        return enableRawRocksDBBatch_;
+    }
+    uint64_t getBlockSize() {
+	return blockSize;
     }
 };
 }  // namespace ycsbc
