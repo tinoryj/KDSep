@@ -884,7 +884,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             return true;
         }
         bool createNewFileHandlerStatus;
-        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -898,7 +898,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(string keyStr, h
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
             if (!getFileHandlerStatus && (opType == kPut || opType == kMultiPut)) {
                 bool createNewFileHandlerStatus;
-                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
@@ -956,7 +956,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
     } else if (fileHandlerExistFlag == false && getForAnchorWriting == false) {
         // Anchor: handler does not exist, need create the file
         bool createNewFileHandlerStatus;
-        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", keyStr.c_str());
             return false;
@@ -971,7 +971,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(strin
             bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
             if (!getFileHandlerStatus) {
                 bool createNewFileHandlerStatus;
-                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr, initialTrieBitNumber_), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", keyStr.c_str());
                     return false;
@@ -1057,29 +1057,10 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixSt
     }
 }
 
-bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber)
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
-    // uint64_t remainingAvaliableFileNumber = objectFileMetaDataTrie_.getRemainFileNumber();
-    // if (remainingAvaliableFileNumber == 0) {
-    //     string targetPrefixStr;
-    //     hashStoreFileMetaDataHandler* tempHandler1;
-    //     hashStoreFileMetaDataHandler* tempHandler2;
-    //     bool selecteFileForMergeStatus = selectFileForMerge(0, tempHandler1, tempHandler2, targetPrefixStr);
-    //     if (selecteFileForMergeStatus == false) {
-    //         debug_error("[ERROR] Could not select file for merge to reclaim space to create new file%s\n", "");
-    //         return false;
-    //     } else {
-    //         bool performTwoFileMergeStatus = twoAdjacentFileMerge(tempHandler1, tempHandler2, targetPrefixStr);
-    //         if (performTwoFileMergeStatus == false) {
-    //             debug_error("[ERROR] Could perform merge to reclaim space to create new file based on selected file ID 1 = %lu, and ID 2 = %lu\n", tempHandler1->target_file_id_, tempHandler2->target_file_id_);
-    //             return false;
-    //         }
-    //     }
-    //     debug_info("Perform bucket merge before create new file success, target prefix = %s\n", targetPrefixStr.c_str());
-    // }
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_, maxBucketSize_, singleFileFlushSize_);
-    currentFileHandlerPtr->current_prefix_used_bit_ = prefixBitNumber;
     currentFileHandlerPtr->target_file_id_ = generateNewFileID();
     currentFileHandlerPtr->file_ownership_flag_ = 0;
     currentFileHandlerPtr->gc_result_status_flag_ = kNew;
@@ -1095,15 +1076,9 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
         fileHandlerPtr = nullptr;
         return false;
     } else {
-        if (currentFileHandlerPtr->current_prefix_used_bit_ != finalInsertLevel) {
-            debug_info("After insert to prefix tree, get handler at level = %lu, but prefix length used = %lu, inserted file ID = %lu, update the current bit number used in the file handler\n", finalInsertLevel, currentFileHandlerPtr->current_prefix_used_bit_, currentFileHandlerPtr->target_file_id_);
-            currentFileHandlerPtr->current_prefix_used_bit_ = finalInsertLevel;
-            fileHandlerPtr = currentFileHandlerPtr;
-            return true;
-        } else {
-            fileHandlerPtr = currentFileHandlerPtr;
-            return true;
-        }
+        currentFileHandlerPtr->current_prefix_used_bit_ = finalInsertLevel;
+        fileHandlerPtr = currentFileHandlerPtr;
+        return true;
     }
 }
 
@@ -1150,7 +1125,7 @@ uint64_t HashStoreFileManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
+pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
 {
     uint64_t processedKeepObjectNumber = 0;
     uint64_t processedTotalObjectNumber = 0;
@@ -1207,18 +1182,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             }
         }
     }
-
-    for (auto& keyIt : savedAnchors) {
-        anchors++;
-        if (resultMap.find(keyIt.first) != resultMap.end()) {
-            processedKeepObjectNumber -= (resultMap.at(keyIt.first).first.size() + 1);
-            resultMap.at(keyIt.first).first.clear();
-            resultMap.at(keyIt.first).second.clear();
-            resultMap.erase(keyIt.first);
-        }
-    }
-
-    debug_info("deconstruct current file header done, file ID = %lu, create reason = %u, prefix length used in this file = %lu, target process file size = %lu, find different key number = %lu, total processed object number = %lu, total anchors = %lu with saved anchors %lu, target keep object number = %lu\n", currentFileHeader.file_id_, currentFileHeader.file_create_reason_, currentFileHeader.current_prefix_used_bit_, fileSize, resultMap.size(), processedTotalObjectNumber, anchors, savedAnchors.size(), processedKeepObjectNumber);
+    debug_info("deconstruct current file header done, file ID = %lu, create reason = %u, prefix length used in this file = %lu, target process file size = %lu, find different key number = %lu, total processed object number = %lu, target keep object number = %lu\n", currentFileHeader.file_id_, currentFileHeader.file_create_reason_, currentFileHeader.current_prefix_used_bit_, fileSize, resultMap.size(), processedTotalObjectNumber, processedKeepObjectNumber);
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
@@ -1495,7 +1459,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes_, currentHandlerPtr1->total_object_bytes_, syncStatistics_);
     // process GC contents
     unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap1;
-    pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_, currentHandlerPtr1->bufferedUnFlushedAnchorsVec_, gcResultMap1);
+    pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_, gcResultMap1);
     debug_info("Merge GC read file ID 1 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr1->target_file_id_, remainObjectNumberPair1.first, remainObjectNumberPair1.second);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_FILE1, tv);
     gettimeofday(&tv, 0);
@@ -1507,7 +1471,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes_, currentHandlerPtr2->total_object_bytes_, syncStatistics_);
     // process GC contents
     unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap2;
-    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_, currentHandlerPtr2->bufferedUnFlushedAnchorsVec_, gcResultMap2);
+    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_, gcResultMap2);
     debug_info("Merge GC read file ID 2 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr2->target_file_id_, remainObjectNumberPair2.first, remainObjectNumberPair2.second);
 
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_FILE2, tv);
@@ -1811,7 +1775,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             }
             // process GC contents
             unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap;
-            pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, fileHandler->bufferedUnFlushedAnchorsVec_, gcResultMap);
+            pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, gcResultMap);
 
             bool fileContainsReWriteKeysFlag = false;
             // calculate target file size

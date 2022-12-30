@@ -57,7 +57,6 @@ typedef struct hashStoreFileMetaDataHandler {
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
-    unordered_map<string, uint32_t> bufferedUnFlushedAnchorsVec_;
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {
