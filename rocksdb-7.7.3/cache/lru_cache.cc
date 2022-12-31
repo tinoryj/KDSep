@@ -805,6 +805,8 @@ LRUCache::LRUCache(size_t capacity, int num_shard_bits,
 }
 
 LRUCache::~LRUCache() {
+  fprintf(stderr, "GetUsage() %d\n", (int)GetUsage());
+  printf("cache GetUsage() %d\n", (int)GetUsage());
   if (shards_ != nullptr) {
     assert(num_shards_ > 0);
     for (int i = 0; i < num_shards_; i++) {

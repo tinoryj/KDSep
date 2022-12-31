@@ -67,7 +67,7 @@ log_db_status() {
 }
 
 pwd
-ulimit -n 1048576 
+ulimit -n 10240
 ulimit -s 102400
 echo $@
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
@@ -78,8 +78,8 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/lvm/Exp3/RunDB"
-DB_Loaded_Path="/mnt/lvm/Exp3/BackupDB"
+DB_Working_Path="/mnt/g/deltakv/working"
+DB_Loaded_Path="/mnt/g/deltakv"
 ResultLogFolder="Exp3/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
@@ -91,6 +91,7 @@ cacheSize="$(( 1024 * 1024 * 1024 ))"
 workerThreadNumber=12
 gcThreadNumber=2
 batchSize=2000
+cacheIndexFilter=false
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -159,8 +160,8 @@ for param in $*; do
         bucketNumber=`echo $param | sed 's/bucketNum//g'`
     elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
-        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
-        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
+#        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
+#        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
         ResultLogFolder="Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
@@ -193,6 +194,9 @@ for param in $*; do
         run_suffix=${run_suffix}_$param
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
+    elif [[ `echo $param | grep "cif" | wc -l` -eq 1 ]]; then
+        cacheIndexFilter="true"
+        run_suffix=${run_suffix}_cif
     fi
 done
 
@@ -238,6 +242,10 @@ if [[ "$maxFileNumber" -ne 16 ]]; then
   run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
 fi
 
+if [[ "$cacheIndexFilter" == "true" ]]; then
+    sed -i "/cacheIndexAndFilterBlocks/c\\cacheIndexAndFilterBlocks = true" temp.ini 
+fi
+
 size="$(( $KVPairsNumber / 1000000 ))M"
 if [[ $size == "0M" ]]; then
     size="$(( $KVPairsNumber / 1000 ))K"
@@ -276,6 +284,8 @@ sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
 sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
 sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
 
+loaded="false"
+
 echo "<===================== Loading the database =====================>"
 
 if [[ "$cleanFlag" == "true" ]]; then
@@ -292,6 +302,7 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} || "$only_load" == "true" ]]; then
     fi
     output_file=`generate_file_name $ResultLogFolder/LoadDB-${run_suffix}`
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
+    loaded="true"
     echo "output at $output_file"
     if [[ $? -ne 0 ]]; then
 	echo "Exit. return number $?"
@@ -324,13 +335,15 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         echo "<===================== Modified spec file content =====================>"
         cat workload-temp.spec | head -n 25 | tail -n 17
         # Running the ycsb-benchmark
-        if [ -d ${DB_Working_Path}/${DB_Name} ]; then
-            rm -rf ${DB_Working_Path}/${DB_Name}
-            echo "Deleted old database folder"
+        if [[ "$loaded" == "false" ]]; then
+            if [ -d ${DB_Working_Path}/${DB_Name} ]; then
+                rm -rf ${DB_Working_Path}/${DB_Name}
+                echo "Deleted old database folder"
+            fi
+            echo "cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path}"
+            cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path} 
+            echo "Copy loaded database"
         fi
-        echo "cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path}"
-        cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path} 
-        echo "Copy loaded database"
         if [ ! -d ${DB_Working_Path}/$DB_Name ]; then
             echo "Retrived loaded database error"
             exit
@@ -342,6 +355,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
         output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
         ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
+        loaded="false"
 	if [[ $? -ne 0 ]]; then
 	    echo "Exit. return number $?"
 	    exit

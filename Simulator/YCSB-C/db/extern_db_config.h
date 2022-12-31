@@ -52,6 +52,7 @@ class ExternDBConfig {
     uint64_t prefixTreeBitNumber_;
     bool enableRawRocksDBBatch_;
     uint64_t blockSize;
+    bool cacheIndexAndFilterBlocks_;
 
     struct {
         uint64_t level;
@@ -99,6 +100,7 @@ class ExternDBConfig {
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
 	blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
+        cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
     }
 
     int getBloomBits() {
@@ -235,6 +237,9 @@ class ExternDBConfig {
     }
     uint64_t getBlockSize() {
 	return blockSize;
+    }
+    bool cacheIndexAndFilterBlocks() {
+        return cacheIndexAndFilterBlocks_;
     }
 };
 }  // namespace ycsbc

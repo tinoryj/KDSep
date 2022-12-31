@@ -18,7 +18,9 @@ if [[ ! -d "/opt/rocksdb-7.7.3" || ! -f "/opt/rocksdb-7.7.3/librocksdb.a" ]]; th
 else
     librocksdb="../rocksdb-7.7.3/librocksdb.a"
     md5value=`md5sum $librocksdb`
+    cd ../rocksdb-7.7.3/
     make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+    cd -
     md5value2=`md5sum $librocksdb`
     if [[ "$md5value" != "$md5value2" ]]; then
 	echo "Copy rocksdb static lib to /opt"

@@ -171,6 +171,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
     bbto.block_size = config.getBlockSize();
+    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks(); 
 
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
