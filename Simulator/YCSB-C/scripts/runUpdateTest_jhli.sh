@@ -37,9 +37,9 @@ KVPairsNumber=40000000    #"300000000"
 OperationsNumber=40000000 #"300000000"
 fieldlength=100
 fieldcount=10
-DB_Working_Path="/mnt/sn640/jhli/working/"
-DB_Loaded_Path="/mnt/sn640/jhli"
-DB_Loaded_Path="/mnt/sn640/ExpParameters/BackupDB/"
+DB_Working_Path="/mnt/lvm/jhli/working/"
+DB_Loaded_Path="/mnt/lvm/jhli"
+DB_Loaded_Path="/mnt/lvm/ExpParameters/BackupDB/"
 DB_Name="loadedDB"
 ResultLogFolder="ResultLogs"
 MAXRunTimes=1
@@ -125,9 +125,9 @@ for param in $*; do
         ReadProportion=`echo $param | sed 's/readRatio//g'`
     elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
-        DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
-        DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
-        ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
+        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
+        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
+        ResultLogFolder="/mnt/lvm/Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
         fi

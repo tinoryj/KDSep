@@ -22,6 +22,10 @@ if (NOT CMAKE_BUILD_TYPE)
    message (
       STATUS "No CMAKE_BUILD_TYPE selected, defaulting to ${CMAKE_BUILD_TYPE}"
    )
+endif ()
+
+if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
+   message (STATUS "CMAKE_BUILD_TYPE as Release selected")
    add_compile_options(-std=c++17 -fPIC -frtti -g) 
 else()
    message (STATUS "CMAKE_BUILD_TYPE as Debug selected")
