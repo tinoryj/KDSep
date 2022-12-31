@@ -28,12 +28,9 @@ static unsigned int charBasedHashFunc(char* data, uint32_t n)
     unsigned int hash = 388650013;
     unsigned int scale = 388650179;
     unsigned int hardener = 1176845762;
-    char buffer[n];
-    memcpy(buffer, data, n);
     for (uint32_t i = 0; i < n; i++) {
         hash *= scale;
-        hash += buffer++;
-        n--;
+        hash += (data[i]);
     }
     return hash ^ hardener;
 }

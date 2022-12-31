@@ -1124,62 +1124,57 @@ uint64_t HashStoreFileManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
+pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
 {
     uint64_t processedKeepObjectNumber = 0;
     uint64_t processedTotalObjectNumber = 0;
 
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
-    hashStoreFileHeader currentFileHeader;
-    memcpy(&currentFileHeader, fileContentBuffer, sizeof(currentFileHeader));
-    currentProcessLocationIndex += sizeof(currentFileHeader);
-    while (currentProcessLocationIndex != fileSize) {
-        processedKeepObjectNumber++;
+    currentProcessLocationIndex += sizeof(hashStoreFileHeader);
+    unordered_map<str_t, pair<vector<string>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> resultMapInternal;
+    while (currentProcessLocationIndex != contentSize) {
         processedTotalObjectNumber++;
         hashStoreRecordHeader currentObjectRecordHeader;
-        memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
-        currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
-        if (currentObjectRecordHeader.is_anchor_ == true) {
-            string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
-            if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                processedKeepObjectNumber -= (resultMap.at(currentKeyStr).first.size() + 1);
-                resultMap.at(currentKeyStr).first.clear();
-                resultMap.at(currentKeyStr).second.clear();
-                resultMap.erase(currentKeyStr);
-                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-                continue;
-            } else {
-                processedKeepObjectNumber--;
-                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-                continue;
-            }
-        } else if (currentObjectRecordHeader.is_gc_done_ == true) {
-            processedKeepObjectNumber--;
+        memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(hashStoreRecordHeader));
+        currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
+        if (currentObjectRecordHeader.is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
             continue;
+        }
+        // get key str_t
+        str_t currentKey;
+        currentKey.data_ = contentBuffer + currentProcessLocationIndex;
+        currentKey.size_ = currentObjectRecordHeader.key_size_;
+        currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+        if (currentObjectRecordHeader.is_anchor_ == true) {
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                processedKeepObjectNumber -= (resultMapInternal.at(currentKey).first.size() + 1);
+                resultMapInternal.at(currentKey).first.clear();
+                resultMapInternal.at(currentKey).second.clear();
+            }
         } else {
-            string currentKeyStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
-            if (resultMap.find(currentKeyStr) != resultMap.end()) {
-                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-                string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMap.at(currentKeyStr).first.push_back(currentValueStr);
-                resultMap.at(currentKeyStr).second.push_back(currentObjectRecordHeader);
-                currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
-                continue;
+            processedKeepObjectNumber++;
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                resultMapInternal.at(currentKey).first.push_back(currentValueStr);
+                resultMapInternal.at(currentKey).second.push_back(currentObjectRecordHeader);
             } else {
                 vector<string> newValuesRelatedToCurrentKeyVec;
-                vector<hashStoreRecordHeader> newRecordRelatedToCurrentKeyVec;
-                currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
-                string currentValueStr(fileContentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                vector<hashStoreRecordHeader> newRecorderHeaderVec;
+                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
-                newRecordRelatedToCurrentKeyVec.push_back(currentObjectRecordHeader);
-                resultMap.insert(make_pair(currentKeyStr, make_pair(newValuesRelatedToCurrentKeyVec, newRecordRelatedToCurrentKeyVec)));
-                currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
-                continue;
+                newRecorderHeaderVec.push_back(currentObjectRecordHeader);
+                resultMapInternal.insert(make_pair(currentKey, make_pair(newValuesRelatedToCurrentKeyVec, newRecorderHeaderVec)));
             }
+            currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
         }
     }
-    debug_info("deconstruct current file header done, file ID = %lu, create reason = %u, prefix length used in this file = %lu, target process file size = %lu, find different key number = %lu, total processed object number = %lu, target keep object number = %lu\n", currentFileHeader.file_id_, currentFileHeader.file_create_reason_, currentFileHeader.current_prefix_used_bit_, fileSize, resultMap.size(), processedTotalObjectNumber, processedKeepObjectNumber);
+    for (auto mapIt : resultMapInternal) {
+        string currentKey(mapIt.first.data_, mapIt.first.size_);
+        resultMap.insert(make_pair(currentKey, mapIt.second));
+    }
+    debug_info("deconstruct current file done, find different key number = %lu, total processed object number = %lu, target keep object number = %lu\n", resultMap.size(), processedTotalObjectNumber, processedKeepObjectNumber);
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
