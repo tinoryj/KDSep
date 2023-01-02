@@ -12,13 +12,13 @@ typedef struct mempoolHandler_t {
     uint32_t valueSize_;
     uint32_t sequenceNumber_;
     bool isAnchorFlag_;
-    uint8_t* keyPtr_ = nullptr;
-    uint8_t* valuePtr_ = nullptr;
+    char* keyPtr_ = nullptr;
+    char* valuePtr_ = nullptr;
     mempoolHandler_t(uint32_t mempoolHandlerID,
         uint32_t keySize,
         uint32_t valueSize,
-        uint8_t* keyPtr,
-        uint8_t* valuePtr)
+        char* keyPtr,
+        char* valuePtr)
     {
         mempoolHandlerID_ = mempoolHandlerID;
         keySize_ = keySize;
@@ -38,7 +38,7 @@ public:
     bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler);
 
 private:
-    uint8_t** mempool_;
+    char** mempool_;
     uint32_t mempoolBlockNumberThreshold_;
     deque<uint32_t> mempoolFreeHandlerQueue_;
     std::shared_mutex managerMtx_;

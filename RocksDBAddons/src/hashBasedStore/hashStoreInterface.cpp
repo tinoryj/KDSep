@@ -34,7 +34,6 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         shouldUseDirectOperationsFlag_ = true;
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
     }
-    objectMemPool_ = new KeyValueMemPool(options->deltaStore_mem_pool_object_number_, options->deltaStore_mem_pool_object_size_);
     fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
 }
 
@@ -67,34 +66,30 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool HashStoreInterface::put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor)
+bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
 {
-    if (isAnchor == true && anyBucketInitedFlag_ == false) {
+    if (objectPairMempoolHandler.isAnchorFlag_ == true && anyBucketInitedFlag_ == false) {
         return true;
-        debug_info("New OP: put delta key [Anchor] = %s\n", keyStr.c_str());
+        debug_info("New OP: put delta key [Anchor] = %s\n", objectPairMempoolHandler.keyPtr_);
     } else {
         anyBucketInitedFlag_ = true;
-        debug_info("New OP: put delta key [Data] = %s\n", keyStr.c_str());
+        debug_info("New OP: put delta key [Data] = %s\n", objectPairMempoolHandler.keyPtr_);
     }
 
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(keyStr, kPut, tempFileHandler, isAnchor), StatsType::DELTAKV_HASHSTORE_PUT);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DELTAKV_HASHSTORE_PUT);
     if (ret != true) {
-        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", objectPairMempoolHandler.keyPtr_);
         return false;
     } else {
-        if (isAnchor == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes_ == 0)) {
+        if (objectPairMempoolHandler.isAnchorFlag_ == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes_ == 0)) {
             if (tempFileHandler != nullptr) {
                 tempFileHandler->file_ownership_flag_ = 0;
             }
             return true;
         }
         ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        // if (shouldUseDirectOperationsFlag_ == true) {
-        // } else {
-        //     ret = hashStoreFileOperatorPtr_->putWriteOperationIntoJobQueue(tempFileHandler, keyStr, valueStr, sequenceNumber, isAnchor);
-        // }
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", keyStr.c_str());
             return false;

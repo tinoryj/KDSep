@@ -167,8 +167,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             if (readFromFileStatus == false) {
                 return false;
             } else {
-                unordered_map<string, vector<string>> currentFileProcessMap;
-                currentFileProcessMap.reserve(currentHandlerPtr->file_handler_->total_object_count_);
+                unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
                 uint64_t processedObjectNumber = 0;
                 STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
                 if (processedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
@@ -202,8 +201,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             debug_error("[ERROR] Could not read file content, target file ID = %lu, size in metadata = %lu, on disk size in metadata = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->total_object_bytes_, currentHandlerPtr->file_handler_->total_on_disk_bytes_);
             return false;
         } else {
-            unordered_map<string, vector<string>> currentFileProcessMap;
-            currentFileProcessMap.reserve(currentHandlerPtr->file_handler_->total_object_count_);
+            unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
             uint64_t processedObjectNumber = 0;
             STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, currentHandlerPtr->file_handler_->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
             if (processedObjectNumber != currentHandlerPtr->file_handler_->total_object_count_) {
@@ -237,14 +235,13 @@ bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fi
     }
 }
 
-uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string, vector<string>>& resultMap)
+uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal)
 {
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
     currentProcessLocationIndex += sizeof(hashStoreFileHeader);
     uint64_t processedObjectNumber = 0;
     hashStoreRecordHeader currentObjectRecordHeader;
-    unordered_map<str_t, vector<string>, mapHashKeyForStr_t, mapEqualKeForStr_t> resultMapInternal;
     while (currentProcessLocationIndex != contentSize) {
         processedObjectNumber++;
         memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(hashStoreRecordHeader));
@@ -263,21 +260,18 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
                 resultMapInternal.at(currentKey).clear();
             }
         } else {
+            str_t currentValue;
+            currentValue.data_ = contentBuffer + currentProcessLocationIndex;
+            currentValue.size_ = currentObjectRecordHeader.value_size_;
             if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
-                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMapInternal.at(currentKey).push_back(currentValueStr);
+                resultMapInternal.at(currentKey).push_back(currentValue);
             } else {
-                vector<string> newValuesRelatedToCurrentKeyVec;
-                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
+                vector<str_t> newValuesRelatedToCurrentKeyVec;
+                newValuesRelatedToCurrentKeyVec.push_back(currentValue);
                 resultMapInternal.insert(make_pair(currentKey, newValuesRelatedToCurrentKeyVec));
             }
             currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
         }
-    }
-    for (auto mapIt : resultMapInternal) {
-        string currentKey(mapIt.first.data_, mapIt.first.size_);
-        resultMap.insert(make_pair(currentKey, mapIt.second));
     }
     return processedObjectNumber;
 }
@@ -783,8 +777,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 fileHandler->file_ownership_flag_ = 0;
                 return false;
             } else {
-                unordered_map<string, vector<string>> currentFileProcessMap;
-                currentFileProcessMap.reserve(fileHandler->total_object_count_);
+                unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
                 uint64_t processedObjectNumber = 0;
                 STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
                 if (processedObjectNumber != fileHandler->total_object_count_) {
@@ -824,8 +817,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             fileHandler->file_ownership_flag_ = 0;
             return false;
         } else {
-            unordered_map<string, vector<string>> currentFileProcessMap;
-            currentFileProcessMap.reserve(fileHandler->total_object_count_);
+            unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
             uint64_t processedObjectNumber = 0;
             STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
             if (processedObjectNumber != fileHandler->total_object_count_) {

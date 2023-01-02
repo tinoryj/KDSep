@@ -6,9 +6,9 @@ namespace DELTAKV_NAMESPACE {
 
 KeyValueMemPool::KeyValueMemPool(uint32_t objectNumberThreshold, uint32_t maxBlockSize)
 {
-    mempool_ = (uint8_t**)malloc(objectNumberThreshold * sizeof(uint8_t*));
+    mempool_ = (char**)malloc(objectNumberThreshold * sizeof(char*));
     for (uint32_t i = 0; i < objectNumberThreshold; i++) {
-        mempool_[i] = (uint8_t*)malloc(maxBlockSize * sizeof(uint8_t));
+        mempool_[i] = (char*)malloc(maxBlockSize * sizeof(char));
         mempoolFreeHandlerQueue_.push_back(i);
     }
     mempoolBlockNumberThreshold_ = objectNumberThreshold;
