@@ -80,6 +80,10 @@ fieldlength=400
 fieldcount=10
 DB_Working_Path="/mnt/g/deltakv/working"
 DB_Loaded_Path="/mnt/g/deltakv"
+if [[ ! -d "/mnt/g" ]]; then
+    DB_Working_Path="/mnt/lvm/deltakv/working"
+    DB_Loaded_Path="/mnt/lvm/deltakv"
+fi
 ResultLogFolder="Exp3/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
@@ -88,6 +92,7 @@ RocksDBThreadNumber=16
 rawConfigPath="configDir/deltakv.ini"
 bucketSize="1048576"
 cacheSize="$(( 1024 * 1024 * 1024 ))"
+blobCacheSize=0
 workerThreadNumber=12
 gcThreadNumber=2
 batchSize=2000
@@ -109,6 +114,7 @@ usebkvkd="false"
 gc="true"
 maxFileNumber="16"
 blockSize=4096
+fake="false"
 
 for param in $*; do
     if [[ $param == "kv" ]]; then
@@ -185,18 +191,24 @@ for param in $*; do
         MAXRunTimes=`echo $param | sed 's/round//g'`
     elif [[ `echo $param | grep "maxFileNumber" | wc -l` -eq 1 ]]; then
         maxFileNumber=`echo $param | sed 's/maxFileNumber//g'`
-    elif [[ `echo $param | grep "cache" | wc -l` -eq 1 ]]; then
+    elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
         num=`echo $param | sed 's/cache//g'`
         cacheSize=$(( $num * 1024 * 1024 ))
         run_suffix=${run_suffix}_$param
-    elif [[ `echo $param | grep "blockSize" | wc -l` -eq 1 ]]; then
+    elif [[ "$param" =~ ^blobcache[0-9]+$ ]]; then
+        num=`echo $param | sed 's/blobcache//g'`
+        blobCacheSize=$(( $num * 1024 * 1024 ))
+        run_suffix=${run_suffix}_$param
+    elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=`echo $param | sed 's/blockSize//g'`
         run_suffix=${run_suffix}_$param
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
-    elif [[ `echo $param | grep "cif" | wc -l` -eq 1 ]]; then
+    elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
         run_suffix=${run_suffix}_cif
+    elif [[ "$param" == "fake" ]]; then
+        fake="true"
     fi
 done
 
@@ -233,6 +245,7 @@ else
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = true" temp.ini
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
     sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
+    sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 fi
 
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini 
@@ -244,6 +257,10 @@ fi
 
 if [[ "$cacheIndexFilter" == "true" ]]; then
     sed -i "/cacheIndexAndFilterBlocks/c\\cacheIndexAndFilterBlocks = true" temp.ini 
+fi
+
+if [[ "$fake" == "true" ]]; then
+    sed -i "/fakeDirectIO/c\\fakeDirectIO = true" temp.ini 
 fi
 
 size="$(( $KVPairsNumber / 1000000 ))M"
@@ -368,8 +385,10 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             rm -rf workload-temp.spec
             echo "Deleted old workload spec"
         fi
-        if [ -f temp.ini ]; then
-            rm -rf temp.ini
-            echo "Deleted old workload config"
+        if [[ $roundIndex -eq $MAXRunTimes ]]; then
+            if [ -f temp.ini ]; then
+                rm -rf temp.ini
+                echo "Deleted old workload config"
+            fi
         fi
 done
