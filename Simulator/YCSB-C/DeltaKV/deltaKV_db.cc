@@ -131,6 +131,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     // bool seekCompaction = config.getSeekCompaction();
     bool compression = config.getCompression();
     bool directIO = config.getDirectIO();
+    bool useMmap = config.getUseMmap();
     bool fakeDirectIO = config.getFakeDirectIO();  // for testing
     bool keyValueSeparation = config.getKeyValueSeparation();
     bool keyDeltaSeparation = config.getKeyDeltaSeparation();
@@ -148,8 +149,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
     } else {
-        options_.rocksdbRawOptions_.allow_mmap_reads = true;
-        options_.rocksdbRawOptions_.allow_mmap_writes = true;
+        options_.rocksdbRawOptions_.allow_mmap_reads = useMmap;
+        options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     }
     if (blobDbKeyValueSeparation == true) {
@@ -219,8 +220,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         cerr << "Enabled fake I/O, do not sync" << endl;
         options_.rocksdbRawOptions_.use_direct_reads = false;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = false;
-        options_.rocksdbRawOptions_.allow_mmap_reads = true;
-        options_.rocksdbRawOptions_.allow_mmap_writes = true;
+        options_.rocksdbRawOptions_.allow_mmap_reads = useMmap;
+        options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
         options_.rocksdb_sync_put = false;
         options_.rocksdb_sync_merge = false;

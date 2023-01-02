@@ -115,6 +115,8 @@ gc="true"
 maxFileNumber="16"
 blockSize=4096
 fake="false"
+nodirect="false"
+nommap="false"
 
 for param in $*; do
     if [[ $param == "kv" ]]; then
@@ -202,13 +204,20 @@ for param in $*; do
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=`echo $param | sed 's/blockSize//g'`
         run_suffix=${run_suffix}_$param
-    elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
-	cleanFlag="true"
+#    elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
+#	cleanFlag="true"
     elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
         run_suffix=${run_suffix}_cif
     elif [[ "$param" == "fake" ]]; then
         fake="true"
+        run_suffix=${run_suffix}_fake
+    elif [[ "$param" == "nodirect" ]]; then
+        nodirect="true"
+        run_suffix=${run_suffix}_nodirect
+    elif [[ "$param" == "nommap" ]]; then
+        nommap="true"
+        run_suffix=${run_suffix}_nommap
     fi
 done
 
@@ -261,6 +270,14 @@ fi
 
 if [[ "$fake" == "true" ]]; then
     sed -i "/fakeDirectIO/c\\fakeDirectIO = true" temp.ini 
+fi
+
+if [[ "$nodirect" == "true" ]]; then
+    sed -i "/directIO/c\\directIO = false" temp.ini 
+fi
+
+if [[ "$nommap" == "true" ]]; then
+    sed -i "/useMmap/c\\useMmap = false" temp.ini 
 fi
 
 size="$(( $KVPairsNumber / 1000000 ))M"

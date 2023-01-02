@@ -18,6 +18,7 @@ class ExternDBConfig {
     bool seekCompaction_;
     bool compression_;
     bool directIO_;
+    bool useMmap_;
     bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
@@ -64,7 +65,8 @@ class ExternDBConfig {
         bloomBits_ = pt_.get<int>("config.bloomBits");
         seekCompaction_ = pt_.get<bool>("config.seekCompaction");
         compression_ = pt_.get<bool>("config.compression");
-        directIO_ = pt_.get<bool>("config.directIO");
+        directIO_ = pt_.get<bool>("config.directIO", true);
+        useMmap_ = pt_.get<bool>("config.useMmap", true);
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
         blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
@@ -114,6 +116,9 @@ class ExternDBConfig {
     }
     bool getDirectIO() {
         return directIO_;
+    }
+    bool getUseMmap() {
+        return useMmap_;
     }
     bool getFakeDirectIO() {
         return fakeDirectIO_;

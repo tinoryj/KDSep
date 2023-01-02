@@ -11,8 +11,8 @@ reqs=("10M" "20M" "40M" "80M")
 batchSize=10K
 
 indexSet=(10)
-runModeSet=('bkv' 'raw')
-blocksizes=(2048)
+runModeSet=('raw' 'bkv')
+blocksizes=(4096)
 flengths=(100)
 reqs=("40M")
 cacheSizes=(4096 4096 4096 4096 4096 4096 4096)
@@ -44,22 +44,23 @@ for bs in "${blocksizes[@]}"; do
 		    if [[ $index -eq 10 ]]; then
 			ratio="1"
 		    fi
+
 #                    scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs}
                     if [[ "$runMode" == "raw" ]]; then
                         if [[ "$lastCacheSize" -ne "$cacheSize" ]]; then
-                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs} cif 
-                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs} cif fake 
+#                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
+                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif nodirect nommap 
                         else
                             continue
                         fi
                         lastCacheSize=$cacheSize
-                    else
-                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs} cif 
-                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs} cif fake 
+                    elif [[ "$runMode" == "bkv" ]]; then
+#                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
+                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif nodirect nommap 
                     fi
 		done
-	    done
-            scripts/run.sh $runMode req${req} op30M fc10 fl${fl} cache8192 threads$threadNumber workerT$works gcT$gcs batchSize$batchSize Exp$ExpName blockSize${bs} clean 
-	done
+            done
+#            scripts/run.sh $runMode req${req} op30M fc10 fl${fl} cache8192 threads$threadNumber workerT$works gcT$gcs batchSize$batchSize Exp$ExpName blockSize${bs} clean 
+        done
     done
 done

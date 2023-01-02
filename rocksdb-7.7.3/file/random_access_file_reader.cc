@@ -236,6 +236,9 @@ IOStatus RandomAccessFileReader::Read(
     }
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
+    if (file_name().find("blob") != std::string::npos) {
+        RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+    } 
     SetPerfLevel(prev_perf_level);
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
