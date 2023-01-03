@@ -41,7 +41,7 @@ class Client {
 inline Operation Client::DoInsert() {
     std::string key = workload_.NextSequenceKey();
     std::vector<YCSBDB::KVPair> pairs;
-    workload_.BuildValues(pairs);
+    workload_.BuildValuesWithKey(key, pairs);
     assert(db_.Insert(workload_.NextTable(), key, pairs) >= 0);
     return (Operation::INSERT);
 }
@@ -127,7 +127,7 @@ inline int Client::TransactionReadModifyWrite() {
     //     workload_.BuildUpdate(values);
     // }
     // return db_.Update(table, key, values);
-    workload_.BuildValues(values);
+    workload_.BuildValuesWithKey(key, values);
     return db_.Insert(table, key, values);
 }
 
@@ -150,9 +150,9 @@ inline int Client::TransactionUpdate() {
     const std::string& key = workload_.NextTransactionKey();
     std::vector<YCSBDB::KVPair> values;
     if (workload_.write_all_fields()) {
-        workload_.BuildValues(values);
+        workload_.BuildValuesWithKey(key, values);
     } else {
-        workload_.BuildUpdate(values);
+        workload_.BuildUpdateWithKey(key, values);
     }
     // std::cout << "Update transaction key = " << key << std::endl;
     // for (long unsigned int i = 0; i < values.size(); i++) {
@@ -166,7 +166,7 @@ inline int Client::TransactionOverWrite() {
     const std::string& table = workload_.NextTable();
     const std::string& key = workload_.NextTransactionKey();
     std::vector<YCSBDB::KVPair> values;
-    workload_.BuildValues(values);
+    workload_.BuildValuesWithKey(key, values);
     // std::cout << "Update transaction key = " << key << std::endl;
     // for (long unsigned int i = 0; i < values.size(); i++) {
     //     std::cout << "Update transaction value = " << values[i].second <<
@@ -179,7 +179,7 @@ inline int Client::TransactionInsert() {
     const std::string& table = workload_.NextTable();
     const std::string& key = workload_.NextSequenceKey();
     std::vector<YCSBDB::KVPair> values;
-    workload_.BuildValues(values);
+    workload_.BuildValuesWithKey(key, values);
     return db_.Insert(table, key, values);
 }
 

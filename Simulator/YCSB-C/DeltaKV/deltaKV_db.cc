@@ -157,7 +157,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         cerr << "Enabled Blob based KV separation" << endl;
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
         options_.rocksdbRawOptions_.enable_blob_files = true;
-        options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
+        options_.rocksdbRawOptions_.min_blob_size = config.getMinBlobSize();                           // Default 1024
         options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
         options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
         options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false

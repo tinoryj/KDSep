@@ -97,6 +97,7 @@ workerThreadNumber=12
 gcThreadNumber=2
 batchSize=2000
 cacheIndexFilter=false
+paretokey="false"
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -154,12 +155,10 @@ for param in $*; do
         OperationsNumber=$num
     elif [[ `echo $param | grep "fc" | wc -l` -eq 1 ]]; then
         suffix=${suffix}-${param}
-        run_suffix=${run_suffix}-${param}
         num=`echo $param | sed 's/fc//g'`
         fieldcount=$num
     elif [[ `echo $param | grep "fl" | wc -l` -eq 1 ]]; then
         suffix=${suffix}-${param}
-        run_suffix=${run_suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
     elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
@@ -203,7 +202,9 @@ for param in $*; do
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=`echo $param | sed 's/blockSize//g'`
-        run_suffix=${run_suffix}_$param
+        if [[ $blockSize -ne 4096 ]]; then
+            run_suffix=${run_suffix}_$param
+        fi
 #    elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 #	cleanFlag="true"
     elif [[ "$param" == "cif" ]]; then
@@ -218,6 +219,9 @@ for param in $*; do
     elif [[ "$param" == "nommap" ]]; then
         nommap="true"
         run_suffix=${run_suffix}_nommap
+    elif [[ "$param" == "paretokey" ]]; then
+        paretokey="true"
+        suffix=${suffix}_paretokey
     fi
 done
 
@@ -317,6 +321,9 @@ sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
 sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
 sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
 sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
+if [[ $paretokey == "true" ]]; then
+    sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
+fi
 
 loaded="false"
 
@@ -334,7 +341,7 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} || "$only_load" == "true" ]]; then
     if [[ -d ${DB_Working_Path}/$DB_Name ]]; then 
         rm -rf ${DB_Working_Path}/$DB_Name
     fi
-    output_file=`generate_file_name $ResultLogFolder/LoadDB-${run_suffix}`
+    output_file=`generate_file_name $ResultLogFolder/LoadDB_${run_suffix}`
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
     loaded="true"
     echo "output at $output_file"
@@ -366,6 +373,9 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         sed -i "16s/0/0$UpdateProportion/g" workload-temp.spec
         sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
         sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
+        if [[ $paretokey == "true" ]]; then
+            sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
+        fi
         echo "<===================== Modified spec file content =====================>"
         cat workload-temp.spec | head -n 25 | tail -n 17
         # Running the ycsb-benchmark
@@ -387,7 +397,11 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fi
 
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
+
         output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
+        if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
+            output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
+        fi
         ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
         loaded="false"
 	if [[ $? -ne 0 ]]; then

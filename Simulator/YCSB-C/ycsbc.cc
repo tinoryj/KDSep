@@ -111,14 +111,15 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         // if (i % processLabel_base == 0) {
         std::cerr << "\r";
         double tot_duration = timerStart.End() / 1000000.0;
-        int est_minutes = ceil(tot_duration / 60.0);
-        int est_seconds = int(tot_duration) % 60;
-        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s) estimate ";
+        double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
+        int est_minutes = int(estimate_duration) / 60;
+        int est_seconds = int(estimate_duration) % 60;
+        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
         if (est_minutes > 0) {
             std::cerr << est_minutes << " min"; 
         } 
         if (est_seconds > 0) {
-            std::cerr << est_seconds << " s"; 
+            std::cerr << est_seconds << " s    "; 
         }
         // }
     }

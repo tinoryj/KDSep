@@ -53,6 +53,7 @@ class ExternDBConfig {
     uint64_t prefixTreeBitNumber_;
     bool enableRawRocksDBBatch_;
     uint64_t blockSize;
+    uint64_t minBlobSize;
     bool cacheIndexAndFilterBlocks_;
 
     struct {
@@ -102,6 +103,7 @@ class ExternDBConfig {
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
 	blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
+        minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 1024);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
     }
 
@@ -242,6 +244,9 @@ class ExternDBConfig {
     }
     uint64_t getBlockSize() {
 	return blockSize;
+    }
+    uint64_t getMinBlobSize() {
+	return minBlobSize;
     }
     bool cacheIndexAndFilterBlocks() {
         return cacheIndexAndFilterBlocks_;

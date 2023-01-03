@@ -1,5 +1,4 @@
-#ifndef YCSB_C_PARETOGENERATOR_H
-#define YCSB_C_PARETOGENERATOR_H
+#pragma once
 
 #include <random>
 
@@ -8,18 +7,19 @@
 
 namespace ycsbc {
 
-class DistToKeyGenerator : public Generator<uint64_t> {
+class DistToKeyGenerator {
    public:
     DistToKeyGenerator(double theta, double k, double sigma)
         : theta_(theta), k_(k), sigma_(sigma) {
 	num_ = 10000;
+        field_count_ = 10;
     }
-    DistToKeyGenerator() : theta_(0), k_(0.92), sigma_(226) {
+    DistToKeyGenerator(int field_count) : theta_(0), k_(0.92), sigma_(226), field_count_(field_count) {
 	num_ = 10000;
     }
-    uint64_t Next(std::string& key) {
+    uint64_t Next(const std::string& key) {
 	int64_t rand_v = 0;
-	for (int i = (key.size() > 4) ? key.size() - 4 : 0; i < key.size(); i++) {
+	for (int i = (key.size() > 4) ? key.size() - 4 : 0; i < (int)key.size(); i++) {
 	    rand_v = rand_v * 10 + (key[i] - '0');
 	}
         rand_v = rand_v % num_ + 1;
@@ -37,6 +37,8 @@ class DistToKeyGenerator : public Generator<uint64_t> {
 
     uint64_t Last() { return last_value_; }
 
+    void SetFieldCount(uint64_t fc) { field_count_ = fc; }
+
    private:
     uint64_t num_;
     double theta_;
@@ -44,15 +46,16 @@ class DistToKeyGenerator : public Generator<uint64_t> {
     double sigma_;
     double last_value_;
     uint64_t max_value_{128 * 1024};
+    uint64_t field_count_;
 
-    uint64_t Value(uint64_t v, std::string& key) {
-	if (v < 0) {
-	    return 10;
+    uint64_t Value(uint64_t v, const std::string& key) {
+	if (v < field_count_) {
+	    return 1;
 	}
 	if (v > max_value_) {
-	    return max_value_;
+	    return max_value_ / field_count_;
 	}
-	return v;
+	return v / field_count_;
 //        return (v < 0 || v > max_value_) ? Next(key) : v;
         // return v < 0 ? 10 : (v > max_value_ ? v % max_value_ : v);
     }
@@ -60,4 +63,3 @@ class DistToKeyGenerator : public Generator<uint64_t> {
 
 }  // namespace ycsbc
 
-#endif  // YCSB_C_PARETOGENERATOR_H
