@@ -14,14 +14,13 @@ namespace DELTAKV_NAMESPACE {
 typedef struct str_t {
     char* data_;
     uint32_t size_;
-} str_t;
-
-struct mapEqualKeForStr_t {
-    bool operator()(str_t const& a, str_t const& b) const
+    str_t() { }
+    str_t(char* data, uint32_t size)
     {
-        return (memcmp(a.data_, b.data_, a.size_) == 0);
+        data_ = data;
+        size_ = size;
     }
-};
+} str_t;
 
 static unsigned int charBasedHashFunc(char* data, uint32_t n)
 {
@@ -35,10 +34,31 @@ static unsigned int charBasedHashFunc(char* data, uint32_t n)
     return hash ^ hardener;
 }
 
+struct mapEqualKeForStr_t {
+    bool operator()(str_t const& a, str_t const& b) const
+    {
+        return (memcmp(a.data_, b.data_, a.size_) == 0);
+    }
+};
+
 struct mapHashKeyForStr_t {
     size_t operator()(str_t const& s) const
     {
         return charBasedHashFunc(s.data_, s.size_);
+    }
+};
+
+struct mapEqualKeForMemPoolHandler_t {
+    bool operator()(mempoolHandler_t const& a, mempoolHandler_t const& b) const
+    {
+        return (memcmp(a.keyPtr_, b.keyPtr_, a.keySize_) == 0);
+    }
+};
+
+struct mapHashKeyForMemPoolHandler_t {
+    size_t operator()(mempoolHandler_t const& s) const
+    {
+        return charBasedHashFunc(s.keyPtr_, s.keySize_);
     }
 };
 
