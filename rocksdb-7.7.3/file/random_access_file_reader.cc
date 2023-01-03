@@ -92,6 +92,7 @@ IOStatus RandomAccessFileReader::Read(
 
   IOStatus io_s;
   uint64_t elapsed = 0;
+  size_t total_read_size = 0;
   {
     StopWatch sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
@@ -164,6 +165,7 @@ IOStatus RandomAccessFileReader::Read(
           aligned_buf->reset(buf.Release());
         }
       }
+      total_read_size = read_size;
       *result = Slice(scratch, res_len);
 #endif  // !ROCKSDB_LITE
     } else {
@@ -230,8 +232,13 @@ IOStatus RandomAccessFileReader::Read(
         }
       }
       *result = Slice(res_scratch, io_s.ok() ? pos : 0);
+      total_read_size = result->size();
     }
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
+    RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
+    if (file_name().find("blob") != std::string::npos) {
+        RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+    } 
     SetPerfLevel(prev_perf_level);
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {

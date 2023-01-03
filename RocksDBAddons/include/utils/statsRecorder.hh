@@ -80,6 +80,7 @@ enum StatsType {
 
     /* batch */
     BATCH_PLAIN_ROCKSDB,
+    BATCH_FLUSH_WAL,
     BATCH_KV_KD,
 
     /* op */

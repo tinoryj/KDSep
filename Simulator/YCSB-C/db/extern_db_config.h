@@ -18,10 +18,12 @@ class ExternDBConfig {
     bool seekCompaction_;
     bool compression_;
     bool directIO_;
+    bool useMmap_;
     bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
     size_t blockCache_;
+    size_t blobCacheSize;
     size_t gcSize_;
     size_t memtable_;
     bool tiered_;
@@ -50,6 +52,8 @@ class ExternDBConfig {
     uint64_t deltaKVCacheObjectNumber_;
     uint64_t prefixTreeBitNumber_;
     bool enableRawRocksDBBatch_;
+    uint64_t blockSize;
+    bool cacheIndexAndFilterBlocks_;
 
     struct {
         uint64_t level;
@@ -61,9 +65,11 @@ class ExternDBConfig {
         bloomBits_ = pt_.get<int>("config.bloomBits");
         seekCompaction_ = pt_.get<bool>("config.seekCompaction");
         compression_ = pt_.get<bool>("config.compression");
-        directIO_ = pt_.get<bool>("config.directIO");
+        directIO_ = pt_.get<bool>("config.directIO", true);
+        useMmap_ = pt_.get<bool>("config.useMmap", true);
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
+        blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
         gcSize_ = pt_.get<size_t>("config.gcSize");
         memtable_ = pt_.get<size_t>("config.memtable");
         noCompaction_ = pt_.get<bool>("config.noCompaction");
@@ -95,6 +101,8 @@ class ExternDBConfig {
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
+        blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
+        cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
     }
 
     int getBloomBits() {
@@ -109,6 +117,9 @@ class ExternDBConfig {
     bool getDirectIO() {
         return directIO_;
     }
+    bool getUseMmap() {
+        return useMmap_;
+    }
     bool getFakeDirectIO() {
         return fakeDirectIO_;
     }
@@ -117,6 +128,9 @@ class ExternDBConfig {
     }
     size_t getBlockCache() {
         return blockCache_;
+    }
+    size_t getBlobCacheSize() {
+        return blobCacheSize;
     }
     size_t getGcSize() {
         return gcSize_;
@@ -225,6 +239,12 @@ class ExternDBConfig {
 
     bool getEnableRoaRocksDBBatch() {
         return enableRawRocksDBBatch_;
+    }
+    uint64_t getBlockSize() {
+        return blockSize;
+    }
+    bool cacheIndexAndFilterBlocks() {
+        return cacheIndexAndFilterBlocks_;
     }
 };
 }  // namespace ycsbc
