@@ -260,3 +260,16 @@ void CoreWorkload::BuildUpdate(std::vector<ycsbc::YCSBDB::KVPair>& update) {
     // std::endl;
     update.push_back(pair);
 }
+
+void CoreWorkload::BuildValuesWithKey(std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& values) {
+    for (int i = 0; i < field_count_; ++i) {
+        ycsbc::YCSBDB::KVPair pair;
+        pair.first.append("field").append(std::to_string(i));
+        pair.second.append(field_len_generator_->Next(key), utils::RandomPrintChar());
+        // pair.second.append(",");
+        values.push_back(pair);
+        // std::cout << "Build Values->field name [" << i << "] = " << pair.first <<
+        // std::endl; std::cout << "Build Values->field value [" << i << "] = " <<
+        // pair.second << std::endl;
+    }
+} 

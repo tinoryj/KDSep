@@ -154,6 +154,7 @@ class CoreWorkload {
 
     virtual void BuildValues(std::vector<ycsbc::YCSBDB::KVPair>& values);
     virtual void BuildUpdate(std::vector<ycsbc::YCSBDB::KVPair>& update);
+    virtual void BuildValuesWithKey(std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& values);
 
     virtual std::string NextTable() { return table_name_; }
     virtual std::string NextSequenceKey();     /// Used for loading data
