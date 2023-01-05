@@ -65,6 +65,7 @@ private:
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
+    uint64_t batchedOperationsCounter[2] = 0ULL;
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
@@ -108,6 +109,8 @@ private:
     vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
+
+    bool performInBatchedBufferDeduplication(unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();

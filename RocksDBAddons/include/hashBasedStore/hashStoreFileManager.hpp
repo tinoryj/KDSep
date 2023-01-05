@@ -23,7 +23,7 @@ public:
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
     bool getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
-    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
+    bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, string& prefixStr);
 
     // GC manager
     void processSingleFileGCRequestWorker(int threadID);

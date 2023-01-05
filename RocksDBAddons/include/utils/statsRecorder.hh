@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-//#include <hdr_histogram.h>
+// #include <hdr_histogram.h>
 #include "common/indexStorePreDefines.hpp"
 
 #define S2US (1000 * 1000)
@@ -68,10 +68,10 @@ enum StatsType {
     DELTAKV_BATCH_READ,
     DELTAKV_BATCH_READ_WAIT_BUFFER,
     DELTAKV_BATCH_READ_NO_WAIT_BUFFER,
-    DELTAKV_BATCH_READ_GET_KEY, 
-    DELTAKV_BATCH_READ_MERGE, 
+    DELTAKV_BATCH_READ_GET_KEY,
+    DELTAKV_BATCH_READ_MERGE,
     DELTAKV_BATCH_READ_MERGE_ALL,
-    DELTAKV_BATCH_READ_STORE, 
+    DELTAKV_BATCH_READ_STORE,
     /* merge */
     MERGE_LOCK_1,
     MERGE_LOCK_2,
@@ -82,6 +82,8 @@ enum StatsType {
     BATCH_PLAIN_ROCKSDB,
     BATCH_FLUSH_WAL,
     BATCH_KV_KD,
+    BATCH_KV,
+    BATCH_KD,
 
     /* op */
     OP_GET,

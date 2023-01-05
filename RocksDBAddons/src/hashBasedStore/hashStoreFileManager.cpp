@@ -867,7 +867,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
     }
 
     string prefixStr;
-    bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
+    bool genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyStr.c_str());
         return false;
@@ -941,7 +941,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         operationCounterMtx_.unlock();
     }
 
-    bool genPrefixStatus = generateHashBasedPrefix(keyStr, prefixStr);
+    bool genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyStr.c_str());
         return false;
@@ -1013,10 +1013,10 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
 }
 
 // file operations - private
-bool HashStoreFileManager::generateHashBasedPrefix(const string rawStr, string& prefixStr)
+bool HashStoreFileManager::generateHashBasedPrefix(char* rawStr, uint32_t strSize, string& prefixStr)
 {
     u_char murmurHashResultBuffer[16];
-    MurmurHash3_x64_128((void*)rawStr.c_str(), rawStr.size(), 0, murmurHashResultBuffer);
+    MurmurHash3_x64_128((void*)rawStr, strSize, 0, murmurHashResultBuffer);
     uint64_t firstFourByte;
     memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
     while (firstFourByte != 0) {

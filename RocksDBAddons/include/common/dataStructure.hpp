@@ -119,10 +119,7 @@ typedef struct hashStoreWriteOperationHandler {
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    vector<string>* key_str_vec_ptr_;
-    vector<string>* value_str_vec_ptr_;
-    vector<uint32_t>* sequence_number_vec_ptr_;
-    vector<bool>* is_anchor_vec_ptr_;
+    vector<mempoolHandler_t>* mempool_handler_vec_ptr_;
 } hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {
