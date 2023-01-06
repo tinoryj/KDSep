@@ -389,27 +389,35 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     // process runnning mode
     if (options.enable_valueStore && options.enable_deltaStore) {
         deltaKVRunningMode_ = kBothValueAndDeltaLog;
+        cerr << "deltaKVRunningMode_ = kBothValueAndDeltaLog" << endl;
     } else if (options.enable_valueStore && !options.enable_deltaStore) {
         deltaKVRunningMode_ = kOnlyValueLog;
+        cerr << "deltaKVRunningMode_ = kOnlyValueLog" << endl;
     } else if (!options.enable_valueStore && options.enable_deltaStore) {
         deltaKVRunningMode_ = kOnlyDeltaLog;
+        cerr << "deltaKVRunningMode_ = kOnlyDeltaLog" << endl;
     } else if (!options.enable_valueStore && !options.enable_deltaStore) {
         deltaKVRunningMode_ = kPlainRocksDB;
+        cerr << "deltaKVRunningMode_ = kPlainRocksDB" << endl;
     }
 
     if (options.enable_batched_operations_) {
         switch (deltaKVRunningMode_) {
         case kBothValueAndDeltaLog:
             deltaKVRunningMode_ = kBatchedWithBothValueAndDeltaLog;
+            cerr << "deltaKVRunningMode_ = kBatchedWithBothValueAndDeltaLog" << endl;
             break;
         case kOnlyDeltaLog:
             deltaKVRunningMode_ = kBatchedWithOnlyDeltaLog;
+            cerr << "deltaKVRunningMode_ = kBatchedWithOnlyDeltaLog" << endl;
             break;
         case kOnlyValueLog:
             deltaKVRunningMode_ = kBatchedWithOnlyValueLog;
+            cerr << "deltaKVRunningMode_ = kBatchedWithOnlyValueLog" << endl;
             break;
         case kPlainRocksDB:
             deltaKVRunningMode_ = kBatchedWithPlainRocksDB;
+            cerr << "deltaKVRunningMode_ = kBatchedWithPlainRocksDB" << endl;
             break;
         default:
             debug_error("Unsupported DeltaKV running mode = %d\n", deltaKVRunningMode_);
@@ -676,10 +684,11 @@ bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler
             currentInternalValueType.rawValueSize_ = objectPairMemPoolHandler.valueSize_;
             currentInternalValueType.sequenceNumber_ = objectPairMemPoolHandler.sequenceNumber_;
             memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-            string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType));
             rocksdb::Status rocksDBStatus;
-            string keyStr(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
-            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keyStr, newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+            rocksdb::Slice keySlice(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
+            rocksdb::Slice newWriteValueSlice(writeInternalValueBuffer, sizeof(internalValueType));
+            STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keySlice, newWriteValueSlice), StatsType::DELTAKV_MERGE_ROCKSDB);
+            objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
             if (!rocksDBStatus.ok()) {
                 debug_error("[ERROR] Write underlying rocksdb with external value type info, key = %s, value = %s, status = %s\n", objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.valuePtr_, rocksDBStatus.ToString().c_str());
                 return false;
@@ -699,11 +708,11 @@ bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler
         currentInternalValueType.sequenceNumber_ = objectPairMemPoolHandler.sequenceNumber_;
         memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
         memcpy(writeInternalValueBuffer + sizeof(internalValueType), objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
-        string newWriteValue(writeInternalValueBuffer, sizeof(internalValueType) + objectPairMemPoolHandler.valueSize_);
-
         rocksdb::Status rocksDBStatus;
-        string keyStr(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
-        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keyStr, newWriteValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+        rocksdb::Slice keySlice(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
+        rocksdb::Slice newWriteValueSlice(writeInternalValueBuffer, sizeof(internalValueType) + objectPairMemPoolHandler.valueSize_);
+        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keySlice, newWriteValueSlice), StatsType::DELTAKV_MERGE_ROCKSDB);
+        objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.valuePtr_, rocksDBStatus.ToString().c_str());
             return false;
@@ -1301,50 +1310,48 @@ bool DeltaKV::Merge(const string& key, const string& value)
     globalSequenceNumberGeneratorMtx_.unlock();
     mempoolHandler_t objectPairMemPoolHandler;
     objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, objectPairMemPoolHandler);
-    bool mergeOperationStatus = true;
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
     case kBatchedWithOnlyDeltaLog:
     case kBatchedWithBothValueAndDeltaLog:
         if (MergeWithWriteBatch(objectPairMemPoolHandler) == false) {
-            mergeOperationStatus = false;
+            return false;
         } else {
-            mergeOperationStatus = true;
+            return true;
         }
         break;
     case kBothValueAndDeltaLog:
         if (MergeWithValueAndDeltaStore(objectPairMemPoolHandler) == false) {
-            mergeOperationStatus = false;
+            return false;
         } else {
-            mergeOperationStatus = true;
+            return true;
         }
         break;
     case kOnlyValueLog:
         if (MergeWithOnlyValueStore(objectPairMemPoolHandler) == false) {
-            mergeOperationStatus = false;
+            return false;
         } else {
-            mergeOperationStatus = true;
+            return true;
         }
         break;
     case kOnlyDeltaLog:
         if (MergeWithOnlyDeltaStore(objectPairMemPoolHandler) == false) {
-            mergeOperationStatus = false;
+            return false;
         } else {
-            mergeOperationStatus = true;
+            return true;
         }
     case kPlainRocksDB:
         if (MergeWithPlainRocksDB(objectPairMemPoolHandler) == false) {
-            mergeOperationStatus = false;
+            return false;
         } else {
-            mergeOperationStatus = true;
+            return true;
         }
         break;
     default:
         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
         return false;
     }
-    return false;
 }
 
 bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag)

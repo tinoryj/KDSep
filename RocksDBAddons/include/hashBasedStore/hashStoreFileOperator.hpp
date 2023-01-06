@@ -15,12 +15,12 @@ public:
     HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
     ~HashStoreFileOperator();
     // file operations with job queue support
-    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t& memPoolHandler);
+    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler);
     bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>*>*& valueVecVec);
     // file operations without job queue support-> only support single operation
-    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t& memPoolHandler);
+    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
     // threads with job queue support

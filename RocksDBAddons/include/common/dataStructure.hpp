@@ -112,10 +112,7 @@ typedef struct hashStoreFileMetaDataHandler {
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {
-    string* key_str_;
-    string* value_str_;
-    uint32_t sequence_number_;
-    bool is_anchor = false;
+    mempoolHandler_t* mempoolHandler_ptr_;
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {

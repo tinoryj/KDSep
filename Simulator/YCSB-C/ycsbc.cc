@@ -22,9 +22,8 @@
 #include "core/timer.h"
 #include "core/utils.h"
 #include "db/db_factory.h"
+#include "malloc.h"  // malloc_trim(0)
 #include "unistd.h"
-
-#include "malloc.h" // malloc_trim(0)
 
 using namespace std;
 
@@ -115,10 +114,10 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         int est_seconds = int(tot_duration) % 60;
         std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s) estimate ";
         if (est_minutes > 0) {
-            std::cerr << est_minutes << " min"; 
-        } 
+            std::cerr << est_minutes << " min";
+        }
         if (est_seconds > 0) {
-            std::cerr << est_seconds << " s"; 
+            std::cerr << est_seconds << " s";
         }
         // }
     }
@@ -129,12 +128,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     bool dump_memory_usage = true;
     if (dump_memory_usage) {
         malloc_trim(0);
-        double vm_usage     = 0.0;
+        double vm_usage = 0.0;
         double resident_set = 0.0;
 
         // 'file' stat seems to give the most reliable results
         //
-        ifstream stat_stream("/proc/self/stat",ios_base::in);
+        ifstream stat_stream("/proc/self/stat", ios_base::in);
 
         // dummy vars for leading entries in stat that we don't care about
         //
@@ -148,15 +147,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         unsigned long vsize;
         long rss;
 
-        stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr
-            >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt
-            >> utime >> stime >> cutime >> cstime >> priority >> nice
-            >> O >> itrealvalue >> starttime >> vsize >> rss; // don't care about the rest
+        stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >> stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >> starttime >> vsize >> rss;  // don't care about the rest
 
         stat_stream.close();
 
-        long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024; // in case x86-64 is configured to use 2MB pages
-        vm_usage     = vsize / 1024.0;
+        long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024;  // in case x86-64 is configured to use 2MB pages
+        vm_usage = vsize / 1024.0;
         resident_set = rss * page_size_kb;
         std::cerr << "vm_usage " << vm_usage << std::endl;
         std::cerr << "resident " << resident_set << std::endl;

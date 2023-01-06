@@ -89,7 +89,7 @@ bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
             }
             return true;
         }
-        ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, objectPairMempoolHandler);
+        ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", objectPairMempoolHandler.keyPtr_);
             return false;

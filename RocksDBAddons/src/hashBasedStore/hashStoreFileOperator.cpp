@@ -48,14 +48,11 @@ bool HashStoreFileOperator::setJobDone()
 }
 
 // file operations
-bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequenceNumber, bool isAnchorStatus)
+bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* mempoolHandler)
 {
     hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(fileHandler);
     currentHandler->jobDone_ = kNotDone;
-    currentHandler->write_operation_.key_str_ = &key;
-    currentHandler->write_operation_.sequence_number_ = sequenceNumber;
-    currentHandler->write_operation_.value_str_ = &value;
-    currentHandler->write_operation_.is_anchor = isAnchorStatus;
+    currentHandler->write_operation_.mempoolHandler_ptr_ = mempoolHandler;
     currentHandler->opType_ = kPut;
     operationToWorkerMQ_->push(currentHandler);
     if (currentHandler->jobDone_ == kNotDone) {
@@ -81,11 +78,11 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperat
         asm volatile("");
     }
     if (currentOperationHandler->jobDone_ == kDone) {
-        debug_trace("Process multiput operation for file ID = %lu, key number = %lu done\n", currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.key_str_vec_ptr_->size());
+        debug_trace("Process multiput operation for file ID = %lu, key number = %lu done\n", currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_->size());
         delete currentOperationHandler;
         return true;
     } else {
-        debug_error("[ERROR] Process multiput operation for file ID = %lu, key number = %lu error\n", currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.key_str_vec_ptr_->size());
+        debug_error("[ERROR] Process multiput operation for file ID = %lu, key number = %lu error\n", currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_->size());
         delete currentOperationHandler;
         return false;
     }
@@ -174,20 +171,31 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                     debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, currentHandlerPtr->file_handler_->total_object_count_);
                     return false;
                 } else {
-                    if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
+                    str_t currentKey((char*)currentHandlerPtr->read_operation_.key_str_->c_str(), currentHandlerPtr->read_operation_.key_str_->size());
+                    auto mapItForCurrentKey = currentFileProcessMap.find(currentKey);
+                    if (mapItForCurrentKey == currentFileProcessMap.end()) {
                         debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                         return false;
                     } else {
-                        debug_trace("Get current key related values success, key = %s, value number = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).size());
-                        currentHandlerPtr->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).begin(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).end());
+                        debug_trace("Get current key related values success, key = %s, value number = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), mapItForCurrentKey->second.size());
+                        currentHandlerPtr->read_operation_.value_str_vec_->reserve(mapItForCurrentKey->second.size());
+                        for (auto vecIt : mapItForCurrentKey->second) {
+                            currentHandlerPtr->read_operation_.value_str_vec_->push_back(string(vecIt.data_, vecIt.size_));
+                        }
                         // Put the cache operation before job done, to avoid some synchronization issues
                         for (auto mapIt : currentFileProcessMap) {
-                            string tempInsertCacheKeyStr = mapIt.first;
+                            string tempInsertCacheKeyStr(mapIt.first.data_, mapIt.first.size_);
+                            vector<string> cachedValues;
+                            cachedValues.reserve(mapIt.second.size());
+                            for (auto vecIt : mapIt.second) {
+                                cachedValues.push_back(string(vecIt.data_, vecIt.size_));
+                            }
+                            string tempInsertCacheValueStr(mapIt.first.data_, mapIt.first.size_);
                             struct timeval tv;
                             gettimeofday(&tv, 0);
-                            keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, mapIt.second);
+                            keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, cachedValues);
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
-                            debug_trace("Insert to cache key %s delta num %d\n", tempInsertCacheKeyStr.c_str(), (int)mapIt.second.size());
+                            debug_trace("Insert to cache key %s delta num %lu\n", tempInsertCacheKeyStr.c_str(), cachedValues.size());
                         }
                         return true;
                     }
@@ -208,12 +216,17 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                 debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, currentHandlerPtr->file_handler_->total_object_count_);
                 return false;
             } else {
-                if (currentFileProcessMap.find(*currentHandlerPtr->read_operation_.key_str_) == currentFileProcessMap.end()) {
+                str_t currentKey((char*)currentHandlerPtr->read_operation_.key_str_->c_str(), currentHandlerPtr->read_operation_.key_str_->size());
+                auto mapItForCurrentKey = currentFileProcessMap.find(currentKey);
+                if (mapItForCurrentKey == currentFileProcessMap.end()) {
                     debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", (*currentHandlerPtr->read_operation_.key_str_).c_str());
                     return false;
                 } else {
-                    debug_trace("Get current key related values success, key = %s, value number = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).size());
-                    currentHandlerPtr->read_operation_.value_str_vec_->assign(currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).begin(), currentFileProcessMap.at(*currentHandlerPtr->read_operation_.key_str_).end());
+                    debug_trace("Get current key related values success, key = %s, value number = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), mapItForCurrentKey->second.size());
+                    currentHandlerPtr->read_operation_.value_str_vec_->reserve(mapItForCurrentKey->second.size());
+                    for (auto vecIt : mapItForCurrentKey->second) {
+                        currentHandlerPtr->read_operation_.value_str_vec_->push_back(string(vecIt.data_, vecIt.size_));
+                    }
                     return true;
                 }
             }
@@ -297,13 +310,12 @@ bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fil
 
 bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr)
 {
-    string currentKeyStr = *currentHandlerPtr->write_operation_.key_str_;
     // construct record header
     hashStoreRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = currentHandlerPtr->write_operation_.is_anchor;
-    newRecordHeader.key_size_ = currentHandlerPtr->write_operation_.key_str_->size();
-    newRecordHeader.sequence_number_ = currentHandlerPtr->write_operation_.sequence_number_;
-    newRecordHeader.value_size_ = currentHandlerPtr->write_operation_.value_str_->size();
+    newRecordHeader.is_anchor_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->isAnchorFlag_;
+    newRecordHeader.key_size_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keySize_;
+    newRecordHeader.sequence_number_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->sequenceNumber_;
+    newRecordHeader.value_size_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valueSize_;
     if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
         // since file not created, shoud not flush anchors
         // construct file header
@@ -320,13 +332,13 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.value_str_->c_str(), newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -348,12 +360,14 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             if (keyToValueListCache_ != nullptr) {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                if (keyToValueListCache_->existsInCache(*currentHandlerPtr->write_operation_.key_str_)) {
+                string currentKeyStr(currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keySize_);
+                string currentValueStr(currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valuePtr_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valueSize_);
+                if (keyToValueListCache_->existsInCache(currentKeyStr)) {
                     // insert into cache only if the key has been read
                     if (newRecordHeader.is_anchor_ == true) {
-                        keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).clear();
+                        keyToValueListCache_->getFromCache(currentKeyStr).clear();
                     } else {
-                        keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).push_back(*currentHandlerPtr->write_operation_.value_str_);
+                        keyToValueListCache_->getFromCache(currentKeyStr).push_back(currentValueStr);
                     }
                 }
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -367,12 +381,12 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         char writeBuffer[writeBufferSize];
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.value_str_->c_str(), newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.key_str_->c_str(), newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -386,12 +400,14 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             if (keyToValueListCache_ != nullptr) {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                if (keyToValueListCache_->existsInCache(*currentHandlerPtr->write_operation_.key_str_)) {
+                string currentKeyStr(currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keySize_);
+                string currentValueStr(currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valuePtr_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valueSize_);
+                if (keyToValueListCache_->existsInCache(currentKeyStr)) {
                     // insert into cache only if the key has been read
                     if (newRecordHeader.is_anchor_ == true) {
-                        keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).clear();
+                        keyToValueListCache_->getFromCache(currentKeyStr).clear();
                     } else {
-                        keyToValueListCache_->getFromCache(*currentHandlerPtr->write_operation_.key_str_).push_back(*currentHandlerPtr->write_operation_.value_str_);
+                        keyToValueListCache_->getFromCache(currentKeyStr).push_back(currentValueStr);
                     }
                 }
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -406,8 +422,8 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
         // prepare write buffer, file not open, may load, skip;
         bool onlyAnchorFlag = true;
-        for (auto index = 0; index < currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->size(); index++) {
-            if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(index) == false) {
+        for (auto index = 0; index < currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size(); index++) {
+            if (currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(index).isAnchorFlag_ == false) {
                 onlyAnchorFlag = false;
                 break;
             }
@@ -436,12 +452,12 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             currentHandlerPtr->file_handler_->file_operation_func_ptr_->openFile(targetFilePath);
         }
     }
-    for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
-        targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size());
-        if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i) == true) {
+    for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size(); i++) {
+        targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).keySize_);
+        if (currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).isAnchorFlag_ == true) {
             continue;
         } else {
-            targetWriteBufferSize += currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).size();
+            targetWriteBufferSize += currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).valueSize_;
         }
     }
     char writeContentBuffer[targetWriteBufferSize];
@@ -451,23 +467,23 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         currentProcessedBufferIndex += sizeof(hashStoreFileHeader);
     }
     hashStoreRecordHeader newRecordHeader;
-    for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
-        newRecordHeader.is_anchor_ = currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i);
-        newRecordHeader.key_size_ = currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).size();
-        newRecordHeader.value_size_ = currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).size();
-        newRecordHeader.sequence_number_ = currentHandlerPtr->batched_write_operation_.sequence_number_vec_ptr_->at(i);
+    for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size(); i++) {
+        newRecordHeader.is_anchor_ = currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).isAnchorFlag_;
+        newRecordHeader.key_size_ = currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).keySize_;
+        newRecordHeader.value_size_ = currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).valueSize_;
+        newRecordHeader.sequence_number_ = currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).sequenceNumber_;
         memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
         currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
-        memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i).c_str(), newRecordHeader.key_size_);
+        memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).keyPtr_, newRecordHeader.key_size_);
         currentProcessedBufferIndex += newRecordHeader.key_size_;
         if (newRecordHeader.is_anchor_ == true) {
             continue;
         } else {
-            memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i).c_str(), newRecordHeader.value_size_);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).valuePtr_, newRecordHeader.value_size_);
             currentProcessedBufferIndex += newRecordHeader.value_size_;
         }
     }
-    uint64_t targetObjectNumber = currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size();
+    uint64_t targetObjectNumber = currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size();
     // write content
     bool writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler_, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
     if (writeContentStatus == false) {
@@ -478,12 +494,14 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         if (keyToValueListCache_ != nullptr) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(); i++) {
-                if (keyToValueListCache_->existsInCache(currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i))) {
-                    if (currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->at(i) == true) {
-                        keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i)).clear();
+            for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size(); i++) {
+                string currentKey(currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).keyPtr_, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).keySize_);
+                if (keyToValueListCache_->existsInCache(currentKey)) {
+                    if (currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).isAnchorFlag_ == true) {
+                        keyToValueListCache_->getFromCache(currentKey).clear();
                     } else {
-                        keyToValueListCache_->getFromCache(currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->at(i)).push_back(currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->at(i));
+                        string currentValue(currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).valuePtr_, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->at(i).valueSize_);
+                        keyToValueListCache_->getFromCache(currentKey).push_back(currentValue);
                     }
                 }
             }
@@ -524,16 +542,16 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
     }
 }
 
-bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, string key, string value, uint32_t sequenceNumber, bool isAnchorStatus)
+bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* mempoolHandler)
 {
     std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
     // construct record header
     // construct record header
     hashStoreRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = isAnchorStatus;
-    newRecordHeader.key_size_ = key.size();
-    newRecordHeader.sequence_number_ = sequenceNumber;
-    newRecordHeader.value_size_ = value.size();
+    newRecordHeader.is_anchor_ = mempoolHandler->isAnchorFlag_;
+    newRecordHeader.key_size_ = mempoolHandler->keySize_;
+    newRecordHeader.sequence_number_ = mempoolHandler->sequenceNumber_;
+    newRecordHeader.value_size_ = mempoolHandler->valueSize_;
     if (fileHandler->file_operation_func_ptr_->isFileOpen() == false) {
         // since file not created, shoud not flush anchors
         // construct file header
@@ -550,13 +568,13 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, value.c_str(), newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, mempoolHandler->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -578,12 +596,14 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
             if (keyToValueListCache_ != nullptr) {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                if (keyToValueListCache_->existsInCache(key)) {
+                string currentKeyStr(mempoolHandler->keyPtr_, mempoolHandler->keySize_);
+                if (keyToValueListCache_->existsInCache(currentKeyStr)) {
                     // insert into cache only if the key has been read
                     if (newRecordHeader.is_anchor_ == true) {
-                        keyToValueListCache_->getFromCache(key).clear();
+                        keyToValueListCache_->getFromCache(currentKeyStr).clear();
                     } else {
-                        keyToValueListCache_->getFromCache(key).push_back(value);
+                        string currentValueStr(mempoolHandler->valuePtr_, mempoolHandler->valueSize_);
+                        keyToValueListCache_->getFromCache(currentKeyStr).push_back(currentValueStr);
                     }
                 }
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -597,12 +617,12 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         char writeBuffer[writeBufferSize];
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, value.c_str(), newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, mempoolHandler->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), key.c_str(), newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -616,12 +636,14 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
             if (keyToValueListCache_ != nullptr) {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                if (keyToValueListCache_->existsInCache(key)) {
+                string currentKeyStr(mempoolHandler->keyPtr_, mempoolHandler->keySize_);
+                if (keyToValueListCache_->existsInCache(currentKeyStr)) {
                     // insert into cache only if the key has been read
                     if (newRecordHeader.is_anchor_ == true) {
-                        keyToValueListCache_->getFromCache(key).clear();
+                        keyToValueListCache_->getFromCache(currentKeyStr).clear();
                     } else {
-                        keyToValueListCache_->getFromCache(key).push_back(value);
+                        string currentValueStr(mempoolHandler->valuePtr_, mempoolHandler->valueSize_);
+                        keyToValueListCache_->getFromCache(currentKeyStr).push_back(currentValueStr);
                     }
                 }
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -631,15 +653,15 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
     }
 }
 
-bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, tuple<vector<string>, vector<string>, vector<uint32_t>, vector<bool>>> batchedWriteOperationsMap)
+bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap)
 {
     vector<bool> jobeDoneStatus;
     for (auto batchIt : batchedWriteOperationsMap) {
         std::scoped_lock<std::shared_mutex> w_lock(batchIt.first->fileOperationMutex_);
         // check file existence, create if not exist
         bool onlyAnchorFlag = true;
-        for (auto index = 0; index < std::get<3>(batchIt.second).size(); index++) {
-            if (std::get<3>(batchIt.second).at(index) == false) {
+        for (auto index = 0; index < batchIt.second.size(); index++) {
+            if (batchIt.second[index].isAnchorFlag_ == false) {
                 onlyAnchorFlag = false;
             }
         }
@@ -667,12 +689,12 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
                 batchIt.first->file_operation_func_ptr_->openFile(targetFilePath);
             }
         }
-        for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
-            targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + std::get<0>(batchIt.second).at(i).size());
-            if (std::get<3>(batchIt.second).at(i) == true) {
+        for (auto i = 0; i < batchIt.second.size(); i++) {
+            targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + batchIt.second[i].keySize_);
+            if (batchIt.second[i].isAnchorFlag_ == true) {
                 continue;
             } else {
-                targetWriteBufferSize += std::get<1>(batchIt.second).at(i).size();
+                targetWriteBufferSize += batchIt.second[i].valueSize_;
             }
         }
         char writeContentBuffer[targetWriteBufferSize];
@@ -682,23 +704,23 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             currentProcessedBufferIndex += sizeof(hashStoreFileHeader);
         }
         hashStoreRecordHeader newRecordHeader;
-        for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
-            newRecordHeader.key_size_ = std::get<0>(batchIt.second).at(i).size();
-            newRecordHeader.value_size_ = std::get<1>(batchIt.second).at(i).size();
-            newRecordHeader.sequence_number_ = std::get<2>(batchIt.second).at(i);
-            newRecordHeader.is_anchor_ = std::get<3>(batchIt.second).at(i);
+        for (auto i = 0; i < batchIt.second.size(); i++) {
+            newRecordHeader.key_size_ = batchIt.second[i].keySize_;
+            newRecordHeader.value_size_ = batchIt.second[i].valueSize_;
+            newRecordHeader.sequence_number_ = batchIt.second[i].sequenceNumber_;
+            newRecordHeader.is_anchor_ = batchIt.second[i].isAnchorFlag_;
             memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(hashStoreRecordHeader));
             currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
-            memcpy(writeContentBuffer + currentProcessedBufferIndex, std::get<0>(batchIt.second).at(i).c_str(), newRecordHeader.key_size_);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, batchIt.second[i].keyPtr_, newRecordHeader.key_size_);
             currentProcessedBufferIndex += newRecordHeader.key_size_;
             if (newRecordHeader.is_anchor_ == true) {
                 continue;
             } else {
-                memcpy(writeContentBuffer + currentProcessedBufferIndex, std::get<1>(batchIt.second).at(i).c_str(), newRecordHeader.value_size_);
+                memcpy(writeContentBuffer + currentProcessedBufferIndex, batchIt.second[i].valuePtr_, newRecordHeader.value_size_);
                 currentProcessedBufferIndex += newRecordHeader.value_size_;
             }
         }
-        uint64_t targetObjectNumber = std::get<0>(batchIt.second).size();
+        uint64_t targetObjectNumber = batchIt.second.size();
         // write content
         bool writeContentStatus = writeContentToFile(batchIt.first, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
         if (writeContentStatus == false) {
@@ -710,12 +732,14 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             if (keyToValueListCache_ != nullptr) {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                for (auto i = 0; i < std::get<0>(batchIt.second).size(); i++) {
-                    if (keyToValueListCache_->existsInCache(std::get<0>(batchIt.second).at(i))) {
-                        if (std::get<3>(batchIt.second).at(i) == true) {
-                            keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).clear();
+                for (auto i = 0; i < batchIt.second.size(); i++) {
+                    string currentKeyStr(batchIt.second[i].keyPtr_, batchIt.second[i].keySize_);
+                    if (keyToValueListCache_->existsInCache(currentKeyStr)) {
+                        if (batchIt.second[i].isAnchorFlag_ == true) {
+                            keyToValueListCache_->getFromCache(currentKeyStr).clear();
                         } else {
-                            keyToValueListCache_->getFromCache(std::get<0>(batchIt.second).at(i)).push_back(std::get<1>(batchIt.second).at(i));
+                            string currentValueStr(batchIt.second[i].valuePtr_, batchIt.second[i].valueSize_);
+                            keyToValueListCache_->getFromCache(currentKeyStr).push_back(currentValueStr);
                         }
                     }
                 }
@@ -786,20 +810,29 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                     fileHandler->file_ownership_flag_ = 0;
                     return false;
                 } else {
-                    if (currentFileProcessMap.find(key) == currentFileProcessMap.end()) {
+                    str_t currentKey((char*)key.c_str(), key.size());
+                    auto mapIt = currentFileProcessMap.find(currentKey);
+                    if (mapIt == currentFileProcessMap.end()) {
                         debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", key.c_str());
                         valueVec->clear();
                         fileHandler->file_ownership_flag_ = 0;
                         return false;
                     } else {
-                        debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(key).size());
-                        valueVec->assign(currentFileProcessMap.at(key).begin(), currentFileProcessMap.at(key).end());
+                        debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
+                        valueVec->reserve(mapIt->second.size());
+                        for (auto vecIt : mapIt->second) {
+                            valueVec->push_back(string(vecIt.data_, vecIt.size_));
+                        }
                         // Put the cache operation before job done, to avoid some synchronization issues
                         for (auto mapIt : currentFileProcessMap) {
-                            string tempInsertCacheKeyStr = mapIt.first;
                             struct timeval tv;
                             gettimeofday(&tv, 0);
-                            keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, mapIt.second);
+                            string tempInsertCacheKeyStr(mapIt.first.data_, mapIt.first.size_);
+                            vector<string> cacheValuesVec;
+                            for (auto vecIt : mapIt.second) {
+                                cacheValuesVec.push_back(string(vecIt.data_, vecIt.size_));
+                            }
+                            keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, cacheValuesVec);
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
                             debug_trace("Insert to cache key = %s delta num = %lu\n", tempInsertCacheKeyStr.c_str(), mapIt.second.size());
                         }
@@ -826,14 +859,19 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 fileHandler->file_ownership_flag_ = 0;
                 return false;
             } else {
-                if (currentFileProcessMap.find(key) == currentFileProcessMap.end()) {
+                str_t currentKey((char*)key.c_str(), key.size());
+                auto currentKeyIt = currentFileProcessMap.find(currentKey);
+                if (currentKeyIt == currentFileProcessMap.end()) {
                     debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", key.c_str());
                     valueVec->clear();
                     fileHandler->file_ownership_flag_ = 0;
                     return false;
                 } else {
-                    debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(key).size());
-                    valueVec->assign(currentFileProcessMap.at(key).begin(), currentFileProcessMap.at(key).end());
+                    debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
+                    valueVec->reserve(currentKeyIt->second.size());
+                    for (auto vecIt : currentKeyIt->second) {
+                        valueVec->push_back(string(vecIt.data_, vecIt.size_));
+                    }
                 }
                 fileHandler->file_ownership_flag_ = 0;
                 return true;
@@ -865,13 +903,13 @@ void HashStoreFileOperator::operationWorker(int threadID)
                 break;
             case kMultiPut:
                 operationTypeCorrectFlag = true;
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu, %lu, %lu, %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.value_str_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.sequence_number_vec_ptr_->size(), currentHandlerPtr->batched_write_operation_.is_anchor_vec_ptr_->size());
+                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size());
                 STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(currentHandlerPtr), StatsType::OP_MULTIPUT);
-                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.key_str_vec_ptr_->size());
+                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_->size());
                 break;
             case kPut:
                 operationTypeCorrectFlag = true;
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", (*currentHandlerPtr->write_operation_.key_str_).c_str(), currentHandlerPtr->file_handler_->target_file_id_);
+                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->file_handler_->target_file_id_);
                 STAT_PROCESS(operationsStatus = operationWorkerPutFunction(currentHandlerPtr), StatsType::OP_PUT);
                 break;
             default:

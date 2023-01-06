@@ -65,7 +65,7 @@ private:
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     messageQueue<unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
-    uint64_t batchedOperationsCounter[2] = 0ULL;
+    uint64_t batchedOperationsCounter[2] = { 0UL, 0UL };
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
