@@ -154,11 +154,9 @@ for param in $*; do
         num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
         OperationsNumber=$num
     elif [[ `echo $param | grep "fc" | wc -l` -eq 1 ]]; then
-        suffix=${suffix}-${param}
         num=`echo $param | sed 's/fc//g'`
         fieldcount=$num
     elif [[ `echo $param | grep "fl" | wc -l` -eq 1 ]]; then
-        suffix=${suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
     elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
@@ -221,7 +219,6 @@ for param in $*; do
         run_suffix=${run_suffix}_nommap
     elif [[ "$param" == "paretokey" ]]; then
         paretokey="true"
-        suffix=${suffix}_paretokey
     fi
 done
 
@@ -259,6 +256,8 @@ else
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
     sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
     sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
+    totalCacheSize=$(( ($cacheSize + $blobCacheSize) / 1024 / 1024 ))
+    run_suffix=${run_suffix}_totcache${totalCacheSize}
 fi
 
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini 
@@ -299,7 +298,12 @@ elif [[ "$(( $OperationsNumber % 1000000 ))" -ne 0 ]]; then
     ops="${ops}$(( ($OperationsNumber % 1000000) / 1000 ))K"
 fi
 
-suffix="${suffix}_${size}"
+if [[ $paretokey == "true" ]]; then
+    suffix=${suffix}_fc${fieldcount}_paretokey_${size}
+else
+    suffix=${suffix}_fc${fieldcount}_fl${fieldlength}_${size}
+fi
+
 run_suffix="${run_suffix}-${ops}"
 
 DB_Name=${DB_Name}${suffix}
@@ -341,7 +345,7 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} || "$only_load" == "true" ]]; then
     if [[ -d ${DB_Working_Path}/$DB_Name ]]; then 
         rm -rf ${DB_Working_Path}/$DB_Name
     fi
-    output_file=`generate_file_name $ResultLogFolder/LoadDB_${run_suffix}`
+    output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
     loaded="true"
     echo "output at $output_file"

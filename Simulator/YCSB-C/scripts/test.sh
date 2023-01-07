@@ -11,14 +11,14 @@ reqs=("10M" "20M" "40M" "80M")
 batchSize=10K
 
 indexSet=(10)
-runModeSet=('raw' 'bkv')
+runModeSet=('kv')
 blocksizes=(4096)
-flengths=(100)
-reqs=("40M")
-cacheSizes=(4096 4096 4096 4096 4096 4096 4096)
-blobCacheSizes=(3584 3072 2560 2048 1536 1048 512)
-cacheSizes=(2048 2048 2048)
-blobCacheSizes=(1536 1024 512)
+flengths=(800)
+reqs=("10M")
+cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
+blobCacheSizes=(1536 1024 512 3584 3072 2560 2048 1536 1048 512 512 256 128 64)
+cacheSizes=(1024 2048 4096 8192)
+blobCacheSizes=(960 1984 4032 8128)
 
 for bs in "${blocksizes[@]}"; do
     for ((j=0; j<${#flengths[@]}; j++)); do
@@ -29,16 +29,18 @@ for bs in "${blocksizes[@]}"; do
 		threadNumber=9
 	    elif [[ $runMode == "kd" ]]; then
 		threadNumber=9
+	    elif [[ $runMode == "kvkd" ]]; then
+		threadNumber=9
 	    fi
 
 	    fl=${flengths[$j]}
 	    req=${reqs[$j]}
-            lastCacheSize=0
-	    for ((k=0; k<${#cacheSizes[@]}; k++)); do
-                cacheSize=${cacheSizes[$k]}
-                blobCacheSize=${blobCacheSizes[$k]}
-                blockCacheSize=$(( $cacheSize - $blobCacheSize ))
-		for index in "${indexSet[@]}"; do
+            for index in "${indexSet[@]}"; do
+                lastCacheSize=0
+                for ((k=0; k<${#cacheSizes[@]}; k++)); do
+                    cacheSize=${cacheSizes[$k]}
+                    blobCacheSize=${blobCacheSizes[$k]}
+                    blockCacheSize=$(( $cacheSize - $blobCacheSize ))
 		    bucketNumber=$(echo "( 500000 * (10 - $index) * 138 ) / 262144 / 0.5"|bc)
 		    ratio="0.$index"
 		    if [[ $index -eq 10 ]]; then
@@ -48,15 +50,13 @@ for bs in "${blocksizes[@]}"; do
 #                    scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber workerT$works gcT$gcs batchSize$batchSize readRatio$ratio bucketNum$bucketNumber Exp$ExpName blockSize${bs}
                     if [[ "$runMode" == "raw" ]]; then
                         if [[ "$lastCacheSize" -ne "$cacheSize" ]]; then
-#                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
-                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif nodirect nommap 
-                        else
-                            continue
+                            scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif # paretokey 
                         fi
                         lastCacheSize=$cacheSize
                     elif [[ "$runMode" == "bkv" ]]; then
-#                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
-                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif nodirect nommap 
+                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
+                    elif [[ "$runMode" == "kv" ]]; then
+                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
                     fi
 		done
             done
