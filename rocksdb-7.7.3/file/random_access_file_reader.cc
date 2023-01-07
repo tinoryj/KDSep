@@ -80,6 +80,8 @@ IOStatus RandomAccessFileReader::Read(
     Env::IOPriority rate_limiter_priority) const {
   (void)aligned_buf;
 
+  static int print_cnt = 0;
+
   TEST_SYNC_POINT_CALLBACK("RandomAccessFileReader::Read", nullptr);
 
   // To be paranoid: modify scratch a little bit, so in case underlying
@@ -128,6 +130,13 @@ IOStatus RandomAccessFileReader::Read(
         if (ShouldNotifyListeners()) {
           start_ts = FileOperationInfo::StartNow();
           orig_offset = aligned_offset + buf.CurrentSize();
+        }
+
+        if (print_cnt < 20) {
+            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
+                    aligned_offset, orig_offset, n, aligned_offset + read_size,
+                    read_size);
+            print_cnt++;
         }
 
         {
@@ -238,6 +247,7 @@ IOStatus RandomAccessFileReader::Read(
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {
         RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+        RecordTick(stats_, BLOB_READ_COUNT, 1);
     } 
     SetPerfLevel(prev_perf_level);
   }

@@ -156,11 +156,9 @@ for param in $*; do
         num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
         OperationsNumber=$num
     elif [[ `echo $param | grep "fc" | wc -l` -eq 1 ]]; then
-        suffix=${suffix}-${param}
         num=`echo $param | sed 's/fc//g'`
         fieldcount=$num
     elif [[ `echo $param | grep "fl" | wc -l` -eq 1 ]]; then
-        suffix=${suffix}-${param}
         num=`echo $param | sed 's/fl//g'`
         fieldlength=$num
     elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
@@ -232,7 +230,6 @@ for param in $*; do
         run_suffix=${run_suffix}_nommap
     elif [[ "$param" == "paretokey" ]]; then
         paretokey="true"
-        suffix=${suffix}_paretokey
     fi
 done
 
@@ -256,26 +253,17 @@ if [[ $kdcache -ne 0 ]]; then
     sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheSize" temp.ini
 fi
 
-if [[ "$usekd" == "true" ]]; then
+if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
     echo usekd $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
-
-elif [[ "$usebkvkd" == "true" ]]; then
-    echo usekd $cacheSize
-    sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
-    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
-    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
-    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
-
-else
-    sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 fi
+
+sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 
 totCacheSize=$(( ( ${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024 ));
 run_suffix=${run_suffix}_totcache${totCacheSize}
@@ -318,7 +306,12 @@ elif [[ "$(( $OperationsNumber % 1000000 ))" -ne 0 ]]; then
     ops="${ops}$(( ($OperationsNumber % 1000000) / 1000 ))K"
 fi
 
-suffix="${suffix}_${size}"
+if [[ $paretokey == "true" ]]; then
+    suffix=${suffix}_fc${fieldcount}_paretokey_${size}
+else
+    suffix=${suffix}_fc${fieldcount}_fl${fieldlength}_${size}
+fi
+
 run_suffix="${run_suffix}-${ops}"
 
 DB_Name=${DB_Name}${suffix}
@@ -360,7 +353,7 @@ if [[ ! -d ${DB_Loaded_Path}/${DB_Name} || "$only_load" == "true" ]]; then
     if [[ -d ${DB_Working_Path}/$DB_Name ]]; then 
         rm -rf ${DB_Working_Path}/$DB_Name
     fi
-    output_file=`generate_file_name $ResultLogFolder/LoadDB_${run_suffix}`
+    output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
     echo "output at $output_file"
     ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
     loaded="true"
