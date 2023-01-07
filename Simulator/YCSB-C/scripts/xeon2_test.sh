@@ -31,6 +31,8 @@ for bs in "${blocksizes[@]}"; do
 		threadNumber=9
 	    elif [[ $runMode == "kd" ]]; then
 		threadNumber=9
+	    elif [[ $runMode == "kvkd" ]]; then
+		threadNumber=9
 	    fi
 
 	    fl=${flengths[$j]}

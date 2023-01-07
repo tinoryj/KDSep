@@ -10,11 +10,11 @@ flengths=(800 400 200 100)
 reqs=("10M" "20M" "40M" "80M")
 batchSize=10K
 
-indexSet=(10)
+indexSet=(10 5)
 runModeSet=('kv')
 blocksizes=(4096)
-flengths=(800)
-reqs=("10M")
+flengths=(100)
+reqs=("40M")
 cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
 blobCacheSizes=(1536 1024 512 3584 3072 2560 2048 1536 1048 512 512 256 128 64)
 cacheSizes=(1024 2048 4096 8192)
@@ -54,9 +54,15 @@ for bs in "${blocksizes[@]}"; do
                         fi
                         lastCacheSize=$cacheSize
                     elif [[ "$runMode" == "bkv" ]]; then
-                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
+                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} \
+                            cache$blockCacheSize blobcache${blobCacheSize} \
+                            threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
                     elif [[ "$runMode" == "kv" ]]; then
-                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
+			kvcacheSize=$(( ${cacheSize} / 2 ))
+			cacheSize=$(( ${cacheSize} - $kvcacheSize ))
+                        scripts/run.sh $runMode req${req} op10M fc10 fl${fl} \
+                            cache$cacheSize kvcache${kvcacheSize} \
+                            threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif #paretokey
                     fi
 		done
             done
