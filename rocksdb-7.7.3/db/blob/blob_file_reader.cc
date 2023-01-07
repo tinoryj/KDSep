@@ -243,6 +243,7 @@ Status BlobFileReader::ReadFromFile(const RandomAccessFileReader* file_reader,
   assert(file_reader);
 
   RecordTick(statistics, BLOB_DB_BLOB_FILE_BYTES_READ, read_size);
+  RecordTick(statistics, BLOB_DB_BLOB_FILE_BYTES_READ_COUNT, 1);
 
   Status s;
 

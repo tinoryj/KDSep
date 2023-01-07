@@ -10,15 +10,16 @@ flengths=(800 400 200 100)
 reqs=("10M" "20M" "40M" "80M")
 batchSize=10K
 
-indexSet=(10 5)
+indexSet=(1 5)
 runModeSet=('kv')
+runModeSet=('bkv' 'raw' 'kv')
 blocksizes=(4096)
 flengths=(100)
 reqs=("40M")
 cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
 blobCacheSizes=(1536 1024 512 3584 3072 2560 2048 1536 1048 512 512 256 128 64)
-cacheSizes=(1024 2048 4096 8192)
-blobCacheSizes=(960 1984 4032 8128)
+cacheSizes=(2048)
+blobCacheSizes=(512)
 
 for bs in "${blocksizes[@]}"; do
     for ((j=0; j<${#flengths[@]}; j++)); do

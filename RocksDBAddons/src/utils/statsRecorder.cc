@@ -119,6 +119,12 @@ StatsRecorder::~StatsRecorder()
         fprintf(stdout, "%-30s sum:%16llu count:%12llu avg.:%10.2lf per.:%6.2lf%%\n", _NAME_, time[_TYPE_], counts[_TYPE_], time[_TYPE_] * 1.0 / counts[_TYPE_], time[_TYPE_] * 100.0 / _SUM_); \
     } while (0);
 
+    fprintf(stdout, "------------------------- Total -------------------------------------\n");
+    PRINT_FULL("workload-others", WORKLOAD_OTHERS, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-put", DELTAKV_PUT, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-get", DELTAKV_GET, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+    PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+
     fprintf(stdout, "------------------------- DELTAKV Temp  -------------------------------------\n");
     PRINT_FULL("DeltaKV-tmp1", DELTAKV_TMP1, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-tmp2", DELTAKV_TMP2, time[DELTAKV_PUT]);

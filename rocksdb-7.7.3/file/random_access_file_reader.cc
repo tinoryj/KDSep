@@ -134,7 +134,12 @@ IOStatus RandomAccessFileReader::Read(
 
         if (print_cnt < 20) {
             fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
-                    aligned_offset, orig_offset, n, aligned_offset + read_size,
+                    aligned_offset, offset, n, aligned_offset + read_size,
+                    read_size);
+            print_cnt++;
+        } else if (print_cnt < 30 && (n % alignment > 0 || offset % alignment > 0)) {
+            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
+                    aligned_offset, offset, n, aligned_offset + read_size,
                     read_size);
             print_cnt++;
         }
@@ -246,8 +251,13 @@ IOStatus RandomAccessFileReader::Read(
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {
-        RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
-        RecordTick(stats_, BLOB_READ_COUNT, 1);
+        if (total_read_size >= 1 * 1024 * 1024) {
+            RecordTick(stats_, ACTUAL_BLOB_READ_LARGE_BYTES, total_read_size);
+            RecordTick(stats_, BLOB_READ_LARGE_COUNT, 1);
+        } else {
+            RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+            RecordTick(stats_, BLOB_READ_COUNT, 1);
+        }
     } 
     SetPerfLevel(prev_perf_level);
   }

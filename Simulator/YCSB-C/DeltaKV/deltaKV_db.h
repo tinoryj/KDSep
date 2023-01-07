@@ -46,6 +46,7 @@ class DeltaKVDB : public YCSBDB {
     std::ofstream outputStream_;
     DELTAKV_NAMESPACE::DeltaKV db_;
     DELTAKV_NAMESPACE::DeltaKVOptions options_;
+    struct timeval tv_;
 };
 }  // namespace ycsbc
 #endif  // YCSB_C_DeltaKVDB_DB_H

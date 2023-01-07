@@ -301,6 +301,8 @@ enum Tickers : uint32_t {
   BLOB_DB_BLOB_FILE_BYTES_WRITTEN,
   // # of bytes read from blob file.
   BLOB_DB_BLOB_FILE_BYTES_READ,
+  // # of times read from blob file.
+  BLOB_DB_BLOB_FILE_BYTES_READ_COUNT,
   // # of times a blob files being synced.
   BLOB_DB_BLOB_FILE_SYNCED,
   // # of blob index evicted from base DB by BlobDB compaction filter because
@@ -442,8 +444,10 @@ enum Tickers : uint32_t {
   NON_LAST_LEVEL_READ_BYTES,
   NON_LAST_LEVEL_READ_COUNT,
   BLOB_READ_COUNT,
+  BLOB_READ_LARGE_COUNT,
   ACTUAL_READ_BYTES,
   ACTUAL_BLOB_READ_BYTES,
+  ACTUAL_BLOB_READ_LARGE_BYTES,
 
   BLOCK_CHECKSUM_COMPUTE_COUNT,
   MULTIGET_COROUTINE_COUNT,

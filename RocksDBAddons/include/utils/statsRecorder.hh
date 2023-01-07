@@ -18,6 +18,7 @@ namespace DELTAKV_NAMESPACE {
 
 enum StatsType {
     KEY_IDENTIFY,
+    WORKLOAD_OTHERS,
     DELTAKV_TMP1,
     DELTAKV_TMP2,
     DELTAKV_TMP3,

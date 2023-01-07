@@ -163,7 +163,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
         options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
         options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
-        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
+        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 2 * 1024 * 1024;                  // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
         options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
         options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
@@ -276,6 +276,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         rocksdb::get_perf_context()->Reset();
         rocksdb::get_iostats_context()->Reset();
     }
+
+    gettimeofday(&tv_, 0);
 }
 
 int DeltaKVDB::Read(const std::string &table, const std::string &key,
@@ -284,8 +286,10 @@ int DeltaKVDB::Read(const std::string &table, const std::string &key,
     string value;
     struct timeval tv;
     gettimeofday(&tv, nullptr);
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
     int ret = db_.Get(key, &value);
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_GET, tv);
+    gettimeofday(&tv_, 0);
     // outputStream_ << "YCSB Read " << key << " " << value << endl;
     return ret;
 }
@@ -303,6 +307,7 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
     rocksdb::Status s;
     string fullValue;
     struct timeval tv;
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
     gettimeofday(&tv, nullptr);
     for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
@@ -310,6 +315,7 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
     fullValue += values[values.size() - 1].second;
     bool status = db_.Put(key, fullValue);
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_PUT, tv);
+    gettimeofday(&tv_, 0);
     if (!status) {
         cerr << "insert error"
              << endl;
@@ -321,6 +327,7 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
 int DeltaKVDB::Update(const std::string &table, const std::string &key,
                       std::vector<KVPair> &values) {
     struct timeval tv;
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
     gettimeofday(&tv, nullptr);
     for (KVPair &p : values) {
         bool status = db_.Merge(key, p.second);
@@ -331,6 +338,7 @@ int DeltaKVDB::Update(const std::string &table, const std::string &key,
         // outputStream_ << "[YCSB] Update op, key = " << key << ", op value = " << p.second << endl;
     }
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_MERGE, tv);
+    gettimeofday(&tv_, 0);
     // s = db_.Flush(rocksdb::FlushOptions());
     return 1;
 }

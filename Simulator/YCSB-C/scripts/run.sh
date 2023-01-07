@@ -338,32 +338,34 @@ if [[ $paretokey == "true" ]]; then
 fi
 
 loaded="false"
+workingDB=${DB_Working_Path}/workingDB
+loadedDB=${DB_Loaded_Path}/${DB_Name}
 
 echo "<===================== Loading the database =====================>"
 
 if [[ "$cleanFlag" == "true" ]]; then
     set -x
-    rm -rf ${DB_Loaded_Path}/${DB_Name} 
-    rm -rf ${DB_Working_Path}/$DB_Name
+    rm -rf $loadedDB 
+    rm -rf $workingDB
     exit
 fi
 
-if [[ ! -d ${DB_Loaded_Path}/${DB_Name} || "$only_load" == "true" ]]; then
-    rm -rf ${DB_Loaded_Path}/${DB_Name} 
-    if [[ -d ${DB_Working_Path}/$DB_Name ]]; then 
-        rm -rf ${DB_Working_Path}/$DB_Name
+if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
+    rm -rf $loadedDB 
+    if [[ -d $workingDB ]]; then 
+        rm -rf $workingDB 
     fi
     output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
     echo "output at $output_file"
-    ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
+    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
     loaded="true"
     echo "output at $output_file"
     if [[ $? -ne 0 ]]; then
 	echo "Exit. return number $?"
 	exit
     fi
-    log_db_status ${DB_Working_Path}/$DB_Name $output_file
-    cp -r ${DB_Working_Path}/$DB_Name $DB_Loaded_Path/ # Copy loaded DB
+    log_db_status $workingDB $output_file
+    cp -r $workingDB $loadedDB # Copy loaded DB
     if [[ "$only_load" == "true" ]]; then
 	exit
     fi
@@ -393,15 +395,15 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         cat workload-temp.spec | head -n 25 | tail -n 17
         # Running the ycsb-benchmark
         if [[ "$loaded" == "false" ]]; then
-            if [ -d ${DB_Working_Path}/${DB_Name} ]; then
-                rm -rf ${DB_Working_Path}/${DB_Name}
+            if [ -d $workingDB ]; then
+                rm -rf $workingDB 
                 echo "Deleted old database folder"
             fi
-            echo "cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path}"
-            cp -r $DB_Loaded_Path/$DB_Name ${DB_Working_Path} 
+            echo "cp -r $loadedDB $workingDB"
+            cp -r $loadedDB $workingDB
             echo "Copy loaded database"
         fi
-        if [ ! -d ${DB_Working_Path}/$DB_Name ]; then
+        if [ ! -d $workingDB ]; then
             echo "Retrived loaded database error"
             exit
         fi
@@ -416,14 +418,14 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
         fi
 	echo "output at $output_file"
-        ./ycsbc -db rocksdb -dbfilename ${DB_Working_Path}/$DB_Name -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
+        ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
         loaded="false"
 	if [[ $? -ne 0 ]]; then
 	    echo "Exit. return number $?"
 	    exit
 	fi
         echo "output at $output_file"
-	log_db_status ${DB_Working_Path}/$DB_Name $output_file
+	log_db_status $workingDB $output_file
         echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
         # Cleanup
         if [ -f workload-temp.spec ]; then
