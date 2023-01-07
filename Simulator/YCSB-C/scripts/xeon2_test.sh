@@ -11,6 +11,7 @@ reqs=("10M" "20M" "40M" "80M")
 batchSize=10K
 
 indexSet=(5 9)
+indexSet=(9)
 runModeSet=('raw')
 blocksizes=(4096)
 flengths=(100)
@@ -56,7 +57,7 @@ for bs in "${blocksizes[@]}"; do
 			    cacheSize=$(( ${cacheSize} / 2 ))
                             scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$cacheSize kvcache${kvcacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
 			fi
-                        lastCacheSize=$cacheSize
+                        lastCacheSize=$(( $cacheSize * 2 ))
                     elif [[ "$runMode" == "bkv" ]]; then
                         scripts/run.sh $runMode req${req} op10M fc10 fl${fl} cache$blockCacheSize blobcache${blobCacheSize} threads$threadNumber readRatio$ratio Exp$ExpName blockSize${bs} cif 
                     elif [[ "$runMode" == "kd" ]]; then
