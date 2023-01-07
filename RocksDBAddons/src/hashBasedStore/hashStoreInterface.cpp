@@ -90,6 +90,7 @@ bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
             return true;
         }
         ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
+        tempFileHandler->file_ownership_flag_ = 0;
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", objectPairMempoolHandler.keyPtr_);
             return false;
@@ -148,7 +149,6 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHan
             for (auto index = 0; index < mapIt.second.size(); index++) {
                 handlerVec.push_back(objectPairMemPoolHandlerVec[mapIt.second[index]]);
             }
-            // mapIt.first->file_ownership_flag_ = 1;
             mapIt.first->markedByMultiPut_ = false;
             tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVec));
         }
@@ -167,7 +167,6 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHan
         auto processedHandlerIndex = 0;
         unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
         for (auto mapIt : fileHandlerToIndexMap) {
-            // mapIt.first->file_ownership_flag_ = 1;
             uint64_t targetWriteSize = 0;
             for (auto index = 0; index < mapIt.second.size(); index++) {
                 handlerVecTemp[processedHandlerIndex].push_back(objectPairMemPoolHandlerVec[mapIt.second[index]]);
