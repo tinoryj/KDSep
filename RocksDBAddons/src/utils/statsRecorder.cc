@@ -120,10 +120,10 @@ StatsRecorder::~StatsRecorder()
     } while (0);
 
     fprintf(stdout, "------------------------- Total -------------------------------------\n");
-    PRINT_FULL("workload-others", WORKLOAD_OTHERS, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-put", DELTAKV_PUT, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-get", DELTAKV_GET, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
-    PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+    PRINT_FULL("workload-others", WORKLOAD_OTHERS, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
+    PRINT_FULL("DeltaKV-put", DELTAKV_PUT, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
+    PRINT_FULL("DeltaKV-get", DELTAKV_GET, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
+    PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
 
     fprintf(stdout, "------------------------- DELTAKV Temp  -------------------------------------\n");
     PRINT_FULL("DeltaKV-tmp1", DELTAKV_TMP1, time[DELTAKV_PUT]);

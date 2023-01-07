@@ -251,7 +251,7 @@ IOStatus RandomAccessFileReader::Read(
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {
-        if (total_read_size >= 1 * 1024 * 1024) {
+        if (total_read_size >= 32 * 1024) {
             RecordTick(stats_, ACTUAL_BLOB_READ_LARGE_BYTES, total_read_size);
             RecordTick(stats_, BLOB_READ_LARGE_COUNT, 1);
         } else {
