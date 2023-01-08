@@ -25,13 +25,15 @@ KeyValueMemPool::~KeyValueMemPool()
 
 bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(string keyStr, string valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler)
 {
+    std::scoped_lock<std::shared_mutex> wlock(managerMtx_);
     if (mempoolFreeHandlerQueue_.size() == 0) {
         return false;
     } else {
-        managerMtx_.lock();
         mempoolHandler.mempoolHandlerID_ = mempoolFreeHandlerQueue_.front();
         mempoolFreeHandlerQueue_.pop_front();
-        managerMtx_.unlock();
+        if (mempoolHandler.mempoolHandlerID_ > mempoolBlockNumberThreshold_ - 1) {
+            debug_error("[ERROR] Get overflowed mempool handler, ID = %u, threshold = %u\n", mempoolHandler.mempoolHandlerID_, mempoolBlockNumberThreshold_);
+        }
         mempoolHandler.keySize_ = keyStr.size();
         mempoolHandler.valueSize_ = valueStr.size();
         memcpy(mempool_[mempoolHandler.mempoolHandlerID_], keyStr.c_str(), keyStr.size());
@@ -46,9 +48,8 @@ bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(string keyStr, string 
 
 bool KeyValueMemPool::eraseContentFromMemPool(mempoolHandler_t mempoolHandler)
 {
-    managerMtx_.lock();
+    std::scoped_lock<std::shared_mutex> wlock(managerMtx_);
     mempoolFreeHandlerQueue_.push_back(mempoolHandler.mempoolHandlerID_);
-    managerMtx_.unlock();
     return true;
 }
 

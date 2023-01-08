@@ -157,22 +157,22 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         cerr << "Enabled Blob based KV separation" << endl;
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
         options_.rocksdbRawOptions_.enable_blob_files = true;
-        options_.rocksdbRawOptions_.min_blob_size = 0;                                                 // Default 0
-        options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
-        options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
-        options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
-        options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
-        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
-        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                // Default 0
-        options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
-        options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
-        options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
+        options_.rocksdbRawOptions_.min_blob_size = 0;                                                                 // Default 0
+        options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                                  // Default 256*1024*1024
+        options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                                            // Default kNoCompression
+        options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                                             // Default false
+        options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                                         // Default 0.25
+        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                                     // Default 1.0
+        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                                                // Default 0
+        options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                                      // Default 0
+        options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr;  // rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
+        options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;                  // Default kDisable
         assert(!keyValueSeparation);
     } else {
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
     bbto.block_size = config.getBlockSize();
-    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks(); 
+    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks();
 
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
@@ -215,6 +215,12 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.internalRocksDBBatchedOperation_ = config.getEnableRoaRocksDBBatch();
     options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
+
+    if (options_.enable_batched_operations_ == true && options_.batched_operations_number_ > 0) {
+        options_.deltaStore_mem_pool_object_number_ = options_.batched_operations_number_ * 3;
+        long pagesize = sysconf(_SC_PAGE_SIZE);
+        options_.deltaStore_mem_pool_object_size_ = ceil(config.getMaxKeyValueSize() % pagesize) * pagesize;
+    }
 
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;

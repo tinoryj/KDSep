@@ -688,7 +688,6 @@ bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler
             rocksdb::Slice keySlice(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
             rocksdb::Slice newWriteValueSlice(writeInternalValueBuffer, sizeof(internalValueType));
             STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keySlice, newWriteValueSlice), StatsType::DELTAKV_MERGE_ROCKSDB);
-            objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
             if (!rocksDBStatus.ok()) {
                 debug_error("[ERROR] Write underlying rocksdb with external value type info, key = %s, value = %s, status = %s\n", objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.valuePtr_, rocksDBStatus.ToString().c_str());
                 return false;
@@ -712,7 +711,6 @@ bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler
         rocksdb::Slice keySlice(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
         rocksdb::Slice newWriteValueSlice(writeInternalValueBuffer, sizeof(internalValueType) + objectPairMemPoolHandler.valueSize_);
         STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, keySlice, newWriteValueSlice), StatsType::DELTAKV_MERGE_ROCKSDB);
-        objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with external storage index fault, key = %s, value = %s, status = %s\n", objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.valuePtr_, rocksDBStatus.ToString().c_str());
             return false;
@@ -1041,6 +1039,7 @@ bool DeltaKV::Put(const string& key, const string& value)
     mempoolHandler_t objectPairMemPoolHandler;
     objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, true, objectPairMemPoolHandler);
     bool putOperationStatus = true;
+    bool shouldDeleteMemPoolHandler = false;
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
@@ -1058,6 +1057,7 @@ bool DeltaKV::Put(const string& key, const string& value)
         } else {
             putOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     case kOnlyValueLog:
         if (PutWithOnlyValueStore(objectPairMemPoolHandler) == false) {
@@ -1065,6 +1065,7 @@ bool DeltaKV::Put(const string& key, const string& value)
         } else {
             putOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     case kOnlyDeltaLog:
         if (PutWithOnlyDeltaStore(objectPairMemPoolHandler) == false) {
@@ -1072,6 +1073,7 @@ bool DeltaKV::Put(const string& key, const string& value)
         } else {
             putOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     case kPlainRocksDB:
         if (PutWithPlainRocksDB(objectPairMemPoolHandler) == false) {
@@ -1079,12 +1081,17 @@ bool DeltaKV::Put(const string& key, const string& value)
         } else {
             putOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     default:
         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
         putOperationStatus = false;
+        shouldDeleteMemPoolHandler = true;
+        break;
     }
-    objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
+    if (shouldDeleteMemPoolHandler == true) {
+        objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
+    }
     if (putOperationStatus == true) {
         return true;
     } else {
@@ -1310,46 +1317,63 @@ bool DeltaKV::Merge(const string& key, const string& value)
     globalSequenceNumberGeneratorMtx_.unlock();
     mempoolHandler_t objectPairMemPoolHandler;
     objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, objectPairMemPoolHandler);
+    bool shouldDeleteMemPoolHandler = false;
+    bool mergeOperationStatus = false;
     switch (deltaKVRunningMode_) {
     case kBatchedWithPlainRocksDB:
     case kBatchedWithOnlyValueLog:
     case kBatchedWithOnlyDeltaLog:
     case kBatchedWithBothValueAndDeltaLog:
         if (MergeWithWriteBatch(objectPairMemPoolHandler) == false) {
-            return false;
+            mergeOperationStatus = false;
         } else {
-            return true;
+            mergeOperationStatus = true;
         }
         break;
     case kBothValueAndDeltaLog:
         if (MergeWithValueAndDeltaStore(objectPairMemPoolHandler) == false) {
-            return false;
+            mergeOperationStatus = false;
         } else {
-            return true;
+            mergeOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     case kOnlyValueLog:
         if (MergeWithOnlyValueStore(objectPairMemPoolHandler) == false) {
-            return false;
+            mergeOperationStatus = false;
         } else {
-            return true;
+            mergeOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     case kOnlyDeltaLog:
         if (MergeWithOnlyDeltaStore(objectPairMemPoolHandler) == false) {
-            return false;
+            mergeOperationStatus = false;
         } else {
-            return true;
+            mergeOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
+        break;
     case kPlainRocksDB:
         if (MergeWithPlainRocksDB(objectPairMemPoolHandler) == false) {
-            return false;
+            mergeOperationStatus = false;
         } else {
-            return true;
+            mergeOperationStatus = true;
         }
+        shouldDeleteMemPoolHandler = true;
         break;
     default:
         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
+        mergeOperationStatus = false;
+        shouldDeleteMemPoolHandler = true;
+        break;
+    }
+    if (shouldDeleteMemPoolHandler == true) {
+        objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
+    }
+    if (mergeOperationStatus == true) {
+        return true;
+    } else {
         return false;
     }
 }
@@ -1538,6 +1562,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
         mempoolHandler_t objectPairMemPoolHandler;
         objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, newValueStr, currentSequenceNumber, true, objectPairMemPoolHandler);
         bool putOperationStatus = true;
+        bool deleteMemPoolHandlerStatus = false;
         switch (deltaKVRunningMode_) {
         case kBatchedWithPlainRocksDB:
         case kBatchedWithOnlyValueLog:
@@ -1555,6 +1580,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             } else {
                 putOperationStatus = true;
             }
+            deleteMemPoolHandlerStatus = true;
             break;
         case kOnlyValueLog:
             if (PutWithOnlyValueStore(objectPairMemPoolHandler) == false) {
@@ -1562,6 +1588,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             } else {
                 putOperationStatus = true;
             }
+            deleteMemPoolHandlerStatus = true;
             break;
         case kOnlyDeltaLog:
             if (PutWithOnlyDeltaStore(objectPairMemPoolHandler) == false) {
@@ -1569,6 +1596,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             } else {
                 putOperationStatus = true;
             }
+            deleteMemPoolHandlerStatus = true;
             break;
         case kPlainRocksDB:
             if (PutWithPlainRocksDB(objectPairMemPoolHandler) == false) {
@@ -1576,12 +1604,17 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             } else {
                 putOperationStatus = true;
             }
+            deleteMemPoolHandlerStatus = true;
             break;
         default:
             debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
             putOperationStatus = false;
+            deleteMemPoolHandlerStatus = true;
+            break;
         }
-        objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
+        if (deleteMemPoolHandlerStatus == true) {
+            objectPairMemPool_->eraseContentFromMemPool(objectPairMemPoolHandler);
+        }
         if (putOperationStatus == true) {
             return true;
         } else {
@@ -1656,15 +1689,19 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
         str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
+            uint32_t currentErasedCounter = 0;
             for (auto it : mapIt->second) {
                 objectPairMemPool_->eraseContentFromMemPool(it.second);
+                currentErasedCounter++;
             }
+            batchedOperationsCounter[currentWriteBatchDequeInUse] -= (currentErasedCounter - 1);
             mapIt->second.clear();
             mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
         } else {
             deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
         return true;
@@ -1673,15 +1710,19 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
         str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
+            uint32_t currentErasedCounter = 0;
             for (auto it : mapIt->second) {
                 objectPairMemPool_->eraseContentFromMemPool(it.second);
+                currentErasedCounter++;
             }
+            batchedOperationsCounter[currentWriteBatchDequeInUse] -= (currentErasedCounter - 1);
             mapIt->second.clear();
             mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
         } else {
             deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
         return true;
@@ -1720,10 +1761,12 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             mapIt->second.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
             deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
         return true;
@@ -1733,10 +1776,12 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             mapIt->second.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
             deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
         return true;

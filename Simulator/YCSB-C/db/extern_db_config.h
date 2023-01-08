@@ -54,6 +54,7 @@ class ExternDBConfig {
     bool enableRawRocksDBBatch_;
     uint64_t blockSize;
     bool cacheIndexAndFilterBlocks_;
+    uint64_t maxKeyValueSize_;
 
     struct {
         uint64_t level;
@@ -101,6 +102,7 @@ class ExternDBConfig {
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
+        maxKeyValueSize_ = pt_.get<uint64_t>("config.maxKeyValueSize_", 4096);
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
     }
@@ -242,6 +244,9 @@ class ExternDBConfig {
     }
     uint64_t getBlockSize() {
         return blockSize;
+    }
+    uint64_t getMaxKeyValueSize() {
+        return maxKeyValueSize_;
     }
     bool cacheIndexAndFilterBlocks() {
         return cacheIndexAndFilterBlocks_;
