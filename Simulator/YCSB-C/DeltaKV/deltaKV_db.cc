@@ -163,7 +163,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
         options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
         options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
-        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 2 * 1024 * 1024;                  // Default 0
+        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                  // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
         options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
         options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable

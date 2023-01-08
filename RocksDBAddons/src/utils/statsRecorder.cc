@@ -120,15 +120,19 @@ StatsRecorder::~StatsRecorder()
     } while (0);
 
     fprintf(stdout, "------------------------- Total -------------------------------------\n");
-    PRINT_FULL("workload-others", WORKLOAD_OTHERS, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
-    PRINT_FULL("DeltaKV-put", DELTAKV_PUT, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
-    PRINT_FULL("DeltaKV-get", DELTAKV_GET, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
-    PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]));
+    auto total_time = (time[WORKLOAD_OTHERS] + time[DELTAKV_PUT] + time[DELTAKV_GET] + time[DELTAKV_MERGE]);
+    PRINT_FULL("workload-others", WORKLOAD_OTHERS, total_time);
+    PRINT_FULL("DeltaKV-put", DELTAKV_PUT, total_time);
+    PRINT_FULL("DeltaKV-get", DELTAKV_GET, total_time);
+    PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, total_time);
+    fprintf(stdout, "------------------------- YCSB -------------------------------------\n");
+    PRINT_FULL("ycsb-op", YCSB_OPERATION, total_time);
+    PRINT_FULL("ycsb-op-extra", YCSB_OPERATION_EXTRA, total_time);
+    PRINT_FULL("ycsb-read-gen", YCSB_READ_GEN, total_time);
+    PRINT_FULL("ycsb-update-gen", YCSB_UPDATE_GEN, total_time);
+    PRINT_FULL("ycsb-insert-gen", YCSB_INSERT_GEN, total_time);
 
     fprintf(stdout, "------------------------- DELTAKV Temp  -------------------------------------\n");
-    PRINT_FULL("DeltaKV-tmp1", DELTAKV_TMP1, time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-tmp2", DELTAKV_TMP2, time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-tmp3", DELTAKV_TMP3, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-create-new-bucket", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-create-gc-bucket", DELTAKV_HASHSTORE_CREATE_GC_BUCKET, time[DELTAKV_PUT]);
     PRINT_FULL("DKV-gc-write-back", DELTAKV_GC_WRITE_BACK, time[DELTAKV_GC_WRITE_BACK]);

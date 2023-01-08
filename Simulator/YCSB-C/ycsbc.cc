@@ -91,7 +91,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     utils::Timer timer, timerStart;
     timerStart.Start();
     int processLabel_base = num_ops / 100;
+    struct timeval tv;
     for (int i = 0; i < num_ops; ++i) {
+        gettimeofday(&tv, 0);
         timer.Start();
         // if(i%10000==0){
         //   cerr << "finished ops: "<<i<<"\r";
@@ -103,6 +105,8 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             operation_type = client.DoTransaction();
             oks += 1;
         }
+        DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
+                DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION, tv);
         double duration = timer.End();
         while (histogram_lock.test_and_set())
             ;
@@ -110,16 +114,20 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         histogram_lock.clear();
         // if (i % processLabel_base == 0) {
         std::cerr << "\r";
-        double tot_duration = timerStart.End() / 1000000.0;
-        double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
-        int est_minutes = int(estimate_duration) / 60;
-        int est_seconds = int(estimate_duration) % 60;
-        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
-        if (est_minutes > 0) {
-            std::cerr << est_minutes << " min"; 
-        } 
-        if (est_seconds > 0) {
-            std::cerr << est_seconds << " s    "; 
+        if (i % 100 == 0) {
+            double tot_duration = timerStart.End() / 1000000.0;
+            double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
+            int est_minutes = int(estimate_duration) / 60;
+            int est_seconds = int(estimate_duration) % 60;
+            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+            if (est_minutes > 0) {
+                std::cerr << est_minutes << " min"; 
+            } 
+            if (est_seconds > 0) {
+                std::cerr << est_seconds << " s    "; 
+            }
+            DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
+                    DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION_EXTRA, tv);
         }
         // }
     }
