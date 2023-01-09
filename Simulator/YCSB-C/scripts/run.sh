@@ -79,7 +79,7 @@ OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
 DB_Working_Path="/mnt/g/deltakv/working"
-DB_Loaded_Path="/mnt/g/deltakv"
+DB_Loaded_Path="/mnt/e/deltakvload"
 if [[ ! -d "/mnt/g" ]]; then
     DB_Working_Path="/mnt/lvm/deltakv/working"
     DB_Loaded_Path="/mnt/lvm/deltakv"
@@ -312,8 +312,6 @@ else
     suffix=${suffix}_fc${fieldcount}_fl${fieldlength}_${size}
 fi
 
-run_suffix="${run_suffix}-${ops}"
-
 DB_Name=${DB_Name}${suffix}
 ResultLogFolder=${ResultLogFolder}${suffix}
 configPath="temp.ini"
@@ -370,6 +368,8 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
 	exit
     fi
 fi
+
+run_suffix="${run_suffix}-${ops}"
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
