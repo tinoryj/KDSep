@@ -211,6 +211,8 @@ void CompactionJob::ReportStartedCompaction(Compaction* compaction) {
 
   IOSTATS_RESET(bytes_written);
   IOSTATS_RESET(bytes_read);
+  IOSTATS_RESET(counts_written);
+  IOSTATS_RESET(counts_read);
   ThreadStatusUtil::SetThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_WRITTEN, 0);
   ThreadStatusUtil::SetThreadOperationProperty(
@@ -1680,6 +1682,8 @@ Status CompactionJob::InstallCompactionResults(
 void CompactionJob::RecordCompactionIOStats() {
   RecordTick(stats_, COMPACT_READ_BYTES, IOSTATS(bytes_read));
   RecordTick(stats_, COMPACT_WRITE_BYTES, IOSTATS(bytes_written));
+  RecordTick(stats_, COMPACT_READ_COUNT, IOSTATS(counts_read));
+  RecordTick(stats_, COMPACT_WRITE_COUNT, IOSTATS(counts_written));
   CompactionReason compaction_reason =
       compact_->compaction->compaction_reason();
   if (compaction_reason == CompactionReason::kFilesMarkedForCompaction) {
@@ -1695,9 +1699,11 @@ void CompactionJob::RecordCompactionIOStats() {
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_READ, IOSTATS(bytes_read));
   IOSTATS_RESET(bytes_read);
+  IOSTATS_RESET(counts_read);
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_WRITTEN, IOSTATS(bytes_written));
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 
 Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,

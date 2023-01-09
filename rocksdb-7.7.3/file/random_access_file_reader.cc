@@ -26,6 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 inline void RecordIOStats(Statistics* stats, Temperature file_temperature,
                           bool is_last_level, size_t size) {
   IOSTATS_ADD(bytes_read, size);
+  IOSTATS_ADD(counts_read, 1);
   // record for last/non-last level
   if (is_last_level) {
     RecordTick(stats, LAST_LEVEL_READ_BYTES, size);

@@ -113,8 +113,8 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
         // if (i % processLabel_base == 0) {
-        std::cerr << "\r";
-        if (i % 100 == 0) {
+        if (i % 200 == 0) {
+            std::cerr << "\r";
             double tot_duration = timerStart.End() / 1000000.0;
             double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
             int est_minutes = int(estimate_duration) / 60;
@@ -125,6 +125,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             } 
             if (est_seconds > 0) {
                 std::cerr << est_seconds << " s    "; 
+            }
+            if (i % (num_ops / 10) == 0) {
+                std::cout << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)\n";
             }
             DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
                     DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION_EXTRA, tv);

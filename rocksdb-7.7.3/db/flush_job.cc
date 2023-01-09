@@ -148,6 +148,7 @@ void FlushJob::ReportStartedFlush() {
       ThreadStatus::COMPACTION_JOB_ID,
       job_context_->job_id);
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 
 void FlushJob::ReportFlushInputSize(const autovector<MemTable*>& mems) {
@@ -162,9 +163,11 @@ void FlushJob::ReportFlushInputSize(const autovector<MemTable*>& mems) {
 
 void FlushJob::RecordFlushIOStats() {
   RecordTick(stats_, FLUSH_WRITE_BYTES, IOSTATS(bytes_written));
+  RecordTick(stats_, FLUSH_WRITE_COUNT, IOSTATS(counts_written));
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::FLUSH_BYTES_WRITTEN, IOSTATS(bytes_written));
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 void FlushJob::PickMemTable() {
   db_mutex_->AssertHeld();
