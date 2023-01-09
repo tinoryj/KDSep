@@ -107,19 +107,20 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             ;
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
-        // if (i % processLabel_base == 0) {
-        std::cerr << "\r";
-        double tot_duration = timerStart.End() / 1000000.0;
-        int est_minutes = ceil(tot_duration / 60.0);
-        int est_seconds = int(tot_duration) % 60;
-        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s) estimate ";
-        if (est_minutes > 0) {
-            std::cerr << est_minutes << " min";
+        if (i % processLabel_base == 0) {
+            std::cerr << "\r";
+            double tot_duration = timerStart.End() / 1000000.0;
+            double estimate_duration = (i < num_ops - 1) ? tot_duration / (i + 1) * (num_ops - i - 1) : 0;
+            int est_minutes = int(estimate_duration) / 60;
+            int est_seconds = int(estimate_duration) % 60;
+            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+            if (est_minutes > 0) {
+                std::cerr << est_minutes << " min";
+            }
+            if (est_seconds > 0) {
+                std::cerr << est_seconds << " s    ";
+            }
         }
-        if (est_seconds > 0) {
-            std::cerr << est_seconds << " s";
-        }
-        // }
     }
     std::cerr << "\r";
     std::cerr << "[Running Status] Operation process: 100%, " << num_ops << "/" << num_ops;
@@ -360,6 +361,7 @@ int main(const int argc, const char *argv[]) {
     std::cerr << "Start delete db" << std::endl;
     delete db;
     std::cerr << "Deleted db success" << std::endl;
+    return 0;
 }
 
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {

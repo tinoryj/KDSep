@@ -61,10 +61,10 @@ public:
 private:
     KeyValueMemPool* objectPairMemPool_ = nullptr;
     // batched write
-    unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* writeBatchMapForSearch_[2]; // key to <operation type, value>
+    unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
-    messageQueue<unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
+    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
     uint64_t batchedOperationsCounter[2] = { 0UL, 0UL };
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
@@ -81,36 +81,35 @@ private:
     DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
-    bool PutWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler);
-    bool MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler);
+    bool PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithWriteBatch(const string& key, string* value);
 
-    bool PutWithPlainRocksDB(mempoolHandler_t& objectPairMemPoolHandler);
-    bool MergeWithPlainRocksDB(mempoolHandler_t& objectPairMemPoolHandler);
+    bool PutWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithPlainRocksDB(const string& key, string* value);
 
-    bool PutWithOnlyValueStore(mempoolHandler_t& objectPairMemPoolHandler);
-    bool MergeWithOnlyValueStore(mempoolHandler_t& objectPairMemPoolHandler);
+    bool PutWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler);
-    bool MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler);
+    bool PutWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithValueAndDeltaStore(mempoolHandler_t& objectPairMemPoolHandler);
-    bool MergeWithValueAndDeltaStore(mempoolHandler_t& objectPairMemPoolHandler);
+    bool PutWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
-    bool performInBatchedBufferDeduplication(deque<tuple<DBOperationType, mempoolHandler_t>>*& operationsQueue);
 
     vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
-    bool performInBatchedBufferDeduplication(unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
+    bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();

@@ -41,7 +41,10 @@ public:
 private:
     char** mempool_;
     uint32_t mempoolBlockNumberThreshold_;
-    deque<uint32_t> mempoolFreeHandlerQueue_;
+    uint32_t mempoolBlockSizeThreshold_;
+    uint32_t* mempoolFreeHandlerVec_;
+    uint32_t mempoolFreeHandlerVecStartPtr_;
+    uint32_t mempoolFreeHandlerVecEndPtr_;
     std::shared_mutex managerMtx_;
 };
 

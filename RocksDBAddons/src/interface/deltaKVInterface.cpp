@@ -291,6 +291,7 @@ DeltaKV::~DeltaKV()
         delete IndexStoreInterfaceObjPtr_;
         // delete related object pointers
     }
+    delete objectPairMemPool_;
     cerr << "[DeltaKV Interface] Try delete RocksDB" << endl;
     if (pointerToRawRocksDB_ != nullptr) {
         delete pointerToRawRocksDB_;
@@ -336,9 +337,9 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         valueExtractSize_ = IndexStoreInterfaceObjPtr_->getExtractSizeThreshold();
     }
     if (options.enable_batched_operations_ == true) {
-        writeBatchMapForSearch_[0] = new unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
-        writeBatchMapForSearch_[1] = new unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
-        notifyWriteBatchMQ_ = new messageQueue<unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>;
+        writeBatchMapForSearch_[0] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
+        writeBatchMapForSearch_[1] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
+        notifyWriteBatchMQ_ = new messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
         thList_.push_back(th);
         isBatchedOperationsWithBufferInUse_ = true;
@@ -468,7 +469,7 @@ bool DeltaKV::Close()
     return true;
 }
 
-bool DeltaKV::PutWithPlainRocksDB(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::PutWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler)
 {
     rocksdb::Status rocksDBStatus;
     rocksdb::Slice newKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
@@ -482,7 +483,7 @@ bool DeltaKV::PutWithPlainRocksDB(mempoolHandler_t& objectPairMemPoolHandler)
     }
 }
 
-bool DeltaKV::MergeWithPlainRocksDB(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::MergeWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler)
 {
     rocksdb::Status rocksDBStatus;
     rocksdb::Slice newKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
@@ -508,7 +509,7 @@ bool DeltaKV::GetWithPlainRocksDB(const string& key, string* value)
     }
 }
 
-bool DeltaKV::PutWithOnlyValueStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::PutWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     if (objectPairMemPoolHandler.valueSize_ >= valueExtractSize_) {
         bool status;
@@ -541,7 +542,7 @@ bool DeltaKV::PutWithOnlyValueStore(mempoolHandler_t& objectPairMemPoolHandler)
     }
 }
 
-bool DeltaKV::MergeWithOnlyValueStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::MergeWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     // also need internal value header since value store GC may update fake header as merge
     char writeInternalValueBuffer[sizeof(internalValueType) + objectPairMemPoolHandler.valueSize_];
@@ -639,7 +640,7 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value, uint32_t& 
     }
 }
 
-bool DeltaKV::PutWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::PutWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     // for merge flag check, add internal value header to raw value
     char writeInternalValueBuffer[sizeof(internalValueType) + objectPairMemPoolHandler.valueSize_];
@@ -671,7 +672,7 @@ bool DeltaKV::PutWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler)
     }
 }
 
-bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::MergeWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     if (objectPairMemPoolHandler.valueSize_ >= deltaExtractSize_) {
         bool status;
@@ -800,7 +801,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
     }
 }
 
-bool DeltaKV::PutWithValueAndDeltaStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::PutWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     if (objectPairMemPoolHandler.valueSize_ >= valueExtractSize_) {
         bool status;
@@ -847,7 +848,7 @@ bool DeltaKV::PutWithValueAndDeltaStore(mempoolHandler_t& objectPairMemPoolHandl
     }
 }
 
-bool DeltaKV::MergeWithValueAndDeltaStore(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::MergeWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler)
 {
     if (objectPairMemPoolHandler.valueSize_ >= deltaExtractSize_) {
         bool status;
@@ -1658,7 +1659,82 @@ bool DeltaKV::SingleDelete(const string& key)
     }
 }
 
-bool DeltaKV::PutWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
+bool DeltaKV::PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler)
+{
+    // cerr << "Key size = " << objectPairMemPoolHandler.keySize_ << endl;
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+        if (oneBufferDuringProcessFlag_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (oneBufferDuringProcessFlag_ == true) {
+                asm volatile("");
+            }
+        }
+    }
+    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_1, tv);
+    gettimeofday(&tv, 0);
+    std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_2, tv);
+    gettimeofday(&tv, 0);
+    debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
+    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+        // flush old one
+        notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
+        debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
+        // insert to another deque
+        if (currentWriteBatchDequeInUse == 1) {
+            currentWriteBatchDequeInUse = 0;
+        } else {
+            currentWriteBatchDequeInUse = 1;
+        }
+        batchedOperationsCounter[currentWriteBatchDequeInUse] = 0;
+        str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
+        // cerr << "Key in pool = " << objectPairMemPoolHandler.keyPtr_ << endl;
+        // cerr << "Key in str_t = " << currentKey.data_ << endl;
+        auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
+        if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
+            for (auto it : mapIt->second) {
+                objectPairMemPool_->eraseContentFromMemPool(it.second);
+                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
+            }
+            mapIt->second.clear();
+            mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+        } else {
+            vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
+            tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+        }
+        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        return true;
+    } else {
+        // only insert
+        str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
+        // cerr << "Key in pool = " << objectPairMemPoolHandler.keyPtr_ << endl;
+        // cerr << "Key in str_t = " << currentKey.data_ << endl;
+        auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
+        if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
+            for (auto it : mapIt->second) {
+                objectPairMemPool_->eraseContentFromMemPool(it.second);
+                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
+            }
+            mapIt->second.clear();
+            mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+        } else {
+            vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
+            tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
+            writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+        }
+        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        return true;
+    }
+}
+
+bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -1686,84 +1762,14 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
         } else {
             currentWriteBatchDequeInUse = 1;
         }
-        str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
-        auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
-        if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
-            uint32_t currentErasedCounter = 0;
-            for (auto it : mapIt->second) {
-                objectPairMemPool_->eraseContentFromMemPool(it.second);
-                currentErasedCounter++;
-            }
-            batchedOperationsCounter[currentWriteBatchDequeInUse] -= (currentErasedCounter - 1);
-            mapIt->second.clear();
-            mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
-        } else {
-            deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
-            tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
-            writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
-            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
-        }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
-        return true;
-    } else {
-        // only insert
-        str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
-        auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
-        if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
-            uint32_t currentErasedCounter = 0;
-            for (auto it : mapIt->second) {
-                objectPairMemPool_->eraseContentFromMemPool(it.second);
-                currentErasedCounter++;
-            }
-            batchedOperationsCounter[currentWriteBatchDequeInUse] -= (currentErasedCounter - 1);
-            mapIt->second.clear();
-            mapIt->second.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
-        } else {
-            deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
-            tempDeque.push_back(make_pair(kPutOp, objectPairMemPoolHandler));
-            writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
-            batchedOperationsCounter[currentWriteBatchDequeInUse]++;
-        }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
-        return true;
-    }
-}
-
-bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
-{
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
-        if (oneBufferDuringProcessFlag_ == true) {
-            debug_trace("Wait for batched buffer process%s\n", "");
-            while (oneBufferDuringProcessFlag_ == true) {
-                asm volatile("");
-            }
-        }
-    }
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_1, tv);
-    gettimeofday(&tv, 0);
-    std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_2, tv);
-    gettimeofday(&tv, 0);
-    debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
-        // flush old one
-        notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
-        debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
-        // insert to another deque
-        if (currentWriteBatchDequeInUse == 1) {
-            currentWriteBatchDequeInUse = 0;
-        } else {
-            currentWriteBatchDequeInUse = 1;
-        }
+        batchedOperationsCounter[currentWriteBatchDequeInUse] = 0;
         str_t currentKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             mapIt->second.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
-            deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
+            vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
@@ -1778,7 +1784,7 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
             mapIt->second.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
-            deque<pair<DBOperationType, mempoolHandler_t>> tempDeque;
+            vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, objectPairMemPoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
@@ -1788,9 +1794,13 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t& objectPairMemPoolHandler)
     }
 }
 
-bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap)
+bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap)
 {
+    uint32_t totalObjectNumber = 0;
+    uint32_t validObjectNumber = 0;
     for (auto it : *operationsMap) {
+        totalObjectNumber += it.second.size();
+        validObjectNumber += it.second.size();
         if (it.second.front().first == kPutOp && it.second.size() >= 2) {
             string finalValue;
             string firstValue(it.second.front().second.valuePtr_, it.second.front().second.valueSize_);
@@ -1805,15 +1815,16 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, deque<pai
                 debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it.second.size() - 1);
                 return false;
             }
-            mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, it.second.back().second.sequenceNumber_, true, newHandler);
             for (auto index : it.second) {
                 objectPairMemPool_->eraseContentFromMemPool(index.second);
+                validObjectNumber--;
             }
             it.second.clear();
+            mempoolHandler_t newHandler;
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, it.second.back().second.sequenceNumber_, true, newHandler);
             it.second.push_back(make_pair(kPutOp, newHandler));
-        }
-        if (it.second.front().first == kMergeOp && it.second.size() >= 2) {
+            validObjectNumber++;
+        } else if (it.second.front().first == kMergeOp && it.second.size() >= 2) {
             string newKeyStr(it.second.front().second.keyPtr_, it.second.front().second.keySize_);
             vector<string> operandList;
             for (auto i = it.second.begin(); i < it.second.end(); i++) {
@@ -1826,15 +1837,18 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, deque<pai
                 debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it.second.size());
                 return false;
             }
-            mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], it.second.back().second.sequenceNumber_, false, newHandler);
             for (auto index : it.second) {
                 objectPairMemPool_->eraseContentFromMemPool(index.second);
+                validObjectNumber--;
             }
             it.second.clear();
+            mempoolHandler_t newHandler;
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], it.second.back().second.sequenceNumber_, false, newHandler);
             it.second.push_back(make_pair(kMergeOp, newHandler));
+            validObjectNumber++;
         }
     }
+    cerr << "Total object number = " << totalObjectNumber << ", valid object number = " << validObjectNumber << endl;
     return true;
 }
 
@@ -1844,7 +1858,7 @@ void DeltaKV::processBatchedOperationsWorker()
         if (notifyWriteBatchMQ_->done_ == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
         }
-        unordered_map<str_t, deque<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
+        unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
             std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
             oneBufferDuringProcessFlag_ = true;
@@ -1853,14 +1867,17 @@ void DeltaKV::processBatchedOperationsWorker()
                 performInBatchedBufferDeduplication(currentHandler);
             }
             vector<mempoolHandler_t> handlerToValueStoreVec, handlerToDeltaStoreVec;
+            uint32_t validObjectCounter = 0;
             for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
                 for (auto dequeIt : it->second) {
+                    validObjectCounter++;
                     if (dequeIt.first == kPutOp) {
                         handlerToValueStoreVec.push_back(dequeIt.second);
                     }
                     handlerToDeltaStoreVec.push_back(dequeIt.second);
                 }
             }
+            cerr << "After process, valid object number = " << validObjectCounter << endl;
             // bool putToIndexStoreStatus = false;
             bool putToDeltaStoreStatus = false;
             bool putToValueStoreStatus = false;
@@ -2309,11 +2326,14 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             // update write buffers
             debug_info("process batched contents done, start update write buffer's map, target update key number = %lu\n", handlerToDeltaStoreVec.size());
+            uint32_t erasedObjectCounter = 0;
             for (auto index : *currentHandler) {
                 for (auto it : index.second) {
+                    erasedObjectCounter++;
                     objectPairMemPool_->eraseContentFromMemPool(it.second);
                 }
             }
+            cerr << "Erased object number = " << erasedObjectCounter << endl;
             currentHandler->clear();
             oneBufferDuringProcessFlag_ = false;
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());

@@ -55,7 +55,7 @@ public:
     uint64_t deltaStore_write_back_during_reads_threshold = 5;
     uint64_t deltaStore_write_back_during_gc_threshold = 5;
     uint64_t deltaStore_prefix_tree_initial_bit_number_ = 2;
-    uint32_t deltaStore_mem_pool_object_number_ = 1000;
+    uint32_t deltaStore_mem_pool_object_number_ = 5;
     uint32_t deltaStore_mem_pool_object_size_ = 4096;
 
     // valueStore options
