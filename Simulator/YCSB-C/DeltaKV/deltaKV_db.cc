@@ -262,6 +262,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
+    options_.rocksdbRawOptions_.report_bg_io_stats = true;
 
     cerr << "Start create DeltaKVDB instance" << endl;
 
