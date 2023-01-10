@@ -67,8 +67,8 @@ void* DeviceManager::checkBufferSize(len_t neededSize, offset_t offset, len_t& b
     }
 
     int ret = posix_memalign(&buf, _pageSize, neededSize);
-    if (ret == 0) {
-        debug_error("[ERROR] check buffer size error, ret = %d", ret);
+    if (ret != 0) {
+        debug_error("[ERROR] check buffer size error, ret = %d, page size = %d, need size = %lu, err %s\n", ret, _pageSize, neededSize, strerror(errno));
     }
     bufsize = neededSize;
 

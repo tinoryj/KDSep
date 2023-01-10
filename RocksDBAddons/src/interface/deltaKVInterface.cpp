@@ -1798,57 +1798,61 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
 {
     uint32_t totalObjectNumber = 0;
     uint32_t validObjectNumber = 0;
-    for (auto it : *operationsMap) {
-        totalObjectNumber += it.second.size();
-        validObjectNumber += it.second.size();
-        if (it.second.front().first == kPutOp && it.second.size() >= 2) {
+    for (auto it = operationsMap->begin(); it != operationsMap->end(); it++) {
+        totalObjectNumber += it->second.size();
+        validObjectNumber += it->second.size();
+        if (it->second.front().first == kPutOp && it->second.size() >= 2) {
             string finalValue;
-            string firstValue(it.second.front().second.valuePtr_, it.second.front().second.valueSize_);
-            string newKeyStr(it.second.front().second.keyPtr_, it.second.front().second.keySize_);
+            string firstValue(it->second.front().second.valuePtr_, it->second.front().second.valueSize_);
+            string newKeyStr(it->second.front().second.keyPtr_, it->second.front().second.keySize_);
             vector<string> operandList;
-            for (auto i = it.second.begin() + 1; i < it.second.end(); i++) {
+            for (auto i = it->second.begin() + 1; i != it->second.end(); i++) {
                 string operandStr(i->second.valuePtr_, i->second.valueSize_);
                 operandList.push_back(operandStr);
             }
             bool mergeStatus = deltaKVMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue);
             if (mergeStatus == false) {
-                debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it.second.size() - 1);
+                debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size() - 1);
                 return false;
             }
-            for (auto index : it.second) {
+            for (auto index : it->second) {
                 objectPairMemPool_->eraseContentFromMemPool(index.second);
                 validObjectNumber--;
             }
-            it.second.clear();
+            it->second.clear();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, it.second.back().second.sequenceNumber_, true, newHandler);
-            it.second.push_back(make_pair(kPutOp, newHandler));
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, it->second.back().second.sequenceNumber_, true, newHandler);
+            it->second.push_back(make_pair(kPutOp, newHandler));
             validObjectNumber++;
-        } else if (it.second.front().first == kMergeOp && it.second.size() >= 2) {
-            string newKeyStr(it.second.front().second.keyPtr_, it.second.front().second.keySize_);
+        } else if (it->second.front().first == kMergeOp && it->second.size() >= 2) {
+            string newKeyStr(it->second.front().second.keyPtr_, it->second.front().second.keySize_);
             vector<string> operandList;
-            for (auto i = it.second.begin(); i < it.second.end(); i++) {
+            for (auto i = it->second.begin(); i != it->second.end(); i++) {
                 string operandStr(i->second.valuePtr_, i->second.valueSize_);
                 operandList.push_back(operandStr);
             }
             vector<string> finalOperandList;
             bool mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(operandList, finalOperandList);
             if (mergeStatus == false) {
-                debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it.second.size());
+                debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size());
                 return false;
             }
-            for (auto index : it.second) {
+            for (auto index : it->second) {
                 objectPairMemPool_->eraseContentFromMemPool(index.second);
                 validObjectNumber--;
             }
-            it.second.clear();
+            it->second.clear();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], it.second.back().second.sequenceNumber_, false, newHandler);
-            it.second.push_back(make_pair(kMergeOp, newHandler));
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], it->second.back().second.sequenceNumber_, false, newHandler);
+            it->second.push_back(make_pair(kMergeOp, newHandler));
             validObjectNumber++;
         }
     }
-    cerr << "Total object number = " << totalObjectNumber << ", valid object number = " << validObjectNumber << endl;
+    // uint32_t counter = 0;
+    // for (auto it = operationsMap->begin(); it != operationsMap->end(); it++) {
+    //     counter += it->second.size();
+    // }
+    // cerr << "Total object number = " << totalObjectNumber << ", valid object number = " << validObjectNumber << ", map size = " << operationsMap->size() << ", object number in map = " << counter << endl;
     return true;
 }
 
@@ -1860,25 +1864,21 @@ void DeltaKV::processBatchedOperationsWorker()
         }
         unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
-            std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
             oneBufferDuringProcessFlag_ = true;
+            std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
             if (deltaKVRunningMode_ != kBatchedWithPlainRocksDB) {
                 performInBatchedBufferDeduplication(currentHandler);
             }
             vector<mempoolHandler_t> handlerToValueStoreVec, handlerToDeltaStoreVec;
-            uint32_t validObjectCounter = 0;
             for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
                 for (auto dequeIt : it->second) {
-                    validObjectCounter++;
                     if (dequeIt.first == kPutOp) {
                         handlerToValueStoreVec.push_back(dequeIt.second);
                     }
                     handlerToDeltaStoreVec.push_back(dequeIt.second);
                 }
             }
-            cerr << "After process, valid object number = " << validObjectCounter << endl;
-            // bool putToIndexStoreStatus = false;
             bool putToDeltaStoreStatus = false;
             bool putToValueStoreStatus = false;
             switch (deltaKVRunningMode_) {
@@ -1937,7 +1937,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 // process value
                 if (useInternalRocksDBBatchOperationsFlag_ == false) {
                     for (auto valueIt = handlerToValueStoreVec.begin(); valueIt != handlerToValueStoreVec.end(); valueIt++) {
-                        if (valueIt->valueSize_ < valueExtractSize_) {
+                        if (valueIt->valueSize_ <= valueExtractSize_) {
                             char writeInternalValueBuffer[sizeof(internalValueType) + valueIt->valueSize_];
                             internalValueType currentInternalValueType;
                             currentInternalValueType.mergeFlag_ = false;
@@ -1961,7 +1961,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 } else {
                     rocksdb::WriteBatch batch;
                     for (auto valueIt = handlerToValueStoreVec.begin(); valueIt != handlerToValueStoreVec.end(); valueIt++) {
-                        if (valueIt->valueSize_ < valueExtractSize_) {
+                        if (valueIt->valueSize_ <= valueExtractSize_) {
                             char writeInternalValueBuffer[sizeof(internalValueType) + valueIt->valueSize_];
                             internalValueType currentInternalValueType;
                             currentInternalValueType.mergeFlag_ = false;
@@ -1983,14 +1983,14 @@ void DeltaKV::processBatchedOperationsWorker()
                 vector<bool> separateFlagVec;
                 vector<mempoolHandler_t> notSeparatedDeltasVec;
                 for (auto deltaIt = handlerToDeltaStoreVec.begin(); deltaIt != handlerToDeltaStoreVec.end(); deltaIt++) {
-                    if (deltaIt->valueSize_ < deltaExtractSize_ && deltaIt->isAnchorFlag_ == false) {
+                    if (deltaIt->valueSize_ <= deltaExtractSize_ && deltaIt->isAnchorFlag_ == false) {
                         separateFlagVec.push_back(false);
                         notSeparatedDeltasVec.push_back(*deltaIt);
                         handlerToDeltaStoreVec.erase(deltaIt);
                     }
                 }
-                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToValueStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
-                STAT_PROCESS(putToValueStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_INDEXSTORE);
+                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
+                STAT_PROCESS(putToValueStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(handlerToValueStoreVec), StatsType::DELTAKV_PUT_INDEXSTORE);
                 if (putToDeltaStoreStatus == true && putToValueStoreStatus == true) {
                     if (useInternalRocksDBBatchOperationsFlag_ == false) {
                         auto separatedID = 0, notSeparatedID = 0;
@@ -2085,7 +2085,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 // process value
                 if (useInternalRocksDBBatchOperationsFlag_ == false) {
                     for (auto valueIt = handlerToValueStoreVec.begin(); valueIt != handlerToValueStoreVec.end(); valueIt++) {
-                        if (valueIt->valueSize_ < valueExtractSize_) {
+                        if (valueIt->valueSize_ <= valueExtractSize_) {
                             char writeInternalValueBuffer[sizeof(internalValueType) + valueIt->valueSize_];
                             internalValueType currentInternalValueType;
                             currentInternalValueType.mergeFlag_ = false;
@@ -2109,7 +2109,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 } else {
                     rocksdb::WriteBatch batch;
                     for (auto valueIt = handlerToValueStoreVec.begin(); valueIt != handlerToValueStoreVec.end(); valueIt++) {
-                        if (valueIt->valueSize_ < valueExtractSize_) {
+                        if (valueIt->valueSize_ <= valueExtractSize_) {
                             char writeInternalValueBuffer[sizeof(internalValueType) + valueIt->valueSize_];
                             internalValueType currentInternalValueType;
                             currentInternalValueType.mergeFlag_ = false;
@@ -2183,14 +2183,14 @@ void DeltaKV::processBatchedOperationsWorker()
                 vector<bool> separateFlagVec;
                 vector<mempoolHandler_t> notSeparatedDeltasVec;
                 for (auto deltaIt = handlerToDeltaStoreVec.begin(); deltaIt != handlerToDeltaStoreVec.end(); deltaIt++) {
-                    if (deltaIt->valueSize_ < deltaExtractSize_ && deltaIt->isAnchorFlag_ == false) {
+                    if (deltaIt->valueSize_ <= deltaExtractSize_ && deltaIt->isAnchorFlag_ == false) {
                         separateFlagVec.push_back(false);
                         notSeparatedDeltasVec.push_back(*deltaIt);
                         handlerToDeltaStoreVec.erase(deltaIt);
                     }
                 }
-                bool putToDeltaStoreStatus = false;
-                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToValueStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
+                cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << endl;
+                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
                 if (putToDeltaStoreStatus == true) {
                     rocksdb::WriteOptions batchedWriteOperation;
                     batchedWriteOperation.sync = false;
@@ -2316,9 +2316,11 @@ void DeltaKV::processBatchedOperationsWorker()
                         debug_info("Write underlying rocksdb for %lu keys done \n", handlerToDeltaStoreVec.size());
                     }
                     STAT_PROCESS(pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
-                    StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_KV_KD, tv);
-                    break;
+                    StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_KD, tv);
+                } else {
+                    debug_error("[ERROR] could not put %zu object into delta store, as well as not separated object number = %zu\n", handlerToDeltaStoreVec.size(), notSeparatedDeltasVec.size());
                 }
+                break;
             }
             default:
                 debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
@@ -2326,14 +2328,14 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             // update write buffers
             debug_info("process batched contents done, start update write buffer's map, target update key number = %lu\n", handlerToDeltaStoreVec.size());
-            uint32_t erasedObjectCounter = 0;
+            // uint32_t erasedObjectCounter = 0;
             for (auto index : *currentHandler) {
                 for (auto it : index.second) {
-                    erasedObjectCounter++;
+                    // erasedObjectCounter++;
                     objectPairMemPool_->eraseContentFromMemPool(it.second);
                 }
             }
-            cerr << "Erased object number = " << erasedObjectCounter << endl;
+            // cerr << "Erased object number = " << erasedObjectCounter << endl;
             currentHandler->clear();
             oneBufferDuringProcessFlag_ = false;
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
