@@ -59,23 +59,13 @@ public:
     bool SingleDelete(const string& key);
 
 private:
+    KeyValueMemPool* objectPairMemPool_ = nullptr;
     // batched write
-    deque<tuple<DBOperationType, string, string, uint32_t>>* writeBatchDeque[2]; // operation type, key, value, 2 working queue
-    typedef struct writeBatchSearch_t {
-        DBOperationType op_;
-        string value_;
-        uint32_t sequenceNumber_;
-        writeBatchSearch_t(DBOperationType op, string value, uint32_t sequenceNumber)
-        {
-            op_ = op;
-            value_ = value;
-            sequenceNumber_ = sequenceNumber;
-        };
-    } writeBatchSearch_t;
-    unordered_map<string, deque<writeBatchSearch_t>> writeBatchMapForSearch_[2]; // key to <operation type, value>
+    unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
-    messageQueue<deque<tuple<DBOperationType, string, string, uint32_t>>*>* notifyWriteBatchMQ_ = nullptr;
+    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
+    uint64_t batchedOperationsCounter[2] = { 0UL, 0UL };
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
@@ -91,35 +81,35 @@ private:
     DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
 
     // operations
-    bool PutWithWriteBatch(const string& key, const string& value);
-    bool MergeWithWriteBatch(const string& key, const string& value);
+    bool PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithWriteBatch(const string& key, string* value);
 
-    bool PutWithPlainRocksDB(const string& key, const string& value);
-    bool MergeWithPlainRocksDB(const string& key, const string& value);
+    bool PutWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithPlainRocksDB(const string& key, string* value);
 
-    bool PutWithOnlyValueStore(const string& key, const string& value);
-    bool MergeWithOnlyValueStore(const string& key, const string& value);
+    bool PutWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithOnlyDeltaStore(const string& key, const string& value);
-    bool MergeWithOnlyDeltaStore(const string& key, const string& value);
+    bool PutWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithValueAndDeltaStore(const string& key, const string& value);
-    bool MergeWithValueAndDeltaStore(const string& key, const string& value);
+    bool PutWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
+    bool MergeWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
     bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool GetFromBufferedOperations(const string& keyStr, string* value, vector<string>& resultMergeOperatorsVec);
     bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
-    bool performInBatchedBufferDeduplication(deque<tuple<DBOperationType, string, string, uint32_t>>*& operationsQueue);
 
     vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
     vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
     vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
+
+    bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
@@ -130,6 +120,8 @@ private:
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
+    uint64_t deltaExtractSize_ = 0;
+    uint64_t valueExtractSize_ = 0;
     std::shared_mutex DeltaKVOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;

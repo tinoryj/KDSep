@@ -41,9 +41,9 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/sn640/Exp3/RunDB"
-DB_Loaded_Path="/mnt/sn640/Exp3/BackupDB"
-ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
+DB_Working_Path="/mnt/lvm/Exp3/RunDB"
+DB_Loaded_Path="/mnt/lvm/Exp3/BackupDB"
+ResultLogFolder="/mnt/lvm/Exp3/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
@@ -115,9 +115,9 @@ for param in $*; do
         bucketNumber=`echo $param | sed 's/bucketNum//g'`
     elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
-        DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
-        DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
-        ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
+        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
+        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
+        ResultLogFolder="/mnt/lvm/Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
         fi

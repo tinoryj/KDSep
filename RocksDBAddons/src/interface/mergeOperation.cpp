@@ -53,10 +53,12 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(vector<string> operandList, v
             operandMap.insert(make_pair(index, updateContentStr));
         }
     }
+    string finalOperator = "";
     for (auto it : operandMap) {
-        string finalOperator = to_string(it.first) + "," + it.second;
-        finalOperandList.push_back(finalOperator);
+        finalOperator.append(to_string(it.first) + "," + it.second + ",");
     }
+    finalOperator = finalOperator.substr(0, finalOperandList.size() - 1);
+    finalOperandList.push_back(finalOperator);
     return true;
 }
 

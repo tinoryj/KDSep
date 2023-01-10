@@ -6,7 +6,7 @@
 #include <string>
 
 #include "core/db.h"
-//#include "leveldb/db.h"
+// #include "leveldb/db.h"
 
 using std::string;
 
@@ -55,6 +55,7 @@ class ExternDBConfig {
     uint64_t blockSize;
     uint64_t minBlobSize;
     bool cacheIndexAndFilterBlocks_;
+    uint64_t maxKeyValueSize_;
 
     struct {
         uint64_t level;
@@ -102,8 +103,9 @@ class ExternDBConfig {
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
-	blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
-        minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 1024);
+        maxKeyValueSize_ = pt_.get<uint64_t>("config.maxKeyValueSize_", 4096);
+        minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 800);
+        blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
     }
 
@@ -243,7 +245,10 @@ class ExternDBConfig {
         return enableRawRocksDBBatch_;
     }
     uint64_t getBlockSize() {
-	return blockSize;
+        return blockSize;
+    }
+    uint64_t getMaxKeyValueSize() {
+        return maxKeyValueSize_;
     }
     uint64_t getMinBlobSize() {
 	return minBlobSize;

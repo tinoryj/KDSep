@@ -41,9 +41,9 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/sn640/Exp3/RunDB"
-DB_Loaded_Path="/mnt/sn640/Exp3/BackupDB"
-ResultLogFolder="/mnt/sn640/Exp3/ResultLogs"
+DB_Working_Path="./Exp3/RunDB"
+DB_Loaded_Path="./Exp3/BackupDB"
+ResultLogFolder="./Exp3/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
@@ -120,9 +120,9 @@ for param in $*; do
         bucketNumber=`echo $param | sed 's/bucketNum//g'`
     elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
-        DB_Working_Path="/mnt/sn640/Exp$ExpID/RunDB"
-        DB_Loaded_Path="/mnt/sn640/Exp$ExpID/BackupDB"
-        ResultLogFolder="/mnt/sn640/Exp$ExpID/ResultLogs"
+        DB_Working_Path="./Exp$ExpID/RunDB"
+        DB_Loaded_Path="./Exp$ExpID/BackupDB"
+        ResultLogFolder="./Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
         fi
@@ -159,7 +159,7 @@ if [[ "$usekd" == "true" ]]; then
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
-    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheSize" temp.ini
+    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = 0" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 
 elif [[ "$usebkvkd" == "true" ]]; then

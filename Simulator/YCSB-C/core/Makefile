@@ -1,5 +1,5 @@
-CC=g++
-CFLAGS=-std=c++11 -c -g -Wall
+CC=icpx
+CFLAGS=-O3 -std=c++17 -c -g
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
 

@@ -172,7 +172,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
     }
     bbto.block_size = config.getBlockSize();
-    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks(); 
+    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks();
 
     if (keyValueSeparation == true) {
         cerr << "Enabled vLog based KV separation" << endl;
@@ -215,6 +215,12 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.internalRocksDBBatchedOperation_ = config.getEnableRoaRocksDBBatch();
     options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
+
+    if (options_.enable_batched_operations_ == true && options_.batched_operations_number_ > 0) {
+        options_.deltaStore_mem_pool_object_number_ = ceil(options_.batched_operations_number_ * 3);
+        long pagesize = sysconf(_SC_PAGE_SIZE);
+        options_.deltaStore_mem_pool_object_size_ = ceil(config.getMaxKeyValueSize() / pagesize) * pagesize;
+    }
 
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;

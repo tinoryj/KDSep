@@ -1,6 +1,6 @@
 #include "indexBasedStore/deviceManager.hh"
-#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
+#include "utils/statsRecorder.hh"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -67,7 +67,9 @@ void* DeviceManager::checkBufferSize(len_t neededSize, offset_t offset, len_t& b
     }
 
     int ret = posix_memalign(&buf, _pageSize, neededSize);
-    assert(ret == 0);
+    if (ret != 0) {
+        debug_error("[ERROR] check buffer size error, ret = %d, page size = %d, need size = %lu, err %s\n", ret, _pageSize, neededSize, strerror(errno));
+    }
     bufsize = neededSize;
 
     return buf;
@@ -152,8 +154,8 @@ bool DeviceManager::isLogSegment(segment_id_t segmentId)
 
 len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t diskOffset, len_t length, bool isWrite)
 {
-    debug_trace("accessDisk offset %lu length %lu write %d [%x%x]\n", diskOffset, length, (int)isWrite, 
-            (isWrite) ? buf[0] : ' ', (isWrite) ? buf[1] : ' ');
+    debug_trace("accessDisk offset %lu length %lu write %d [%x%x]\n", diskOffset, length, (int)isWrite,
+        (isWrite) ? buf[0] : ' ', (isWrite) ? buf[1] : ' ');
 
     // check if disk id is valid
     if (diskId == INVALID_DISK || _diskInfo.count(diskId) < 0) {
@@ -177,7 +179,7 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
     len_t bufsize;
 
     if (_directIO) {
-        directbuf = checkBufferSize(length, diskOffset, bufsize); 
+        directbuf = checkBufferSize(length, diskOffset, bufsize);
         memset(directbuf, 0, bufsize);
         if (isWrite) {
             memcpy((char*)directbuf + diskOffset % _pageSize, buf, length);
