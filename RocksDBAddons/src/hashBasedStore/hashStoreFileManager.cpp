@@ -1124,7 +1124,7 @@ uint64_t HashStoreFileManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap)
+pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap)
 {
     uint64_t processedKeepObjectNumber = 0;
     uint64_t processedTotalObjectNumber = 0;
@@ -1132,7 +1132,6 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     uint64_t currentProcessLocationIndex = 0;
     // skip file header
     currentProcessLocationIndex += sizeof(hashStoreFileHeader);
-    unordered_map<str_t, pair<vector<string>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> resultMapInternal;
     while (currentProcessLocationIndex != contentSize) {
         processedTotalObjectNumber++;
         hashStoreRecordHeader currentObjectRecordHeader;
@@ -1148,37 +1147,35 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
         currentKey.size_ = currentObjectRecordHeader.key_size_;
         currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
         if (currentObjectRecordHeader.is_anchor_ == true) {
-            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
-                processedKeepObjectNumber -= (resultMapInternal.at(currentKey).first.size() + 1);
-                resultMapInternal.at(currentKey).first.clear();
-                resultMapInternal.at(currentKey).second.clear();
+            auto mapIndex = resultMap.find(currentKey);
+            if (mapIndex != resultMap.end()) {
+                processedKeepObjectNumber -= (mapIndex->second.first.size() + 1);
+                mapIndex->second.first.clear();
+                mapIndex->second.second.clear();
             }
         } else {
             processedKeepObjectNumber++;
-            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
-                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
-                resultMapInternal.at(currentKey).first.push_back(currentValueStr);
-                resultMapInternal.at(currentKey).second.push_back(currentObjectRecordHeader);
+            auto mapIndex = resultMap.find(currentKey);
+            if (mapIndex != resultMap.end()) {
+                str_t currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                mapIndex->second.first.push_back(currentValueStr);
+                mapIndex->second.second.push_back(currentObjectRecordHeader);
             } else {
-                vector<string> newValuesRelatedToCurrentKeyVec;
+                vector<str_t> newValuesRelatedToCurrentKeyVec;
                 vector<hashStoreRecordHeader> newRecorderHeaderVec;
-                string currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
+                str_t currentValueStr(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.value_size_);
                 newValuesRelatedToCurrentKeyVec.push_back(currentValueStr);
                 newRecorderHeaderVec.push_back(currentObjectRecordHeader);
-                resultMapInternal.insert(make_pair(currentKey, make_pair(newValuesRelatedToCurrentKeyVec, newRecorderHeaderVec)));
+                resultMap.insert(make_pair(currentKey, make_pair(newValuesRelatedToCurrentKeyVec, newRecorderHeaderVec)));
             }
             currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
         }
-    }
-    for (auto mapIt : resultMapInternal) {
-        string currentKey(mapIt.first.data_, mapIt.first.size_);
-        resultMap.insert(make_pair(currentKey, mapIt.second));
     }
     debug_info("deconstruct current file done, find different key number = %lu, total processed object number = %lu, target keep object number = %lu\n", resultMap.size(), processedTotalObjectNumber, processedKeepObjectNumber);
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
-bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag)
+bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -1206,10 +1203,10 @@ bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* curre
             newObjectNumber++;
             memcpy(currentWriteBuffer + currentProcessLocationIndex, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
             currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
-            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.c_str(), keyIt.first.size());
-            currentProcessLocationIndex += keyIt.first.size();
-            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
-            currentProcessLocationIndex += keyIt.second.first[valueAndRecordHeaderIt].size();
+            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.first.data_, keyIt.first.size_);
+            currentProcessLocationIndex += keyIt.first.size_;
+            memcpy(currentWriteBuffer + currentProcessLocationIndex, keyIt.second.first[valueAndRecordHeaderIt].data_, keyIt.second.first[valueAndRecordHeaderIt].size_);
+            currentProcessLocationIndex += keyIt.second.first[valueAndRecordHeaderIt].size_;
         }
     }
     // add gc done flag into bucket file
@@ -1260,34 +1257,34 @@ bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* curre
     }
 }
 
-bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetPrefixBitNumber, bool fileContainsReWriteKeysFlag)
+bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetPrefixBitNumber, bool fileContainsReWriteKeysFlag)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
     string previousPrefixStr;
-    generateHashBasedPrefix((char*)gcResultMap.begin()->first.c_str(), gcResultMap.begin()->first.size(), previousPrefixStr);
+    generateHashBasedPrefix((char*)gcResultMap.begin()->first.data_, gcResultMap.begin()->first.size_, previousPrefixStr);
     previousPrefixStr = previousPrefixStr.substr(0, targetPrefixBitNumber - 1);
-    unordered_map<string, pair<unordered_map<string, uint64_t>, uint64_t>> tempPrefixToKeysVecAndTotalSizeMap;
+    unordered_map<string, pair<unordered_map<str_t, uint64_t, mapHashKeyForStr_t, mapEqualKeForStr_t>, uint64_t>> tempPrefixToKeysVecAndTotalSizeMap;
     StatsRecorder::getInstance()->timeProcess(StatsType::SPLIT_HANDLER, tv);
     gettimeofday(&tv, 0);
     for (auto keyIt : gcResultMap) {
         string prefixTempStr;
-        generateHashBasedPrefix((char*)keyIt.first.c_str(), keyIt.first.size(), prefixTempStr);
+        generateHashBasedPrefix(keyIt.first.data_, keyIt.first.size_, prefixTempStr);
         prefixTempStr = prefixTempStr.substr(0, targetPrefixBitNumber);
         if (tempPrefixToKeysVecAndTotalSizeMap.find(prefixTempStr) != tempPrefixToKeysVecAndTotalSizeMap.end()) {
             // current prefix exist, update
             uint64_t currentKeyTargetAllocateSpace = 0;
             for (auto valueIt : keyIt.second.first) {
-                currentKeyTargetAllocateSpace += (keyIt.first.size() + valueIt.size() + sizeof(hashStoreRecordHeader));
+                currentKeyTargetAllocateSpace += (keyIt.first.size_ + valueIt.size_ + sizeof(hashStoreRecordHeader));
             }
             tempPrefixToKeysVecAndTotalSizeMap.at(prefixTempStr).first.insert(make_pair(keyIt.first, currentKeyTargetAllocateSpace));
             tempPrefixToKeysVecAndTotalSizeMap.at(prefixTempStr).second += currentKeyTargetAllocateSpace;
         } else {
             uint64_t currentKeyTargetAllocateSpace = 0;
             for (auto valueIt : keyIt.second.first) {
-                currentKeyTargetAllocateSpace += (keyIt.first.size() + valueIt.size() + sizeof(hashStoreRecordHeader));
+                currentKeyTargetAllocateSpace += (keyIt.first.size_ + valueIt.size_ + sizeof(hashStoreRecordHeader));
             }
-            pair<unordered_map<string, uint64_t>, uint64_t> tempNewKeyMap;
+            pair<unordered_map<str_t, uint64_t, mapHashKeyForStr_t, mapEqualKeForStr_t>, uint64_t> tempNewKeyMap;
             tempNewKeyMap.first.insert(make_pair(keyIt.first, currentKeyTargetAllocateSpace));
             tempNewKeyMap.second += currentKeyTargetAllocateSpace;
             tempPrefixToKeysVecAndTotalSizeMap.insert(make_pair(prefixTempStr, tempNewKeyMap));
@@ -1319,14 +1316,14 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler* current
         uint64_t currentWritePos = sizeof(hashStoreFileHeader);
         currentFileHandlerPtr->total_object_bytes_ += sizeof(hashStoreFileHeader);
         for (auto keyToSizeIt : prefixIt.second.first) {
-            uint64_t keySize = keyToSizeIt.first.size();
+            uint64_t keySize = keyToSizeIt.first.size_;
             for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < gcResultMap.at(keyToSizeIt.first).first.size(); valueAndRecordHeaderIt++) {
                 memcpy(currentWriteBuffer + currentWritePos, &gcResultMap.at(keyToSizeIt.first).second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
                 currentWritePos += sizeof(hashStoreRecordHeader);
-                memcpy(currentWriteBuffer + currentWritePos, keyToSizeIt.first.c_str(), keySize);
+                memcpy(currentWriteBuffer + currentWritePos, keyToSizeIt.first.data_, keySize);
                 currentWritePos += keySize;
-                uint64_t valueSize = gcResultMap.at(keyToSizeIt.first).first[valueAndRecordHeaderIt].size();
-                memcpy(currentWriteBuffer + currentWritePos, gcResultMap.at(keyToSizeIt.first).first[valueAndRecordHeaderIt].c_str(), valueSize);
+                uint64_t valueSize = gcResultMap.at(keyToSizeIt.first).first[valueAndRecordHeaderIt].size_;
+                memcpy(currentWriteBuffer + currentWritePos, gcResultMap.at(keyToSizeIt.first).first[valueAndRecordHeaderIt].data_, valueSize);
                 currentWritePos += valueSize;
                 currentFileHandlerPtr->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keySize + valueSize);
                 currentFileHandlerPtr->total_object_count_++;
@@ -1449,7 +1446,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     STAT_PROCESS(readStatus1 = currentHandlerPtr1->file_operation_func_ptr_->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes_, currentHandlerPtr1->total_object_bytes_, syncStatistics_);
     // process GC contents
-    unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap1;
+    unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap1;
     pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes_, gcResultMap1);
     debug_info("Merge GC read file ID 1 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr1->target_file_id_, remainObjectNumberPair1.first, remainObjectNumberPair1.second);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_FILE1, tv);
@@ -1461,7 +1458,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     STAT_PROCESS(readStatus2 = currentHandlerPtr2->file_operation_func_ptr_->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_), StatsType::DELTAKV_GC_READ);
     StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes_, currentHandlerPtr2->total_object_bytes_, syncStatistics_);
     // process GC contents
-    unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap2;
+    unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap2;
     pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes_, gcResultMap2);
     debug_info("Merge GC read file ID 2 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr2->target_file_id_, remainObjectNumberPair2.first, remainObjectNumberPair2.second);
 
@@ -1471,12 +1468,12 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
     uint64_t targetWriteSize = 0;
     for (auto& keyIt : gcResultMap1) {
         for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
-            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + keyIt.second.first[valueAndRecordHeaderIt].size());
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[valueAndRecordHeaderIt].size_);
         }
     }
     for (auto& keyIt : gcResultMap2) {
         for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
-            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + keyIt.second.first[valueAndRecordHeaderIt].size());
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[valueAndRecordHeaderIt].size_);
         }
     }
     targetWriteSize += (sizeof(hashStoreRecordHeader) + sizeof(hashStoreFileHeader));
@@ -1489,10 +1486,10 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
         for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
             memcpy(currentWriteBuffer + currentWritePos, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
             currentWritePos += sizeof(hashStoreRecordHeader);
-            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.c_str(), keyIt.first.size());
-            currentWritePos += keyIt.first.size();
-            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
-            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size();
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.data_, keyIt.first.size_);
+            currentWritePos += keyIt.first.size_;
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].data_, keyIt.second.first[valueAndRecordHeaderIt].size_);
+            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size_;
             mergedFileHandler->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
             mergedFileHandler->total_object_count_++;
         }
@@ -1501,10 +1498,10 @@ bool HashStoreFileManager::twoAdjacentFileMerge(hashStoreFileMetaDataHandler* cu
         for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
             memcpy(currentWriteBuffer + currentWritePos, &keyIt.second.second[valueAndRecordHeaderIt], sizeof(hashStoreRecordHeader));
             currentWritePos += sizeof(hashStoreRecordHeader);
-            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.c_str(), keyIt.first.size());
-            currentWritePos += keyIt.first.size();
-            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].c_str(), keyIt.second.first[valueAndRecordHeaderIt].size());
-            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size();
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.first.data_, keyIt.first.size_);
+            currentWritePos += keyIt.first.size_;
+            memcpy(currentWriteBuffer + currentWritePos, keyIt.second.first[valueAndRecordHeaderIt].data_, keyIt.second.first[valueAndRecordHeaderIt].size_);
+            currentWritePos += keyIt.second.first[valueAndRecordHeaderIt].size_;
             mergedFileHandler->total_object_bytes_ += (sizeof(hashStoreRecordHeader) + keyIt.second.second[valueAndRecordHeaderIt].key_size_ + keyIt.second.second[valueAndRecordHeaderIt].value_size_);
             mergedFileHandler->total_object_count_++;
         }
@@ -1765,7 +1762,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 continue;
             }
             // process GC contents
-            unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>> gcResultMap;
+            unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, gcResultMap);
 
             bool fileContainsReWriteKeysFlag = false;
@@ -1774,15 +1771,16 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             uint64_t targetValidObjectSize = 0;
             for (auto keyIt : gcResultMap) {
                 if (enableWriteBackDuringGCFlag_ == true) {
-                    debug_info("key = %s has %lu deltas\n", keyIt.first.c_str(), keyIt.second.first.size());
+                    debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
                     if (keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) {
                         fileContainsReWriteKeysFlag = true;
-                        writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(keyIt.first, "", 0);
+                        string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
+                        writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(currentKeyForWriteBack, "", 0);
                         targetWriteBackVec.push_back(newWriteBackObject);
                     }
                 }
                 for (auto valueIt : keyIt.second.first) {
-                    targetValidObjectSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size() + valueIt.size());
+                    targetValidObjectSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + valueIt.size_);
                 }
             }
             uint64_t targetFileSize = targetValidObjectSize + sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader);
