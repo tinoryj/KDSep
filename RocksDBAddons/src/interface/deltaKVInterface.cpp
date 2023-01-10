@@ -1987,6 +1987,8 @@ void DeltaKV::processBatchedOperationsWorker()
                         separateFlagVec.push_back(false);
                         notSeparatedDeltasVec.push_back(*deltaIt);
                         handlerToDeltaStoreVec.erase(deltaIt);
+                    } else {
+                        separateFlagVec.push_back(true);
                     }
                 }
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
@@ -2187,6 +2189,8 @@ void DeltaKV::processBatchedOperationsWorker()
                         separateFlagVec.push_back(false);
                         notSeparatedDeltasVec.push_back(*deltaIt);
                         handlerToDeltaStoreVec.erase(deltaIt);
+                    } else {
+                        separateFlagVec.push_back(true);
                     }
                 }
                 // cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << endl;
