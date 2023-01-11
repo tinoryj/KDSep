@@ -32,7 +32,7 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool IndexStoreInterface::put(mempoolHandler_t& objectPairMemPoolHandler, bool sync)
+bool IndexStoreInterface::put(mempoolHandler_t objectPairMemPoolHandler, bool sync)
 {
     externalIndexInfo valueLoc;
     char buffer[sizeof(uint32_t) + objectPairMemPoolHandler.valueSize_];
@@ -42,7 +42,7 @@ bool IndexStoreInterface::put(mempoolHandler_t& objectPairMemPoolHandler, bool s
     return true;
 }
 
-bool IndexStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHandlerVec)
+bool IndexStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
 {
     for (auto i = 0; i < objectPairMemPoolHandlerVec.size(); i++) {
         put(objectPairMemPoolHandlerVec[i], false);

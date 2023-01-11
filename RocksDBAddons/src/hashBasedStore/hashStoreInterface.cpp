@@ -66,7 +66,7 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
+bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
 {
     if (objectPairMempoolHandler.isAnchorFlag_ == true && anyBucketInitedFlag_ == false) {
         return true;
@@ -100,7 +100,7 @@ bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
     }
 }
 
-bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHandlerVec)
+bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
 {
     bool allAnchoarsFlag = true;
     for (auto it : objectPairMemPoolHandlerVec) {

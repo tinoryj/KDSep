@@ -1,4 +1,4 @@
-CC=icpx
+CC=clang++
 SEARCH_LIBRARY_ROCKSDB=/opt/rocksdb-7.7.3/include/
 SEARCH_LIBRARY_DELTAKV=$(shell pwd)/../../RocksDBAddons/include/
 # SEARCH_LIBRARY_LEVELDB=$(shell pwd)/../Databases/LevelDB/include/

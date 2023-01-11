@@ -17,7 +17,7 @@ echo "<===================== Loading the database start =====================>"
 echo "<===================== Loading the database done =====================>"
 # exit
 echo "<===================== Benchmark the database start =====================>"
-./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv.ini #2>test.log
+./ycsbc -db rocksdb -dbfilename $DB_Name -threads $Thread_number -P workloadTemp.spec -phase run -configpath deltakv.ini 2>test.log
 echo "<===================== Benchmark the database done =====================>"
 
 # -db rocksdb -dbfilename loadedDB -threads 1 -P workloadTemp.spec -phase load -configpath deltakv.ini
