@@ -614,7 +614,9 @@ bool DeltaKV::GetWithOnlyValueStore(const string& key, string* value, uint32_t& 
                 finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
             }
         }
-        if (deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value) != true) {
+        bool mergeStatus;
+        STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
+        if (mergeStatus != true) {
             debug_error("[ERROR] DeltaKV merge operation fault, rawValueStr = %s, operand number = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
             return false;
         } else {
@@ -789,7 +791,8 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
                     return false;
                 } else {
                     debug_trace("Start DeltaKV merge operation, internalRawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", internalRawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                    bool mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value);
+                    bool mergeOperationStatus;
+                    STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
                     if (mergeOperationStatus == true) {
                         if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                             writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
@@ -990,7 +993,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value, uint32
                         return false;
                     } else {
                         debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                        deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
+                        STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
                         if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                             writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                             writeBackOperationsQueue_->push(newPair);
@@ -1006,7 +1009,7 @@ bool DeltaKV::GetWithValueAndDeltaStore(const string& key, string* value, uint32
                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                 }
                 debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
                 if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                     writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                     writeBackOperationsQueue_->push(newPair);
@@ -1171,7 +1174,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 }
             }
             if (findNewValueFlag == true) {
-                deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE, tv0);
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
@@ -1202,7 +1205,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 string tempValueStr;
                 tempValueStr.assign(*value);
                 value->clear();
-                deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ, tvAll);
             }
             if (enableKeyValueCache_ == true) {
@@ -1231,7 +1234,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 string tempValueStr;
                 tempValueStr.assign(*value);
                 value->clear();
-                deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
             }
             if (enableKeyValueCache_ == true) {
                 string cacheKey = key;
@@ -1259,7 +1262,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 string tempValueStr;
                 tempValueStr.assign(*value);
                 value->clear();
-                deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
             }
             if (enableKeyValueCache_ == true) {
                 string cacheKey = key;
@@ -1284,7 +1287,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 string tempValueStr;
                 tempValueStr.assign(*value);
                 value->clear();
-                deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
             }
             if (enableKeyValueCache_ == true) {
                 string cacheKey = key;
@@ -1321,7 +1324,7 @@ bool DeltaKV::Merge(const string& key, const string& value)
             string finalValue;
             vector<string> operandListForCacheUpdate;
             operandListForCacheUpdate.push_back(value);
-            deltaKVMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue);
+            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue), StatsType::FULL_MERGE);
             keyToValueListCache_->getFromCache(cacheKey).assign(finalValue);
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_MERGE, tv);
         }
@@ -1496,7 +1499,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
                 getNewValueStrSuccessFlag = true;
             } else {
                 newValueStr.assign(tempRawValueStr);
@@ -1510,7 +1513,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
                 getNewValueStrSuccessFlag = true;
             } else {
                 newValueStr.assign(tempRawValueStr);
@@ -1524,7 +1527,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
                 getNewValueStrSuccessFlag = true;
             } else {
                 newValueStr.assign(tempRawValueStr);
@@ -1538,7 +1541,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
                 getNewValueStrSuccessFlag = true;
             } else {
                 newValueStr.assign(tempRawValueStr);
@@ -1821,7 +1824,8 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
                 string operandStr(i->second.valuePtr_, i->second.valueSize_);
                 operandList.push_back(operandStr);
             }
-            bool mergeStatus = deltaKVMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue);
+            bool mergeStatus;
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue), StatsType::FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size() - 1);
                 return false;
@@ -1846,7 +1850,8 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
                 operandList.push_back(operandStr);
             }
             vector<string> finalOperandList;
-            bool mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(operandList, finalOperandList);
+            bool mergeStatus;
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(operandList, finalOperandList), StatsType::PARTIAL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size());
                 return false;
