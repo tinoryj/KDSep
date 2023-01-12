@@ -356,7 +356,6 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     echo "output at $output_file"
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
 #    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
-    exit
     loaded="true"
     echo "output at $output_file"
     if [[ $? -ne 0 ]]; then

@@ -137,13 +137,13 @@ IOStatus RandomAccessFileReader::Read(
           orig_offset = aligned_offset + buf.CurrentSize();
         }
 
-        if (print_cnt < 20) {
+        if (print_cnt < 5) {
             fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu perf_level = %d, met = %lu\n", 
                     aligned_offset, offset, n, aligned_offset + read_size,
                     read_size, (int)prev_perf_level, 
 		    iostats_context.read_nanos);
             print_cnt++;
-        } else if (print_cnt < 30 && (n % alignment > 0 || offset % alignment > 0)) {
+        } else if (print_cnt < 10 && (n % alignment > 0 || offset % alignment > 0)) {
             fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
                     aligned_offset, offset, n, aligned_offset + read_size,
                     read_size);
@@ -254,7 +254,6 @@ IOStatus RandomAccessFileReader::Read(
       *result = Slice(res_scratch, io_s.ok() ? pos : 0);
       total_read_size = result->size();
     }
-    fprintf(stderr, "random access file this %p stats %p\n", this, stats_); 
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {

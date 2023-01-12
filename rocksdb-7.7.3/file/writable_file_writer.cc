@@ -24,6 +24,11 @@
 #include "util/rate_limiter.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+uint64_t WritableFileWriter::file_write_micros = 0;
+uint64_t WritableFileWriter::file_fsync_micros = 0;
+uint64_t WritableFileWriter::file_range_sync_micros = 0;
+
 IOStatus WritableFileWriter::Create(const std::shared_ptr<FileSystem>& fs,
                                     const std::string& fname,
                                     const FileOptions& file_opts,
@@ -540,7 +545,7 @@ IOStatus WritableFileWriter::SyncInternal(bool use_fsync) {
   SetPerfLevel(prev_prev_perf_level);
   RecordTick(stats_, FILE_WRITER_FSYNC_MICROS, 
 	  (IOSTATS(fsync_nanos) - prev_fsync_nanos) / 1000); 
-  WritableFileWriter::file_fsync_micros += (IOSTATS(fsync_nanos) - prev_fsync_nanos) / 1000; 
+  file_fsync_micros += (IOSTATS(fsync_nanos) - prev_fsync_nanos) / 1000; 
 
   // The caller will be responsible to call set_seen_error() if s is not OK.
   return s;
@@ -589,7 +594,7 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
   SetPerfLevel(prev_prev_perf_level);
   RecordTick(stats_, FILE_WRITER_RANGE_SYNC_MICROS, 
 	  (IOSTATS(range_sync_nanos) - prev_range_sync_nanos) / 1000); 
-  WritableFileWriter::file_range_sync_micros += 
+  file_range_sync_micros += 
       (IOSTATS(range_sync_nanos) - prev_range_sync_nanos) / 1000; 
   return s;
 }
@@ -698,7 +703,7 @@ IOStatus WritableFileWriter::WriteBuffered(
   SetPerfLevel(prev_prev_perf_level);
   RecordTick(stats_, FILE_WRITER_WRITE_MICROS, 
 	  (IOSTATS(write_nanos) - prev_write_nanos) / 1000); 
-  WritableFileWriter::file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
+  file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
   if (!s.ok()) {
@@ -798,7 +803,7 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(
   SetPerfLevel(prev_prev_perf_level);
   RecordTick(stats_, FILE_WRITER_WRITE_MICROS, 
 	  (IOSTATS(write_nanos) - prev_write_nanos) / 1000); 
-  WritableFileWriter::file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
+  file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
 
   IOSTATS_ADD(bytes_written, left);
   IOSTATS_ADD(counts_written, 1);
