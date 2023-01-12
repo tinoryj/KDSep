@@ -494,6 +494,14 @@ IOStatus WritableFileWriter::SyncWithoutFlush(bool use_fsync) {
 IOStatus WritableFileWriter::SyncInternal(bool use_fsync) {
   // Caller is supposed to check seen_error_
   IOStatus s;
+
+  auto prev_prev_perf_level = GetPerfLevel();
+  uint64_t prev_fsync_nanos = IOSTATS(fsync_nanos);
+  if (prev_prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+      SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
+  }
+
+  {
   IOSTATS_TIMER_GUARD(fsync_nanos);
   TEST_SYNC_POINT("WritableFileWriter::SyncInternal:0");
   auto prev_perf_level = GetPerfLevel();
@@ -528,6 +536,11 @@ IOStatus WritableFileWriter::SyncInternal(bool use_fsync) {
   }
 #endif
   SetPerfLevel(prev_perf_level);
+  }
+  SetPerfLevel(prev_prev_perf_level);
+  RecordTick(stats_, FILE_WRITER_FSYNC_MICROS, 
+	  (IOSTATS(fsync_nanos) - prev_fsync_nanos) / 1000); 
+  WritableFileWriter::file_fsync_micros += (IOSTATS(fsync_nanos) - prev_fsync_nanos) / 1000; 
 
   // The caller will be responsible to call set_seen_error() if s is not OK.
   return s;
@@ -538,6 +551,15 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
     return AssertFalseAndGetStatusForPrevError();
   }
 
+  auto prev_prev_perf_level = GetPerfLevel();
+  uint64_t prev_range_sync_nanos = IOSTATS(range_sync_nanos);
+  if (prev_prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+      SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
+  }
+
+  IOStatus s; 
+
+  {
   IOSTATS_TIMER_GUARD(range_sync_nanos);
   TEST_SYNC_POINT("WritableFileWriter::RangeSync:0");
 #ifndef ROCKSDB_LITE
@@ -548,7 +570,7 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
 #endif
   IOOptions io_options;
   io_options.rate_limiter_priority = writable_file_->GetIOPriority();
-  IOStatus s = writable_file_->RangeSync(offset, nbytes, io_options, nullptr);
+  s = writable_file_->RangeSync(offset, nbytes, io_options, nullptr);
   if (!s.ok()) {
     set_seen_error();
   }
@@ -562,6 +584,13 @@ IOStatus WritableFileWriter::RangeSync(uint64_t offset, uint64_t nbytes) {
     }
   }
 #endif
+  }
+
+  SetPerfLevel(prev_prev_perf_level);
+  RecordTick(stats_, FILE_WRITER_RANGE_SYNC_MICROS, 
+	  (IOSTATS(range_sync_nanos) - prev_range_sync_nanos) / 1000); 
+  WritableFileWriter::file_range_sync_micros += 
+      (IOSTATS(range_sync_nanos) - prev_range_sync_nanos) / 1000; 
   return s;
 }
 
@@ -584,6 +613,12 @@ IOStatus WritableFileWriter::WriteBuffered(
           writable_file_->GetIOPriority(), op_rate_limiter_priority);
   IOOptions io_options;
   io_options.rate_limiter_priority = rate_limiter_priority_used;
+
+  auto prev_prev_perf_level = GetPerfLevel();
+  uint64_t prev_write_nanos = IOSTATS(write_nanos);
+  if (prev_prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+      SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
+  }
 
   while (left > 0) {
     size_t allowed = left;
@@ -647,6 +682,7 @@ IOStatus WritableFileWriter::WriteBuffered(
         set_seen_error();
         return s;
       }
+
     }
 
     IOSTATS_ADD(bytes_written, allowed);
@@ -658,6 +694,11 @@ IOStatus WritableFileWriter::WriteBuffered(
     uint64_t cur_size = flushed_size_.load(std::memory_order_acquire);
     flushed_size_.store(cur_size + allowed, std::memory_order_release);
   }
+
+  SetPerfLevel(prev_prev_perf_level);
+  RecordTick(stats_, FILE_WRITER_WRITE_MICROS, 
+	  (IOSTATS(write_nanos) - prev_write_nanos) / 1000); 
+  WritableFileWriter::file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
   buf_.Size(0);
   buffered_data_crc32c_checksum_ = 0;
   if (!s.ok()) {
@@ -697,6 +738,12 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(
                                              RateLimiter::OpType::kWrite);
       data_size -= tmp_size;
     }
+  }
+
+  auto prev_prev_perf_level = GetPerfLevel();
+  uint64_t prev_write_nanos = IOSTATS(write_nanos);
+  if (prev_prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+      SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
   }
 
   {
@@ -747,6 +794,11 @@ IOStatus WritableFileWriter::WriteBufferedWithChecksum(
       return s;
     }
   }
+
+  SetPerfLevel(prev_prev_perf_level);
+  RecordTick(stats_, FILE_WRITER_WRITE_MICROS, 
+	  (IOSTATS(write_nanos) - prev_write_nanos) / 1000); 
+  WritableFileWriter::file_write_micros += (IOSTATS(write_nanos) - prev_write_nanos) / 1000; 
 
   IOSTATS_ADD(bytes_written, left);
   IOSTATS_ADD(counts_written, 1);

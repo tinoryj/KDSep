@@ -214,7 +214,6 @@ for param in $*; do
             run_suffix=${run_suffix}_$param
         fi
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
-	exit
 	cleanFlag="true"
     elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
@@ -356,6 +355,8 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
     echo "output at $output_file"
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
+#    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
+    exit
     loaded="true"
     echo "output at $output_file"
     if [[ $? -ne 0 ]]; then

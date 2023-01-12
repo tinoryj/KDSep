@@ -118,6 +118,28 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {COMPACT_READ_COUNT, "rocksdb.compact.read.count"},
     {COMPACT_WRITE_COUNT, "rocksdb.compact.write.count"},
     {FLUSH_WRITE_COUNT, "rocksdb.flush.write.count"},
+
+    {COMPACT_READ_NANOS, "rocksdb.compact.read.nanos"},
+    {COMPACT_WRITE_NANOS, "rocksdb.compact.write.nanos"},
+    {COMPACT_FSYNC_NANOS, "rocksdb.compact.fsync.nanos"},
+    {COMPACT_CPU_READ_NANOS, "rocksdb.compact.cpu.read.nanos"},
+    {COMPACT_CPU_WRITE_NANOS, "rocksdb.compact.cpu.write.nanos"},
+
+    {FLUSH_READ_NANOS, "rocksdb.flush.read.nanos"},
+    {FLUSH_WRITE_NANOS, "rocksdb.flush.write.nanos"},
+    {FLUSH_FSYNC_NANOS, "rocksdb.flush.fsync.nanos"},
+    {FLUSH_CPU_READ_NANOS, "rocksdb.flush.cpu.read.nanos"},
+    {FLUSH_CPU_WRITE_NANOS, "rocksdb.flush.cpu.write.nanos"},
+
+    {FILE_READER_READ_MICROS, "rocksdb.file.reader.read.micros"},
+    {FILE_READER_LAST_LEVEL_READ_MICROS, 
+	"rocksdb.file.reader.last.level.read.micros"},
+    {FILE_READER_NON_LAST_LEVEL_READ_MICROS, 
+	"rocksdb.file.reader.non.last.level.read.micros"},
+    {FILE_WRITER_WRITE_MICROS, "rocksdb.file.writer.write.micros"},
+    {FILE_WRITER_FSYNC_MICROS, "rocksdb.file.writer.fsync.micros"},
+    {FILE_WRITER_RANGE_SYNC_MICROS, "rocksdb.file.writer.range.sync.micros"},
+
     {COMPACT_READ_BYTES_MARKED, "rocksdb.compact.read.marked.bytes"},
     {COMPACT_READ_BYTES_PERIODIC, "rocksdb.compact.read.periodic.bytes"},
     {COMPACT_READ_BYTES_TTL, "rocksdb.compact.read.ttl.bytes"},

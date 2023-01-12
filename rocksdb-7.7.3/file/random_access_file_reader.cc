@@ -96,11 +96,15 @@ IOStatus RandomAccessFileReader::Read(
   IOStatus io_s;
   uint64_t elapsed = 0;
   size_t total_read_size = 0;
+  uint64_t prev_read_nanos = IOSTATS(read_nanos);
   {
     StopWatch sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
+    if ((int)prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+	SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
+    }
     IOSTATS_TIMER_GUARD(read_nanos);
     if (use_direct_io()) {
 #ifndef ROCKSDB_LITE
@@ -134,9 +138,10 @@ IOStatus RandomAccessFileReader::Read(
         }
 
         if (print_cnt < 20) {
-            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
+            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu perf_level = %d, met = %lu\n", 
                     aligned_offset, offset, n, aligned_offset + read_size,
-                    read_size);
+                    read_size, (int)prev_perf_level, 
+		    iostats_context.read_nanos);
             print_cnt++;
         } else if (print_cnt < 30 && (n % alignment > 0 || offset % alignment > 0)) {
             fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
@@ -249,6 +254,7 @@ IOStatus RandomAccessFileReader::Read(
       *result = Slice(res_scratch, io_s.ok() ? pos : 0);
       total_read_size = result->size();
     }
+    fprintf(stderr, "random access file this %p stats %p\n", this, stats_); 
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {
@@ -261,6 +267,15 @@ IOStatus RandomAccessFileReader::Read(
         }
     } 
     SetPerfLevel(prev_perf_level);
+  }
+  RecordTick(stats_, FILE_READER_READ_MICROS, 
+	  (IOSTATS(read_nanos) - prev_read_nanos) / 1000) ; 
+  if (is_last_level_) {
+      RecordTick(stats_, FILE_READER_LAST_LEVEL_READ_MICROS, 
+	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
+  } else {
+      RecordTick(stats_, FILE_READER_NON_LAST_LEVEL_READ_MICROS, 
+	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
     file_read_hist_->Add(elapsed);

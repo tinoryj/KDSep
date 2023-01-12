@@ -895,6 +895,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
          << compaction_job_stats_->num_single_del_fallthru;
 
   if (measure_io_stats_) {
+    fprintf(stderr, "measure_io_stats_ install\n");
     stream << "file_write_nanos" << compaction_job_stats_->file_write_nanos;
     stream << "file_range_sync_nanos"
            << compaction_job_stats_->file_range_sync_nanos;
@@ -1155,7 +1156,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   uint64_t prev_prepare_write_nanos = 0;
   uint64_t prev_cpu_write_nanos = 0;
   uint64_t prev_cpu_read_nanos = 0;
+  uint64_t prev_read_nanos = 0;
   if (measure_io_stats_) {
+    fprintf(stderr, "measure_io_stats_\n");
     prev_perf_level = GetPerfLevel();
     SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
     prev_write_nanos = IOSTATS(write_nanos);
@@ -1164,6 +1167,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     prev_prepare_write_nanos = IOSTATS(prepare_write_nanos);
     prev_cpu_write_nanos = IOSTATS(cpu_write_nanos);
     prev_cpu_read_nanos = IOSTATS(cpu_read_nanos);
+    prev_read_nanos = IOSTATS(read_nanos);
   }
 
   MergeHelper merge(
@@ -1345,6 +1349,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
       db_options_.clock->CPUMicros() - prev_cpu_micros;
 
   if (measure_io_stats_) {
+    fprintf(stderr, "measure_io_stats_ calculate sub_compact\n");
     sub_compact->compaction_job_stats.file_write_nanos +=
         IOSTATS(write_nanos) - prev_write_nanos;
     sub_compact->compaction_job_stats.file_fsync_nanos +=
@@ -1357,6 +1362,13 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         (IOSTATS(cpu_write_nanos) - prev_cpu_write_nanos +
          IOSTATS(cpu_read_nanos) - prev_cpu_read_nanos) /
         1000;
+    RecordTick(stats_, COMPACT_READ_NANOS, IOSTATS(read_nanos) - prev_read_nanos); 
+    RecordTick(stats_, COMPACT_WRITE_NANOS, IOSTATS(write_nanos) - prev_write_nanos); 
+    RecordTick(stats_, COMPACT_FSYNC_NANOS, IOSTATS(fsync_nanos) - prev_fsync_nanos); 
+    RecordTick(stats_, COMPACT_CPU_READ_NANOS, 
+	    IOSTATS(cpu_write_nanos) - prev_cpu_write_nanos); 
+    RecordTick(stats_, COMPACT_CPU_WRITE_NANOS, 
+	    IOSTATS(cpu_read_nanos) - prev_cpu_read_nanos); 
     if (prev_perf_level != PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
       SetPerfLevel(prev_perf_level);
     }
