@@ -23,6 +23,7 @@ public:
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
+    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec, vector<hashStoreRecordHeader>*& recordVec);
     // threads with job queue support
     void operationWorker(int threadID);
     bool setJobDone();
@@ -42,6 +43,7 @@ private:
     bool readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer);
     bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
+    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;

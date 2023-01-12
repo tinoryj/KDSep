@@ -738,19 +738,22 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
         if (tempInternalValueHeader.mergeFlag_ == true) {
             // get deltas from delta store
             vector<pair<bool, string>> deltaInfoVec;
+            vector<internalValueType> deltaInfoHeaderVec;
             externalIndexInfo newExternalIndexInfo;
             bool findNewValueIndexFlag = false;
-            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo, maxSequenceNumber);
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, deltaInfoHeaderVec, findNewValueIndexFlag, newExternalIndexInfo, maxSequenceNumber);
             if (findNewValueIndexFlag == true) {
                 debug_error("[ERROR] In only delta store, should not extract exteranl index, flag = %d\n", findNewValueIndexFlag);
             }
             debug_trace("read deltaInfoVec from LSM-tree size = %lu\n", deltaInfoVec.size());
             vector<string>* deltaValueFromExternalStoreVec = new vector<string>;
+            vector<hashStoreRecordHeader>* deltaRecordFromExternalStoreVec = new vector<hashStoreRecordHeader>;
             bool ret;
-            STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
+            STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec, deltaRecordFromExternalStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
             if (ret != true) {
                 debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
                 delete deltaValueFromExternalStoreVec;
+                delete deltaRecordFromExternalStoreVec;
                 return false;
             } else {
                 vector<string> finalDeltaOperatorsVec;
@@ -761,6 +764,7 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
                         if (index >= deltaValueFromExternalStoreVec->size()) {
                             debug_error("[ERROR] Read external deltaStore number mismatch with requested number (may overflow), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
                             delete deltaValueFromExternalStoreVec;
+                            delete deltaRecordFromExternalStoreVec;
                             exit(1);
                             return false;
                         }
@@ -773,7 +777,14 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
 
                 if (index != deltaValueFromExternalStoreVec->size()) {
                     debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec->size(), deltaInfoVec.size());
+                    for (auto internalIt = deltaRecordFromExternalStoreVec->begin(); internalIt != deltaRecordFromExternalStoreVec->end(); internalIt++) {
+                        debug_error("[ERROR] sequence number in hash store = %u\n", internalIt->sequence_number_);
+                    }
+                    for (auto internalIt = deltaInfoHeaderVec.begin(); internalIt != deltaInfoHeaderVec.end(); internalIt++) {
+                        debug_error("[ERROR] sequence number in rocksdb = %u\n", internalIt->sequenceNumber_);
+                    }
                     delete deltaValueFromExternalStoreVec;
+                    delete deltaRecordFromExternalStoreVec;
                     exit(1);
                     return false;
                 } else {
@@ -785,10 +796,12 @@ bool DeltaKV::GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& 
                             writeBackOperationsQueue_->push(newPair);
                         }
                         delete deltaValueFromExternalStoreVec;
+                        delete deltaRecordFromExternalStoreVec;
                         return true;
                     } else {
                         debug_error("[ERROR] Perform merge operation fail, key = %s\n", key.c_str());
                         delete deltaValueFromExternalStoreVec;
+                        delete deltaRecordFromExternalStoreVec;
                         return false;
                     }
                 }
@@ -1451,13 +1464,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             struct timeval tv0;
             gettimeofday(&tv0, 0);
-            string newValueStr;
-            bool findNewValueFlag = false;
             for (auto queueIt : mapIt->second) {
                 if (queueIt.first == kPutOp) {
-                    newValueStr.assign(queueIt.second.valuePtr_, queueIt.second.valueSize_);
-                    tempNewMergeOperatorsVec.clear();
-                    debug_info("Get current value in write buffer, skip write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
+                    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
                     return true;
                 } else {
                     string currentValue(queueIt.second.valuePtr_, queueIt.second.valueSize_);
@@ -1739,6 +1748,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler)
 
 bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler)
 {
+    debug_info("[MergeOp] key = %s, sequence number = %u\n", string(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_).c_str(), objectPairMemPoolHandler.sequenceNumber_);
     if (objectPairMemPoolHandler.isAnchorFlag_ == true) {
         debug_error("[ERROR] merge operation should has no anchor flag%s\n", "");
     }
@@ -1826,8 +1836,11 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
                 validObjectNumber--;
             }
             it->second.clear();
+            globalSequenceNumberGeneratorMtx_.lock();
+            uint32_t currentSequenceNumber = globalSequenceNumber_++;
+            globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, it->second.back().second.sequenceNumber_, true, newHandler);
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, currentSequenceNumber, true, newHandler);
             it->second.push_back(make_pair(kPutOp, newHandler));
             validObjectNumber++;
         } else if (it->second.front().first == kMergeOp && it->second.size() >= 2) {
@@ -1848,8 +1861,11 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
                 validObjectNumber--;
             }
             it->second.clear();
+            globalSequenceNumberGeneratorMtx_.lock();
+            uint32_t currentSequenceNumber = globalSequenceNumber_++;
+            globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], it->second.back().second.sequenceNumber_, false, newHandler);
+            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], currentSequenceNumber, false, newHandler);
             it->second.push_back(make_pair(kMergeOp, newHandler));
             validObjectNumber++;
         }
@@ -1870,8 +1886,8 @@ void DeltaKV::processBatchedOperationsWorker()
         }
         unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
-            oneBufferDuringProcessFlag_ = true;
             std::scoped_lock<std::shared_mutex> w_lock(batchedBufferOperationMtx_);
+            oneBufferDuringProcessFlag_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
             if (deltaKVRunningMode_ != kBatchedWithPlainRocksDB) {
                 performInBatchedBufferDeduplication(currentHandler);
@@ -2263,12 +2279,17 @@ void DeltaKV::processBatchedOperationsWorker()
                                     rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
                                     rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
                                     rocksdb::Status rocksDBStatus;
+                                    debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                     STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
                                     if (!rocksDBStatus.ok()) {
                                         debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
                                     } else {
                                         debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
                                     }
+                                    notSeparatedID++;
+                                } else {
+                                    string newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                    debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                     notSeparatedID++;
                                 }
                             } else {
@@ -2283,12 +2304,17 @@ void DeltaKV::processBatchedOperationsWorker()
                                     rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
                                     rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
                                     rocksdb::Status rocksDBStatus;
+                                    debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                     STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
                                     if (!rocksDBStatus.ok()) {
                                         debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
                                     } else {
                                         debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
                                     }
+                                    separatedID++;
+                                } else {
+                                    string newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
+                                    debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                     separatedID++;
                                 }
                             }
@@ -2325,7 +2351,12 @@ void DeltaKV::processBatchedOperationsWorker()
                                     rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
                                     rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
                                     rocksdb::Status rocksDBStatus;
+                                    debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                     batch.Merge(newKey, newValue);
+                                    notSeparatedID++;
+                                } else {
+                                    string newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                    debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                     notSeparatedID++;
                                 }
                             } else {
@@ -2340,7 +2371,12 @@ void DeltaKV::processBatchedOperationsWorker()
                                     rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
                                     rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
                                     rocksdb::Status rocksDBStatus;
+                                    debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                     batch.Merge(newKey, newValue);
+                                    separatedID++;
+                                } else {
+                                    string newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
+                                    debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                     separatedID++;
                                 }
                             }
@@ -2371,8 +2407,8 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             // cerr << "Erased object number = " << erasedObjectCounter << endl;
             currentHandler->clear();
-            oneBufferDuringProcessFlag_ = false;
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
+            oneBufferDuringProcessFlag_ = false;
         }
     }
     writeBatchOperationWorkExitFlag = true;
@@ -2390,6 +2426,7 @@ void DeltaKV::processWriteBackOperationsWorker()
         if (writeBackOperationsQueue_->pop(currentProcessPair)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
+            debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
             bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
             if (writeBackStatus == false) {
                 debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
@@ -2448,4 +2485,37 @@ bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string inter
     }
     return true;
 }
+
+bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber)
+{
+    uint64_t internalValueSize = internalValue.size();
+    debug_trace("internalValueSize = %lu, skipSize = %lu\n", internalValueSize, skipSize);
+    uint64_t currentProcessLocationIndex = skipSize;
+    while (currentProcessLocationIndex != internalValueSize) {
+        internalValueType currentInternalValueTypeHeader;
+        memcpy(&currentInternalValueTypeHeader, internalValue.c_str() + currentProcessLocationIndex, sizeof(internalValueType));
+        currentProcessLocationIndex += sizeof(internalValueType);
+        if (maxSequenceNumber < currentInternalValueTypeHeader.sequenceNumber_) {
+            maxSequenceNumber = currentInternalValueTypeHeader.sequenceNumber_;
+        }
+        if (currentInternalValueTypeHeader.mergeFlag_ == true) {
+            debug_error("[ERROR] Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
+            memcpy(&newExternalIndexInfo, internalValue.c_str() + currentProcessLocationIndex, sizeof(externalIndexInfo));
+            currentProcessLocationIndex += sizeof(externalIndexInfo);
+            findNewValueIndex = true;
+        }
+        if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
+            assert(currentProcessLocationIndex + currentInternalValueTypeHeader.rawValueSize_ <= internalValue.size());
+            string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
+            currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;
+            mergeOperatorsVec.push_back(make_pair(false, currentValue));
+            mergeOperatorsRecordVec.push_back(currentInternalValueTypeHeader);
+        } else {
+            mergeOperatorsVec.push_back(make_pair(true, ""));
+            mergeOperatorsRecordVec.push_back(currentInternalValueTypeHeader);
+        }
+    }
+    return true;
+}
+
 } // namespace DELTAKV_NAMESPACE

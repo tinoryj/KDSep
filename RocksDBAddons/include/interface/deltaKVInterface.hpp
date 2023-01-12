@@ -142,6 +142,7 @@ private:
     bool deleteExistingThreads();
     // for separated operations
     bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
     // Storage component for delta store
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
     HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;

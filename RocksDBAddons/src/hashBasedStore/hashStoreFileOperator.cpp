@@ -289,6 +289,47 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
     return processedObjectNumber;
 }
 
+uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal)
+{
+    uint64_t currentProcessLocationIndex = 0;
+    // skip file header
+    currentProcessLocationIndex += sizeof(hashStoreFileHeader);
+    uint64_t processedObjectNumber = 0;
+    while (currentProcessLocationIndex != contentSize) {
+        processedObjectNumber++;
+        hashStoreRecordHeader currentObjectRecordHeader;
+        memcpy(&currentObjectRecordHeader, contentBuffer + currentProcessLocationIndex, sizeof(hashStoreRecordHeader));
+        currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
+        if (currentObjectRecordHeader.is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
+            continue;
+        }
+        // get key str_t
+        str_t currentKey;
+        currentKey.data_ = contentBuffer + currentProcessLocationIndex;
+        currentKey.size_ = currentObjectRecordHeader.key_size_;
+        currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
+        if (currentObjectRecordHeader.is_anchor_ == true) {
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                resultMapInternal.at(currentKey).clear();
+            }
+        } else {
+            str_t currentValue;
+            currentValue.data_ = contentBuffer + currentProcessLocationIndex;
+            currentValue.size_ = currentObjectRecordHeader.value_size_;
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                resultMapInternal.at(currentKey).push_back(make_pair(currentValue, currentObjectRecordHeader));
+            } else {
+                vector<pair<str_t, hashStoreRecordHeader>> newValuesRelatedToCurrentKeyVec;
+                newValuesRelatedToCurrentKeyVec.push_back(make_pair(currentValue, currentObjectRecordHeader));
+                resultMapInternal.insert(make_pair(currentKey, newValuesRelatedToCurrentKeyVec));
+            }
+            currentProcessLocationIndex += currentObjectRecordHeader.value_size_;
+        }
+    }
+    return processedObjectNumber;
+}
+
 bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber)
 {
     debug_trace("Write content to file ID = %lu\n", fileHandler->target_file_id_);
@@ -871,6 +912,112 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                     valueVec->reserve(currentKeyIt->second.size());
                     for (auto vecIt : currentKeyIt->second) {
                         valueVec->push_back(string(vecIt.data_, vecIt.size_));
+                    }
+                }
+                fileHandler->file_ownership_flag_ = 0;
+                return true;
+            }
+        }
+    }
+}
+
+bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec, vector<hashStoreRecordHeader>*& recordVec)
+{
+    std::scoped_lock<std::shared_mutex> r_lock(fileHandler->fileOperationMutex_);
+    // check if not flushed anchors exit, return directly.
+    // try extract from cache first
+    if (keyToValueListCache_ != nullptr) {
+        if (keyToValueListCache_->existsInCache(key)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            vector<string> tempResultVec = keyToValueListCache_->getFromCache(key);
+            debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec.size());
+            valueVec->assign(tempResultVec.begin(), tempResultVec.end());
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
+            fileHandler->file_ownership_flag_ = 0;
+            return true;
+        } else {
+            // Not exist in cache, find the content in the file
+            char readContentBuffer[fileHandler->total_object_bytes_];
+            bool readFromFileStatus = readContentFromFile(fileHandler, readContentBuffer);
+            if (readFromFileStatus == false) {
+                debug_error("[ERROR] Could not read from file for key = %s\n", key.c_str());
+                valueVec->clear();
+                fileHandler->file_ownership_flag_ = 0;
+                return false;
+            } else {
+                unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
+                uint64_t processedObjectNumber = 0;
+                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+                if (processedObjectNumber != fileHandler->total_object_count_) {
+                    debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
+                    valueVec->clear();
+                    fileHandler->file_ownership_flag_ = 0;
+                    return false;
+                } else {
+                    str_t currentKey((char*)key.c_str(), key.size());
+                    auto mapIt = currentFileProcessMap.find(currentKey);
+                    if (mapIt == currentFileProcessMap.end()) {
+                        debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", key.c_str());
+                        valueVec->clear();
+                        fileHandler->file_ownership_flag_ = 0;
+                        return false;
+                    } else {
+                        debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
+                        valueVec->reserve(mapIt->second.size());
+                        for (auto vecIt : mapIt->second) {
+                            valueVec->push_back(string(vecIt.first.data_, vecIt.first.size_));
+                            recordVec->push_back(vecIt.second);
+                        }
+                        // Put the cache operation before job done, to avoid some synchronization issues
+                        for (auto mapIt : currentFileProcessMap) {
+                            struct timeval tv;
+                            gettimeofday(&tv, 0);
+                            string tempInsertCacheKeyStr(mapIt.first.data_, mapIt.first.size_);
+                            vector<string> cacheValuesVec;
+                            for (auto vecIt : mapIt.second) {
+                                cacheValuesVec.push_back(string(vecIt.first.data_, vecIt.first.size_));
+                            }
+                            keyToValueListCache_->insertToCache(tempInsertCacheKeyStr, cacheValuesVec);
+                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+                            debug_trace("Insert to cache key = %s delta num = %lu\n", tempInsertCacheKeyStr.c_str(), mapIt.second.size());
+                        }
+                        fileHandler->file_ownership_flag_ = 0;
+                        return true;
+                    }
+                }
+            }
+        }
+    } else {
+        char readContentBuffer[fileHandler->total_object_bytes_];
+        bool readFromFileStatus = readContentFromFile(fileHandler, readContentBuffer);
+        if (readFromFileStatus == false) {
+            valueVec->clear();
+            fileHandler->file_ownership_flag_ = 0;
+            return false;
+        } else {
+            unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
+            uint64_t processedObjectNumber = 0;
+            STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+            if (processedObjectNumber != fileHandler->total_object_count_) {
+                debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
+                valueVec->clear();
+                fileHandler->file_ownership_flag_ = 0;
+                return false;
+            } else {
+                str_t currentKey((char*)key.c_str(), key.size());
+                auto currentKeyIt = currentFileProcessMap.find(currentKey);
+                if (currentKeyIt == currentFileProcessMap.end()) {
+                    debug_error("[ERROR] Read bucket done, but could not found values for key = %s\n", key.c_str());
+                    valueVec->clear();
+                    fileHandler->file_ownership_flag_ = 0;
+                    return false;
+                } else {
+                    debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
+                    valueVec->reserve(currentKeyIt->second.size());
+                    for (auto vecIt : currentKeyIt->second) {
+                        valueVec->push_back(string(vecIt.first.data_, vecIt.first.size_));
+                        recordVec->push_back(vecIt.second);
                     }
                 }
                 fileHandler->file_ownership_flag_ = 0;
