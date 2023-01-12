@@ -33,7 +33,7 @@ KeyValueMemPool::~KeyValueMemPool()
 bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(string keyStr, string valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler)
 {
     if (valueStr.size() + keyStr.size() >= mempoolBlockSizeThreshold_) {
-        debug_error("[ERROR] current key size = %lu, value size = %lu, may exceed mempool block size = %lu\n", keyStr.size(), valueStr.size(), mempoolBlockSizeThreshold_);
+        debug_error("[ERROR] current key size = %lu, value size = %lu, may exceed mempool block size = %u\n", keyStr.size(), valueStr.size(), mempoolBlockSizeThreshold_);
         return false;
     }
     std::scoped_lock<std::shared_mutex> wlock(managerMtx_);

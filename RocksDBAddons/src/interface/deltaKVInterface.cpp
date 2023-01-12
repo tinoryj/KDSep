@@ -1439,9 +1439,10 @@ bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_
 bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
 {
     std::scoped_lock<std::shared_mutex> w_lock(DeltaKVOperationsMtx_);
+
     vector<string> tempNewMergeOperatorsVec;
     bool needMergeWithInBufferOperationsFlag = false;
-    string newValueStr;
+
     struct timeval tvAll;
     gettimeofday(&tvAll, 0);
     if (isBatchedOperationsWithBufferInUse_ == true) {
@@ -1467,10 +1468,11 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             for (auto queueIt : mapIt->second) {
                 if (queueIt.first == kPutOp) {
                     debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
+                    batchedBufferOperationMtx_.unlock();
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
                     return true;
                 } else {
-                    string currentValue(queueIt.second.valuePtr_, queueIt.second.valueSize_);
-                    tempNewMergeOperatorsVec.push_back(currentValue);
+                    tempNewMergeOperatorsVec.push_back(string(queueIt.second.valuePtr_, queueIt.second.valueSize_));
                 }
             }
             if (tempNewMergeOperatorsVec.size() != 0) {
@@ -1483,6 +1485,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
     }
     // get content from underlying DB
+    string newValueStr;
     uint32_t maxSequenceNumber = 0;
     string tempRawValueStr;
     bool getNewValueStrSuccessFlag = false;
@@ -1493,11 +1496,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                newValueStr.clear();
                 deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
                 getNewValueStrSuccessFlag = true;
             } else {
-                newValueStr.clear();
                 newValueStr.assign(tempRawValueStr);
                 getNewValueStrSuccessFlag = true;
             }
@@ -1509,11 +1510,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                newValueStr.clear();
                 deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
                 getNewValueStrSuccessFlag = true;
             } else {
-                newValueStr.clear();
                 newValueStr.assign(tempRawValueStr);
                 getNewValueStrSuccessFlag = true;
             }
@@ -1525,11 +1524,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                newValueStr.clear();
                 deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
                 getNewValueStrSuccessFlag = true;
             } else {
-                newValueStr.clear();
                 newValueStr.assign(tempRawValueStr);
                 getNewValueStrSuccessFlag = true;
             }
@@ -1541,11 +1538,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             getNewValueStrSuccessFlag = false;
         } else {
             if (needMergeWithInBufferOperationsFlag == true) {
-                newValueStr.clear();
                 deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr);
                 getNewValueStrSuccessFlag = true;
             } else {
-                newValueStr.clear();
                 newValueStr.assign(tempRawValueStr);
                 getNewValueStrSuccessFlag = true;
             }
@@ -1557,7 +1552,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
         break;
     }
     if (getNewValueStrSuccessFlag == true) {
-        debug_info("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
+        debug_warn("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
         globalSequenceNumberGeneratorMtx_.lock();
         uint32_t currentSequenceNumber = globalSequenceNumber_++;
         globalSequenceNumberGeneratorMtx_.unlock();

@@ -22,13 +22,29 @@ vector<string> stringSplit(string str, string token)
 
 bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList, string* finalValue)
 {
+    unordered_map<int, string> operandMap;
+    string overallOperandListStr = "";
+    for (auto it : operandList) {
+        overallOperandListStr.append(it);
+        overallOperandListStr.append(",");
+    }
+    overallOperandListStr = overallOperandListStr.substr(0, overallOperandListStr.size() - 1);
+    // cerr << "overallOperandListStr = " << overallOperandListStr << endl;
+    vector<string> rawOperandListVec = stringSplit(overallOperandListStr, ",");
+    // cerr << "rawOperandListVec size = " << rawOperandListVec.size() << endl;
+    for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
+        // cerr << "rawOperandListVec[" << it << "] = " << rawOperandListVec[it] << endl;
+        int index = stoi(rawOperandListVec[it]);
+        if (operandMap.find(index) != operandMap.end()) {
+            operandMap.at(index).assign(rawOperandListVec[it + 1]);
+        } else {
+            operandMap.insert(make_pair(index, rawOperandListVec[it + 1]));
+        }
+    }
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
-    for (auto q : operandList) {
-        string indexStr = q.substr(0, q.find(","));
-        int index = stoi(indexStr);
-        string updateContentStr = q.substr(q.find(",") + 1);
+    for (auto q : operandMap) {
         // debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
-        rawValueFieldsVec[index].assign(updateContentStr);
+        rawValueFieldsVec[q.first].assign(q.second);
     }
 
     string temp;
@@ -43,21 +59,29 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
 bool DeltaKVFieldUpdateMergeOperator::PartialMerge(vector<string> operandList, vector<string>& finalOperandList)
 {
     unordered_map<int, string> operandMap;
+    string overallOperandListStr;
     for (auto it : operandList) {
-        string indexStr = it.substr(0, it.find(","));
-        int index = stoi(indexStr);
-        string updateContentStr = it.substr(it.find(",") + 1);
+        overallOperandListStr.append(it);
+        overallOperandListStr.append(",");
+    }
+    overallOperandListStr = overallOperandListStr.substr(0, overallOperandListStr.size() - 1);
+    // cerr << "[Partial] overallOperandListStr = " << overallOperandListStr << endl;
+    vector<string> rawOperandListVec = stringSplit(overallOperandListStr, ",");
+    // cerr << "[Partial] rawOperandListVec size = " << rawOperandListVec.size() << endl;
+    for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
+        // cerr << "[Partial] rawOperandListVec[" << it << "] = " << rawOperandListVec[it] << endl;
+        int index = stoi(rawOperandListVec[it]);
         if (operandMap.find(index) != operandMap.end()) {
-            operandMap.at(index).assign(updateContentStr);
+            operandMap.at(index).assign(rawOperandListVec[it + 1]);
         } else {
-            operandMap.insert(make_pair(index, updateContentStr));
+            operandMap.insert(make_pair(index, rawOperandListVec[it + 1]));
         }
     }
     string finalOperator = "";
     for (auto it : operandMap) {
         finalOperator.append(to_string(it.first) + "," + it.second + ",");
     }
-    finalOperator = finalOperator.substr(0, finalOperandList.size() - 1);
+    finalOperator = finalOperator.substr(0, finalOperator.size() - 1);
     finalOperandList.push_back(finalOperator);
     return true;
 }
