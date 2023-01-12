@@ -2027,7 +2027,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         spearateTrueCounter++;
                     }
                 }
-                cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
+                // cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
                 STAT_PROCESS(putToValueStoreStatus = IndexStoreInterfaceObjPtr_->multiPut(handlerToValueStoreVec), StatsType::DELTAKV_PUT_INDEXSTORE);
                 if (putToValueStoreStatus == true) {
                     STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
@@ -2036,42 +2036,50 @@ void DeltaKV::processBatchedOperationsWorker()
                             auto separatedID = 0, notSeparatedID = 0;
                             for (auto separatedDeltaFlagIndex = 0; separatedDeltaFlagIndex < separateFlagVec.size(); separatedDeltaFlagIndex++) {
                                 if (separateFlagVec[separatedDeltaFlagIndex] == false) {
-                                    char writeInternalValueBuffer[sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
-                                    internalValueType currentInternalValueType;
-                                    currentInternalValueType.mergeFlag_ = false;
-                                    currentInternalValueType.rawValueSize_ = notSeparatedDeltasVec[notSeparatedID].valueSize_;
-                                    currentInternalValueType.valueSeparatedFlag_ = false;
-                                    currentInternalValueType.sequenceNumber_ = notSeparatedDeltasVec[notSeparatedID].sequenceNumber_;
-                                    memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-                                    memcpy(writeInternalValueBuffer + sizeof(internalValueType), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                    rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
-                                    rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                    rocksdb::Status rocksDBStatus;
-                                    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
-                                    if (!rocksDBStatus.ok()) {
-                                        debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                    if (notSeparatedDeltasVec[notSeparatedID].isAnchorFlag_ == false) {
+                                        char writeInternalValueBuffer[sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
+                                        internalValueType currentInternalValueType;
+                                        currentInternalValueType.mergeFlag_ = false;
+                                        currentInternalValueType.rawValueSize_ = notSeparatedDeltasVec[notSeparatedID].valueSize_;
+                                        currentInternalValueType.valueSeparatedFlag_ = false;
+                                        currentInternalValueType.sequenceNumber_ = notSeparatedDeltasVec[notSeparatedID].sequenceNumber_;
+                                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                        memcpy(writeInternalValueBuffer + sizeof(internalValueType), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                        rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                        rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                        rocksdb::Status rocksDBStatus;
+                                        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+                                        if (!rocksDBStatus.ok()) {
+                                            debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                        } else {
+                                            debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
+                                        }
+                                        notSeparatedID++;
                                     } else {
-                                        debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
+                                        notSeparatedID++;
                                     }
-                                    notSeparatedID++;
                                 } else {
-                                    char writeInternalValueBuffer[sizeof(internalValueType)];
-                                    internalValueType currentInternalValueType;
-                                    currentInternalValueType.mergeFlag_ = false;
-                                    currentInternalValueType.rawValueSize_ = handlerToDeltaStoreVec[separatedID].valueSize_;
-                                    currentInternalValueType.valueSeparatedFlag_ = true;
-                                    currentInternalValueType.sequenceNumber_ = handlerToDeltaStoreVec[separatedID].sequenceNumber_;
-                                    memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-                                    rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
-                                    rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
-                                    rocksdb::Status rocksDBStatus;
-                                    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
-                                    if (!rocksDBStatus.ok()) {
-                                        debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                    if (handlerToDeltaStoreVec[separatedID].isAnchorFlag_ == false) {
+                                        char writeInternalValueBuffer[sizeof(internalValueType)];
+                                        internalValueType currentInternalValueType;
+                                        currentInternalValueType.mergeFlag_ = false;
+                                        currentInternalValueType.rawValueSize_ = handlerToDeltaStoreVec[separatedID].valueSize_;
+                                        currentInternalValueType.valueSeparatedFlag_ = true;
+                                        currentInternalValueType.sequenceNumber_ = handlerToDeltaStoreVec[separatedID].sequenceNumber_;
+                                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                        rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
+                                        rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
+                                        rocksdb::Status rocksDBStatus;
+                                        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(batchedWriteOperation, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+                                        if (!rocksDBStatus.ok()) {
+                                            debug_error("[ERROR] Write underlying rocksdb with external storage index fault, status = %s\n", rocksDBStatus.ToString().c_str());
+                                        } else {
+                                            debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
+                                        }
+                                        separatedID++;
                                     } else {
-                                        debug_trace("Merge underlying rocksdb with added value header succes, key = %s\n", newKey.ToString().c_str());
+                                        separatedID++;
                                     }
-                                    separatedID++;
                                 }
                             }
                         } else {
@@ -2080,32 +2088,40 @@ void DeltaKV::processBatchedOperationsWorker()
                             auto separatedID = 0, notSeparatedID = 0;
                             for (auto separatedDeltaFlagIndex = 0; separatedDeltaFlagIndex < separateFlagVec.size(); separatedDeltaFlagIndex++) {
                                 if (separateFlagVec[separatedDeltaFlagIndex] == false) {
-                                    char writeInternalValueBuffer[sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
-                                    internalValueType currentInternalValueType;
-                                    currentInternalValueType.mergeFlag_ = false;
-                                    currentInternalValueType.rawValueSize_ = notSeparatedDeltasVec[notSeparatedID].valueSize_;
-                                    currentInternalValueType.valueSeparatedFlag_ = false;
-                                    currentInternalValueType.sequenceNumber_ = notSeparatedDeltasVec[notSeparatedID].sequenceNumber_;
-                                    memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-                                    memcpy(writeInternalValueBuffer + sizeof(internalValueType), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                    rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
-                                    rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                    rocksdb::Status rocksDBStatus;
-                                    batch.Merge(newKey, newValue);
-                                    notSeparatedID++;
+                                    if (notSeparatedDeltasVec[notSeparatedID].isAnchorFlag_ == false) {
+                                        char writeInternalValueBuffer[sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
+                                        internalValueType currentInternalValueType;
+                                        currentInternalValueType.mergeFlag_ = false;
+                                        currentInternalValueType.rawValueSize_ = notSeparatedDeltasVec[notSeparatedID].valueSize_;
+                                        currentInternalValueType.valueSeparatedFlag_ = false;
+                                        currentInternalValueType.sequenceNumber_ = notSeparatedDeltasVec[notSeparatedID].sequenceNumber_;
+                                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                        memcpy(writeInternalValueBuffer + sizeof(internalValueType), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                        rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                        rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                        rocksdb::Status rocksDBStatus;
+                                        batch.Merge(newKey, newValue);
+                                        notSeparatedID++;
+                                    } else {
+                                        notSeparatedID++;
+                                    }
                                 } else {
-                                    char writeInternalValueBuffer[sizeof(internalValueType)];
-                                    internalValueType currentInternalValueType;
-                                    currentInternalValueType.mergeFlag_ = false;
-                                    currentInternalValueType.rawValueSize_ = handlerToDeltaStoreVec[separatedID].valueSize_;
-                                    currentInternalValueType.valueSeparatedFlag_ = true;
-                                    currentInternalValueType.sequenceNumber_ = handlerToDeltaStoreVec[separatedID].sequenceNumber_;
-                                    memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
-                                    rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
-                                    rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
-                                    rocksdb::Status rocksDBStatus;
-                                    batch.Merge(newKey, newValue);
-                                    separatedID++;
+                                    if (handlerToDeltaStoreVec[separatedID].isAnchorFlag_ == false) {
+                                        char writeInternalValueBuffer[sizeof(internalValueType)];
+                                        internalValueType currentInternalValueType;
+                                        currentInternalValueType.mergeFlag_ = false;
+                                        currentInternalValueType.rawValueSize_ = handlerToDeltaStoreVec[separatedID].valueSize_;
+                                        currentInternalValueType.valueSeparatedFlag_ = true;
+                                        currentInternalValueType.sequenceNumber_ = handlerToDeltaStoreVec[separatedID].sequenceNumber_;
+                                        memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
+                                        rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
+                                        rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
+                                        rocksdb::Status rocksDBStatus;
+                                        batch.Merge(newKey, newValue);
+                                        separatedID++;
+                                    } else {
+                                        separatedID++;
+                                    }
                                 }
                             }
                             rocksdb::Status rocksDBStatus;
@@ -2239,7 +2255,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         spearateTrueCounter++;
                     }
                 }
-                cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
+                // cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
                 if (putToDeltaStoreStatus == true) {
                     rocksdb::WriteOptions batchedWriteOperation;
