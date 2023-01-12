@@ -155,6 +155,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  postlock-full", MERGE_AFTER_LOCK_FULL, time[DELTAKV_MERGE]);
     PRINT_FULL("  postlock-not-full", MERGE_AFTER_LOCK_NOT_FULL, time[DELTAKV_MERGE]);
 
+    fprintf(stdout, "-------------- DeltaKV Delta Merge Breakdown ------------------------------\n");
+    PRINT_FULL("Full Merge", FULL_MERGE, time[FULL_MERGE]);
+    PRINT_FULL("Partial Merge", PARTIAL_MERGE, time[PARTIAL_MERGE]);
+
     fprintf(stdout, "-------------- DeltaKV Batch Get Breakdown ------------------------------\n");
     PRINT_FULL("All", DELTAKV_BATCH_READ, time[DELTAKV_BATCH_READ]);
     PRINT_FULL("Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);

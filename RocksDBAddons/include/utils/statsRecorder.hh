@@ -77,6 +77,9 @@ enum StatsType {
     MERGE_LOCK_2,
     MERGE_AFTER_LOCK_FULL,
     MERGE_AFTER_LOCK_NOT_FULL,
+    /* delta merge */
+    FULL_MERGE,
+    PARTIAL_MERGE,
 
     /* batch */
     BATCH_PLAIN_ROCKSDB,
