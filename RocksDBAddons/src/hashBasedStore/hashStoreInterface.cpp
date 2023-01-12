@@ -66,7 +66,7 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
+bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
 {
     if (objectPairMempoolHandler.isAnchorFlag_ == true && anyBucketInitedFlag_ == false) {
         return true;
@@ -100,7 +100,7 @@ bool HashStoreInterface::put(mempoolHandler_t& objectPairMempoolHandler)
     }
 }
 
-bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHandlerVec)
+bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
 {
     bool allAnchoarsFlag = true;
     for (auto it : objectPairMemPoolHandlerVec) {
@@ -169,6 +169,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objectPairMemPoolHan
         for (auto mapIt : fileHandlerToIndexMap) {
             uint64_t targetWriteSize = 0;
             for (auto index = 0; index < mapIt.second.size(); index++) {
+                debug_info("[MergeOp-multiput] key = %s, sequence number = %u\n", string(objectPairMemPoolHandlerVec[mapIt.second[index]].keyPtr_, objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_).c_str(), objectPairMemPoolHandlerVec[mapIt.second[index]].sequenceNumber_);
                 handlerVecTemp[processedHandlerIndex].push_back(objectPairMemPoolHandlerVec[mapIt.second[index]]);
                 if (objectPairMemPoolHandlerVec[mapIt.second[index]].isAnchorFlag_ == true) {
                     targetWriteSize += (sizeof(hashStoreRecordHeader) + objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_);
@@ -218,6 +219,30 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
     } else {
         // if (shouldUseDirectOperationsFlag_ == true) {
         ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
+        if (ret != true) {
+            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
+bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec, vector<hashStoreRecordHeader>*& recordVec)
+{
+    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    bool ret;
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+    if (ret != true) {
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
+        return false;
+    } else {
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec, recordVec);
         // } else {
         //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
         // }
