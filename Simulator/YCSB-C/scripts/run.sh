@@ -67,7 +67,7 @@ log_db_status() {
 }
 
 pwd
-ulimit -n 10240
+ulimit -n 102400
 ulimit -s 102400
 echo $@
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
@@ -78,7 +78,7 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-storagePrefix="/mnt/lvm"
+storagePrefix="/mnt/sn640"
 DB_Working_Path="$storagePrefix/deltakv/working"
 DB_Loaded_Path="$storagePrefix/deltakv/load"
 ResultLogFolder="$storagePrefix/Exp1/ResultLogs"
@@ -162,6 +162,7 @@ for param in $*; do
         ReadProportion=$(echo $param | sed 's/readRatio//g')
     elif [[ $(echo $param | grep "bucketNum" | wc -l) -eq 1 ]]; then
         bucketNumber=$(echo $param | sed 's/bucketNum//g')
+        echo $deltaLogMaxFileNumber
     elif [[ $(echo $param | grep "Exp" | wc -l) -eq 1 ]]; then
         ExpID=$(echo $param | sed 's/Exp//g')
         ResultLogFolder="$storagePrefix/Exp$ExpID/ResultLogs"
@@ -180,6 +181,8 @@ for param in $*; do
         gcThreadNumber=$(echo $param | sed 's/gcT//g')
     elif [[ $(echo $param | grep "workerT" | wc -l) -eq 1 ]]; then
         workerThreadNumber=$(echo $param | sed 's/workerT//g')
+    elif [[ $(echo $param | grep "bucketSize" | wc -l) -eq 1 ]]; then
+        bucketSize=$(echo $param | sed 's/bucketSize//g')
     elif [[ $(echo $param | grep "batchSize" | wc -l) -eq 1 ]]; then
         num=$(echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g')
         batchSize=$num
@@ -230,7 +233,7 @@ done
 # KV cache
 
 if [[ $kvCacheSize -ne 0 ]]; then
-    if [[ "$usekd" == "false" && "$usebkvkd" == "false" ]]; then
+    if [[ "$usekd" == "false" && "$usebkvkd" == "false" && "$usekvkd" == "false" ]]; then
         bucketNumber=0
     fi
     deltaKVCacheSize=$((($kvCacheSize - $bucketNumber * 4096) / ($fieldcount * $fieldlength + $fieldcount - 1)))
@@ -250,9 +253,11 @@ fi
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
     echo usekd $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
+    echo $bucketNumber
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 fi
 
@@ -361,7 +366,8 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     echo "Modify spec for read -> compaction"
     cp workloads/workloadTemplate.spec ./workload-temp.spec
     sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
-    sed -i "10s/NaN/500000/g" workload-temp.spec
+    sed -i "10s/NaN/5000000/g" workload-temp.spec
+    sed -i "15s/0/1/g" workload-temp.spec
     sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
     sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
