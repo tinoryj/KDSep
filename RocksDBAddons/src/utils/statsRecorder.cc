@@ -357,6 +357,8 @@ StatsRecorder::~StatsRecorder()
     //}
     PRINT_FULL("GetKeyLookupTime", GET_KEY_LOOKUP, time[GET]);
     PRINT_FULL("GetValueTime    ", GET_VALUE, time[GET]);
+    PRINT_FULL("DeviceWrite    ", DEVICE_WRITE, time[GET]);
+    PRINT_FULL("DeviceRead    ", DEVICE_READ, time[GET]);
 
     fprintf(stdout, "------------------------- SCAN Request --------------------------------------\n");
     PRINT_FULL("Scan Time", SCAN, time[SCAN]);

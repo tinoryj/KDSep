@@ -189,6 +189,9 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
         tempBuf = (char*)directbuf;
     }
 
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     if (cm.enabledVLogMode() || _isSlave) {
         // get the capacity, allow wrap-around write/read
         len_t capacity = _isSlave ? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
@@ -256,6 +259,7 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
     // mark disk as dirty if needed, and update stats
     if (isWrite) {
         StatsRecorder::getInstance()->IOBytesWrite(length, diskId);
+	StatsRecorder::getInstance()->timeProcess(StatsType::DEVICE_WRITE, tv);
         if (!_directIO) {
             if (useFS) {
                 //            fflush(fd);
@@ -265,6 +269,7 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
         }
     } else {
         StatsRecorder::getInstance()->IOBytesRead(length, diskId);
+	StatsRecorder::getInstance()->timeProcess(StatsType::DEVICE_READ, tv);
     }
 
     if (!isWrite && _directIO) {
@@ -450,6 +455,9 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
         tempBuf = (char*)directbuf;
     }
 
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     if (isCircular) {
         // get the capacity, allow wrap-around write/read
         len_t capacity = _isSlave ? cm.getColdStorageCapacity() : cm.getSystemEffectiveCapacity();
@@ -490,8 +498,10 @@ len_t DeviceManager::accessFile(int fd, unsigned char* buf, segment_offset_t dis
     // mark disk as dirty if needed, and update stats
     if (isWrite) {
         StatsRecorder::getInstance()->IOBytesWrite(accessLength, 0);
+	StatsRecorder::getInstance()->timeProcess(StatsType::DEVICE_WRITE, tv);
     } else {
         StatsRecorder::getInstance()->IOBytesRead(accessLength, 0);
+	StatsRecorder::getInstance()->timeProcess(StatsType::DEVICE_READ, tv);
     }
 
     if (!isWrite && _directIO && !isLog) {

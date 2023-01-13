@@ -92,6 +92,10 @@ enum StatsType {
     BATCH_KV,
     BATCH_KD,
 
+    /* vlog r/w */
+    DEVICE_WRITE,
+    DEVICE_READ,
+
     /* op */
     OP_GET,
     OP_MULTIPUT,

@@ -100,6 +100,7 @@ gcThreadNumber=2
 batchSize=2000
 cacheIndexFilter=false
 paretokey="false"
+nogc="false"
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -230,6 +231,8 @@ for param in $*; do
         run_suffix=${run_suffix}_nommap
     elif [[ "$param" == "paretokey" ]]; then
         paretokey="true"
+    elif [[ "$param" == "nogc" ]]; then
+        nogc="true"
     fi
 done
 
@@ -312,6 +315,10 @@ else
     suffix=${suffix}_fc${fieldcount}_fl${fieldlength}_${size}
 fi
 
+if [[ $nogc == "true" ]]; then
+    sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = false" temp.ini 
+fi
+
 DB_Name=${DB_Name}${suffix}
 ResultLogFolder=${ResultLogFolder}${suffix}
 configPath="temp.ini"
@@ -364,6 +371,20 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
 	exit
     fi
     log_db_status $workingDB $output_file
+
+    # Running Update
+    SPEC="./workload-temp-prepare.spec"
+    cp workloads/workloadTemplate.spec $SPEC 
+    sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
+    sed -i "10s/NaN/3000000/g" $SPEC 
+    sed -i "15s/0/1/g" $SPEC
+    sed -i "16s/0/0/g" $SPEC
+    sed -i "24s/NaN/$fieldcount/g" $SPEC
+    sed -i "25s/NaN/$fieldlength/g" $SPEC
+    echo "<===================== Prepare =====================>"
+    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P ${SPEC} -phase run -configpath $configPath > ${output_file}-prepare
+    echo "output at ${output_file}-prepare"
+
     cp -r $workingDB $loadedDB # Copy loaded DB
     if [[ "$only_load" == "true" ]]; then
 	exit
@@ -411,24 +432,12 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             exit
         fi
 
-        # Running Update
-	SPEC="./workload-temp-prepare.spec"
-        cp workloads/workloadTemplate.spec $SPEC 
-        sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
-        sed -i "10s/NaN/3000000/g" $SPEC 
-        sed -i "15s/0/1/g" $SPEC
-        sed -i "16s/0/0/g" $SPEC
-        sed -i "24s/NaN/$fieldcount/g" $SPEC
-        sed -i "25s/NaN/$fieldlength/g" $SPEC
-        echo "<===================== Prepare =====================>"
+
+        echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
         output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
         if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
             output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
         fi
-        ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P ${SPEC} -phase run -configpath $configPath > ${output_file}-prepare
-	echo "output at ${output_file}-prepare"
-
-        echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
 	echo "output at $output_file"
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
         loaded="false"
