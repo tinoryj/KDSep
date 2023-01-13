@@ -79,7 +79,7 @@ OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
 DB_Working_Path="/mnt/g/deltakv/working"
-DB_Loaded_Path="/mnt/e/deltakvload"
+DB_Loaded_Path="/mnt/d/deltakvload"
 if [[ ! -d "/mnt/g" ]]; then
     DB_Working_Path="/mnt/lvm/deltakv/working"
     DB_Loaded_Path="/mnt/lvm/deltakv"
@@ -370,7 +370,8 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
 	echo "Exit. return number $?"
 	exit
     fi
-    log_db_status $workingDB $output_file
+    t_output_file=$output_file
+    log_db_status $workingDB $t_output_file
 
     # Running Update
     SPEC="./workload-temp-prepare.spec"
