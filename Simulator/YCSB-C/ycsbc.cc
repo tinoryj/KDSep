@@ -125,6 +125,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             if (est_seconds > 0) {
                 std::cerr << est_seconds << " s    ";
             }
+	    if (i % (processLabel_base * 10) == 0) {
+		std::cout << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)\n";
+	    }
         }
 	// }
     }
