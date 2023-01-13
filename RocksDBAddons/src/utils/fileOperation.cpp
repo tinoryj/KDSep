@@ -12,6 +12,14 @@ FileOperation::FileOperation(fileOperationType operationType)
     globalWriteBuffer_ = new char[directIOPageSize_ - sizeof(uint32_t)];
     globalBufferSize_ = directIOPageSize_ - sizeof(uint32_t);
     bufferUsedSize_ = 0;
+    uint64_t targetRequestPageNumber = ceil((double)preAllocateFileSize_ / (double)(directIOPageSize_));
+    auto readWriteBufferSize = directIOPageSize_ * targetRequestPageNumber;
+    auto ret = posix_memalign((void**)&readWriteBuffer_, directIOPageSize_, readWriteBufferSize);
+    if (ret) {
+        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+    } else {
+        memset(readWriteBuffer_, 0, readWriteBufferSize);
+    }
 }
 
 FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize)
@@ -22,10 +30,19 @@ FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize,
     globalWriteBuffer_ = new char[bufferSize];
     globalBufferSize_ = bufferSize;
     bufferUsedSize_ = 0;
+    uint64_t targetRequestPageNumber = ceil((double)preAllocateFileSize_ / (double)(directIOPageSize_));
+    auto readWriteBufferSize = directIOPageSize_ * targetRequestPageNumber;
+    auto ret = posix_memalign((void**)&readWriteBuffer_, directIOPageSize_, readWriteBufferSize);
+    if (ret) {
+        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+    } else {
+        memset(readWriteBuffer_, 0, readWriteBufferSize);
+    }
 }
 
 FileOperation::~FileOperation()
 {
+    free(readWriteBuffer_);
     delete[] globalWriteBuffer_;
 }
 
@@ -221,16 +238,9 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
             uint64_t targetRequestPageNumber = ceil((double)(contentSize + bufferUsedSize_) / (double)(directIOPageSize_ - sizeof(uint32_t)));
             uint64_t writeDoneContentSize = 0;
             // align mem
-            char* writeBuffer;
             auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
-            auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
-            if (ret) {
-                debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-                fileOperationStatus_t ret(false, 0, 0, 0);
-                return ret;
-            } else {
-                memset(writeBuffer, 0, writeBufferSize);
-            }
+            memset(readWriteBuffer_, 0, writeBufferSize);
+
             uint64_t processedPageNumber = 0;
             uint64_t targetWriteSize = bufferUsedSize_ + contentSize;
 
@@ -243,8 +253,8 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
             while (writeDoneContentSize != targetWriteSize) {
                 if ((targetWriteSize - writeDoneContentSize) >= (directIOPageSize_ - sizeof(uint32_t))) {
                     currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
                     writeDoneContentSize += currentPageWriteSize;
                     actualNeedWriteSize += directIOPageSize_;
                     processedPageNumber++;
@@ -261,14 +271,12 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
                 memset(globalWriteBuffer_, 0, globalBufferSize_);
                 bufferUsedSize_ = 0;
             }
-            auto wReturn = pwrite(fileDirect_, writeBuffer, actualNeedWriteSize, directIOWriteFileSize_);
+            auto wReturn = pwrite(fileDirect_, readWriteBuffer_, actualNeedWriteSize, directIOWriteFileSize_);
             if (wReturn != actualNeedWriteSize) {
-                free(writeBuffer);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
                 fileOperationStatus_t ret(false, 0, 0, 0);
                 return ret;
             } else {
-                free(writeBuffer);
                 directIOWriteFileSize_ += actualNeedWriteSize;
                 directIOActualWriteFileSize_ += (targetWriteSize - bufferUsedSize_);
                 if (directIOActualWriteFileSize_ == 542115) {
@@ -301,17 +309,10 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
         }
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         // align mem
-        char* readBuffer;
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
-        auto ret = posix_memalign((void**)&readBuffer, directIOPageSize_, readBufferSize);
-        if (ret) {
-            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-            fileOperationStatus_t ret(false, 0, 0, 0);
-            return ret;
-        }
-        auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
+        memset(readWriteBuffer_, 0, readBufferSize);
+        auto rReturn = pread(fileDirect_, readWriteBuffer_, readBufferSize, 0);
         if (rReturn != readBufferSize) {
-            free(readBuffer);
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, fileDirect_, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
             fileOperationStatus_t ret(false, 0, 0, 0);
             return ret;
@@ -320,8 +321,8 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
         vector<uint64_t> vec;
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;
-            memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
-            memcpy(contentBuffer + currentReadDoneSize, readBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), currentPageContentSize);
+            memcpy(&currentPageContentSize, readWriteBuffer_ + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
+            memcpy(contentBuffer + currentReadDoneSize, readWriteBuffer_ + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), currentPageContentSize);
             currentReadDoneSize += currentPageContentSize;
             vec.push_back(currentReadDoneSize);
         }
@@ -330,7 +331,6 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
             currentReadDoneSize += bufferUsedSize_;
         }
         if (currentReadDoneSize != contentSize) {
-            free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, targetRequestPageNumber, directIOWriteFileSize_, directIOActualWriteFileSize_, bufferUsedSize_);
             uint64_t last = 0;
             for (auto& it : vec) {
@@ -340,7 +340,6 @@ fileOperationStatus_t FileOperation::readFile(char* contentBuffer, uint64_t cont
             fileOperationStatus_t ret(false, 0, 0, 0);
             return ret;
         } else {
-            free(readBuffer);
             fileOperationStatus_t ret(true, directIOWriteFileSize_, contentSize, 0);
             return ret;
         }
@@ -361,16 +360,8 @@ fileOperationStatus_t FileOperation::flushFile()
         if (bufferUsedSize_ != 0) {
             uint64_t targetRequestPageNumber = ceil((double)bufferUsedSize_ / (double)(directIOPageSize_ - sizeof(uint32_t)));
             // align mem
-            char* writeBuffer;
             auto writeBufferSize = directIOPageSize_ * targetRequestPageNumber;
-            auto ret = posix_memalign((void**)&writeBuffer, directIOPageSize_, writeBufferSize);
-            if (ret) {
-                debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-                fileOperationStatus_t ret(false, 0, 0, 0);
-                return ret;
-            } else {
-                memset(writeBuffer, 0, writeBufferSize);
-            }
+            memset(readWriteBuffer_, 0, writeBufferSize);
             uint64_t processedPageNumber = 0;
             uint64_t targetWriteSize = bufferUsedSize_;
             uint64_t writeDoneContentSize = 0;
@@ -378,26 +369,24 @@ fileOperationStatus_t FileOperation::flushFile()
                 uint32_t currentPageWriteSize;
                 if ((targetWriteSize - writeDoneContentSize) >= (directIOPageSize_ - sizeof(uint32_t))) {
                     currentPageWriteSize = directIOPageSize_ - sizeof(uint32_t);
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
                     writeDoneContentSize += currentPageWriteSize;
                     processedPageNumber++;
                 } else {
                     currentPageWriteSize = targetWriteSize - writeDoneContentSize;
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
-                    memcpy(writeBuffer + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_, &currentPageWriteSize, sizeof(uint32_t));
+                    memcpy(readWriteBuffer_ + processedPageNumber * directIOPageSize_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
                     writeDoneContentSize += currentPageWriteSize;
                     processedPageNumber++;
                 }
             }
-            auto wReturn = pwrite(fileDirect_, writeBuffer, writeBufferSize, directIOWriteFileSize_);
+            auto wReturn = pwrite(fileDirect_, readWriteBuffer_, writeBufferSize, directIOWriteFileSize_);
             if (wReturn != writeBufferSize) {
-                free(writeBuffer);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
                 fileOperationStatus_t ret(false, 0, 0, 0);
                 return ret;
             } else {
-                free(writeBuffer);
                 directIOWriteFileSize_ += writeBufferSize;
                 directIOActualWriteFileSize_ += bufferUsedSize_;
                 uint64_t flushedSize = bufferUsedSize_;
@@ -427,26 +416,18 @@ uint64_t FileOperation::getFileSize()
         uint64_t fileRealSizeWithoutPadding = 0;
         uint64_t targetRequestPageNumber = ceil((double)directIOWriteFileSize_ / (double)directIOPageSize_);
         // align mem
-        char* readBuffer;
         auto readBufferSize = directIOPageSize_ * targetRequestPageNumber;
-        auto ret = posix_memalign((void**)&readBuffer, directIOPageSize_, readBufferSize);
-        if (ret) {
-            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
-            return false;
-        }
-        auto rReturn = pread(fileDirect_, readBuffer, readBufferSize, 0);
+        memset(readWriteBuffer_, 0, readBufferSize);
+        auto rReturn = pread(fileDirect_, readWriteBuffer_, readBufferSize, 0);
         if (rReturn != readBufferSize) {
-            free(readBuffer);
             debug_error("[ERROR] Read return value = %lu, err = %s, targetRequestPageNumber = %lu, readBuffer size = %lu, directIOWriteFileSize_ = %lu\n", rReturn, strerror(errno), targetRequestPageNumber, readBufferSize, directIOWriteFileSize_);
-            free(readBuffer);
             return false;
         }
         for (auto processedPageNumber = 0; processedPageNumber < targetRequestPageNumber; processedPageNumber++) {
             uint32_t currentPageContentSize = 0;
-            memcpy(&currentPageContentSize, readBuffer + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
+            memcpy(&currentPageContentSize, readWriteBuffer_ + processedPageNumber * directIOPageSize_, sizeof(uint32_t));
             fileRealSizeWithoutPadding += currentPageContentSize;
         }
-        free(readBuffer);
         return fileRealSizeWithoutPadding;
     } else {
         return 0;

@@ -14,19 +14,19 @@ usage() {
 }
 
 generate_file_name() {
-  i=1
-  file=$1
+    i=1
+    file=$1
 
-  while [[ $i -lt 100 ]]; do
-    filename="${file}-Round-${i}"
-    if [[ -f "$filename.log" || -f "$filename" ]]; then
-      i=$(($i+1))
-      continue
-    fi
-    break
-  done
+    while [[ $i -lt 100 ]]; do
+        filename="${file}-Round-${i}"
+        if [[ -f "$filename.log" || -f "$filename" ]]; then
+            i=$(($i + 1))
+            continue
+        fi
+        break
+    done
 
-  echo "$filename.log"
+    echo "$filename.log"
 }
 
 log_db_status() {
@@ -34,36 +34,36 @@ log_db_status() {
     ResultLogFile=$2
 
     output_file=tmpappend
-    rm -rf $output_file 
-    echo "-------- smallest deltas ---------" >> $output_file 
-    ls -lt $DBPath | grep "delta" | sort -n -k5 | head >> $output_file
-    echo "-------- largest deltas ----------" >> $output_file
-    ls -lt $DBPath | grep "delta" | sort -n -k5 | tail >> $output_file
-    echo "-------- delta sizes and counts --" >> $output_file
-    ls -lt $DBPath | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >> $output_file
-    echo "--------- total delta sizes ------" >> $output_file
+    rm -rf $output_file
+    echo "-------- smallest deltas ---------" >>$output_file
+    ls -lt $DBPath | grep "delta" | sort -n -k5 | head >>$output_file
+    echo "-------- largest deltas ----------" >>$output_file
+    ls -lt $DBPath | grep "delta" | sort -n -k5 | tail >>$output_file
+    echo "-------- delta sizes and counts --" >>$output_file
+    ls -lt $DBPath | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
+    echo "--------- total delta sizes ------" >>$output_file
     ls $DBPath/hashStoreFileManifestFile.* | while read line; do
-	awk '{if (NR % 6 == 0) s+=$1;} END {print s / 1024 / 1024 " MiB delta";}' $line >> $output_file 
-	awk '{if (NR % 6 == 0) mp[$1]++;} END {for (i in mp) print i " " mp[i];}' $line | sort -n -k1 >> $output_file 
+        awk '{if (NR % 6 == 0) s+=$1;} END {print s / 1024 / 1024 " MiB delta";}' $line >>$output_file
+        awk '{if (NR % 6 == 0) mp[$1]++;} END {for (i in mp) print i " " mp[i];}' $line | sort -n -k1 >>$output_file
     done
-    ls -lt $DBPath | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >> $output_file
-    ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >> $output_file 
-    ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >> $output_file 
-    ls -lt $DBPath | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >> $output_file
-    echo "---------- total size ------------" >> $output_file
-    du -d1 $DBPath | tail -n 1 | awk '{print $1 / 1024 " MiB all";}' >> $output_file 
-    echo "----------------------------------" >> $output_file
+    ls -lt $DBPath | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >>$output_file
+    echo "---------- total size ------------" >>$output_file
+    du -d1 $DBPath | tail -n 1 | awk '{print $1 / 1024 " MiB all";}' >>$output_file
+    echo "----------------------------------" >>$output_file
 
     cat $output_file
-    cat $output_file >> $ResultLogFile
-    cat temp.ini >> $ResultLogFile
+    cat $output_file >>$ResultLogFile
+    cat temp.ini >>$ResultLogFile
 
-# dump LOG
+    # dump LOG
     cp $DBPath/LOG $ResultLogFile-LOG
 
-# dump OPTIONS 
-    OPTIONS=`ls -lht $DBPath/OPTIONS-* | head -n 1 | awk '{print $NF;}'`
-    cat $OPTIONS >> $ResultLogFile-LOG
+    # dump OPTIONS
+    OPTIONS=$(ls -lht $DBPath/OPTIONS-* | head -n 1 | awk '{print $NF;}')
+    cat $OPTIONS >>$ResultLogFile-LOG
 }
 
 pwd
@@ -78,20 +78,17 @@ KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
-DB_Working_Path="/mnt/g/deltakv/working"
-DB_Loaded_Path="/mnt/e/deltakvload"
-if [[ ! -d "/mnt/g" ]]; then
-    DB_Working_Path="/mnt/lvm/deltakv/working"
-    DB_Loaded_Path="/mnt/lvm/deltakv"
-fi
-ResultLogFolder="Exp3/ResultLogs"
+storagePrefix="/mnt/lvm"
+DB_Working_Path="$storagePrefix/deltakv/working"
+DB_Loaded_Path="$storagePrefix/deltakv/load"
+ResultLogFolder="$storagePrefix/Exp1/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
 RocksDBThreadNumber=16
 rawConfigPath="configDir/deltakv.ini"
 bucketSize="1048576"
-cacheSize="$(( 1024 * 1024 * 1024 ))"
+cacheSize="$((1024 * 1024 * 1024))"
 kvCacheSize=0
 blobCacheSize=0
 kdcache=0
@@ -149,72 +146,70 @@ for param in $*; do
         only_copy="true"
     elif [[ $param == "load" ]]; then
         only_load="true"
-    elif [[ `echo $param | grep "req" | wc -l` -eq 1 ]]; then  # req10m
-        num=`echo $param | sed 's/req//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
+    elif [[ $(echo $param | grep "req" | wc -l) -eq 1 ]]; then # req10m
+        num=$(echo $param | sed 's/req//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
         KVPairsNumber=$num
-    elif [[ `echo $param | grep "op" | wc -l` -eq 1 ]]; then  # op2m
-        num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
+    elif [[ $(echo $param | grep "op" | wc -l) -eq 1 ]]; then # op2m
+        num=$(echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
         OperationsNumber=$num
-    elif [[ `echo $param | grep "fc" | wc -l` -eq 1 ]]; then
-        num=`echo $param | sed 's/fc//g'`
+    elif [[ $(echo $param | grep "fc" | wc -l) -eq 1 ]]; then
+        num=$(echo $param | sed 's/fc//g')
         fieldcount=$num
-    elif [[ `echo $param | grep "fl" | wc -l` -eq 1 ]]; then
-        num=`echo $param | sed 's/fl//g'`
+    elif [[ $(echo $param | grep "fl" | wc -l) -eq 1 ]]; then
+        num=$(echo $param | sed 's/fl//g')
         fieldlength=$num
-    elif [[ `echo $param | grep "readRatio" | wc -l` -eq 1 ]]; then
-        ReadProportion=`echo $param | sed 's/readRatio//g'`
-    elif [[ `echo $param | grep "bucketNum" | wc -l` -eq 1 ]]; then
-        bucketNumber=`echo $param | sed 's/bucketNum//g'`
-    elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
-        ExpID=`echo $param | sed 's/Exp//g'`
-#        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
-#        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
-        ResultLogFolder="Exp$ExpID/ResultLogs"
+    elif [[ $(echo $param | grep "readRatio" | wc -l) -eq 1 ]]; then
+        ReadProportion=$(echo $param | sed 's/readRatio//g')
+    elif [[ $(echo $param | grep "bucketNum" | wc -l) -eq 1 ]]; then
+        bucketNumber=$(echo $param | sed 's/bucketNum//g')
+    elif [[ $(echo $param | grep "Exp" | wc -l) -eq 1 ]]; then
+        ExpID=$(echo $param | sed 's/Exp//g')
+        ResultLogFolder="$storagePrefix/Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
         fi
         if [ ! -d $DB_Loaded_Path ]; then
             mkdir -p $DB_Loaded_Path
         fi
-    elif [[ `echo $param | grep "note" | wc -l` -eq 1 ]]; then
-        note=`echo $param | sed 's/note//g'`
-	run_suffix=${run_suffix}_${note}
-    elif [[ `echo $param | grep "threads" | wc -l` -eq 1 ]]; then
-        RocksDBThreadNumber=`echo $param | sed 's/threads//g'`
-    elif [[ `echo $param | grep "gcT" | wc -l` -eq 1 ]]; then
-        gcThreadNumber=`echo $param | sed 's/gcT//g'`
-    elif [[ `echo $param | grep "workerT" | wc -l` -eq 1 ]]; then
-        workerThreadNumber=`echo $param | sed 's/workerT//g'`
-    elif [[ `echo $param | grep "batchSize" | wc -l` -eq 1 ]]; then
-        num=`echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g'`
+    elif [[ $(echo $param | grep "note" | wc -l) -eq 1 ]]; then
+        note=$(echo $param | sed 's/note//g')
+        run_suffix=${run_suffix}_${note}
+    elif [[ $(echo $param | grep "threads" | wc -l) -eq 1 ]]; then
+        RocksDBThreadNumber=$(echo $param | sed 's/threads//g')
+    elif [[ $(echo $param | grep "gcT" | wc -l) -eq 1 ]]; then
+        gcThreadNumber=$(echo $param | sed 's/gcT//g')
+    elif [[ $(echo $param | grep "workerT" | wc -l) -eq 1 ]]; then
+        workerThreadNumber=$(echo $param | sed 's/workerT//g')
+    elif [[ $(echo $param | grep "batchSize" | wc -l) -eq 1 ]]; then
+        num=$(echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g')
         batchSize=$num
-    elif [[ `echo $param | grep "round" | wc -l` -eq 1 ]]; then
-        MAXRunTimes=`echo $param | sed 's/round//g'`
-    elif [[ `echo $param | grep "maxFileNumber" | wc -l` -eq 1 ]]; then
-        maxFileNumber=`echo $param | sed 's/maxFileNumber//g'`
+    elif [[ $(echo $param | grep "round" | wc -l) -eq 1 ]]; then
+        MAXRunTimes=$(echo $param | sed 's/round//g')
+    elif [[ $(echo $param | grep "maxFileNumber" | wc -l) -eq 1 ]]; then
+        maxFileNumber=$(echo $param | sed 's/maxFileNumber//g')
     elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
-        num=`echo $param | sed 's/cache//g'`
-        cacheSize=$(( $num * 1024 * 1024 ))
+        num=$(echo $param | sed 's/cache//g')
+        cacheSize=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^kvcache[0-9]+$ ]]; then
-        num=`echo $param | sed 's/kvcache//g'`
-        kvCacheSize=$(( $num * 1024 * 1024 ))
+        num=$(echo $param | sed 's/kvcache//g')
+        kvCacheSize=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^blobcache[0-9]+$ ]]; then
-        num=`echo $param | sed 's/blobcache//g'`
-        blobCacheSize=$(( $num * 1024 * 1024 ))
+        num=$(echo $param | sed 's/blobcache//g')
+        blobCacheSize=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^kdcache[0-9]+$ ]]; then
-        num=`echo $param | sed 's/kdcache//g'`
-        kdcache=$(( $num * 1024 * 1024 ))
+        num=$(echo $param | sed 's/kdcache//g')
+        kdcache=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
-        blockSize=`echo $param | sed 's/blockSize//g'`
+        blockSize=$(echo $param | sed 's/blockSize//g')
         if [[ $blockSize -ne 4096 ]]; then
             run_suffix=${run_suffix}_$param
         fi
-    elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
-	cleanFlag="true"
+    elif [[ $(echo $param | grep "clean" | wc -l) -eq 1 ]]; then
+        cleanFlag="true"
     elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
         run_suffix=${run_suffix}_cif
@@ -236,11 +231,11 @@ done
 
 if [[ $kvCacheSize -ne 0 ]]; then
     if [[ "$usekd" == "false" && "$usebkvkd" == "false" ]]; then
-	bucketNumber=0
+        bucketNumber=0
     fi
-    deltaKVCacheSize=$(( ( $kvCacheSize - $bucketNumber * 4096 ) / ($fieldcount * $fieldlength + $fieldcount - 1) ))
+    deltaKVCacheSize=$((($kvCacheSize - $bucketNumber * 4096) / ($fieldcount * $fieldlength + $fieldcount - 1)))
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = true" temp.ini
-    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini 
+    sed -i "/deltaKVCacheObjectNumber/c\\deltaKVCacheObjectNumber = $deltaKVCacheSize" temp.ini
 else
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
 fi
@@ -248,14 +243,14 @@ fi
 # KD cache (append only)
 
 if [[ $kdcache -ne 0 ]]; then
-    deltaLogCacheSize=$(( $kdcache / ($fieldcount * $fieldlength / 2) ))
+    deltaLogCacheSize=$(($kdcache / ($fieldcount * $fieldlength / 2)))
     sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheSize" temp.ini
 fi
 
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
     echo usekd $cacheSize
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini 
+    sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bucketNumber" temp.ini
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
@@ -264,45 +259,45 @@ fi
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 
-totCacheSize=$(( ( ${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024 ));
+totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024))
 run_suffix=${run_suffix}_totcache${totCacheSize}
 
-sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini 
-sed -i "/blockSize/c\\blockSize = ${blockSize}" temp.ini 
+sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
+sed -i "/blockSize/c\\blockSize = ${blockSize}" temp.ini
 
 if [[ "$maxFileNumber" -ne 16 ]]; then
-  run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
+    run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
 fi
 
 if [[ "$cacheIndexFilter" == "true" ]]; then
-    sed -i "/cacheIndexAndFilterBlocks/c\\cacheIndexAndFilterBlocks = true" temp.ini 
+    sed -i "/cacheIndexAndFilterBlocks/c\\cacheIndexAndFilterBlocks = true" temp.ini
 fi
 
 if [[ "$fake" == "true" ]]; then
-    sed -i "/fakeDirectIO/c\\fakeDirectIO = true" temp.ini 
+    sed -i "/fakeDirectIO/c\\fakeDirectIO = true" temp.ini
 fi
 
 if [[ "$nodirect" == "true" ]]; then
-    sed -i "/directIO/c\\directIO = false" temp.ini 
+    sed -i "/directIO/c\\directIO = false" temp.ini
 fi
 
 if [[ "$nommap" == "true" ]]; then
-    sed -i "/useMmap/c\\useMmap = false" temp.ini 
+    sed -i "/useMmap/c\\useMmap = false" temp.ini
 fi
 
-size="$(( $KVPairsNumber / 1000000 ))M"
+size="$(($KVPairsNumber / 1000000))M"
 if [[ $size == "0M" ]]; then
-    size="$(( $KVPairsNumber / 1000 ))K"
-elif [[ "$(( $KVPairsNumber % 1000000 ))" -ne 0 ]]; then
-    echo "$(( $KVPairsNumber % 1000000 ))" 
-    size="${size}$(( ($KVPairsNumber % 1000000) / 1000 ))K"
+    size="$(($KVPairsNumber / 1000))K"
+elif [[ "$(($KVPairsNumber % 1000000))" -ne 0 ]]; then
+    echo "$(($KVPairsNumber % 1000000))"
+    size="${size}$((($KVPairsNumber % 1000000) / 1000))K"
 fi
 
-ops="op$(( $OperationsNumber / 1000000 ))M"
+ops="op$(($OperationsNumber / 1000000))M"
 if [[ $ops == "0M" ]]; then
-    ops="op$(( $OperationsNumber / 1000 ))K"
-elif [[ "$(( $OperationsNumber % 1000000 ))" -ne 0 ]]; then
-    ops="${ops}$(( ($OperationsNumber % 1000000) / 1000 ))K"
+    ops="op$(($OperationsNumber / 1000))K"
+elif [[ "$(($OperationsNumber % 1000000))" -ne 0 ]]; then
+    ops="${ops}$((($OperationsNumber % 1000000) / 1000))K"
 fi
 
 if [[ $paretokey == "true" ]]; then
@@ -342,30 +337,43 @@ echo "<===================== Loading the database =====================>"
 
 if [[ "$cleanFlag" == "true" ]]; then
     set -x
-    rm -rf $loadedDB 
+    rm -rf $loadedDB
     rm -rf $workingDB
     exit
 fi
 
 if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
-    rm -rf $loadedDB 
-    if [[ -d $workingDB ]]; then 
-        rm -rf $workingDB 
+    rm -rf $loadedDB
+    if [[ -d $workingDB ]]; then
+        rm -rf $workingDB
     fi
-    output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
+    output_file=$(generate_file_name $ResultLogFolder/LoadDB${run_suffix})
     echo "output at $output_file"
-    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
-#    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
+    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
+    #    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
     loaded="true"
     echo "output at $output_file"
+    echo "Read loaded DB to complete compaction"
+    if [ -f workload-temp.spec ]; then
+        rm -rf workload-temp.spec
+        echo "Deleted old workload spec"
+    fi
+    echo "Modify spec for read -> compaction"
+    cp workloads/workloadTemplate.spec ./workload-temp.spec
+    sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
+    sed -i "10s/NaN/500000/g" workload-temp.spec
+    sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
+    sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
+    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
+
     if [[ $? -ne 0 ]]; then
-	echo "Exit. return number $?"
-	exit
+        echo "Exit. return number $?"
+        exit
     fi
     log_db_status $workingDB $output_file
     cp -r $workingDB $loadedDB # Copy loaded DB
     if [[ "$only_load" == "true" ]]; then
-	exit
+        exit
     fi
 fi
 
@@ -373,69 +381,69 @@ run_suffix="${run_suffix}-${ops}"
 
 for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
-        # Running Update
+    # Running Update
 
-        if [ -f workload-temp.spec ]; then
-            rm -rf workload-temp.spec
-            echo "Deleted old workload spec"
+    if [ -f workload-temp.spec ]; then
+        rm -rf workload-temp.spec
+        echo "Deleted old workload spec"
+    fi
+    UpdateProportion=$(echo "1.0-$ReadProportion" | bc)
+    echo "Modify spec, Read/Update ratio = $ReadProportion:0$UpdateProportion"
+    cp workloads/workloadTemplate.spec ./workload-temp.spec
+    sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
+    sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
+    sed -i "15s/0/$ReadProportion/g" workload-temp.spec
+    sed -i "16s/0/0$UpdateProportion/g" workload-temp.spec
+    sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
+    sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
+    if [[ $paretokey == "true" ]]; then
+        sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
+    fi
+    echo "<===================== Modified spec file content =====================>"
+    cat workload-temp.spec | head -n 25 | tail -n 17
+    # Running the ycsb-benchmark
+    if [[ "$loaded" == "false" ]]; then
+        if [ -d $workingDB ]; then
+            rm -rf $workingDB
+            echo "Deleted old database folder"
         fi
-        UpdateProportion=$(echo "1.0-$ReadProportion" | bc)
-        echo "Modify spec, Read/Update ratio = $ReadProportion:0$UpdateProportion"
-        cp workloads/workloadTemplate.spec ./workload-temp.spec
-        sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
-        sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
-        sed -i "15s/0/$ReadProportion/g" workload-temp.spec
-        sed -i "16s/0/0$UpdateProportion/g" workload-temp.spec
-        sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
-        sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
-        if [[ $paretokey == "true" ]]; then
-            sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
-        fi
-        echo "<===================== Modified spec file content =====================>"
-        cat workload-temp.spec | head -n 25 | tail -n 17
-        # Running the ycsb-benchmark
-        if [[ "$loaded" == "false" ]]; then
-            if [ -d $workingDB ]; then
-                rm -rf $workingDB 
-                echo "Deleted old database folder"
-            fi
-            echo "cp -r $loadedDB $workingDB"
-            cp -r $loadedDB $workingDB
-            echo "Copy loaded database"
-        fi
-        if [ ! -d $workingDB ]; then
-            echo "Retrived loaded database error"
-            exit
-        fi
-        if [[ $only_copy == "true" ]]; then
-            exit
-        fi
+        echo "cp -r $loadedDB $workingDB"
+        cp -r $loadedDB $workingDB
+        echo "Copy loaded database"
+    fi
+    if [ ! -d $workingDB ]; then
+        echo "Retrived loaded database error"
+        exit
+    fi
+    if [[ $only_copy == "true" ]]; then
+        exit
+    fi
 
-        echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
+    echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
 
-        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
-        if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
-            output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
+    output_file=$(generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize})
+    if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
+        output_file=$(generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix})
+    fi
+    echo "output at $output_file"
+    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
+    loaded="false"
+    if [[ $? -ne 0 ]]; then
+        echo "Exit. return number $?"
+        exit
+    fi
+    echo "output at $output_file"
+    log_db_status $workingDB $output_file
+    echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
+    # Cleanup
+    if [ -f workload-temp.spec ]; then
+        rm -rf workload-temp.spec
+        echo "Deleted old workload spec"
+    fi
+    if [[ $roundIndex -eq $MAXRunTimes ]]; then
+        if [ -f temp.ini ]; then
+            rm -rf temp.ini
+            echo "Deleted old workload config"
         fi
-	echo "output at $output_file"
-        ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
-        loaded="false"
-	if [[ $? -ne 0 ]]; then
-	    echo "Exit. return number $?"
-	    exit
-	fi
-        echo "output at $output_file"
-	log_db_status $workingDB $output_file
-        echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
-        # Cleanup
-        if [ -f workload-temp.spec ]; then
-            rm -rf workload-temp.spec
-            echo "Deleted old workload spec"
-        fi
-        if [[ $roundIndex -eq $MAXRunTimes ]]; then
-            if [ -f temp.ini ]; then
-                rm -rf temp.ini
-                echo "Deleted old workload config"
-            fi
-        fi
+    fi
 done
