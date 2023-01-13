@@ -255,6 +255,54 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec,
     }
 }
 
+bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec)
+{
+    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    bool ret;
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+    if (ret != true) {
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
+        return false;
+    } else {
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec);
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
+        if (ret != true) {
+            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
+bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec, vector<hashStoreRecordHeader>*& recordVec)
+{
+    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    bool ret;
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+    if (ret != true) {
+        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
+        return false;
+    } else {
+        // if (shouldUseDirectOperationsFlag_ == true) {
+        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec, recordVec);
+        // } else {
+        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
+        // }
+        if (ret != true) {
+            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
 bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVec)
 {
     vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;

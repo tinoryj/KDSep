@@ -20,7 +20,9 @@ public:
     bool put(mempoolHandler_t objectPairMemPoolHandler);
     bool multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec);
     bool get(const string& keyStr, vector<string>*& valueStrVecPtr);
+    bool get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec);
     bool get(const string& keyStr, vector<string>*& valueStrVec, vector<hashStoreRecordHeader>*& recordVec);
+    bool get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec, vector<hashStoreRecordHeader>*& recordVec);
     bool multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();
     bool setJobDone();

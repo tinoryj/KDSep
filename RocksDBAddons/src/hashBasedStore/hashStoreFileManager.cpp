@@ -1142,9 +1142,7 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
             continue;
         }
         // get key str_t
-        str_t currentKey;
-        currentKey.data_ = contentBuffer + currentProcessLocationIndex;
-        currentKey.size_ = currentObjectRecordHeader.key_size_;
+        str_t currentKey(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeader.key_size_);
         currentProcessLocationIndex += currentObjectRecordHeader.key_size_;
         if (currentObjectRecordHeader.is_anchor_ == true) {
             auto mapIndex = resultMap.find(currentKey);

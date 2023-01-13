@@ -16,11 +16,29 @@ typedef struct str_t {
     uint32_t size_;
     str_t() { }
     str_t(char* data, uint32_t size)
+        : data_(data)
+        , size_(size)
     {
-        data_ = data;
-        size_ = size;
     }
 } str_t;
+
+typedef struct str_cpy_t {
+    char* data_;
+    uint32_t size_;
+    str_cpy_t() { }
+    str_cpy_t(char* data, uint32_t size)
+    {
+        data_ = new char[size];
+        memcpy(data_, data, size);
+        size_ = size;
+    }
+    ~str_cpy_t()
+    {
+        if (data_ != nullptr) {
+            delete[] data_;
+        }
+    }
+} str_cpy_t;
 
 static unsigned int charBasedHashFunc(char* data, uint32_t n)
 {
@@ -73,6 +91,17 @@ typedef struct externalIndexInfo {
     uint32_t externalFileID_;
     uint32_t externalFileOffset_;
     uint32_t externalContentSize_;
+    externalIndexInfo()
+    {
+    }
+    externalIndexInfo(uint32_t externalFileID,
+        uint32_t externalFileOffset,
+        uint32_t externalContentSize)
+        : externalFileID_(externalFileID)
+        , externalFileOffset_(externalFileOffset)
+        , externalContentSize_(externalContentSize)
+    {
+    }
 } externalIndexInfo;
 
 enum DBOperationType { kPutOp = 0,
@@ -137,7 +166,8 @@ typedef struct hashStoreOperationHandler {
     hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
     operationStatus jobDone_ = kNotDone;
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler)
+        : file_handler_(file_handler) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
