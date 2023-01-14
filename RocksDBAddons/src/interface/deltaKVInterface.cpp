@@ -2214,7 +2214,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         }
                     } else {
                         rocksdb::WriteBatch batch;
-                        for (auto index = 0; index < handlerToValueStoreVec.size(); index++) {
+                        for (auto index = 0; index < handlerToDeltaStoreVec.size(); index++) {
                             if (handlerToDeltaStoreVec[index].isAnchorFlag_ == false) {
                                 char writeInternalValueBuffer[sizeof(internalValueType) + handlerToDeltaStoreVec[index].valueSize_];
                                 internalValueType currentInternalValueType;
