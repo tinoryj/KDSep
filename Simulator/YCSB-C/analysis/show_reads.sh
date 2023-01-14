@@ -25,7 +25,7 @@ DN=`dirname $0`
 source $DN/common.sh
 
 #concatFunc "sst_r" "sst_rc" "blob_r" "blob_rc" "d_gc_r" "d_op_r" "d_gc_rc" "d_op_rc" "v_r" "v_rc" "rock_io" "d_rw" "v_rw" "tot_rw" "thpt" "fname"
-concatFunc "comp_r" "sst_r" "blob_r" "d_gc_r" "d_op_r" "v_r" "tot_r" "tot_rc" "|" "rock_io" "d_rw" "v_rw" "tot_rw" "|" "thpt   " "fname"
+concatFunc "comp_r" "sst_r" "blob_r" "d_gc_r" "d_op_r" "v_r" "tot_r" "|" "v_rc" "tot_rc" "|" "rock_io" "d_rw" "v_rw" "tot_rw" "|" "thpt   " "fname"
 
 for file in $*; do
     comp_r=`grep "rocksdb.compact.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
@@ -69,5 +69,5 @@ for file in $*; do
     tot_rw=`echo $d_rw $v_rw $rock_io | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
 #    concatFunc "$act_sst" "$act_sst_count" "$act_bl" "$act_bl_count" "$d_gc_r" "$d_op_r" "$d_gc_r_cnt" "$d_op_r_cnt" "$v_r" "$v_r_cnt" "$rock_io" "$d_rw" "$v_rw" "$tot_rw" "$thpt" "$file"
-    concatFunc "$comp_r" "$act_sst" "$act_bl" "$d_gc_r" "$d_op_r" "$v_r" "$tot_r" "$tot_rc" "|" "$rock_io" "$d_rw" "$v_rw" "$tot_rw" "|" "$thpt" "$file"
+    concatFunc "$comp_r" "$act_sst" "$act_bl" "$d_gc_r" "$d_op_r" "$v_r" "$tot_r" "|" "$v_r_cnt" "$tot_rc" "|" "$rock_io" "$d_rw" "$v_rw" "$tot_rw" "|" "$thpt" "$file"
 done
