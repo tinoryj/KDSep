@@ -26,39 +26,29 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "comp_w" "flush_w" "wal_w" "comp_wc" "fl_wc" "wal_wc" "d_gc_w" "d_op_w" "d_gc_wc" "d_op_wc" "v_w" "v_wc" "rock_io" "d_rw" "v_rw" "tot_rw" "thpt" "fname"
+concatFunc "comp_w" "flush_w" "wal_w" "d_gc_w" "d_op_w" "v_w" "tot_w" "tot_wc" "|" "rock_io" "d_rw" "v_rw" "tot_rw" "|" "thpt   " "fname"
 
 for file in $*; do
-    act_sst=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
-    act_sst_count=`grep "rocksdb.*last.level.read.count" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t / 1000;}'`
-
-    act_bl=`grep "actual.blob.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
-    act_bl_count=`grep "blob.read.count\|blob.read.large.count" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t / 1000;}'`
-
-    act_sst=`echo $act_sst $act_bl | awk '{print $1-$2;}'`
-    act_sst_count=`echo $act_sst_count $act_bl_count | awk '{print $1-$2;}'`
+    rock_r=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
 
     comp_w=`grep "rocksdb.compact.write.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
     flush=`grep "rocksdb.flush.write.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
     wal=`grep "rocksdb.wal.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
 
-    comp_w_cnt=`grep "rocksdb.compact.write.count" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000;}'`
-    flush_cnt=`grep "rocksdb.flush.write.count" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000;}'`
-    wal_cnt=`grep "rocksdb.write.wal" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000;}'`
+    rock_wc=`grep "rocksdb.compact.write.count\|rocksdb.flush.write.count\|rocksdb.write.wal" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t / 1000;}'`
 
-    rock_io=`echo $act_sst $act_bl $comp_w $flush $wal | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
+    rock_io=`echo $rock_r $comp_w $flush $wal | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
 
-    d_gc_r=`grep "dStore GC Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
     d_gc_w=`grep "dStore GC Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
-    d_op_r=`grep "dStore OP Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
     d_op_w=`grep "dStore OP Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
 
-    d_gc_r_cnt=`grep "dStore GC Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
-    d_gc_w_cnt=`grep "dStore GC Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
-    d_op_r_cnt=`grep "dStore OP Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
-    d_op_w_cnt=`grep "dStore OP Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
+#    d_gc_r_cnt=`grep "dStore GC Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
+#    d_gc_w_cnt=`grep "dStore GC Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
+#    d_op_r_cnt=`grep "dStore OP Physical read bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
+#    d_op_w_cnt=`grep "dStore OP Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
 
     d_rw=`grep "dStore.*Physical.*bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
+    d_w_cnt=`grep "dStore.*Physical write bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
     d_rw_cnt=`grep "dStore.*Physical.*bytes" $file | awk 'BEGIN {t=0;} {t+=$10;} END {print t / 1000;}'`
 
     thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
@@ -68,13 +58,13 @@ for file in $*; do
         thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
     fi
 
-    v_r=`grep "Total disk read" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t/1024/1024/1024;}'`
     v_w=`grep "Total disk write" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t/1024/1024/1024;}'`
     v_rw=`grep "Total disk" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t/1024/1024/1024;}'`
-    v_r_cnt=`grep "GetValueTime" $file | awk 'BEGIN {t=0;} {t+=$(NF-4);} END {print t/1000;}'`
     v_w_cnt=`grep "Flush w/o GC" $file | awk 'BEGIN {t=0;} {t+=$(NF-4);} END {print t/1000;}'`
 
+    tot_w=`echo $comp_w $flush $wal $d_gc_w $d_op_w $v_w | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
+    tot_wc=`echo $rock_wc $d_w_cnt $v_w_cnt | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
     tot_rw=`echo $d_rw $v_rw $rock_io | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
-    concatFunc "$comp_w" "$flush" "$wal" "$comp_w_cnt" "$flush_cnt" "$wal_cnt" "$d_gc_w" "$d_op_w" "$d_gc_w_cnt" "$d_op_w_cnt" "$v_w" "$v_w_cnt" "$rock_io" "$d_rw" "$v_rw" "$tot_rw" "$thpt" "$file"
+    concatFunc "$comp_w" "$flush" "$wal" "$d_gc_w" "$d_op_w" "$v_w" "$tot_w" "$tot_wc" "|" "$rock_io" "$d_rw" "$v_rw" "$tot_rw" "|" "$thpt" "$file"
 done
