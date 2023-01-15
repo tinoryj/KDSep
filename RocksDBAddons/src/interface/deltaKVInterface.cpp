@@ -1043,9 +1043,9 @@ bool DeltaKV::Put(const string& key, const string& value)
     // insert to cache if is value update
     if (enableKeyValueCache_ == true) {
         string cacheKey = key;
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         if (keyToValueListCache_->existsInCache(cacheKey) == true) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
             keyToValueListCache_->getFromCache(cacheKey).assign(value);
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
         }
@@ -2214,7 +2214,7 @@ void DeltaKV::processBatchedOperationsWorker()
                         }
                     } else {
                         rocksdb::WriteBatch batch;
-                        for (auto index = 0; index < handlerToValueStoreVec.size(); index++) {
+                        for (auto index = 0; index < handlerToDeltaStoreVec.size(); index++) {
                             if (handlerToDeltaStoreVec[index].isAnchorFlag_ == false) {
                                 char writeInternalValueBuffer[sizeof(internalValueType) + handlerToDeltaStoreVec[index].valueSize_];
                                 internalValueType currentInternalValueType;

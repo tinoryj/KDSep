@@ -257,24 +257,23 @@ IOStatus RandomAccessFileReader::Read(
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
     RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
     if (file_name().find("blob") != std::string::npos) {
-        if (total_read_size >= 32 * 1024) {
-            RecordTick(stats_, ACTUAL_BLOB_READ_LARGE_BYTES, total_read_size);
-            RecordTick(stats_, BLOB_READ_LARGE_COUNT, 1);
-        } else {
-            RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
-            RecordTick(stats_, BLOB_READ_COUNT, 1);
-        }
+        RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+        RecordTick(stats_, BLOB_READ_COUNT, 1);
     } 
     SetPerfLevel(prev_perf_level);
   }
-  RecordTick(stats_, FILE_READER_READ_MICROS, 
-	  (IOSTATS(read_nanos) - prev_read_nanos) / 1000) ; 
-  if (is_last_level_) {
-      RecordTick(stats_, FILE_READER_LAST_LEVEL_READ_MICROS, 
-	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
+  auto time_micros = (IOSTATS(read_nanos) - prev_read_nanos) / 1000;
+  RecordTick(stats_, FILE_READER_READ_MICROS, time_micros); 
+  if (file_name().find("blob") != std::string::npos) {
+      RecordTick(stats_, FILE_READER_BLOB_READ_MICROS, time_micros); 
   } else {
-      RecordTick(stats_, FILE_READER_NON_LAST_LEVEL_READ_MICROS, 
-	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
+      RecordTick(stats_, FILE_READER_SST_READ_MICROS, time_micros); 
+  }
+
+  if (is_last_level_) {
+      RecordTick(stats_, FILE_READER_LAST_LEVEL_READ_MICROS, time_micros); 
+  } else {
+      RecordTick(stats_, FILE_READER_NON_LAST_LEVEL_READ_MICROS, time_micros); 
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
     file_read_hist_->Add(elapsed);

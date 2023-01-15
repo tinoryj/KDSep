@@ -132,6 +132,8 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {FLUSH_CPU_WRITE_NANOS, "rocksdb.flush.cpu.write.nanos"},
 
     {FILE_READER_READ_MICROS, "rocksdb.file.reader.read.micros"},
+    {FILE_READER_BLOB_READ_MICROS, "rocksdb.file.reader.blob.read.micros"},
+    {FILE_READER_SST_READ_MICROS, "rocksdb.file.reader.sst.read.micros"},
     {FILE_READER_LAST_LEVEL_READ_MICROS, 
 	"rocksdb.file.reader.last.level.read.micros"},
     {FILE_READER_NON_LAST_LEVEL_READ_MICROS, 

@@ -22,7 +22,8 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "roc_r" "roc_w" "roc_syn" "d_gc_r" "d_gc_w" "d_op_r" "d_op_w" "v_r" "v_w" "roc_io" "d_io_t" "v_io_t" "tot" "act_t" "thpt" "fname"
+#concatFunc "roc_r" "roc_w" "roc_syn" "d_gc_r" "d_gc_w" "d_op_r" "d_op_w" "v_r" "v_w" "roc_io" "d_io_t" "v_io_t" "tot" "act_t" "thpt" "fname"
+concatFunc "sst_r" "blb_r" "d_gc_r" "d_gc_w" "d_op_r" "d_op_w" "v_r" "v_w" "roc_io" "d_io_t" "v_io_t" "tot" "act_t" "thpt" "fname"
 
 for file in $*; do
     fname=$file
@@ -30,9 +31,16 @@ for file in $*; do
     comp_r=`grep "rocksdb.compact.read.nanos" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000000;}'`
     comp_w=`grep "rocksdb.compact.write.nanos" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000000;}'`
 
-    roc_r=`grep "rocksdb.file.reader.read.micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
-    roc_w=`grep "file_write_micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
-    roc_syn=`grep "file_fsync_micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
+#    roc_r=`grep "rocksdb.file.reader.read.micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
+
+# Real SST read I/O time
+    sst_r=`grep "rocksdb.sst.read.micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
+
+# Real blob read I/O time
+    blb_r=`grep "rocksdb.blobdb.blob.file.read.micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
+
+#    roc_w=`grep "file_write_micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
+#    roc_syn=`grep "file_fsync_micros" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1000000;}'`
 
 
     d_gc_r=`grep "gc read" $file | awk 'BEGIN {t=0;} {t=$5;} END {print t / 1000000;}'`
@@ -53,10 +61,11 @@ for file in $*; do
     v_r=`grep "GetValueTime" $file | awk 'BEGIN {t=0;} {t+=$3;} END {print t/1000000;}'`
     v_w=`grep "Flush w/o GC" $file | awk 'BEGIN {t=0;} {t+=$6;} END {print t/1000000;}'`
 
-    roc_io=`echo $roc_r $roc_w $roc_syn | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
+    roc_io=`echo $sst_r $blb_r $roc_w $roc_syn | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
     d_io_t=`echo $d_gc_r $d_gc_w $d_op_r $d_op_w | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
     v_io_t=`echo $v_r $v_w | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
     tot=`echo $roc_io $d_io_t $v_io_t | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
-    concatFunc "$roc_r" "$roc_w" "$roc_syn" "$d_gc_r" "$d_gc_w" "$d_op_r" "$d_op_w" "$v_r" "$v_w" "$roc_io" "$d_io_t" "$v_io_t" "$tot" "$act_t" "$thpt" "$fname"
+#    concatFunc "$sst_r" "$blb_r" "$roc_w" "$roc_syn" "$d_gc_r" "$d_gc_w" "$d_op_r" "$d_op_w" "$v_r" "$v_w" "$roc_io" "$d_io_t" "$v_io_t" "$tot" "$act_t" "$thpt" "$fname"
+    concatFunc "$sst_r" "$blb_r" "$d_gc_r" "$d_gc_w" "$d_op_r" "$d_op_w" "$v_r" "$v_w" "$roc_io" "$d_io_t" "$v_io_t" "$tot" "$act_t" "$thpt" "$fname"
 done

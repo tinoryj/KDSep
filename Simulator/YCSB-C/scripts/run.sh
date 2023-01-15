@@ -67,7 +67,7 @@ log_db_status() {
 }
 
 pwd
-ulimit -n 10240
+ulimit -n 20480 
 ulimit -s 102400
 echo $@
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
@@ -121,6 +121,10 @@ blockSize=4096
 fake="false"
 nodirect="false"
 nommap="false"
+checkRepeat="false"
+sstsz=64
+l1sz=256
+memtable=64
 
 for param in $*; do
     if [[ $param == "kv" ]]; then
@@ -214,6 +218,21 @@ for param in $*; do
         if [[ $blockSize -ne 4096 ]]; then
             run_suffix=${run_suffix}_$param
         fi
+    elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
+        sstsz=`echo $param | sed 's/sst//g'`
+        if [[ $sstsz -ne 64 ]]; then
+            suffix=${suffix}_$param
+        fi
+    elif [[ "$param" =~ ^l1sz[0-9]+$ ]]; then
+        l1sz=`echo $param | sed 's/l1sz//g'`
+        if [[ $l1sz -ne 256 ]]; then
+            suffix=${suffix}_$param
+        fi
+    elif [[ "$param" =~ ^memtable[0-9]+$ ]]; then
+        memtable=`echo $param | sed 's/memtable//g'`
+        if [[ $memtable -ne 64 ]]; then
+            suffix=${suffix}_$param
+        fi
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
 	exit
@@ -233,6 +252,8 @@ for param in $*; do
         paretokey="true"
     elif [[ "$param" == "nogc" ]]; then
         nogc="true"
+    elif [[ "$param" == "checkrepeat" ]]; then
+        checkRepeat="true"
     fi
 done
 
@@ -319,6 +340,12 @@ if [[ $nogc == "true" ]]; then
     sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = false" temp.ini 
 fi
 
+maxKeyValueSize=$(( (${fieldcount} * ${fieldlength} + 4095) / 4096 * 4096))
+sed -i "/maxKeyValueSize_/c\\maxKeyValueSize_ = $maxKeyValueSize" temp.ini 
+sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini 
+sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
+sed -i "/maxBytesForLevelBase/c\\maxBytesForLevelBase = $(( $l1sz * 1024 ))" temp.ini 
+
 DB_Name=${DB_Name}${suffix}
 ResultLogFolder=${ResultLogFolder}${suffix}
 configPath="temp.ini"
@@ -377,7 +404,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC 
     sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
-    sed -i "10s/NaN/3000000/g" $SPEC 
+    sed -i "10s/NaN/10000000/g" $SPEC 
     sed -i "15s/0/1/g" $SPEC
     sed -i "16s/0/0/g" $SPEC
     sed -i "24s/NaN/$fieldcount/g" $SPEC
@@ -415,6 +442,19 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fi
         echo "<===================== Modified spec file content =====================>"
         cat workload-temp.spec | head -n 25 | tail -n 17
+
+        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
+        if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
+            output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
+        fi
+	echo "output at $output_file"
+        if [[ "$checkRepeat" == "true" ]]; then
+            if [[ `echo $output_file | grep "Round-1" | wc -l` -eq 0 ]]; then
+                echo "exit because of check repeated: $output_file"
+                exit
+            fi
+        fi
+
         # Running the ycsb-benchmark
         if [[ "$loaded" == "false" ]]; then
             if [ -d $workingDB ]; then
@@ -433,13 +473,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             exit
         fi
 
-
         echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
-        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
-        if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
-            output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
-        fi
-	echo "output at $output_file"
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath > $output_file
         loaded="false"
         echo "output at $output_file"

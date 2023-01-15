@@ -24,21 +24,22 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "ind_rc" "fil_rc" "dat_rc" "tot_rc" "|" "ind_r" "fil_r" "dat_r" "ind_pr" "fil_pr" "dat_pr" "thpt" "file"
+func() {
+    level=$1
+    fn=$2
+    lvl_cnt=`grep "Level $level read latency" -A 1 $fn | tail -n 1 | awk 'BEGIN {t=0;} {t = $2 / 1000;} END {print t;}'`
+    echo $lvl_cnt
+}
+
+concatFunc lv0_rc lv3_rc lv4_rc lv5_rc lv6_rc sst_rc blb_rc v_rc tot_rc thpt file
 
 for file in $*; do
-    ind_rc=`grep "rocksdb.block.cache.index.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    fil_rc=`grep "rocksdb.block.cache.filter.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    dat_rc=`grep "rocksdb.block.cache.data.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    tot_rc=`echo $ind_rc $fil_rc $dat_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
-    ind_r=`grep "rocksdb.block.cache.index.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-    fil_r=`grep "rocksdb.block.cache.filter.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-    dat_r=`grep "rocksdb.block.cache.data.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-
-    ind_pr=`echo $ind_rc $ind_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
-    fil_pr=`echo $fil_rc $fil_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
-    dat_pr=`echo $dat_rc $dat_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
+    lv0_rc=`func 0 $file`
+    lv3_rc=`func 3 $file`
+    lv4_rc=`func 4 $file`
+    lv5_rc=`func 5 $file`
+    lv6_rc=`func 6 $file`
 
     thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
     if [[ "$thpt" == "0" ]]; then
@@ -47,5 +48,11 @@ for file in $*; do
         thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
     fi
 
-    concatFunc "$ind_rc" "$fil_rc" "$dat_rc" "$tot_rc" "|" "$ind_r" "$fil_r" "$dat_r" "$ind_pr" "$fil_pr" "$dat_pr" "$thpt" "$file"
+    sst_rc=`echo $lv0_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
+    blb_rc=`grep "rocksdb.blobdb.blob.file.read.micros" $file | awk 'BEGIN {t=0;} {t=$(NF-3);} END {print t / 1000;}'`
+    v_rc=`grep "GetValueTime" $file | awk 'BEGIN {t=0;} {t+=$(NF-4);} END {print t/1000;}'`
+
+    tot_rc=`echo $sst_rc $blb_rc $v_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
+
+    concatFunc $lv0_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc $sst_rc $blb_rc $v_rc $tot_rc $thpt $file
 done

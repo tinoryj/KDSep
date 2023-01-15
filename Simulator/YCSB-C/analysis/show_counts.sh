@@ -24,21 +24,11 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "ind_rc" "fil_rc" "dat_rc" "tot_rc" "|" "ind_r" "fil_r" "dat_r" "ind_pr" "fil_pr" "dat_pr" "thpt" "file"
+concatFunc "sst_rc" "blb_rc" "v_rc" "thpt" "file"
 
 for file in $*; do
-    ind_rc=`grep "rocksdb.block.cache.index.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    fil_rc=`grep "rocksdb.block.cache.filter.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    dat_rc=`grep "rocksdb.block.cache.data.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
-    tot_rc=`echo $ind_rc $fil_rc $dat_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
-
-    ind_r=`grep "rocksdb.block.cache.index.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-    fil_r=`grep "rocksdb.block.cache.filter.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-    dat_r=`grep "rocksdb.block.cache.data.bytes.insert" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
-
-    ind_pr=`echo $ind_rc $ind_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
-    fil_pr=`echo $fil_rc $fil_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
-    dat_pr=`echo $dat_rc $dat_r | awk '{t+=$2/($1+0.001)*1024*1024/1000000;} END {print t;}'`
+    sst_rc=`grep "rocksdb.sst.read.micros" $file | awk 'BEGIN {t=0;} {t=$(NF-3);} END {print t / 1000000;}'`
+    blb_rc=`grep "rocksdb.blobdb.blob.file.read.micros" $file | awk 'BEGIN {t=0;} {t=$(NF-3);} END {print t / 1000000;}'`
 
     thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
     if [[ "$thpt" == "0" ]]; then
@@ -47,5 +37,7 @@ for file in $*; do
         thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
     fi
 
-    concatFunc "$ind_rc" "$fil_rc" "$dat_rc" "$tot_rc" "|" "$ind_r" "$fil_r" "$dat_r" "$ind_pr" "$fil_pr" "$dat_pr" "$thpt" "$file"
+    v_rc=`grep "GetValueTime" $file | awk 'BEGIN {t=0;} {t+=$(NF-4);} END {print t/1000000;}'`
+
+    concatFunc "$sst_rc" "$blb_rc" "$v_rc" "$thpt" "$file"
 done

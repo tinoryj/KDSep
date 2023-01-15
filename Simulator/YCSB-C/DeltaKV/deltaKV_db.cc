@@ -251,6 +251,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.disable_auto_compactions = config.getNoCompaction();
     options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
     options_.rocksdbRawOptions_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
+    options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getMaxBytesForLevelBase() * 1024;
+
     cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
     cerr << "write buffer size " << options_.rocksdbRawOptions_.write_buffer_size << endl;
     cerr << "write buffer number " << options_.rocksdbRawOptions_.max_write_buffer_number << endl;
@@ -270,7 +272,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
     options_.rocksdbRawOptions_.report_bg_io_stats = true;
 
-    cerr << "Start create DeltaKVDB instance" << endl;
+    cerr << "--- Start create DeltaKVDB instance" << endl;
 
     DELTAKV_NAMESPACE::ConfigManager::getInstance().setConfigPath(config_file_path.c_str());
 
@@ -283,6 +285,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         rocksdb::get_perf_context()->Reset();
         rocksdb::get_iostats_context()->Reset();
     }
+    cerr << "--- Create finished" << endl;
 
     gettimeofday(&tv_, 0);
 }

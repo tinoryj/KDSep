@@ -32,6 +32,7 @@ class ExternDBConfig {
     bool key_delta_separation_;
     bool blob_db_key_value_separation_;
     uint64_t target_file_size_base_;
+    uint64_t max_bytes_for_level_base_;
     uint64_t blob_file_size_;
     uint64_t deltaLog_file_size_;
     uint64_t deltaLog_file_flush_size_;
@@ -81,7 +82,8 @@ class ExternDBConfig {
         key_value_separation_ = pt_.get<bool>("config.keyValueSeparation");
         key_delta_separation_ = pt_.get<bool>("config.keyDeltaSeparation");
         blob_db_key_value_separation_ = pt_.get<bool>("config.blobDbKeyValueSeparation");
-        target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase");
+        target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase", 65536);
+        max_bytes_for_level_base_ = pt_.get<uint64_t>("config.maxBytesForLevelBase", 262144);
         blob_file_size_ = pt_.get<uint64_t>("config.blobFileSize");
         deltaLog_file_size_ = pt_.get<uint64_t>("deltaStore.deltaLogFileSize");
         deltaLog_file_flush_size_ = pt_.get<uint64_t>("deltaStore.deltaLogFileFlushSize");
@@ -162,6 +164,9 @@ class ExternDBConfig {
     }
     uint64_t getTargetFileSizeBase() {
         return target_file_size_base_;
+    }
+    uint64_t getMaxBytesForLevelBase() {
+        return max_bytes_for_level_base_;
     }
     uint64_t getBlobFileSize() {
         return blob_file_size_;
