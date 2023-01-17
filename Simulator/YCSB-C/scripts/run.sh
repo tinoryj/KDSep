@@ -101,6 +101,7 @@ batchSize=2000
 cacheIndexFilter=false
 paretokey="false"
 nogc="false"
+bloomBits=10
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -233,6 +234,11 @@ for param in $*; do
         if [[ $memtable -ne 64 ]]; then
             suffix=${suffix}_$param
         fi
+    elif [[ "$param" =~ ^bf[0-9]+$ ]]; then
+        bloomBits=`echo $param | sed 's/bf//g'`
+        if [[ $bloomBits -ne 10 ]]; then
+            suffix=${suffix}_$param
+        fi
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
 	exit
@@ -345,6 +351,7 @@ sed -i "/maxKeyValueSize_/c\\maxKeyValueSize_ = $maxKeyValueSize" temp.ini
 sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini 
 sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
 sed -i "/maxBytesForLevelBase/c\\maxBytesForLevelBase = $(( $l1sz * 1024 ))" temp.ini 
+sed -i "/bloomBits/c\\bloomBits = $bloomBits" temp.ini 
 
 DB_Name=${DB_Name}${suffix}
 ResultLogFolder=${ResultLogFolder}${suffix}

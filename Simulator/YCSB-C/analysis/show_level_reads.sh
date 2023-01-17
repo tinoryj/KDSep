@@ -31,11 +31,13 @@ func() {
     echo $lvl_cnt
 }
 
-concatFunc lv0_rc lv3_rc lv4_rc lv5_rc lv6_rc sst_rc blb_rc v_rc tot_rc thpt file
+concatFunc lv0_rc lv1_rc lv2_rc lv3_rc lv4_rc lv5_rc lv6_rc sst_rc blb_rc v_rc tot_rc thpt file
 
 for file in $*; do
 
     lv0_rc=`func 0 $file`
+    lv1_rc=`func 1 $file`
+    lv2_rc=`func 2 $file`
     lv3_rc=`func 3 $file`
     lv4_rc=`func 4 $file`
     lv5_rc=`func 5 $file`
@@ -48,11 +50,11 @@ for file in $*; do
         thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
     fi
 
-    sst_rc=`echo $lv0_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
+    sst_rc=`echo $lv0_rc $lv1_rc $lv2_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
     blb_rc=`grep "rocksdb.blobdb.blob.file.read.micros" $file | awk 'BEGIN {t=0;} {t=$(NF-3);} END {print t / 1000;}'`
     v_rc=`grep "GetValueTime" $file | awk 'BEGIN {t=0;} {t+=$(NF-4);} END {print t/1000;}'`
 
     tot_rc=`echo $sst_rc $blb_rc $v_rc | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
-    concatFunc $lv0_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc $sst_rc $blb_rc $v_rc $tot_rc $thpt $file
+    concatFunc $lv0_rc $lv1_rc $lv2_rc $lv3_rc $lv4_rc $lv5_rc $lv6_rc $sst_rc $blb_rc $v_rc $tot_rc $thpt $file
 done
