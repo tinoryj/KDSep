@@ -241,7 +241,6 @@ for param in $*; do
         fi
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
-	exit
     elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
         run_suffix=${run_suffix}_cif
