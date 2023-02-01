@@ -64,6 +64,12 @@ log_db_status() {
 # dump OPTIONS 
     OPTIONS=`ls -lht $DBPath/OPTIONS-* | head -n 1 | awk '{print $NF;}'`
     cat $OPTIONS >> $ResultLogFile-LOG
+
+    if [[ `echo "$ResultLogFile" | grep "Load" | wc -l` -ne 0 ]]; then
+	if [[ -f /mnt/lvm/cleanLOG.sh ]]; then
+	    /mnt/lvm/cleanLOG.sh $ResultLogFile-LOG
+	fi
+    fi
 }
 
 pwd
@@ -225,7 +231,7 @@ for param in $*; do
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=`echo $param | sed 's/blockSize//g'`
         if [[ $blockSize -ne 4096 ]]; then
-            run_suffix=${run_suffix}_$param
+            suffix=${suffix}_$param
         fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         sstsz=`echo $param | sed 's/sst//g'`
