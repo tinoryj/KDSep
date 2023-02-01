@@ -84,7 +84,11 @@ if [[ ! -d "/mnt/g" ]]; then
     DB_Working_Path="/mnt/lvm/deltakv/working"
     DB_Loaded_Path="/mnt/lvm/deltakv"
 fi
-ResultLogFolder="Exp3/ResultLogs"
+if [[ ! -d "/mnt/lvm" && ! -d "/mnt/g" ]]; then
+    DB_Working_Path="/mnt/sn640/deltakvjhli/working"
+    DB_Loaded_Path="/mnt/sn640/deltakvjhli"
+fi
+ResultLogFolder="Exp2/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
@@ -102,6 +106,7 @@ cacheIndexFilter=false
 paretokey="false"
 nogc="false"
 bloomBits=10
+maxOpenFiles=1048576
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -155,10 +160,13 @@ for param in $*; do
         only_copy="true"
     elif [[ $param == "load" ]]; then
         only_load="true"
+    elif [[ "$param" == "req" || "$param" == "op" || "$param" == "readRatio" ]]; then
+        echo "Param error: $param"
+        exit
     elif [[ `echo $param | grep "req" | wc -l` -eq 1 ]]; then  # req10m
         num=`echo $param | sed 's/req//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
         KVPairsNumber=$num
-    elif [[ `echo $param | grep "op" | wc -l` -eq 1 ]]; then  # op2m
+    elif [[ "$param" =~ ^op[0-9]+$ ]]; then
         num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
         OperationsNumber=$num
     elif [[ `echo $param | grep "fc" | wc -l` -eq 1 ]]; then
@@ -171,7 +179,7 @@ for param in $*; do
         ReadProportion=`echo $param | sed 's/readRatio//g'`
     elif [[ `echo $param | grep "bucketNum" | wc -l` -eq 1 ]]; then
         bucketNumber=`echo $param | sed 's/bucketNum//g'`
-    elif [[ `echo $param | grep "Exp" | wc -l` -eq 1 ]]; then
+    elif [[ "$param" =~ ^Exp[0-9]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
 #        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
 #        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
@@ -238,6 +246,11 @@ for param in $*; do
         bloomBits=`echo $param | sed 's/bf//g'`
         if [[ $bloomBits -ne 10 ]]; then
             suffix=${suffix}_$param
+        fi
+    elif [[ "$param" =~ ^open[0-9]+$ ]]; then
+        maxOpenFiles=`echo $param | sed 's/open//g'`
+        if [[ $maxOpenFiles -ne 1048576 ]]; then
+            run_suffix=${run_suffix}_$param
         fi
     elif [[ `echo $param | grep "clean" | wc -l` -eq 1 ]]; then
 	cleanFlag="true"
@@ -320,6 +333,9 @@ if [[ "$nommap" == "true" ]]; then
     sed -i "/useMmap/c\\useMmap = false" temp.ini 
 fi
 
+numMainSegment="$(( $KVPairsNumber * $fieldcount * $fieldlength / 5 * 6 / 1048576))"
+sed -i "/numMainSegment/c\\numMainSegment = $numMainSegment" temp.ini
+
 size="$(( $KVPairsNumber / 1000000 ))M"
 if [[ $size == "0M" ]]; then
     size="$(( $KVPairsNumber / 1000 ))K"
@@ -351,6 +367,7 @@ sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini
 sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
 sed -i "/maxBytesForLevelBase/c\\maxBytesForLevelBase = $(( $l1sz * 1024 ))" temp.ini 
 sed -i "/bloomBits/c\\bloomBits = $bloomBits" temp.ini 
+sed -i "/maxOpenFiles/c\\maxOpenFiles = $maxOpenFiles" temp.ini 
 
 DB_Name=${DB_Name}${suffix}
 ResultLogFolder=${ResultLogFolder}${suffix}
@@ -397,14 +414,16 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     echo "output at $output_file"
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath > ${output_file}
 #    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
-    loaded="true"
-    echo "output at $output_file"
-    if [[ $? -ne 0 ]]; then
-	echo "Exit. return number $?"
+    retvalue=$?
+    if [[ $retvalue -ne 0 ]]; then
+	echo "Exit. return number $retvalue"
 	exit
     fi
+    loaded="true"
+    echo "output at $output_file"
     t_output_file=$output_file
     log_db_status $workingDB $t_output_file
+    output_file=${t_output_file}
 
     # Running Update
     SPEC="./workload-temp-prepare.spec"
