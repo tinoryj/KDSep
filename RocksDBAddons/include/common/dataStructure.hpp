@@ -62,12 +62,13 @@ struct mapHashKeyForMemPoolHandler_t {
     }
 };
 
-typedef struct internalValueType {
-    bool mergeFlag_; // true if the value request merge.
-    bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree
-    uint32_t sequenceNumber_; // global sequence number
-    uint32_t rawValueSize_; // store the raw value size, in case some delta are not separated.
-} internalValueType;
+struct internalValueType {
+    bool mergeFlag_ = false; // true if the value request merge.
+    bool valueSeparatedFlag_ = false; // true if the value is stored outside LSM-tree
+    uint32_t sequenceNumber_ = 0; // global sequence number
+    uint32_t rawValueSize_ = 0; // store the raw value size, in case some delta are not separated.
+    internalValueType(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber, uint32_t rawValueSize) : mergeFlag_(mergeFlag), valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber), rawValueSize_(rawValueSize) {} 
+};
 
 typedef struct externalIndexInfo {
     uint32_t externalFileID_;

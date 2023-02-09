@@ -10,20 +10,21 @@ namespace DELTAKV_NAMESPACE {
 // always reserve (at least) one spare for flush of reserved space
 int ValueManager::spare = 1;
 
-ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* segmentGroupManager, KeyManager* keyManager, LogManager* logManager, bool isSlave)
+ValueManager::ValueManager(DeviceManager *deviceManager, SegmentGroupManager *segmentGroupManager, KeyManager *keyManager, LogManager *logManager, bool isSlave)
 {
     // init the connections to different mods
     _deviceManager = deviceManager;
     _segmentGroupManager = segmentGroupManager;
     _keyManager = keyManager;
+    //_gcManager = 0;
     _logManager = logManager;
     _slaveValueManager = 0;
 
-    ConfigManager& cm = ConfigManager::getInstance();
+    ConfigManager &cm = ConfigManager::getInstance();
 
     _isSlave = isSlave;
 
-    if (!_isSlave && cm.useSlave()) {
+    if (!isSlave && cm.useSlave()) {
         std::vector<DiskInfo> disks;
         if (cm.useSeparateColdStorageDevice()) {
             DiskInfo coldDisk(0, cm.getColdStorageDevice().c_str(), cm.getColdStorageCapacity());
@@ -40,7 +41,7 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
         _slaveValueManager = new ValueManager(_slave.dm, _slave.cgm, keyManager, 0, /* isSlave = */ true);
         _slave.gcm = new GCManager(keyManager, _slaveValueManager, _slave.dm, _slave.cgm, /* isSlave = */ true);
         _slaveValueManager->setGCManager(_slave.gcm);
-        // printf("dm %p cgm %p svm %p\n", _slave.dm, _slave.cgm, _slaveValueManager);
+        //printf("dm %p cgm %p svm %p\n", _slave.dm, _slave.cgm, _slaveValueManager);
     } else {
         _slave.dm = 0;
         _slave.cgm = 0;
@@ -50,7 +51,7 @@ ValueManager::ValueManager(DeviceManager* deviceManager, SegmentGroupManager* se
     _slave.validBytes = _segmentGroupManager->getLogValidBytes();
 
     // always use vlog by default for slave
-    bool vlogEnabled = _isSlave ? true : cm.enabledVLogMode();
+    bool vlogEnabled = _isSlave? true : cm.enabledVLogMode();
 
     // level of hotness
     int hotnessLevel = cm.getHotnessLevel();
@@ -130,11 +131,9 @@ ValueManager::~ValueManager()
     }
 
     ConfigManager& cm = ConfigManager::getInstance();
-    cerr << "[valueManager] Try scanAllRecordsUponStop" << endl;
     if (cm.scanAllRecordsUponStop()) {
         scanAllRecords();
     }
-    cerr << "[valueManager] Try release buffers" << endl;
     // release buffers
     int hotnessLevel = cm.getHotnessLevel();
     if (cm.enabledVLogMode() || _isSlave) {
@@ -142,7 +141,6 @@ ValueManager::~ValueManager()
     }
     list_head* ptr;
     // spare reserved buffers
-    cerr << "[valueManager] Try spare reserved buffers" << endl;
     for (int i = 0; i < spare; i++) {
         list_for_each(ptr, &_activeSegments[hotnessLevel + i])
         {
@@ -150,7 +148,6 @@ ValueManager::~ValueManager()
         }
     }
     // centralized reserved pool
-    cerr << "[valueManager] Try spare centralized reserved pool" << endl;
     for (int i = 0; i < cm.getNumPipelinedBuffer(); i++) {
         Segment::free(_centralizedReservedPool[i].pool);
     }
@@ -158,25 +155,18 @@ ValueManager::~ValueManager()
     assert(_segmentReservedPool->getUsage().second == 0);
     delete _segmentReservedPool;
     // segment of zeros
-    cerr << "[valueManager] Try segment of zeros" << endl;
     Segment::free(_zeroSegment);
     Segment::free(_readBuffer);
-    cerr << "[valueManager] Try persistLogMeta" << endl;
     if (cm.persistLogMeta()) {
         len_t logOffset = _segmentGroupManager->getLogWriteOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
         logOffset = _segmentGroupManager->getLogGCOffset();
         _keyManager->writeMeta(SegmentGroupManager::LogHeadString, strlen(SegmentGroupManager::LogHeadString), to_string(logOffset));
     }
-    cerr << "[valueManager] Try delete _slaveValueManager" << endl;
     delete _slaveValueManager;
-    cerr << "[valueManager] Try delete _slave.gcm" << endl;
     delete _slave.gcm;
-    cerr << "[valueManager] Try delete _slave.cgm" << endl;
     delete _slave.cgm;
-    cerr << "[valueManager] Try delete _slave.dm" << endl;
     delete _slave.dm;
-    cerr << "[valueManager] done" << endl;
 }
 
 ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valueStr, len_t valueSize, const ValueLocation& oldValueLoc, bool sync, int hotness)
@@ -217,7 +207,6 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     // check if in-place update is possible
     bool inPlaceUpdate = false;
     bool inPool = false;
-    // int segment_start = 0;
     len_t oldValueSize = INVALID_LEN;
 
     std::unordered_map<unsigned char*, segment_len_t, hashKey, equalKey>::iterator keyIt = _centralizedReservedPool[poolIndex].keysInPool.find(key);

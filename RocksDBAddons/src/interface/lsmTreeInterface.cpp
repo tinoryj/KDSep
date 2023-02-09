@@ -3,6 +3,12 @@
 namespace DELTAKV_NAMESPACE {
 
 bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
+    rocksdb::Status rocksDBStatus = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
+    if (!rocksDBStatus.ok()) {
+        debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
+        return false;
+    }
+
     if (options.enable_deltaStore == true || options.enable_valueStore == true) {
         options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset
     }
@@ -41,55 +47,75 @@ bool LsmTreeInterface::~LsmTreeInterface() {
     }
 }
 
-bool LsmTreeInterface::Put(mempoolHandler_t objectPairMemPoolHandler)
+bool LsmTreeInterface::Put(const mempoolHandler_t& memPoolHandler)
 {
-    if (lsmTreeRunningMode_ == kNoValueLog) { // no value log
+    if (lsmTreeRunningMode_ == kNoValueLog || memPoolHandler.valueSize_ < valueExtractSize_) {
+         // no value log
+        char valueBuffer[memPoolHandler.valueSize_ + sizeof(internalValueType)];
+        internalValueType header(false, false, memPoolHandler.sequenceNumber_, memPoolHandler.valueSize_);
+        memcpy(valueBuffer, &header, sizeof(header));
+        memcpy(valueBuffer + sizeof(header), memPoolHandler.valuePtr_, memPoolHandler.valueSize_);
+
         rocksdb::Status rocksDBStatus;
-        rocksdb::Slice newKey(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_);
-        rocksdb::Slice newValue(objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
+        rocksdb::Slice newKey(memPoolHandler.keyPtr_, memPoolHandler.keySize_);
+        rocksdb::Slice newValue(valueBuffer, memPoolHandler.valueSize_ + sizeof(internalValueType));
         STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Put(internalWriteOption_, newKey, newValue), StatsType::DELTAKV_PUT_ROCKSDB);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with raw value fault, key = %s, value = %s, status = %s\n", newKey.ToString().c_str(), newValue.ToString().c_str(), rocksDBStatus.ToString().c_str());
-            return false;
-        } else {
-            return true;
         }
+        return rocksDBStatus.ok();
     } else {  // use value log. Let value log determine whether to separate key and values!
         bool status;
-        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(objectPairMemPoolHandler, true), StatsType::DELTAKV_PUT_INDEXSTORE);
-        if (status == true) {
-            return true;
-        } else {
-            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.valuePtr_);
-            return false;
+        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(memPoolHandler, true), StatsType::DELTAKV_PUT_INDEXSTORE);
+        if (status == false) {
+            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", memPoolHandler.keyPtr_, memPoolHandler.valuePtr_);
         }
+        return status;
     }
 }
 
-bool LsmTreeInterface::MultiWriteWithBatch(std::vector<mempoolHandler_t>& objectPairMemPoolHandlerForPut, std::vector<mempoolHandler_t>& objectPairMemPoolHandlerForMerge) {
-    if (lsmTreeRunningMode_ == kNoValueLog) {
-        rocksdb::WriteOptions batchedWriteOperation;
-        batchedWriteOperation.sync = false;
-        rocksdb::WriteBatch batch;
+// Start from initial batch. It will let the caller deal with the merge batches first in initialBatch. 
+bool LsmTreeInterface::MultiWriteWithBatch(const std::vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch) {
+    rocksdb::WriteOptions batchedWriteOperation;
+    batchedWriteOperation.sync = false;
 
-        for (auto& it : objectPairMemPoolHandlerForPut) {
+    if (lsmTreeRunningMode_ == kNoValueLog) {
+        for (auto& it : memPoolHandlersPut) {
+            internalValueType header(false, false, it.sequenceNumber_, it.valueSize_);
+            char valueBuffer[it.valueSize_ + sizeof(header)];
+            memcpy(valueBuffer, &header, sizeof(header));
+            memcpy(valueBuffer + sizeof(header), it.valuePtr_, it.valueSize_);
+
             rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-            rocksdb::Slice newValue(it.valuePtr_, it.valueSize_);
-            rocksDBStatus = batch.Put(newKey, newValue);
+            rocksdb::Slice newValue(valueBuffer, it.valueSize_ + sizeof(header));
+            mergeBatch->Put(newKey, newValue);
         }
-        for (auto& it : objectPairMemPoolHandlerForMerge) {
-            if (it.isAnchorFlag_ == false) {
+    } else {
+        std::vector<mempoolHandler_t> memPoolHandlerForPutVlog;
+        for (auto& it : memPoolHandlersPut) {
+            if (it.valueSize_ < valueExtractSize_) {
+                internalValueType header(false, false, it.sequenceNumber_, it.valueSize_);
+                char valueBuffer[it.valueSize_ + sizeof(header)];
+                memcpy(valueBuffer, &header, sizeof(header));
+                memcpy(valueBuffer + sizeof(header), it.valuePtr_, it.valueSize_);
+
                 rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-                rocksdb::Slice newValue(it.valuePtr_, it.valueSize_);
-                rocksDBStatus = batch.Merge(newKey, newValue);
+                rocksdb::Slice newValue(valueBuffer, it.valueSize_ + sizeof(header));
+                mergeBatch->Put(newKey, newValue);
+            } else {
+                memPoolHandlerForPutVlog.push_back(it);
             }
         }
-        STAT_PROCESS(pointerToRawRocksDB_->Write(batchedWriteOperation, &batch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
-        STAT_PROCESS(pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
-    } else {
+
+        if (!memPoolHandlerForPutVlog.empty()) {
+            IndexStoreInterfaceObjPtr_->multiPut(memPoolHandlersPut);
+        }
     }
+    STAT_PROCESS(pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
+    STAT_PROCESS(pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
 }
 
+// Do not create headers
 bool LsmTreeInterface::Merge(const char* key, uint32_t keySize, const char* value, uint32_t valueSize)
 {
     rocksdb::Status rocksDBStatus;
@@ -104,9 +130,19 @@ bool LsmTreeInterface::Merge(const char* key, uint32_t keySize, const char* valu
     }
 }
 
-bool LsmTreeInterface::Merge(mempoolHandler_t objectPairMemPoolHandler)
+// Merge for no separation. 
+bool LsmTreeInterface::Merge(const mempoolHandler_t& memPoolHandler)
 {
-    return Merge(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_, objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
+    internalValueType header(false, false, memPoolHandler.sequenceNumber_, memPoolHandler.valueSize_);
+    char valueBuffer[memPoolHandler.valueSize_ + sizeof(header)];
+    memcpy(valueBuffer, &header, sizeof(header));
+    memcpy(valueBuffer + sizeof(header), memPoolHandler.valuePtr_, memPoolHandler.valueSize_);
+//    return Merge(memPoolHandler.keyPtr_, memPoolHandler.keySize_, valueBuffer, memPoolHandler.valueSize_ + sizeof(header));
+
+    rocksdb::Status rocksDBStatus;
+    rocksdb::Slice newKey(memPoolHandler.keyPtr_, memPoolHandler.keySize_);
+    rocksdb::Slice newValue(valueBuffer, memPoolHandler.valueSize_ + sizeof(header));
+    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
 }
 
 bool LsmTreeInterface::Get(const string& key, string* value)
@@ -125,21 +161,21 @@ bool LsmTreeInterface::Get(const string& key, string* value)
     }
 }
 
-//bool DeltaKV::GetWithValueStore(const string& key, string* value, uint32_t& /*maxSequenceNumber*/, bool /*getByWriteBackFlag*/)
-/*{
+bool DeltaKV::GetWithValueStore(const string& key, string* value, uint32_t& /*maxSequenceNumber*/, bool /*getByWriteBackFlag*/)
+{
     // check value status
-    internalValueType tempInternalValueHeader;
-    memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
+    internalValueType header;
+    memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
     string rawValueStr;
-    if (tempInternalValueHeader.mergeFlag_ == true) {
+    if (header.mergeFlag_ == true) {
         // get deltas from delta store
         vector<pair<bool, string>> deltaInfoVec;
         externalIndexInfo newExternalIndexInfo;
         bool findNewValueIndexFlag = false;
-        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+        if (header.valueSeparatedFlag_ == true) {
             processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + sizeof(externalIndexInfo), deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo, maxSequenceNumber);
         } else {
-            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo, maxSequenceNumber);
+            processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + header.rawValueSize_, deltaInfoVec, findNewValueIndexFlag, newExternalIndexInfo, maxSequenceNumber);
         }
         if (findNewValueIndexFlag == true) {
             string tempReadValueStr;
@@ -148,7 +184,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             debug_error("[ERROR] Assigned new value by new external index, value = %s\n", rawValueStr.c_str());
             assert(0);
         } else {
-            if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+            if (header.valueSeparatedFlag_ == true) {
                 // get value from value store first
                 externalIndexInfo tempReadExternalStorageInfo;
                 memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
@@ -156,9 +192,9 @@ bool LsmTreeInterface::Get(const string& key, string* value)
                 STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr), StatsType::DELTAKV_GET_INDEXSTORE);
                 rawValueStr.assign(tempReadValueStr);
             } else {
-                char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-                string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+                char rawValueContentBuffer[header.rawValueSize_];
+                memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), header.rawValueSize_);
+                string internalRawValueStr(rawValueContentBuffer, header.rawValueSize_);
                 rawValueStr.assign(internalRawValueStr);
             }
         }
@@ -180,8 +216,8 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             return true;
         }
     } else {
-        maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
-        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+        maxSequenceNumber = header.sequenceNumber_;
+        if (header.valueSeparatedFlag_ == true) {
             // get value from value store first
             externalIndexInfo tempReadExternalStorageInfo;
             memcpy(&tempReadExternalStorageInfo, internalValueStr.c_str() + sizeof(internalValueType), sizeof(externalIndexInfo));
@@ -189,15 +225,14 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, tempReadExternalStorageInfo, &tempReadValueStr), StatsType::DELTAKV_GET_INDEXSTORE);
             rawValueStr.assign(tempReadValueStr);
         } else {
-            char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-            string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+            char rawValueContentBuffer[header.rawValueSize_];
+            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), header.rawValueSize_);
+            string internalRawValueStr(rawValueContentBuffer, header.rawValueSize_);
             rawValueStr.assign(internalRawValueStr);
         }
         value->assign(rawValueStr);
         return true;
     }
 }
-*/
 
 }
