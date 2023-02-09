@@ -252,6 +252,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
     options_.rocksdbRawOptions_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
     options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getMaxBytesForLevelBase() * 1024;
+    options_.rocksdbRawOptions_.max_open_files = config.getMaxOpenFiles();
 
     cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
     cerr << "write buffer size " << options_.rocksdbRawOptions_.write_buffer_size << endl;
@@ -260,6 +261,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
          << options_.rocksdbRawOptions_.level0_file_num_compaction_trigger << endl;
     cerr << "targe file size base " << options_.rocksdbRawOptions_.target_file_size_base << endl;
     cerr << "level size base " << options_.rocksdbRawOptions_.max_bytes_for_level_base << endl;
+    cerr << "max open files " << options_.rocksdbRawOptions_.max_open_files << endl;
 
     if (!compression) {
         options_.rocksdbRawOptions_.compression = rocksdb::kNoCompression;

@@ -127,6 +127,7 @@ bool FileOperation::createThenOpenFile(string path)
         fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0644);
         if (fileDirect_ == -1) {
             debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            exit(1);
             return false;
         } else {
             int allocateStatus = fallocate(fileDirect_, 0, 0, preAllocateFileSize_);
@@ -143,6 +144,7 @@ bool FileOperation::createThenOpenFile(string path)
         fileDirect_ = open(path.c_str(), O_CREAT | O_RDWR, 0644);
         if (fileDirect_ == -1) {
             debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fileDirect_, strerror(errno));
+            exit(1);
             return false;
         } else {
             directIOWriteFileSize_ = 0;

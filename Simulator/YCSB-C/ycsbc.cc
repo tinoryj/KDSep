@@ -30,7 +30,7 @@ using namespace std;
 void CTRLC(int s) {
     cerr << "Server exit with keyboard interrupt" << endl;
     DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
-    exit(0);
+    exit(1);
 }
 
 #define OUTPUT_MAP_HISTOGRAM(histogram)                                           \
