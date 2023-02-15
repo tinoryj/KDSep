@@ -1,4 +1,5 @@
 #include "hashBasedStore/hashStoreInterface.hpp"
+#include "utils/bucketKeyFilter.hpp"
 #include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
@@ -7,6 +8,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
 {
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
+    enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     if (options->enable_deltaStore_garbage_collection == true) {
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
@@ -207,55 +209,89 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
     }
 }
 
-bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec)
+bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
 {
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
     STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
-        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
-        return false;
+        valueStrVec.clear();
+        return true;
     } else {
-        // if (shouldUseDirectOperationsFlag_ == true) {
-        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
-        // } else {
-        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
-        // }
-        if (ret != true) {
-            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
-            return false;
+        StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
+        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
+            bool deltaExistFlag = (!valueStrVec.empty());
+            if (deltaExistFlag) {
+                StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_EXIST_TRUE, 1, 1);
+            } else {
+                StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_EXIST_FALSE, 1, 1);
+            }
+            return ret;
         } else {
+            tempFileHandler->file_ownership_flag_ = 0;
             return true;
         }
     }
 }
 
-bool HashStoreInterface::get(const string& keyStr, vector<string>*& valueStrVec, vector<hashStoreRecordHeader>*& recordVec)
+bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec, vector<hashStoreRecordHeader>& recordVec)
 {
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
     STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
-        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", keyStr.c_str());
-        return false;
+        return true;
     } else {
-        // if (shouldUseDirectOperationsFlag_ == true) {
-        ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec, recordVec);
-        // } else {
-        //     ret = hashStoreFileOperatorPtr_->putReadOperationIntoJobQueue(tempFileHandler, keyStr, valueStrVec);
-        // }
-        if (ret != true) {
-            debug_error("[ERROR] Could not read content with file handler for key = %s\n", keyStr.c_str());
-            return false;
+        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec, recordVec);
+            return ret;
         } else {
+            tempFileHandler->file_ownership_flag_ = 0;
             return true;
         }
     }
 }
 
-bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVec)
+bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>& valueStrCpyVec)
+{
+    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    bool ret;
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+    if (ret != true) {
+        return true;
+    } else {
+        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+            return hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec);
+        } else {
+            tempFileHandler->file_ownership_flag_ = 0;
+            return true;
+        }
+    }
+}
+
+bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>& valueStrCpyVec, vector<hashStoreRecordHeader>& recordVec)
+{
+    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
+    hashStoreFileMetaDataHandler* tempFileHandler;
+    bool ret;
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+    if (ret != true) {
+        return true;
+    } else {
+        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+            return hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec, recordVec);
+        } else {
+            tempFileHandler->file_ownership_flag_ = 0;
+            return true;
+        }
+    }
+}
+
+bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>>& valueStrVecVec)
 {
     vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
     for (auto i = 0; i < keyStrVec.size(); i++) {

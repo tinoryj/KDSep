@@ -40,6 +40,7 @@ add_library(DeltaKV STATIC
       utils/debug.cpp
       utils/fileOperation.cpp
       utils/mempool.cpp
+      utils/bucketKeyFilter.cc
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

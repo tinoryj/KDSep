@@ -3,14 +3,14 @@
 namespace DELTAKV_NAMESPACE {
 
 bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
+//    if (options.enable_deltaStore == true || options.enable_valueStore == true) {
+        options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset
+//    }
+
     rocksdb::Status rocksDBStatus = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
-    }
-
-    if (options.enable_deltaStore == true || options.enable_valueStore == true) {
-        options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset
     }
 
     if (options.rocksdb_sync_put) {
@@ -50,8 +50,10 @@ LsmTreeInterface::~LsmTreeInterface() {
 
 bool LsmTreeInterface::Close() {
     if (IndexStoreInterfaceObjPtr_ != nullptr) {
-        cerr << "[DeltaKV Interface] Try delete IndexStore" << endl;
         delete IndexStoreInterfaceObjPtr_;
+    }
+    if (pointerToRawRocksDB_ != nullptr) {
+        delete pointerToRawRocksDB_;
     }
     return true;
 }
@@ -146,10 +148,13 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
             externalIndexInfo vLogIndex;
+            header.rawValueSize_ -= 4;
             memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header), sizeof(vLogIndex));
             STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, vLogIndex, &vLogValue), StatsType::DELTAKV_GET_INDEXSTORE);
 
-            char valueBuffer[vLogValue.size() + internalValueStr.size() - sizeof(vLogIndex)];
+            int valueBufferSize = vLogValue.size() + internalValueStr.size() - sizeof(vLogIndex);
+            char valueBuffer[valueBufferSize];
+
             header.valueSeparatedFlag_ = false;
             internalValueStr = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  // remaining deltas
 
@@ -160,7 +165,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
                 memcpy(valueBuffer + sizeof(header) + vLogValue.size(), internalValueStr.c_str(), internalValueStr.size());
             }
 
-            value->assign(string(valueBuffer, vLogValue.size() + internalValueStr.size() - sizeof(vLogIndex)));
+            value->assign(string(valueBuffer, valueBufferSize));
             return true;
         } else {
             value->assign(internalValueStr);
@@ -220,6 +225,10 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         return false;
     }
     return true;
+}
+
+void LsmTreeInterface::GetRocksDBProperty(const string& property, string* str) {
+    pointerToRawRocksDB_->GetProperty(property.c_str(), str);
 }
 
 }

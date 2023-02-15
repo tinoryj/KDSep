@@ -2,7 +2,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-vector<string> stringSplit(string str, string token)
+vector<string> stringSplit(string str, const string& token)
 {
     vector<string> result;
     while (str.size()) {
@@ -20,20 +20,64 @@ vector<string> stringSplit(string str, string token)
     return result;
 };
 
-bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> operandList, string* finalValue)
+bool stringSplit(string str, const string& token, vector<string>& result)
+{
+    while (str.size()) {
+        size_t index = str.find(token);
+        if (index != std::string::npos) {
+            result.push_back(str.substr(0, index));
+            str = str.substr(index + token.size());
+            if (str.size() == 0)
+                result.push_back(str);
+        } else {
+            result.push_back(str);
+            str = "";
+        }
+    }
+    return true;
+};
+
+bool stringSplit(const str_t& str, const char& tokenChar, vector<str_t>& result)
+{
+    char* data = str.data_;
+    char* anchor = data;
+    int anchorIndex = 0;
+
+    for (int i = 0; i < str.size_; i++) {
+        if (data[i] == tokenChar) {
+            if (i > anchorIndex) {
+                result.push_back(str_t(anchor, i - anchorIndex));
+            }
+            if (i + 1 < str.size_) {
+                anchorIndex = i + 1;
+                anchor = data + anchorIndex;
+            } else {
+                break;
+            }
+        } else if (i == str.size_ - 1) {
+            result.push_back(str_t(anchor, i + 1 - anchorIndex));
+        }
+    }
+    return true;
+};
+
+int str_t_stoi(const str_t& str) {
+    int ret = 0;
+
+    for (int i = 0; i < str.size_; i++) {
+        ret = ret * 10 + (str.data_[i] - '0');
+    }
+    return ret;
+}
+
+bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, const vector<string>& operandList, string* finalValue)
 {
     unordered_map<int, string> operandMap;
-    string overallOperandListStr = "";
-    for (auto it : operandList) {
-        overallOperandListStr.append(it);
-        overallOperandListStr.append(",");
+    vector<string> rawOperandListVec;
+    for (auto& it : operandList) {
+        stringSplit(it, ",", rawOperandListVec);
     }
-    overallOperandListStr = overallOperandListStr.substr(0, overallOperandListStr.size() - 1);
-    // cerr << "overallOperandListStr = " << overallOperandListStr << endl;
-    vector<string> rawOperandListVec = stringSplit(overallOperandListStr, ",");
-    // cerr << "rawOperandListVec size = " << rawOperandListVec.size() << endl;
     for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
-        // cerr << "rawOperandListVec[" << it << "] = " << rawOperandListVec[it] << endl;
         int index = stoi(rawOperandListVec[it]);
         if (operandMap.find(index) != operandMap.end()) {
             operandMap.at(index).assign(rawOperandListVec[it + 1]);
@@ -56,17 +100,13 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, vector<string> oper
     return true;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::PartialMerge(vector<string> operandList, vector<string>& finalOperandList)
+bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList)
 {
     unordered_map<int, string> operandMap;
-    string overallOperandListStr;
-    for (auto it : operandList) {
-        overallOperandListStr.append(it);
-        overallOperandListStr.append(",");
+    vector<string> rawOperandListVec;
+    for (auto& it : operandList) {
+        stringSplit(it, ",", rawOperandListVec);
     }
-    overallOperandListStr = overallOperandListStr.substr(0, overallOperandListStr.size() - 1);
-    // cerr << "[Partial] overallOperandListStr = " << overallOperandListStr << endl;
-    vector<string> rawOperandListVec = stringSplit(overallOperandListStr, ",");
     // cerr << "[Partial] rawOperandListVec size = " << rawOperandListVec.size() << endl;
     for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
         // cerr << "[Partial] rawOperandListVec[" << it << "] = " << rawOperandListVec[it] << endl;
@@ -86,17 +126,68 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(vector<string> operandList, v
     return true;
 }
 
+bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operandList, vector<str_t>& finalOperandList)
+{
+    unordered_map<int, str_t> operandMap;
+    vector<str_t> rawOperandListVec;
+    for (auto& it : operandList) {
+        stringSplit(it, ',', rawOperandListVec);
+    }
+    // cerr << "[Partial] rawOperandListVec size = " << rawOperandListVec.size() << endl;
+    for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
+        // cerr << "[Partial] rawOperandListVec[" << it << "] = " << rawOperandListVec[it] << endl;
+        int index = str_t_stoi(rawOperandListVec[it]);
+        if (operandMap.find(index) != operandMap.end()) {
+            operandMap[index] = rawOperandListVec[it + 1];
+        } else {
+            operandMap.insert(make_pair(index, rawOperandListVec[it + 1]));
+        }
+    }
+    string finalOperator = "";
+    bool first = true;
+    str_t result;
+    result.size_ = 0;
+
+    for (auto& it : operandMap) {
+        if (first) {
+            result.size_ += 3 + it.second.size_;
+            first = false;
+        } else {
+            result.size_ += 4 + it.second.size_;
+        }
+    }
+
+    result.data_ = new char[result.size_];
+    first = true;
+    int resultIndex = 0;
+
+    for (auto& it : operandMap) {
+        if (first) {
+            sprintf(result.data_ + resultIndex, "%d,%.*s", it.first, it.second.size_, it.second.data_); 
+            first = false;
+        } else {
+            sprintf(result.data_ + resultIndex, ",%d,%.*s", it.first, it.second.size_, it.second.data_); 
+        }
+        // replace strlen()
+        resultIndex += it.second.size_ + 1; 
+        while (result.data_[resultIndex]) resultIndex++;
+    }
+    result.size_ = resultIndex;
+    finalOperandList.push_back(result);
+    return true;
+}
+
 string DeltaKVFieldUpdateMergeOperator::kClassName()
 {
     return "DeltaKVFieldUpdateMergeOperator";
 }
 
 bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
-    const deque<string>& operand_list,
-    string* new_value, Logger* logger) const
+    const std::deque<std::string>& operand_list,
+    std::string* new_value, Logger* logger) const
 {
     // request merge operation when the value is found
-    debug_trace("Full merge for key = %s, value size = %lu, content = %s\n", key.ToString().c_str(), existing_value->size(), existing_value->ToString().c_str());
+    debug_info("Full merge for key = %s, value size = %lu, content = %s\n", key.ToString().c_str(), existing_value->size(), existing_value->ToString().c_str());
     string newValueIndexStr;
     string filteredOperandStr;
     int headerSize = sizeof(internalValueType), valueIndexSize = sizeof(externalIndexInfo);
@@ -173,7 +264,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         memcpy(&outputValueType, newValueIndexStr.c_str(), headerSize);
         if (filteredOperandStr.empty()) {
             outputValueType.mergeFlag_ = false;
-            new_value->assign(string((char*)(&outputValueType), headerSize)); // internalValueType
+            new_value->assign(std::string((char*)(&outputValueType), headerSize)); // internalValueType
             new_value->append(newValueIndexStr.substr(headerSize)); // externalIndexInfo
         } else {
             new_value->assign(newValueIndexStr); // internalValueType + externalIndexInfo
@@ -210,10 +301,10 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     new_value->append(filteredOperandStr);
 
     return true;
-};
+}
 
 bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
-    const Slice& right_operand, string* new_value,
+    const Slice& right_operand, std::string* new_value,
     Logger* logger) const
 {
     string operandStr;
@@ -281,7 +372,7 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
         }
     }
     return true;
-};
+}
 
 bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const
 {
@@ -324,7 +415,7 @@ bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(string rawValue, vector
     size_t pos = 0;
     string token;
     string delimiter = ",";
-    while ((pos = rawValue.find(delimiter)) != string::npos) {
+    while ((pos = rawValue.find(delimiter)) != std::string::npos) {
         token = rawValue.substr(0, pos);
         rawValueFieldsVec.push_back(token);
         rawValue.erase(0, pos + delimiter.length());

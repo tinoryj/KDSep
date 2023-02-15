@@ -22,6 +22,8 @@ public:
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
     bool Get(const string& key, string* value);
+
+    void GetRocksDBProperty(const string& property, string* str);
 //    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
 //    bool SingleDelete(const string& key);
 
@@ -67,6 +69,8 @@ private:
     bool useInternalRocksDBBatchOperationsFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
+    bool enableLsmTreeDeltaMeta_ = true;
+
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
     uint64_t deltaExtractSize_ = 0;
     uint64_t valueExtractSize_ = 0;

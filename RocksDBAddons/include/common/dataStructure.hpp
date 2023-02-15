@@ -11,16 +11,36 @@ using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
+class BucketKeyFilter;
+
 typedef struct str_t {
     char* data_;
     uint32_t size_;
     str_t() { }
     str_t(char* data, uint32_t size)
+        : data_(data)
+        , size_(size)
     {
-        data_ = data;
-        size_ = size;
     }
 } str_t;
+
+typedef struct str_cpy_t {
+    char* data_;
+    uint32_t size_;
+    str_cpy_t() { }
+    str_cpy_t(char* data, uint32_t size)
+    {
+        data_ = new char[size];
+        memcpy(data_, data, size);
+        size_ = size;
+    }
+    ~str_cpy_t()
+    {
+        if (data_ != nullptr) {
+            delete[] data_;
+        }
+    }
+} str_cpy_t;
 
 static unsigned int charBasedHashFunc(char* data, uint32_t n)
 {
@@ -83,11 +103,22 @@ struct internalValueType {
     internalValueType(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber, uint32_t rawValueSize) : mergeFlag_(mergeFlag), valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber), rawValueSize_(rawValueSize) {} 
 };
 
-typedef struct externalIndexInfo {
+struct externalIndexInfo {
     uint32_t externalFileID_;
     uint32_t externalFileOffset_;
     uint32_t externalContentSize_;
-} externalIndexInfo;
+    externalIndexInfo()
+    {
+    }
+    externalIndexInfo(uint32_t externalFileID,
+        uint32_t externalFileOffset,
+        uint32_t externalContentSize)
+        : externalFileID_(externalFileID)
+        , externalFileOffset_(externalFileOffset)
+        , externalContentSize_(externalContentSize)
+    {
+    }
+};
 
 enum DBOperationType { kPutOp = 0,
     kMergeOp = 1 };
@@ -108,7 +139,7 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
     kNeverGC = 3, // if GC, the file will exceed trie bit number limit
     kShouldDelete = 4 }; // gc done, split/merge to new file, this file should be delete
 
-typedef struct hashStoreFileMetaDataHandler {
+struct hashStoreFileMetaDataHandler {
     uint64_t target_file_id_ = 0;
     uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
     uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
@@ -123,7 +154,9 @@ typedef struct hashStoreFileMetaDataHandler {
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
-} hashStoreFileMetaDataHandler;
+//    std::unordered_set<string> storedKeysSet_;
+    BucketKeyFilter* filter = nullptr;
+};
 
 typedef struct hashStoreWriteOperationHandler {
     mempoolHandler_t* mempoolHandler_ptr_;
@@ -151,7 +184,8 @@ typedef struct hashStoreOperationHandler {
     hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
     operationStatus jobDone_ = kNotDone;
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler)
+        : file_handler_(file_handler) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {

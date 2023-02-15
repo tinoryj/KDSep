@@ -54,6 +54,7 @@ private:
     bool enableGCFlag_ = false;
     bool enableWriteBackDuringGCFlag_ = false;
     bool enableBatchedOperations_ = false;
+    bool enableLsmTreeDeltaMeta_ = true;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
@@ -64,6 +65,7 @@ private:
     // data structures
     PrefixTreeForHashStore objectFileMetaDataTrie_; // prefix-hash to object file metadata.
     deque<uint64_t> targetDelteFileQueue_; // collect need delete files during GC
+    shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     // file ID generator
     uint64_t targetNewFileID_ = 0;
     uint64_t generateNewFileID();
@@ -91,6 +93,9 @@ private:
     uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     // GC
     pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap);
+    // GC partial merge
+    void partialMergeGcResultMap(unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete); 
+
     bool createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2, hashStoreFileHeader& newFileHeader);
 
     bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);

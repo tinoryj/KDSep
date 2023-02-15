@@ -375,13 +375,14 @@ int DeltaKVDB::OverWrite(const std::string &table, const std::string &key,
 }
 
 int DeltaKVDB::Delete(const std::string &table, const std::string &key) {
-    return db_.SingleDelete(key);  // Undefined result
+    return true;
+//    return db_.SingleDelete(key);  // Undefined result
 }
 
 void DeltaKVDB::printStats() {
-    db_.pointerToRawRocksDB_->Flush(rocksdb::FlushOptions());
+//    db_.pointerToRawRocksDB_->Flush(rocksdb::FlushOptions());
     string stats;
-    db_.pointerToRawRocksDB_->GetProperty("rocksdb.stats", &stats);
+    db_.GetRocksDBProperty("rocksdb.stats", &stats);
     cout << stats << endl;
     // cout << options_.statistics->ToString() << endl;
     rocksdb::SetPerfLevel(rocksdb::PerfLevel::kDisable);

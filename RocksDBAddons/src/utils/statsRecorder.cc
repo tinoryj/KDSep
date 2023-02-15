@@ -223,6 +223,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("worker-gc-before-rewrite", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, (time[DELTAKV_HASHSTORE_WORKER_GC]));
     PRINT_FULL("worker-gc-before-split", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_SPLIT, (time[DELTAKV_HASHSTORE_WORKER_GC]));
     PRINT_FULL("- gc read", DELTAKV_GC_READ, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  gc deconstruct", DELTAKV_GC_PROCESS, time[DELTAKV_HASHSTORE_WORKER_GC]); 
+    PRINT_FULL("  gc partial merge", DELTAKV_GC_PARTIAL_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]); 
     PRINT_FULL("- gc write", DELTAKV_GC_WRITE, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("select-merge", GC_SELECT_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  slmerge-get-nodes", GC_SELECT_MERGE_GET_NODES, time[DELTAKV_HASHSTORE_WORKER_GC]);
@@ -437,6 +439,10 @@ StatsRecorder::~StatsRecorder()
         "Update counter count      : (main) %16llu (log) %16llu\n"
         "Update counter bytes      : (main) %16llu (log) %16llu\n",
         counts[UPDATE_TO_MAIN], counts[UPDATE_TO_LOG], total[UPDATE_TO_MAIN], total[UPDATE_TO_LOG]);
+
+    fprintf(stdout,
+        "filter reads              : (total) %16llu (true) %16llu (false) %16llu\n",
+        counts[FILTER_READ_TIMES], counts[FILTER_READ_EXIST_TRUE], counts[FILTER_READ_EXIST_FALSE]);
 
     /*
     fprintf(stdout,

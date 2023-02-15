@@ -85,6 +85,7 @@ public:
     bool enable_write_back_optimization_ = true;
     bool enable_batched_operations_ = false;
     bool enable_key_value_cache_ = false;
+    bool enable_lsm_tree_delta_meta = false;
     uint64_t key_value_cache_object_number_ = 1000;
     uint64_t batched_operations_number_ = 5;
     bool rocksdb_sync_put = false;

@@ -36,6 +36,7 @@ public:
     bool Get(const string& key, string* value);
     bool MultiWriteWithBatch(const vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch);
 
+    void GetRocksDBProperty(const string& property, string* str);
 //    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
 //    bool SingleDelete(const string& key);
 
