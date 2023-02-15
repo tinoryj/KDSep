@@ -1,46 +1,13 @@
 #pragma once
 
-#include "common/rocksdbHeaders.hpp"
-#include "hashBasedStore/hashStoreFileManager.hpp"
-#include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreInterface.hpp"
-#include "indexBasedStore/indexStoreInterface.hpp"
-#include "interface/deltaKVOptions.hpp"
-#include "interface/mergeOperation.hpp"
-#include "utils/debug.hpp"
-#include "utils/messageQueue.hpp"
-#include <bits/stdc++.h>
-#include <boost/atomic.hpp>
-#include <boost/bind/bind.hpp>
-#include <boost/thread/thread.hpp>
-#include <shared_mutex>
+#include "interface/lsmTreeInterface.hpp"
 
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
-class RocksDBInternalMergeOperator : public MergeOperator {
-public:
-    bool FullMerge(const Slice& key, const Slice* existing_value,
-        const std::deque<std::string>& operand_list,
-        std::string* new_value, Logger* logger) const override;
-
-    bool PartialMerge(const Slice& key, const Slice& left_operand,
-        const Slice& right_operand, std::string* new_value,
-        Logger* logger) const override;
-
-    static const char* kClassName() { return "RocksDBInternalMergeOperator"; }
-    const char* Name() const override { return kClassName(); }
-
-private:
-    bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
-    bool PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const;
-};
-
 class DeltaKV {
 public:
-    rocksdb::DB* pointerToRawRocksDB_;
-    // Abstract class ctor
     DeltaKV();
     DeltaKV(DeltaKVOptions& options, const string& name);
     // No copying allowed
@@ -55,8 +22,8 @@ public:
     bool Put(const string& key, const string& value);
     bool Merge(const string& key, const string& value);
     bool Get(const string& key, string* value);
-    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
-    bool SingleDelete(const string& key);
+//    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
+//    bool SingleDelete(const string& key);
 
 private:
     KeyValueMemPool* objectPairMemPool_ = nullptr;
@@ -69,45 +36,27 @@ private:
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 
-    enum DBRunningMode { kPlainRocksDB = 0,
-        kOnlyValueLog = 1,
-        kOnlyDeltaLog = 2,
-        kBothValueAndDeltaLog = 3,
-        kBatchedWithBothValueAndDeltaLog = 4,
-        kBatchedWithOnlyValueLog = 5,
-        kBatchedWithOnlyDeltaLog = 6,
-        kBatchedWithPlainRocksDB = 7 };
+    enum DBRunningMode {
+        kWithDeltaStore = 0,
+        kWithNoDeltaStore = 1,
+        kBatchedWithDeltaStore = 2,
+        kBatchedWithNoDeltaStore = 3
+    };
 
-    DBRunningMode deltaKVRunningMode_ = kBothValueAndDeltaLog;
+    DBRunningMode deltaKVRunningMode_ = kBatchedWithNoDeltaStore;
 
     // operations
     bool PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
     bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
-    bool GetWithWriteBatch(const string& key, string* value);
 
-    bool PutWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
-    bool MergeWithPlainRocksDB(mempoolHandler_t objectPairMemPoolHandler);
-    bool GetWithPlainRocksDB(const string& key, string* value);
+    bool PutInternal(const mempoolHandler_t& mempoolHandler); 
+    bool MergeInternal(const mempoolHandler_t& mempoolHandler);
+    bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool getByWriteBackFlag);
 
-    bool PutWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool MergeWithOnlyValueStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool GetWithOnlyValueStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+//    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+//    vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
-    bool PutWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool MergeWithOnlyDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool GetWithOnlyDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
-
-    bool PutWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool MergeWithValueAndDeltaStore(mempoolHandler_t objectPairMemPoolHandler);
-    bool GetWithValueAndDeltaStore(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
-
-    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
     bool GetCurrentValueThenWriteBack(const string& key);
-
-    vector<bool> MultiGetWithBothValueAndDeltaStore(const vector<string>& keys, vector<string>& values);
-    vector<bool> MultiGetWithOnlyValueStore(const vector<string>& keys, vector<string>& values);
-    vector<bool> MultiGetWithOnlyDeltaStore(const vector<string>& keys, vector<string>& values);
-    vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
@@ -115,7 +64,6 @@ private:
     void processWriteBackOperationsWorker();
 
     bool isDeltaStoreInUseFlag_ = false;
-    bool isValueStoreInUseFlag_ = false;
     bool useInternalRocksDBBatchOperationsFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
@@ -127,8 +75,6 @@ private:
     uint32_t globalSequenceNumber_ = 0;
     std::shared_mutex globalSequenceNumberGeneratorMtx_;
 
-    rocksdb::WriteOptions internalWriteOption_;
-    rocksdb::WriteOptions internalMergeOption_;
     std::shared_mutex batchedBufferOperationMtx_;
 
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
@@ -141,15 +87,15 @@ private:
     vector<boost::thread*> thList_;
     bool deleteExistingThreads();
     // for separated operations
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, bool& findNewValueIndex, externalIndexInfo& newExternalIndexInfo, uint32_t& maxSequenceNumber); // mergeOperatorsVec contains is_separted flag and related values if it is not separated.
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, uint32_t& maxSequenceNumber);
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, uint32_t& maxSequenceNumber);
     // Storage component for delta store
+
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
     HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;
     HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
-    // Storage component for value store
-    IndexStoreInterface* IndexStoreInterfaceObjPtr_ = nullptr;
+    LsmTreeInterface lsmTreeInterface_;
 };
 
 } // namespace DELTAKV_NAMESPACE

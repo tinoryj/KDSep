@@ -58,8 +58,8 @@ add_library(DeltaKV STATIC
       indexBasedStore/valueManager.cc
       interface/deltaKVOptions.cpp
       interface/deltaKVInterface.cpp
-      interface/mergeOperation.cpp
       interface/lsmTreeInterface.cpp
+      interface/mergeOperation.cpp
 )
 
 target_link_libraries(DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})

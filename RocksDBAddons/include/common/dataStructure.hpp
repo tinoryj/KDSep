@@ -62,11 +62,24 @@ struct mapHashKeyForMemPoolHandler_t {
     }
 };
 
+// Put:
+//    false, true: value in vLog
+//    false, false: value in LSM-tree
+// Merge:
+//    false, true: delta in dStore
+//    false, false: delta in LSM-tree
+//    true, true: delta for value position in LSM-tree
+// Get:
+//    true, true: delta in dStore, value in vLog
+//    true, false: delta in dStore, value in LSM-tree
+//    false, true: delta in LSM-tree, value in vLog
+//    false, false: delta in LSM-tree
 struct internalValueType {
     bool mergeFlag_ = false; // true if the value request merge.
     bool valueSeparatedFlag_ = false; // true if the value is stored outside LSM-tree
     uint32_t sequenceNumber_ = 0; // global sequence number
     uint32_t rawValueSize_ = 0; // store the raw value size, in case some delta are not separated.
+    internalValueType() {} 
     internalValueType(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber, uint32_t rawValueSize) : mergeFlag_(mergeFlag), valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber), rawValueSize_(rawValueSize) {} 
 };
 
