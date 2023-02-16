@@ -170,13 +170,13 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("Partial Merge", PARTIAL_MERGE, time[PARTIAL_MERGE]);
 
     fprintf(stdout, "-------------- DeltaKV Batch Get Breakdown ------------------------------\n");
-    PRINT_FULL("All", DELTAKV_BATCH_READ, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("Buffer-read", DELTAKV_BATCH_READ_NO_WAIT_BUFFER, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("  Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_BATCH_READ]);
-    PRINT_FULL("Read-store", DELTAKV_BATCH_READ_STORE, time[DELTAKV_BATCH_READ]);
+    PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("  Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("  Buffer-read", DELTAKV_BATCH_READ_NO_WAIT_BUFFER, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("    Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("    Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("    Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("  Get-internal", DELTAKV_BATCH_READ_STORE, time[DELTAKV_GET_HASHSTORE]);
 
     fprintf(stdout, "-------------- DeltaKV Single batch ------------------------------\n");
     PRINT_FULL("Plain-rocksdb", BATCH_PLAIN_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
@@ -211,12 +211,13 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("worker-put-file-write", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_HASHSTORE_PUT]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Get Breakdown ------------------------------\n");
-    PRINT_FULL("worker-get-file-handler", DELTAKV_HASHSTORE_GET_FILE_HANDLER, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
-    PRINT_FULL("worker-get-cache", DELTAKV_HASHSTORE_GET_CACHE, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
-    PRINT_FULL("worker-insert-cache", DELTAKV_HASHSTORE_GET_INSERT_CACHE, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
-    PRINT_FULL("worker-get-file-process", DELTAKV_HASHSTORE_GET_PROCESS, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
-    PRINT_FULL("worker-get-file-io", DELTAKV_HASHSTORE_GET_IO, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
-    PRINT_FULL("worker-wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_HASHSTORE_GET_FILE_HANDLER]));
+    PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("  get-file-handler", DELTAKV_HASHSTORE_GET_FILE_HANDLER, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-cache", DELTAKV_HASHSTORE_GET_CACHE, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  insert-cache", DELTAKV_HASHSTORE_GET_INSERT_CACHE, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-process", DELTAKV_HASHSTORE_GET_PROCESS, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-io", DELTAKV_HASHSTORE_GET_IO, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_GET_HASHSTORE]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
     PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_HASHSTORE_WORKER_GC]));

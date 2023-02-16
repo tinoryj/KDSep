@@ -1183,12 +1183,14 @@ pair<uint64_t, uint64_t> HashStoreFileManager::deconstructAndGetValidContentsFro
     return make_pair(processedKeepObjectNumber, processedTotalObjectNumber);
 }
 
-void HashStoreFileManager::partialMergeGcResultMap(unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete) {
+uint64_t HashStoreFileManager::partialMergeGcResultMap(unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete) {
 
     shouldDelete.clear();
+    uint64_t reducedObjectsNumber = 0;
 
     for (auto& keyIt : gcResultMap) {
         if (keyIt.second.first.size() > 2) {
+            reducedObjectsNumber += keyIt.second.first.size() - 1;
             shouldDelete.insert(keyIt.first);
 //            for (auto i = 0; i < keyIt.second.first.size(); i++) {
 //                debug_error("value size %d %.*s\n", keyIt.second.first[i].size_, keyIt.second.first[i].size_, keyIt.second.first[i].data_); 
@@ -1210,6 +1212,15 @@ void HashStoreFileManager::partialMergeGcResultMap(unordered_map<str_t, pair<vec
 
 //            debug_error("after partial merge %d %.*s\n", result.size_, result.size_, result.data_); 
         }
+    }
+
+    return reducedObjectsNumber;
+}
+
+inline void HashStoreFileManager::clearMemoryForTemporaryMergedDeltas(unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete)
+{
+    for (auto& it : shouldDelete) {
+        delete[] resultMap[it].first[0].data_;
     }
 }
 
@@ -1836,9 +1847,11 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap;
             pair<uint64_t, uint64_t> remainObjectNumberPair;
             STAT_PROCESS(remainObjectNumberPair = deconstructAndGetValidContentsFromFile(readWriteBuffer, fileHandler->total_object_bytes_, gcResultMap), StatsType::DELTAKV_GC_PROCESS);
-
             unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
-            STAT_PROCESS(partialMergeGcResultMap(gcResultMap, shouldDelete), StatsType::DELTAKV_GC_PARTIAL_MERGE);
+
+            if (enableLsmTreeDeltaMeta_ == false) {
+                STAT_PROCESS(remainObjectNumberPair.first -= partialMergeGcResultMap(gcResultMap, shouldDelete), StatsType::DELTAKV_GC_PARTIAL_MERGE);
+            }
 
             bool fileContainsReWriteKeysFlag = false;
             // calculate target file size
@@ -1927,7 +1940,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                                 }
                             }
                         }
-                        continue;
                     } else if (fileHandler->gc_result_status_flag_ == kMayGC) {
                         // Mark this file as could not GC;
                         fileHandler->gc_result_status_flag_ = kNoGC;
@@ -1942,7 +1954,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                                 }
                             }
                         }
-                        continue;
                     }
                 } else {
                     // single file rewrite
@@ -1958,8 +1969,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                             }
                         }
                     }
-                    continue;
                 }
+                clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
+                continue;
             }
             // perform split into two buckets via extend prefix bit (+1)
             if (targetFileSize <= singleFileSplitGCTriggerSize_) {
@@ -1975,7 +1987,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         }
                     }
                 }
-                continue;
             } else {
                 debug_info("try split for key number = %lu\n", gcResultMap.size());
                 uint64_t currentUsedPrefixBitNumber = fileHandler->current_prefix_used_bit_;
@@ -2000,7 +2011,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                                 }
                             }
                         }
-                        continue;
                     } else {
                         debug_info("Perform split GC for file ID (without merge) = %lu done\n", fileHandler->target_file_id_);
                         fileHandler->gc_result_status_flag_ = kShouldDelete;
@@ -2013,7 +2023,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                                 }
                             }
                         }
-                        continue;
                     }
                 } else {
                     if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
@@ -2029,9 +2038,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                             }
                         }
                     }
-                    continue;
                 }
             }
+            clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
         }
     }
     workingThreadExitFlagVec_ += 1;

@@ -10,8 +10,6 @@ vector<string> stringSplit(string str, const string& token)
         if (index != std::string::npos) {
             result.push_back(str.substr(0, index));
             str = str.substr(index + token.size());
-            if (str.size() == 0)
-                result.push_back(str);
         } else {
             result.push_back(str);
             str = "";
@@ -27,8 +25,6 @@ bool stringSplit(string str, const string& token, vector<string>& result)
         if (index != std::string::npos) {
             result.push_back(str.substr(0, index));
             str = str.substr(index + token.size());
-            if (str.size() == 0)
-                result.push_back(str);
         } else {
             result.push_back(str);
             str = "";
@@ -86,6 +82,9 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, const vector<string
         }
     }
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
+    if (rawValueFieldsVec.size() > 10) {
+        debug_error("rawValueFieldsVec.size() %lu rawValue %.*s\n", rawValueFieldsVec.size(), 20, rawValue.c_str());
+    }
     for (auto q : operandMap) {
         // debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
         rawValueFieldsVec[q.first].assign(q.second);
@@ -97,6 +96,9 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, const vector<string
         finalValue->append(",");
     }
     finalValue->append(rawValueFieldsVec[rawValueFieldsVec.size() - 1]);
+    if (finalValue->size() > 4400) {
+        debug_error("rawOperandListVec.size() %lu rawValueFieldsVec.size() %lu rawValue %s\n", rawOperandListVec.size(), rawValueFieldsVec.size(), rawValue.c_str());
+    }
     return true;
 }
 
@@ -143,7 +145,6 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operandL
             operandMap.insert(make_pair(index, rawOperandListVec[it + 1]));
         }
     }
-    string finalOperator = "";
     bool first = true;
     str_t result;
     result.size_ = 0;
@@ -249,7 +250,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
             } else { // Find a delta from vLog GC
                 if (existingValueType.valueSeparatedFlag_ == false) {
                     debug_error("[ERROR] updating a value index but the value is not separated! key [%s]\n", key.ToString().c_str());
-                    assert(0);
+                    exit(1);
                 }
                 findUpdatedValueIndex = true;
                 newValueIndexStr.assign(operand);
@@ -285,7 +286,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     if (!leadingRawDeltas.empty()) {
         FullMergeFieldUpdates(rawValue, leadingRawDeltas, &mergedValueWithoutValueType);
         if (mergedValueWithoutValueType.size() != existingValueType.rawValueSize_) {
-            debug_error("[ERROR] value size differs after merging: %lu v.rocksDBStatus. %u\n", mergedValueWithoutValueType.size(), existingValueType.rawValueSize_);
+            debug_error("[ERROR] value size differs after merging: %lu v.s. %u\n", mergedValueWithoutValueType.size(), existingValueType.rawValueSize_);
         }
     } else {
         mergedValueWithoutValueType.assign(rawValue);
@@ -408,34 +409,42 @@ bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internal
     return true;
 }
 
-bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const
+bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(string& rawValue, vector<string>& operandList, string* finalValue) const
 {
-    vector<string> rawValueFieldsVec;
-
     size_t pos = 0;
-    string token;
-    string delimiter = ",";
-    while ((pos = rawValue.find(delimiter)) != std::string::npos) {
-        token = rawValue.substr(0, pos);
-        rawValueFieldsVec.push_back(token);
-        rawValue.erase(0, pos + delimiter.length());
-    }
-    rawValueFieldsVec.push_back(token);
+    char delimiter = ',';
+    int bufferSize = -1;
 
-    for (auto& q : operandList) {
-        string indexStr = q.substr(0, q.find(","));
-        int index = stoi(indexStr);
-        string updateContentStr = q.substr(q.find(",") + 1, q.size());
-        debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
-        rawValueFieldsVec[index].assign(updateContentStr);
+    str_t str(rawValue.data(), rawValue.size()); 
+    vector<str_t> rawValueFieldsVec;
+    stringSplit(str, delimiter, rawValueFieldsVec);
+
+    vector<str_t> rawOperandsVec;
+
+    for (auto& it : operandList) {
+        str_t str_t_it(it.data(), it.size());
+        stringSplit(str_t_it, ',', rawOperandsVec); 
     }
 
-    string temp;
+    for (auto it = 0; it < rawOperandsVec.size(); it += 2) {
+        int index = str_t_stoi(rawOperandsVec[it]);
+        rawValueFieldsVec[index] = rawOperandsVec[it+1];
+    }
+
+    for (auto& it : rawValueFieldsVec) {
+        bufferSize += it.size_ + 1;
+    }
+
+    char buffer[bufferSize];
+    int bufferIndex = 0;
+
     for (auto i = 0; i < rawValueFieldsVec.size() - 1; i++) {
-        finalValue->append(rawValueFieldsVec[i]);
-        finalValue->append(",");
+        memcpy(buffer + bufferIndex, rawValueFieldsVec[i].data_, rawValueFieldsVec[i].size_);
+        buffer[bufferIndex + rawValueFieldsVec[i].size_] = ',';
+        bufferIndex += rawValueFieldsVec[i].size_ + 1; 
     }
-    finalValue->append(rawValueFieldsVec[rawValueFieldsVec.size() - 1]);
+    memcpy(buffer + bufferIndex, rawValueFieldsVec[rawValueFieldsVec.size()-1].data_, rawValueFieldsVec[rawValueFieldsVec.size()-1].size_);
+    finalValue->assign(buffer, bufferSize);
     return true;
 }
 

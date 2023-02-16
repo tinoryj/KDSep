@@ -145,6 +145,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         // check value status
         internalValueType header;
         memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
             externalIndexInfo vLogIndex;
@@ -156,16 +157,16 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             char valueBuffer[valueBufferSize];
 
             header.valueSeparatedFlag_ = false;
-            internalValueStr = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  // remaining deltas
+            string remainingDeltas = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  // remaining deltas
 
             // replace the external value index with the raw value
             memcpy(valueBuffer, &header, sizeof(header));
             memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
-            if (internalValueStr.empty() == false) {
-                memcpy(valueBuffer + sizeof(header) + vLogValue.size(), internalValueStr.c_str(), internalValueStr.size());
+            if (remainingDeltas.empty() == false) {
+                memcpy(valueBuffer + sizeof(header) + vLogValue.size(), remainingDeltas.c_str(), remainingDeltas.size());
             }
 
-            value->assign(string(valueBuffer, valueBufferSize));
+            value->assign(valueBuffer, valueBufferSize);
             return true;
         } else {
             value->assign(internalValueStr);

@@ -39,7 +39,7 @@ public:
     const char* Name() const override { return kClassName(); }
 
 private:
-    bool FullMergeFieldUpdates(string rawValue, vector<string>& operandList, string* finalValue) const;
+    bool FullMergeFieldUpdates(string& rawValue, vector<string>& operandList, string* finalValue) const;
     bool PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const;
 };
 

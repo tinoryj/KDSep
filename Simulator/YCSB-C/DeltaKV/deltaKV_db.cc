@@ -236,6 +236,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdb_sync_merge = !keyDeltaSeparation;
     }
     options_.enable_key_value_cache_ = config.getDeltaKVCacheEnableStatus();
+    options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta(); 
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
@@ -299,6 +300,7 @@ int DeltaKVDB::Read(const std::string &table, const std::string &key,
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
+    //cerr << "read " << key << endl;
     int ret = db_.Get(key, &value);
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_GET, tv);
     gettimeofday(&tv_, 0);
@@ -341,6 +343,7 @@ int DeltaKVDB::Update(const std::string &table, const std::string &key,
     struct timeval tv;
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
     gettimeofday(&tv, nullptr);
+    //cerr << "update " << key << endl;
     for (KVPair &p : values) {
         bool status = db_.Merge(key, p.second);
         if (!status) {

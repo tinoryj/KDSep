@@ -50,10 +50,11 @@ class ExternDBConfig {
     uint64_t deltaStore_write_back_during_gc_threshold_ = 5;
     uint64_t deltaStore_write_back_during_gc_size_threshold_ = 2000;
     uint64_t deltaKVWriteBatchSize_ = 5;
-    bool enableDeltaKVCache_ = false;
     uint64_t deltaKVCacheObjectNumber_;
     uint64_t prefixTreeBitNumber_;
+    bool enableDeltaKVCache_ = false;
     bool enableRawRocksDBBatch_;
+    bool enableLsmTreeDeltaMeta_;
     uint64_t blockSize;
     uint64_t minBlobSize;
     bool cacheIndexAndFilterBlocks_;
@@ -113,6 +114,7 @@ class ExternDBConfig {
         minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 800);
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
+        enableLsmTreeDeltaMeta_ = pt_.get<bool>("config.enableLsmTreeDeltaMeta", true);
     }
 
     int getBloomBits() {
@@ -272,6 +274,9 @@ class ExternDBConfig {
     }
     bool cacheIndexAndFilterBlocks() {
         return cacheIndexAndFilterBlocks_;
+    }
+    bool getEnableLsmTreeDeltaMeta() {
+        return enableLsmTreeDeltaMeta_;
     }
 };
 }  // namespace ycsbc

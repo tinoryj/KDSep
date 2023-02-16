@@ -68,10 +68,6 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
         memcpy(seqNumberPtr, value, sizeof(uint32_t));
     }
 
-    internalValueType header;
-    memcpy(&header, value + sizeof(uint32_t), sizeof(header));
-    header.rawValueSize_ -= 4;
-    memcpy(value + sizeof(uint32_t), &header, sizeof(header));
     valueStrPtr->assign(std::string(value + sizeof(uint32_t), valueSize - sizeof(uint32_t)));
 
     debug_trace("get key [%.*s] valueSize %d seqnum %u\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize, (seqNumberPtr) ? *seqNumberPtr : 5678);
