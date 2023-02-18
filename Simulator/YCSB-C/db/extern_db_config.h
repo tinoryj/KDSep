@@ -60,6 +60,7 @@ class ExternDBConfig {
     bool cacheIndexAndFilterBlocks_;
     uint64_t maxKeyValueSize_;
     uint64_t maxOpenFiles;
+    bool deltaStore_KDLevel_cache_use_str_t_;
 
     struct {
         uint64_t level;
@@ -115,6 +116,7 @@ class ExternDBConfig {
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
         enableLsmTreeDeltaMeta_ = pt_.get<bool>("config.enableLsmTreeDeltaMeta", true);
+        deltaStore_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.deltaStore_KDLevel_cache_use_str_t", true);
     }
 
     int getBloomBits() {
@@ -277,6 +279,9 @@ class ExternDBConfig {
     }
     bool getEnableLsmTreeDeltaMeta() {
         return enableLsmTreeDeltaMeta_;
+    }
+    bool getDeltaStoreKDLevelCacheUseStrT() {
+        return deltaStore_KDLevel_cache_use_str_t_;
     }
 };
 }  // namespace ycsbc

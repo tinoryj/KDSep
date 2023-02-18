@@ -39,6 +39,11 @@ func() {
                                         if [[ $index -eq 10 ]]; then
                                             ratio="1"
                                         fi
+                                        echo $runMode $ratio
+
+                                        if [[ "$ratio" == "1" && $runMode =~ "kd" ]]; then
+                                            continue
+                                        fi
 
                                         if [[ "$runMode" == "raw" ]]; then
                                             scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
@@ -66,7 +71,6 @@ func() {
                                                 cache$cacheSize kdcache${kdcacheSize} \
                                                 threads$threadNumber workerT$works gcT$gcs bn$bucketNumber \
                                                 readRatio$ratio Exp$ExpName bs${bs} bf${bf} cif #paretokey
-                                            exit
                                         elif [[ "$runMode" == "kd" ]]; then
                                             if [[ "$ratio" == "1" ]]; then
                                                 continue
@@ -109,18 +113,19 @@ reqs=("25M")
 sstSizes=(8)
 runModeSet=('kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kvkd' 'kd' 'bkv' 'kv' 'raw')
-runModeSet=('kd' 'raw')
+runModeSet=('bkvkd' 'kd' 'bkv' 'kv' 'raw' 'kvkd')
+runModeSet=('kvkd')
 ops=("10M")
 cacheSizes=(4096 2048 1024)
-cacheSizes=(4096)
+cacheSizes=(2048 1024)
 blobCacheSizes=(4096 2048 1024)
 bfs=(10)
 rounds=1
 # memSizes the same
 
-reqs=("200K")
-indexSet=(5)
-ops=("100K")
+reqs=("10M")
+indexSet=(5 1)
+#ops=("1M")
 
 func
 exit

@@ -212,6 +212,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
             options_.enable_deltaStore_garbage_collection = false;
         }
     }
+    options_.deltaStore_KDLevel_cache_use_str_t = config.getDeltaStoreKDLevelCacheUseStrT();
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.internalRocksDBBatchedOperation_ = config.getEnableRoaRocksDBBatch();
     options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();

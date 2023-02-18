@@ -83,7 +83,8 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, const vector<string
     }
     vector<string> rawValueFieldsVec = stringSplit(rawValue, ",");
     if (rawValueFieldsVec.size() > 10) {
-        debug_error("rawValueFieldsVec.size() %lu rawValue %.*s\n", rawValueFieldsVec.size(), 20, rawValue.c_str());
+        debug_error("rawValueFieldsVec.size() %lu rawValue size %lu rawValue %.*s\n", rawValueFieldsVec.size(), rawValue.size(), 20, rawValue.c_str());
+        return false;
     }
     for (auto q : operandMap) {
         // debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
@@ -97,7 +98,7 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(string rawValue, const vector<string
     }
     finalValue->append(rawValueFieldsVec[rawValueFieldsVec.size() - 1]);
     if (finalValue->size() > 4400) {
-        debug_error("rawOperandListVec.size() %lu rawValueFieldsVec.size() %lu rawValue %s\n", rawOperandListVec.size(), rawValueFieldsVec.size(), rawValue.c_str());
+        debug_error("rawOperandListVec.size() %lu rawValueFieldsVec.size() %lu rawValueSize %lu rawValue %.*s\n", rawOperandListVec.size(), rawValueFieldsVec.size(), rawValue.size(), 20, rawValue.c_str());
     }
     return true;
 }

@@ -6,6 +6,9 @@ namespace DELTAKV_NAMESPACE {
 
 HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager, HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
 {
+    if (options->hashStore_max_file_number_ == 0) {
+        options->hashStore_max_file_number_ = 1;
+    }
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
@@ -248,42 +251,6 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec, 
         if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
             ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec, recordVec);
             return ret;
-        } else {
-            tempFileHandler->file_ownership_flag_ = 0;
-            return true;
-        }
-    }
-}
-
-bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>& valueStrCpyVec)
-{
-    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
-    hashStoreFileMetaDataHandler* tempFileHandler;
-    bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
-    if (ret != true) {
-        return true;
-    } else {
-        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
-            return hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec);
-        } else {
-            tempFileHandler->file_ownership_flag_ = 0;
-            return true;
-        }
-    }
-}
-
-bool HashStoreInterface::get(const string& keyStr, vector<str_cpy_t>& valueStrCpyVec, vector<hashStoreRecordHeader>& recordVec)
-{
-    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
-    hashStoreFileMetaDataHandler* tempFileHandler;
-    bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
-    if (ret != true) {
-        return true;
-    } else {
-        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
-            return hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrCpyVec, recordVec);
         } else {
             tempFileHandler->file_ownership_flag_ = 0;
             return true;

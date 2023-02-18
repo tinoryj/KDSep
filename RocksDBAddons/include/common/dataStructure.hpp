@@ -25,9 +25,12 @@ typedef struct str_t {
 } str_t;
 
 typedef struct str_cpy_t {
-    char* data_;
-    uint32_t size_;
-    str_cpy_t() { }
+    char* data_ = nullptr;
+    uint32_t size_ = 0;
+    str_cpy_t() {
+        data_ = nullptr;
+        size_ = 0;
+    }
     str_cpy_t(char* data, uint32_t size)
     {
         data_ = new char[size];
@@ -57,7 +60,10 @@ static unsigned int charBasedHashFunc(char* data, uint32_t n)
 struct mapEqualKeForStr_t {
     bool operator()(str_t const& a, str_t const& b) const
     {
-        return (memcmp(a.data_, b.data_, a.size_) == 0);
+        if (a.size_ == b.size_) {
+            return (memcmp(a.data_, b.data_, a.size_) == 0);
+        }
+        return false;
     }
 };
 

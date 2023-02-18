@@ -3,8 +3,9 @@
 namespace DELTAKV_NAMESPACE {
 
 bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
+    mergeOperator_ = new RocksDBInternalMergeOperator;
 //    if (options.enable_deltaStore == true || options.enable_valueStore == true) {
-        options.rocksdbRawOptions_.merge_operator.reset(new RocksDBInternalMergeOperator); // reset
+        options.rocksdbRawOptions_.merge_operator.reset(mergeOperator_); // reset
 //    }
 
     rocksdb::Status rocksDBStatus = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
@@ -122,6 +123,9 @@ bool LsmTreeInterface::Merge(const mempoolHandler_t& memPoolHandler)
     return true;
 }
 
+// return value: has header
+// values in LSM-tree: has header
+// values in vLog or returned by vLog: no header
 bool LsmTreeInterface::Get(const string& key, string* value)
 {
     if (lsmTreeRunningMode_ == kNoValueLog) {
@@ -149,24 +153,32 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
             externalIndexInfo vLogIndex;
-            header.rawValueSize_ -= 4;
             memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header), sizeof(vLogIndex));
             STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, vLogIndex, &vLogValue), StatsType::DELTAKV_GET_INDEXSTORE);
 
-            int valueBufferSize = vLogValue.size() + internalValueStr.size() - sizeof(vLogIndex);
-            char valueBuffer[valueBufferSize];
-
-            header.valueSeparatedFlag_ = false;
             string remainingDeltas = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  // remaining deltas
 
-            // replace the external value index with the raw value
+
+            int valueBufferSize = sizeof(header) + vLogValue.size();
+            char valueBuffer[valueBufferSize];
+
+            header.rawValueSize_ -= 4;
+            header.valueSeparatedFlag_ = false;
             memcpy(valueBuffer, &header, sizeof(header));
             memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
+
+            // replace the external value index with the raw value
             if (remainingDeltas.empty() == false) {
-                memcpy(valueBuffer + sizeof(header) + vLogValue.size(), remainingDeltas.c_str(), remainingDeltas.size());
+                Slice key("", 0);
+                Slice existingValue(valueBuffer, valueBufferSize);
+                deque<string> operandList;
+                operandList.push_back(remainingDeltas);
+                
+                mergeOperator_->FullMerge(key, &existingValue, operandList, value, nullptr);
+            } else {
+                value->assign(valueBuffer, valueBufferSize);
             }
 
-            value->assign(valueBuffer, valueBufferSize);
             return true;
         } else {
             value->assign(internalValueStr);
@@ -213,6 +225,10 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         }
     }
 
+    if (mergeBatch->Count() == 0) {
+        return true;
+    }
+
     rocksdb::Status rocksDBStatus;
     STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
 
@@ -220,6 +236,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         debug_error("[ERROR] Write with batch on underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
     }
+
     STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Flush WAL, status = %s\n", rocksDBStatus.ToString().c_str());

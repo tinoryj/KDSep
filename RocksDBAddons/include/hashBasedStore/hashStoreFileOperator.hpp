@@ -3,6 +3,7 @@
 #include "common/dataStructure.hpp"
 #include "interface/deltaKVOptions.hpp"
 #include "utils/appendAbleLRUCache.hpp"
+#include "utils/appendAbleLRUCacheStr.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
 #include <bits/stdc++.h>
@@ -47,11 +48,16 @@ private:
     bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
+    void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
+    void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
+    void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<pair<str_t, hashStoreRecordHeader>>& values);
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
     AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
+    AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
+    bool useStrTCache_ = true;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;

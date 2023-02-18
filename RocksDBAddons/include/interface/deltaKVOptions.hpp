@@ -37,6 +37,7 @@ public:
     contentCacheMode deltaStore_base_cache_mode = contentCacheMode::kLRUCache;
     contentStoreMode deltaStore_base_store_mode = contentStoreMode::kHashBasedBucketWithoutIndex;
     uint64_t deltaStore_KDLevel_cache_item_number = 1 * 1024 * 1024;
+    bool deltaStore_KDLevel_cache_use_str_t = true;
     uint64_t deltaStore_KDLevel_cache_peritem_value_number = 1 * 1024;
     uint64_t extract_to_deltaStore_size_lower_bound = 0;
     uint64_t extract_to_deltaStore_size_upper_bound = 0x3f3f3f;

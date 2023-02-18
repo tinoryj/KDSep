@@ -54,7 +54,13 @@ log_db_status() {
     du -d1 $DBPath | tail -n 1 | awk '{print $1 / 1024 " MiB all";}' >>$output_file
     echo "----------------------------------" >>$output_file
 
-    cat $output_file
+    lines=`wc -l $output_file | awk '{print $1;}'`
+    if [[ $lines -lt 50 ]]; then
+        cat $output_file
+    else
+        head -n 30 $output_file
+        tail -n 15 $output_file
+    fi
     cat $output_file >>$ResultLogFile
     cat temp.ini >>$ResultLogFile
 
@@ -181,7 +187,7 @@ for param in $*; do
     elif [[ "$param" =~ ^fl[0-9]+$ ]]; then
         num=$(echo $param | sed 's/fl//g')
         fieldlength=$num
-    elif [[ "$param" =~ ^readRatio[0-9].[0-9]$ || "$fl" == "1" ]]; then
+    elif [[ "$param" =~ ^readRatio[0-9].[0-9]$ || "$param" == "readRatio1" ]]; then
         ReadProportion=`echo $param | sed 's/readRatio//g'`
     elif [[ "$param" =~ ^bn[0-9]+$ ]]; then
         bn=`echo $param | sed 's/bn//g'`
@@ -428,16 +434,17 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
     #    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
     retvalue=$?
-    if [[ $retvalue -ne 0 ]]; then
-	echo "Exit. return number $retvalue"
-	exit
-    fi
     loaded="true"
     echo "output at $output_file"
 
     t_output_file=$output_file
     log_db_status $workingDB $t_output_file
     output_file=${t_output_file}
+
+    if [[ $retvalue -ne 0 ]]; then
+	echo "Exit. return number $retvalue"
+	exit
+    fi
 
     # Running Update
     echo "Read loaded DB to complete compaction"
@@ -473,13 +480,13 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         rm -rf workload-temp.spec
         echo "Deleted old workload spec"
     fi
-    UpdateProportion=$(echo "1.0-$ReadProportion" | bc)
-    echo "Modify spec, Read/Update ratio = $ReadProportion:0$UpdateProportion"
+    UpdateProportion=$(echo "" | awk '{print 1.0-'"$ReadProportion"';}')
+    echo "Modify spec, Read/Update ratio = $ReadProportion:$UpdateProportion"
     cp workloads/workloadTemplate.spec ./workload-temp.spec
     sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
     sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
     sed -i "15s/0/$ReadProportion/g" workload-temp.spec
-    sed -i "16s/0/0$UpdateProportion/g" workload-temp.spec
+    sed -i "16s/0/$UpdateProportion/g" workload-temp.spec
     sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
     sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
     if [[ $paretokey == "true" ]]; then
@@ -488,9 +495,9 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     echo "<===================== Modified spec file content =====================>"
     cat workload-temp.spec | head -n 25 | tail -n 17
 
-    output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
+    output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
     if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
-        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-0$UpdateProportion-${run_suffix}`
+        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}`
     fi
     echo "output at $output_file"
     if [[ "$checkRepeat" == "true" ]]; then
@@ -521,11 +528,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
 
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
-    ret=$?
-    if [[ $ret -ne 0 ]]; then
-        echo "Exit. return number $ret"
-        exit
-    fi
+    retvalue=$?
     loaded="false"
     echo "output at $output_file"
     log_db_status $workingDB $output_file

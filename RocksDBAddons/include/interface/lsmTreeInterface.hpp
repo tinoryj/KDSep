@@ -53,6 +53,7 @@ private:
     rocksdb::WriteOptions internalMergeOption_;
     // Storage component for value store
     IndexStoreInterface* IndexStoreInterfaceObjPtr_ = nullptr;
+    MergeOperator* mergeOperator_ = nullptr; 
     uint64_t valueExtractSize_ = 0;
     bool isValueStoreInUseFlag_ = false;
 };

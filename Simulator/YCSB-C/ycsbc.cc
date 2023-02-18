@@ -91,6 +91,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     timerStart.Start();
     int processLabel_base = num_ops / 100;
     struct timeval tv;
+    int output_base = 200;
     for (int i = 0; i < num_ops; ++i) {
         gettimeofday(&tv, 0);
         timer.Start();
@@ -112,12 +113,18 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
         // if (i % processLabel_base == 0) {
-        if (i % 200 == 0) {
+        if (i % output_base == 0) {
             std::cerr << "\r";
             double tot_duration = timerStart.End() / 1000000.0;
             double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
             int est_minutes = int(estimate_duration) / 60;
             int est_seconds = int(estimate_duration) % 60;
+            int speed = i / tot_duration;
+            if (speed < 1000) {
+                output_base = 200;
+            } else {
+                output_base = speed / 1000 * 200;
+            }
             std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
             if (est_minutes > 0) {
                 std::cerr << est_minutes << " min";

@@ -204,7 +204,14 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
 {
     // Do not use deltaStore
     if (deltaKVRunningMode_ == kWithNoDeltaStore || deltaKVRunningMode_ == kBatchedWithNoDeltaStore) {
-        return lsmTreeInterface_.Get(key, value);
+        string internalValueStr;
+        bool ret = lsmTreeInterface_.Get(key, &internalValueStr);
+        if (ret == false) {
+            debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
+            exit(1);
+        }
+        value->assign(internalValueStr.substr(sizeof(internalValueType)));
+        return true;
     }
 
     // Use deltaStore
@@ -482,7 +489,12 @@ bool DeltaKV::Get(const string& key, string* value)
             string tempValueStr;
             tempValueStr.assign(*value);
             value->clear();
-            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
+            bool mergeStatus;
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
+            if (mergeStatus == false) {
+                debug_error("[ERROR] merge failed: key %s number of deltas %lu raw value size %lu\n", key.c_str(), tempNewMergeOperatorsVec.size(), tempValueStr.size());
+                exit(1);
+            }
         }
         if (enableKeyValueCache_ == true) {
             string cacheKey = key;
@@ -633,9 +645,14 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     uint32_t maxSequenceNumber = 0;
     string tempRawValueStr;
     bool getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, maxSequenceNumber, true);
+    bool mergeStatus;
     if (getNewValueStrSuccessFlag) { 
         if (needMergeWithInBufferOperationsFlag == true) {
-            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
+            if (mergeStatus == false) {
+                debug_error("merge failed: key %s raw value size %lu\n", key.c_str(), tempRawValueStr.size());
+                exit(1);
+            }
         } else {
             newValueStr.assign(tempRawValueStr);
         }
