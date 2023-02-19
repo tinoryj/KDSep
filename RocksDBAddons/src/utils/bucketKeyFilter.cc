@@ -111,10 +111,10 @@ bool BucketKeyFilter::Erase(const string& key) {
 //        if (keys.count(key)) {
 //            keys.erase(key);
 //        }
-        if (erased_keys.size() > REBUILD_THRESHOLD) {
-            debug_error("[WARN] erased_keys too many: %d v.s. threshold %d\n",
-                    (int)erased_keys.size(), REBUILD_THRESHOLD);
-        }
+//        if (erased_keys.size() > REBUILD_THRESHOLD) {
+//            debug_error("[WARN] erased_keys too many: %d v.s. threshold %d\n",
+//                    (int)erased_keys.size(), REBUILD_THRESHOLD);
+//        }
     }
     return true;
 }

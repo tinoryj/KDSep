@@ -31,8 +31,6 @@ func() {
                                     updateOpNum=$(( $opnum * $index / 10 ))
                                     for ((k=0; k<${#cacheSizes[@]}; k++)); do
                                         cacheSize=${cacheSizes[$k]}
-                                        blobCacheSize=${blobCacheSizes[$k]}
-                                        blockCacheSize=$(( $cacheSize - $blobCacheSize ))
 #                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 262144 / 0.5"|bc)
                                         bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 262144 / 0.5"|bc)
                                         ratio="0.$index"
@@ -97,14 +95,15 @@ func() {
 }
 
 ExpName=2
-works=24
-gcs=8
+works=8
+gcs=2
+rounds=1
+bfs=(10)
 indexSet=(1 3 5 7 9 10)
 runModeSet=('raw' 'bkv')
 
 indexSet=(1 5 10)
 cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
-blobCacheSizes=(1536 1024 512 3584 3072 2560 2048 1536 1048 512 512 256 128 64)
 
 indexSet=(5 1)
 blocksizes=(65536)
@@ -114,22 +113,22 @@ sstSizes=(8)
 runModeSet=('kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kvkd' 'kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kd' 'bkv' 'kv' 'raw' 'kvkd')
-runModeSet=('kvkd' 'kv' 'raw' 'kd')
+
+runModeSet=('kvkd' 'kd' 'bkvkd')
+cacheSizes=(4096 2048 1024)
+indexSet=(0 5 1 10)
 ops=("10M")
-cacheSizes=(4096 2048 1024)
-cacheSizes=(4096 2048 1024)
-blobCacheSizes=(4096 2048 1024)
-bfs=(10)
-rounds=1
 # memSizes the same
 
 reqs=("10M")
-indexSet=(0 5 1)
 
+### Base test!!!
+#works=4
+#gcs=2
 #runModeSet=('kvkd')
-#cacheSizes=(2048)
-#indexSet=(5)
-#ops=("1M")
+#cacheSizes=(4096)
+#indexSet=(1)
+#ops=("10M")
 
 func
 exit

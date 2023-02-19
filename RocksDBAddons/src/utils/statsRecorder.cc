@@ -183,26 +183,20 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  merge", DELTAKV_MERGE_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
     PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
     PRINT_FULL("  flush-wal", BATCH_FLUSH_WAL, time[BATCH_PLAIN_ROCKSDB]);
-    PRINT_FULL("KV-KD", BATCH_KV_KD, time[BATCH_KV_KD]);
-    PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[BATCH_KV_KD]);
-    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[BATCH_KV_KD]);
-    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[BATCH_KV_KD]);
-    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[BATCH_KV_KD]);
-    PRINT_FULL("  vLog", DELTAKV_PUT_INDEXSTORE, time[BATCH_KV_KD]);
-    PRINT_FULL("  rocksdb", DELTAKV_MERGE_ROCKSDB, time[BATCH_KV_KD]);
     PRINT_FULL("KV", BATCH_KV, time[BATCH_KV]);
     PRINT_FULL("  vLog", DELTAKV_PUT_INDEXSTORE, time[BATCH_KV]);
     PRINT_FULL("  rocksdb", DELTAKV_MERGE_ROCKSDB, time[BATCH_KV]);
-    PRINT_FULL("KD", BATCH_KD, time[BATCH_KD]);
-    PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[BATCH_KD]);
-    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[BATCH_KD]);
-    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[BATCH_KD]);
-    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[BATCH_KD]);
-    PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[BATCH_KD]);
+    PRINT_FULL("KD", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("      operator", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    direct-write", DS_MULTIPUT_DIRECT_WRITE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[DELTAKV_PUT_HASHSTORE]);
 
     fprintf(stdout, "-------------- DeltaKV Batch OP Breakdown ------------------------------\n");
     PRINT_FULL("op-read", OP_GET, time[OP_GET]);
-    PRINT_FULL("op-multiput", OP_MULTIPUT, time[OP_MULTIPUT]);
     PRINT_FULL("op-put", OP_PUT, time[OP_PUT]);
 
     fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
@@ -212,8 +206,22 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("get-hdl", DSTORE_GET_HANDLER, time[DSTORE_GET_HANDLER]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
-    PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
-    PRINT_FULL("worker-put-file-write", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_HASHSTORE_PUT]);
+    PRINT_FULL("KD", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("  hashStore", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    direct-write", DS_MULTIPUT_DIRECT_WRITE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    wait-handlers", DS_MULTIPUT_WAIT_HANDLERS, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("      operator", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("        worker-multiput", OP_MULTIPUT, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("          update-filter", DS_MULTIPUT_UPDATE_FILTER, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("          prepare-header", DS_MULTIPUT_PREPARE_FILE_HEADER, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("          prepare-content", DS_MULTIPUT_PREPARE_FILE_CONTENT, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("          file-write-func", DS_WRITE_FUNCTION, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("            file-op", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("          insert-cache", DS_MULTIPUT_INSERT_CACHE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[DELTAKV_PUT_HASHSTORE]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Get Breakdown ------------------------------\n");
     PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET_HASHSTORE]);

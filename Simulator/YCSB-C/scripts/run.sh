@@ -65,17 +65,18 @@ log_db_status() {
     cat temp.ini >>$ResultLogFile
 
     # dump LOG
-    cp $DBPath/LOG $ResultLogFile-LOG
+    echo "Do not dump LOG for now"
+#    cp $DBPath/LOG $ResultLogFile-LOG
 
 # dump OPTIONS 
     OPTIONS=`ls -lht $DBPath/OPTIONS-* | head -n 1 | awk '{print $NF;}'`
-    cat $OPTIONS >> $ResultLogFile-LOG
+#    cat $OPTIONS >> $ResultLogFile-LOG
 
-    if [[ `echo "$ResultLogFile" | grep "Load" | wc -l` -ne 0 ]]; then
-	if [[ -f /mnt/lvm/cleanLOG.sh ]]; then
-	    /mnt/lvm/cleanLOG.sh $ResultLogFile-LOG
-	fi
-    fi
+#    if [[ `echo "$ResultLogFile" | grep "Load" | wc -l` -ne 0 ]]; then
+#	if [[ -f /mnt/lvm/cleanLOG.sh ]]; then
+#	    /mnt/lvm/cleanLOG.sh $ResultLogFile-LOG
+#	fi
+#    fi
 }
 
 pwd
@@ -465,6 +466,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     echo "<===================== Prepare =====================>"
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P ${SPEC} -phase run -configpath $configPath > ${output_file}-prepare
     echo "output at ${output_file}-prepare"
+    rm -f $SPEC
 
     cp -r $workingDB $loadedDB # Copy loaded DB
     if [[ "$only_load" == "true" ]]; then

@@ -27,6 +27,7 @@ public:
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec, vector<hashStoreRecordHeader>& recordVec);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<str_cpy_t>& valueCpyVec);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<str_cpy_t>& valueCpyVec, vector<hashStoreRecordHeader>& recordVec);
+    bool waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler);
     // threads with job queue support
     void operationWorker(int threadID);
     bool setJobDone();

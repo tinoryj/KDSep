@@ -79,7 +79,7 @@ public:
         return maxFileNumber_ - currentFileNumber_;
     }
 
-    uint64_t insert(string prefixStr, hashStoreFileMetaDataHandler*& newData)
+    uint64_t insert(const string& prefixStr, hashStoreFileMetaDataHandler*& newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         if (currentFileNumber_ >= maxFileNumber_) {
@@ -100,7 +100,7 @@ public:
         }
     }
 
-    pair<uint64_t, uint64_t> insertPairOfNodes(string prefixStr1, hashStoreFileMetaDataHandler*& newData1, string prefixStr2, hashStoreFileMetaDataHandler*& newData2)
+    pair<uint64_t, uint64_t> insertPairOfNodes(const string& prefixStr1, hashStoreFileMetaDataHandler*& newData1, const string& prefixStr2, hashStoreFileMetaDataHandler*& newData2)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         if (currentFileNumber_ >= (maxFileNumber_ + 1)) {
@@ -132,7 +132,7 @@ public:
         }
     }
 
-    uint64_t insertWithFixedBitNumber(string prefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
+    uint64_t insertWithFixedBitNumber(const string& prefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         debug_info("Current file number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
@@ -154,7 +154,7 @@ public:
         }
     }
 
-    bool get(string prefixStr, hashStoreFileMetaDataHandler*& newData)
+    bool get(const string& prefixStr, hashStoreFileMetaDataHandler*& newData)
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         uint64_t findAtLevelID = 0;
@@ -166,7 +166,7 @@ public:
         }
     }
 
-    bool find(string prefixStr, uint64_t& findAtLevelID)
+    bool find(const string& prefixStr, uint64_t& findAtLevelID)
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         hashStoreFileMetaDataHandler* newData;
@@ -178,7 +178,7 @@ public:
         }
     }
 
-    bool remove(string prefixStr, uint64_t& findAtLevelID)
+    bool remove(const string& prefixStr, uint64_t& findAtLevelID)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         bool status = markPrefixTreeNodeAsNonLeafNode(rootNode_, prefixStr, findAtLevelID);
@@ -190,7 +190,7 @@ public:
         }
     }
 
-    bool mergeNodesToNewLeafNode(string prefixStr, uint64_t& findAtLevelID)
+    bool mergeNodesToNewLeafNode(const string& prefixStr, uint64_t& findAtLevelID)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         bool status = markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(rootNode_, prefixStr, findAtLevelID);
@@ -202,7 +202,7 @@ public:
         }
     }
 
-    bool updateDataObjectForTargetLeafNode(string bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
+    bool updateDataObjectForTargetLeafNode(const string& bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         bool status = updateLeafNodeDataObject(rootNode_, bitBasedPrefixStr, findAtLevelID, newDataObj);
@@ -376,7 +376,7 @@ private:
         }
     }
 
-    bool addPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
+    bool addPrefixTreeNode(prefixTreeNode* root, const string& bitBasedPrefixStr, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
         for (; currentLevel < bitBasedPrefixStr.size(); currentLevel++) {
@@ -470,7 +470,7 @@ private:
         return false;
     }
 
-    bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
+    bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, const string& bitBasedPrefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
         for (; currentLevel < fixedBitNumber - 1; currentLevel++) {
@@ -550,7 +550,7 @@ private:
         return false;
     }
 
-    bool findPrefixTreeNode(prefixTreeNode* root, string bitBasedPrefixStr, hashStoreFileMetaDataHandler*& currentDataTObj, uint64_t& findAtLevelID)
+    bool findPrefixTreeNode(prefixTreeNode* root, const string& bitBasedPrefixStr, hashStoreFileMetaDataHandler*& currentDataTObj, uint64_t& findAtLevelID)
     {
         uint64_t currentLevel = 0;
         for (; currentLevel < bitBasedPrefixStr.size(); currentLevel++) {
@@ -599,7 +599,7 @@ private:
         }
     }
 
-    bool markPrefixTreeNodeAsNonLeafNode(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
+    bool markPrefixTreeNodeAsNonLeafNode(prefixTreeNode* root, const string& bitBasedPrefixStr, uint64_t& findAtLevelID)
     {
         uint64_t searchLevelNumber = bitBasedPrefixStr.size();
         findAtLevelID = 0;
@@ -627,7 +627,7 @@ private:
         }
     }
 
-    bool markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID)
+    bool markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(prefixTreeNode* root, const string& bitBasedPrefixStr, uint64_t& findAtLevelID)
     {
         uint64_t searchLevelNumber = bitBasedPrefixStr.size();
         findAtLevelID = 0;
@@ -666,7 +666,7 @@ private:
         }
     }
 
-    bool updateLeafNodeDataObject(prefixTreeNode* root, string bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
+    bool updateLeafNodeDataObject(prefixTreeNode* root, const string& bitBasedPrefixStr, uint64_t& findAtLevelID, hashStoreFileMetaDataHandler* newDataObj)
     {
         uint64_t searchLevelNumber = bitBasedPrefixStr.size();
         findAtLevelID = 0;

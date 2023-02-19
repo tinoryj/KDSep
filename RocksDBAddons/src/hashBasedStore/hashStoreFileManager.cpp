@@ -884,11 +884,13 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyBuffer);
         return false;
     }
-    bool fileHandlerExistFlag;
-    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
-    if (fileHandlerExistFlag == false && opType == kGet) {
+//    bool fileHandlerExistFlag;
+//    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
+    bool getFileHandlerStatus;
+    STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+    if (getFileHandlerStatus == false && opType == kGet) {
         return false;
-    } else if (fileHandlerExistFlag == false && opType == kPut) {
+    } else if (getFileHandlerStatus == false && opType == kPut) {
         // Anchor: handler does not exist, do not create the file and directly return
         if (getForAnchorWriting) {
             fileHandlerPtr = nullptr;
@@ -904,10 +906,14 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
             fileHandlerPtr->file_ownership_flag_ = 1;
             return true;
         }
-    } else if (fileHandlerExistFlag == true) {
+    } else if (getFileHandlerStatus == true) {
+        bool first = true; 
         while (true) {
-            bool getFileHandlerStatus;
-            STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+            if (!first) {
+                STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+            } else {
+                first = false;
+            }
             if (!getFileHandlerStatus && (opType == kPut || opType == kMultiPut)) {
                 bool createNewFileHandlerStatus;
                 STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
@@ -960,14 +966,17 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", string(keyBuffer, keySize).c_str());
         return false;
     }
-    bool fileHandlerExistFlag;
-    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
-    if (fileHandlerExistFlag == false && getForAnchorWriting == true) {
+//    bool fileHandlerExistFlag;
+//    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
+    bool getFileHandlerStatus;
+    STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+
+    if (getFileHandlerStatus == false && getForAnchorWriting == true) {
         // Anchor: handler does not exist, do not create the file and directly return
         debug_info("Return nullptr for key = %s, since it's an anchor\n", string(keyBuffer, keySize).c_str());
         fileHandlerPtr = nullptr;
         return true;
-    } else if (fileHandlerExistFlag == false && getForAnchorWriting == false) {
+    } else if (getFileHandlerStatus == false && getForAnchorWriting == false) {
         // Anchor: handler does not exist, need create the file
         bool createNewFileHandlerStatus;
         STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
@@ -980,10 +989,14 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
             fileHandlerPtr->markedByMultiPut_ = true;
             return true;
         }
-    } else if (fileHandlerExistFlag == true) {
+    } else if (getFileHandlerStatus == true) {
+        bool first = true;
         while (true) {
-            bool getFileHandlerStatus;
-            STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+            if (!first) {
+                STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+            } else {
+                first = false;
+            }
             if (!getFileHandlerStatus) {
                 bool createNewFileHandlerStatus;
                 STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
@@ -996,7 +1009,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
                     fileHandlerPtr->markedByMultiPut_ = true;
                     return true;
                 }
-            } else {
+            } else 
+            {
                 // avoid get file handler which is in GC;
                 if (fileHandlerPtr->file_ownership_flag_ == 1 && fileHandlerPtr->markedByMultiPut_ == true) {
                     debug_trace("Get exist file ID = %lu, for key = %s\n", fileHandlerPtr->target_file_id_, string(keyBuffer, keySize).c_str());
@@ -1035,14 +1049,17 @@ bool HashStoreFileManager::generateHashBasedPrefix(char* rawStr, uint32_t strSiz
     MurmurHash3_x64_128((void*)rawStr, strSize, 0, murmurHashResultBuffer);
     uint64_t firstFourByte;
     memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
+    char buffer[64];
+    int index = 0;
     while (firstFourByte != 0) {
-        prefixStr += (firstFourByte & 1) + '0';
+        buffer[index++] = (firstFourByte & 1) + '0';
         firstFourByte >>= 1;
     }
+    prefixStr.assign(buffer, index);
     return true;
 }
 
-bool HashStoreFileManager::getHashStoreFileHandlerExistFlag(const string prefixStr)
+bool HashStoreFileManager::getHashStoreFileHandlerExistFlag(const string& prefixStr)
 {
     uint64_t prefixLen;
     bool handlerFindStatus = objectFileMetaDataTrie_.find(prefixStr, prefixLen);
@@ -1054,25 +1071,32 @@ bool HashStoreFileManager::getHashStoreFileHandlerExistFlag(const string prefixS
     }
 }
 
-bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
+bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     uint64_t prefixLen;
-    bool handlerFindStatus = objectFileMetaDataTrie_.find(prefixStr, prefixLen);
-    if (handlerFindStatus == true) {
-        bool handlerGetStatus = objectFileMetaDataTrie_.get(prefixStr, fileHandlerPtr);
-        if (handlerGetStatus == false) {
-            debug_error("[ERROR] get file hendler fail after check existence for prefix = %s\n", prefixStr.c_str());
-            return false;
-        } else {
-            return true;
-        }
+//    bool handlerFindStatus = objectFileMetaDataTrie_.find(prefixStr, prefixLen);
+//    if (handlerFindStatus == true) {
+//        bool handlerGetStatus = objectFileMetaDataTrie_.get(prefixStr, fileHandlerPtr);
+//        if (handlerGetStatus == false) {
+//            debug_error("[ERROR] get file hendler fail after check existence for prefix = %s\n", prefixStr.c_str());
+//            return false;
+//        } else {
+//            return true;
+//        }
+//    } else {
+//        debug_trace("Could not find prefix = %s for any length in trie, need to create\n", prefixStr.c_str());
+//        return false;
+//    }
+    bool handlerGetStatus = objectFileMetaDataTrie_.get(prefixStr, fileHandlerPtr);
+    if (handlerGetStatus == true) {
+        return true;
     } else {
         debug_trace("Could not find prefix = %s for any length in trie, need to create\n", prefixStr.c_str());
         return false;
     }
 }
 
-bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
     currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_, maxBucketSize_, singleFileFlushSize_);

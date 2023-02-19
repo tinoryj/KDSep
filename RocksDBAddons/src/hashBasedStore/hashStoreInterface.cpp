@@ -171,6 +171,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
         // for selective putinto job queue
         auto processedHandlerIndex = 0;
         unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
+        vector<hashStoreOperationHandler*> handlers; 
         for (auto mapIt : fileHandlerToIndexMap) {
             uint64_t targetWriteSize = 0;
             for (auto index = 0; index < mapIt.second.size(); index++) {
@@ -182,7 +183,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
                     targetWriteSize += (sizeof(hashStoreRecordHeader) + objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_ + objectPairMemPoolHandlerVec[mapIt.second[index]].valueSize_);
                 }
             }
-            if (targetWriteSize + mapIt.first->file_operation_func_ptr_->getFileBufferedSize() < fileFlushThreshold_) {
+            if (false && targetWriteSize + mapIt.first->file_operation_func_ptr_->getFileBufferedSize() < fileFlushThreshold_) {
                 tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVecTemp[processedHandlerIndex]));
             } else {
                 mapIt.first->markedByMultiPut_ = false;
@@ -190,24 +191,24 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
                 currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = &handlerVecTemp[processedHandlerIndex];
                 currentOperationHandler->jobDone_ = kNotDone;
                 currentOperationHandler->opType_ = kMultiPut;
-                hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler);
+                STAT_PROCESS(hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
+                handlers.push_back(currentOperationHandler);
             }
             processedHandlerIndex++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
         gettimeofday(&tv, 0);
+        bool putStatus;
         if (tempFileHandlerMap.size() != 0) {
-            bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
+            STAT_PROCESS(putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap), DS_MULTIPUT_DIRECT_WRITE);
             if (putStatus != true) {
                 debug_error("[ERROR] write to dLog error for keys, number = %lu\n", tempFileHandlerMap.size());
-                return false;
-            } else {
-                debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", tempFileHandlerMap.size());
-                return true;
-            }
+            } 
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_DIRECT_OP, tv);
-        debug_trace("Write to dLog success for keys via job queue operations, number = %lu\n", objectPairMemPoolHandlerVec.size());
+
+        for (auto& it : handlers) {
+            STAT_PROCESS(hashStoreFileOperatorPtr_->waitOperationHandlerDone(it), StatsType::DS_MULTIPUT_WAIT_HANDLERS);
+        }
         return true;
     }
 }

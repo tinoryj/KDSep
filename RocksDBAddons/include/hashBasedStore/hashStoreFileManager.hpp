@@ -80,9 +80,9 @@ private:
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
-    bool getHashStoreFileHandlerExistFlag(const string prefixStr);
-    bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr); // previousFileID only used when createByGCFlag == true
+    bool getHashStoreFileHandlerExistFlag(const string& prefixStr);
+    bool getHashStoreFileHandlerByPrefix(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr); // previousFileID only used when createByGCFlag == true
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management
