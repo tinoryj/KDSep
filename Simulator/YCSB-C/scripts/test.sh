@@ -114,17 +114,21 @@ sstSizes=(8)
 runModeSet=('kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kvkd' 'kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kd' 'bkv' 'kv' 'raw' 'kvkd')
-runModeSet=('kvkd')
+runModeSet=('kvkd' 'kv' 'raw' 'kd')
 ops=("10M")
 cacheSizes=(4096 2048 1024)
-cacheSizes=(2048 1024)
+cacheSizes=(4096 2048 1024)
 blobCacheSizes=(4096 2048 1024)
 bfs=(10)
 rounds=1
 # memSizes the same
 
 reqs=("10M")
-indexSet=(5 1)
+indexSet=(0 5 1)
+
+#runModeSet=('kvkd')
+#cacheSizes=(2048)
+#indexSet=(5)
 #ops=("1M")
 
 func

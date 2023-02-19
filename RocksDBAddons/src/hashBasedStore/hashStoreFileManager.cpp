@@ -29,7 +29,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     notifyGCMQ_ = notifyGCMQ;
     enableWriteBackDuringGCFlag_ = true;
     writeBackOperationsQueue_ = writeBackOperationsQueue;
-    gcWriteBackDeltaNum_ = options->deltaStore_write_back_during_gc_threshold;
+    gcWriteBackDeltaNum_ = options->deltaStore_gc_write_back_delta_num;
+    gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
@@ -65,7 +66,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     workingDir_ = workingDirStr;
     notifyGCMQ_ = notifyGCMQ;
     enableWriteBackDuringGCFlag_ = false;
-    gcWriteBackDeltaNum_ = options->deltaStore_write_back_during_gc_threshold;
+    gcWriteBackDeltaNum_ = options->deltaStore_gc_write_back_delta_num;
+    gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
@@ -876,12 +878,14 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
         operationCounterMtx_.unlock();
     }
     string prefixStr;
-    bool genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr);
+    bool genPrefixStatus;
+    STAT_PROCESS(genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr), StatsType::DSTORE_PREFIX);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", keyBuffer);
         return false;
     }
-    bool fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr);
+    bool fileHandlerExistFlag;
+    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
     if (fileHandlerExistFlag == false && opType == kGet) {
         return false;
     } else if (fileHandlerExistFlag == false && opType == kPut) {
@@ -902,7 +906,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
         }
     } else if (fileHandlerExistFlag == true) {
         while (true) {
-            bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
+            bool getFileHandlerStatus;
+            STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
             if (!getFileHandlerStatus && (opType == kPut || opType == kMultiPut)) {
                 bool createNewFileHandlerStatus;
                 STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
@@ -949,12 +954,14 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         operationCounterMtx_.unlock();
     }
 
-    bool genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr);
+    bool genPrefixStatus;
+    STAT_PROCESS(genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr), StatsType::DSTORE_PREFIX);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", string(keyBuffer, keySize).c_str());
         return false;
     }
-    bool fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr);
+    bool fileHandlerExistFlag;
+    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
     if (fileHandlerExistFlag == false && getForAnchorWriting == true) {
         // Anchor: handler does not exist, do not create the file and directly return
         debug_info("Return nullptr for key = %s, since it's an anchor\n", string(keyBuffer, keySize).c_str());
@@ -975,7 +982,8 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         }
     } else if (fileHandlerExistFlag == true) {
         while (true) {
-            bool getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr);
+            bool getFileHandlerStatus;
+            STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
             if (!getFileHandlerStatus) {
                 bool createNewFileHandlerStatus;
                 STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
@@ -1860,9 +1868,17 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 
             for (auto keyIt : gcResultMap) {
                 bool merged = false;
+                size_t totalValueSizes = 0;
+
+                for (auto valueIt : keyIt.second.first) {
+                    targetValidObjectSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + valueIt.size_);
+                    totalValueSizes += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + valueIt.size_);
+                }
+
                 if (enableWriteBackDuringGCFlag_ == true) {
                     debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
-                    if (keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) {
+                    if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
+                            (totalValueSizes > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
                         fileContainsReWriteKeysFlag = true;
                         string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
                         writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(currentKeyForWriteBack, "", 0);
@@ -1870,9 +1886,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     } 
                 }
 
-                for (auto valueIt : keyIt.second.first) {
-                    targetValidObjectSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + valueIt.size_);
-                }
             }
 
             uint64_t targetFileSize = targetValidObjectSize + sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader);
@@ -1886,7 +1899,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done_ != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            writeBackOperationsQueue_->push(writeBackIt);
+                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -1901,7 +1914,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done_ != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            writeBackOperationsQueue_->push(writeBackIt);
+                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -1917,7 +1930,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done_ != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            writeBackOperationsQueue_->push(writeBackIt);
+                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -1936,7 +1949,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done_ != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    writeBackOperationsQueue_->push(writeBackIt);
+                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -1950,7 +1963,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done_ != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    writeBackOperationsQueue_->push(writeBackIt);
+                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -1965,7 +1978,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if (enableWriteBackDuringGCFlag_ == true) {
                         if (writeBackOperationsQueue_->done_ != true) {
                             for (auto writeBackIt : targetWriteBackVec) {
-                                writeBackOperationsQueue_->push(writeBackIt);
+                                STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                             }
                         }
                     }
@@ -1983,7 +1996,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done_ != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            writeBackOperationsQueue_->push(writeBackIt);
+                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -2007,7 +2020,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done_ != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    writeBackOperationsQueue_->push(writeBackIt);
+                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -2019,7 +2032,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done_ != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    writeBackOperationsQueue_->push(writeBackIt);
+                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -2034,7 +2047,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if (enableWriteBackDuringGCFlag_ == true) {
                         if (writeBackOperationsQueue_->done_ != true) {
                             for (auto writeBackIt : targetWriteBackVec) {
-                                writeBackOperationsQueue_->push(writeBackIt);
+                                STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                             }
                         }
                     }

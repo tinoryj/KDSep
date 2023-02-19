@@ -51,6 +51,7 @@ private:
     bool PutWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
     bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
 
+    bool PutImpl(const string& key, const string& value);
     bool PutInternal(const mempoolHandler_t& mempoolHandler); 
     bool MergeInternal(const mempoolHandler_t& mempoolHandler);
     bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool getByWriteBackFlag);

@@ -51,6 +51,7 @@ private:
     uint64_t operationCounterForMetadataCommit_ = 0;
     uint64_t operationNumberForMetadataCommitThreshold_ = 0;
     uint64_t gcWriteBackDeltaNum_ = 5;
+    uint64_t gcWriteBackDeltaSize_ = 0;
     bool enableGCFlag_ = false;
     bool enableWriteBackDuringGCFlag_ = false;
     bool enableBatchedOperations_ = false;

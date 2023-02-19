@@ -289,8 +289,9 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                 STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
                 if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
-                    writeBackOperationsQueue_->push(newPair);
+                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
+//                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+//                    writeBackOperationsQueue_->push(newPair);
                 }
                 return true;
             }
@@ -340,9 +341,9 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, deltaValueFromExternalStoreVec, value), StatsType::FULL_MERGE);
             if (mergeOperationStatus == true) {
                 if (enableWriteBackOperationsFlag_ == true && deltaValueFromExternalStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
-                    writeBackOperationsQueue_->push(newPair);
-                    // TODO directly write back.
+                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
+//                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+//                    writeBackOperationsQueue_->push(newPair);
                 }
                 return true;
             } else {
@@ -369,13 +370,22 @@ bool DeltaKV::Put(const string& key, const string& value)
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
         }
     }
+
+    return PutImpl(key, value);
+}
+
+bool DeltaKV::PutImpl(const string& key, const string& value) {
     globalSequenceNumberGeneratorMtx_.lock();
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
     mempoolHandler_t mempoolHandler;
     bool insertMemPoolStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, true, mempoolHandler);
+    if (insertMemPoolStatus == false) {
+        debug_error("insert to mempool failed, key %s value size %lu\n", key.c_str(), value.size());
+        exit(1);
+    }
     bool putOperationStatus = true;
-    bool shouldDeleteMemPoolHandler = false;
+    bool deleteMemPoolHandlerStatus = false;
     switch (deltaKVRunningMode_) {
     case kBatchedWithNoDeltaStore:
     case kBatchedWithDeltaStore:
@@ -384,22 +394,24 @@ bool DeltaKV::Put(const string& key, const string& value)
     case kWithDeltaStore:
     case kWithNoDeltaStore:
         putOperationStatus = PutInternal(mempoolHandler);
-        shouldDeleteMemPoolHandler = true;
+        deleteMemPoolHandlerStatus = true;
         break;
     default:
         debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
         putOperationStatus = false;
-        shouldDeleteMemPoolHandler = true;
+        deleteMemPoolHandlerStatus = true;
         break;
     }
-    if (shouldDeleteMemPoolHandler == true) {
+    if (deleteMemPoolHandlerStatus == true) {
         objectPairMemPool_->eraseContentFromMemPool(mempoolHandler);
     }
-    if (putOperationStatus == true) {
-        return true;
-    } else {
+
+    if (putOperationStatus == false) {
+        debug_error("[ERROR] Could not put back current value, skip write back, key = %s, value = %s\n", key.c_str(), value.c_str());
         return false;
     }
+
+    return true;
 }
 
 bool DeltaKV::Get(const string& key, string* value)
@@ -664,50 +676,8 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     }
 
     debug_warn("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
-    globalSequenceNumberGeneratorMtx_.lock();
-    uint32_t currentSequenceNumber = globalSequenceNumber_++;
-    globalSequenceNumberGeneratorMtx_.unlock();
-    mempoolHandler_t mempoolHandler;
-    bool insertMemPoolStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, newValueStr, currentSequenceNumber, true, mempoolHandler);
-    if (insertMemPoolStatus == false) {
-        debug_error("insert to mempool failed, key %s value size %lu tempRawValueStr %lu delta vector %lu\n", key.c_str(), newValueStr.size(), tempRawValueStr.size(), tempNewMergeOperatorsVec.size());
-        exit(1);
-    }
-    bool putOperationStatus = true;
-    bool deleteMemPoolHandlerStatus = false;
-    switch (deltaKVRunningMode_) {
-    case kBatchedWithNoDeltaStore:
-    case kBatchedWithDeltaStore:
-        putOperationStatus = PutWithWriteBatch(mempoolHandler);
-        break;
-    case kWithDeltaStore:
-    case kWithNoDeltaStore:
-        putOperationStatus = PutInternal(mempoolHandler);
-        deleteMemPoolHandlerStatus = true;
-        break;
-    default:
-        debug_error("[ERROR] unknown running mode = %d", deltaKVRunningMode_);
-        putOperationStatus = false;
-        deleteMemPoolHandlerStatus = true;
-        break;
-    }
-    if (deleteMemPoolHandlerStatus == true) {
-        objectPairMemPool_->eraseContentFromMemPool(mempoolHandler);
-    }
 
-    if (putOperationStatus == false) {
-        debug_error("[ERROR] Could not put back current value, skip write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
-        return false;
-    }
-
-    if (enableKeyValueCache_ == true) {
-        string cacheKey = key;
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        keyToValueListCache_->insertToCache(cacheKey, newValueStr);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_NEW, tv);
-    }
-    return true;
+    return PutImpl(key, newValueStr);
 }
 
 // TODO: following functions are not complete
@@ -1128,7 +1098,7 @@ void DeltaKV::processWriteBackOperationsWorker()
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_GC_WRITE_BACK, tv);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
             delete currentProcessPair;
         }
     }

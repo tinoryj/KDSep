@@ -333,6 +333,48 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
     return processedObjectNumber;
 }
 
+uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal, const str_t& key)
+{
+    uint64_t currentProcessLocationIndex = 0;
+    // skip file header
+    currentProcessLocationIndex += sizeof(hashStoreFileHeader);
+    uint64_t processedObjectNumber = 0;
+    hashStoreRecordHeader* currentObjectRecordHeaderPtr;
+    while (currentProcessLocationIndex != contentSize) {
+        processedObjectNumber++;
+        currentObjectRecordHeaderPtr = (hashStoreRecordHeader*)(contentBuffer + currentProcessLocationIndex);
+        currentProcessLocationIndex += sizeof(hashStoreRecordHeader);
+        if (currentObjectRecordHeaderPtr->is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
+            continue;
+        }
+        // get key str_t
+        str_t currentKey(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeaderPtr->key_size_);
+        if (key.size_ != currentKey.size_ || memcmp(key.data_, currentKey.data_, key.size_) != 0) {
+            currentProcessLocationIndex += currentObjectRecordHeaderPtr->key_size_ + ((currentObjectRecordHeaderPtr->is_anchor_) ? 0 : currentObjectRecordHeaderPtr->value_size_);
+            continue;
+        }
+
+        currentProcessLocationIndex += currentObjectRecordHeaderPtr->key_size_;
+        if (currentObjectRecordHeaderPtr->is_anchor_ == true) {
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                resultMapInternal.at(currentKey).clear();
+            }
+        } else {
+            str_t currentValue(contentBuffer + currentProcessLocationIndex, currentObjectRecordHeaderPtr->value_size_);
+            if (resultMapInternal.find(currentKey) != resultMapInternal.end()) {
+                resultMapInternal.at(currentKey).push_back(currentValue);
+            } else {
+                vector<str_t> newValuesRelatedToCurrentKeyVec;
+                newValuesRelatedToCurrentKeyVec.push_back(currentValue);
+                resultMapInternal.insert(make_pair(currentKey, newValuesRelatedToCurrentKeyVec));
+            }
+            currentProcessLocationIndex += currentObjectRecordHeaderPtr->value_size_;
+        }
+    }
+    return processedObjectNumber;
+}
+
 bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber)
 {
     debug_trace("Write content to file ID = %lu\n", fileHandler->target_file_id_);
@@ -1010,8 +1052,6 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                                     (int)fileHandler->filter->MayExist(string(key.c_str(), key.size())), fileHandler);
                             exit(1);
                         }
-//                        exit(1);
-//                        valueVec.clear();
                         valueVec.clear();
                         fileHandler->file_ownership_flag_ = 0;
                         return true;
@@ -1066,7 +1106,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             } else {
                 unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
                 uint64_t processedObjectNumber = 0;
-                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap, currentKey), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
                 if (processedObjectNumber != fileHandler->total_object_count_) {
                     debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
                     valueVec.clear();
@@ -1091,14 +1131,13 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             valueVec.push_back(string(vecIt.data_, vecIt.size_));
                         }
                         // Put the cache operation before job done, to avoid some synchronization issues
-                        for (auto& mapIt : currentFileProcessMap) {
+//                        for (auto& mapIt : currentFileProcessMap) {
                             struct timeval tv;
                             gettimeofday(&tv, 0);
-                            putKeyValueVectorToAppendableCacheIfNotExist(mapIt.first.data_, mapIt.first.size_, mapIt.second);
+//                            putKeyValueVectorToAppendableCacheIfNotExist(mapIt.first.data_, mapIt.first.size_, mapIt.second);
+                            putKeyValueVectorToAppendableCacheIfNotExist(mapIt->first.data_, mapIt->first.size_, mapIt->second);
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
-                            debug_trace("Insert to cache key = %.*s delta num = %lu\n", 
-                                    mapIt.first.size_, mapIt.first.data_, mapIt.second.size());
-                        }
+//                        }
                         fileHandler->file_ownership_flag_ = 0;
                         return true;
                     }
@@ -1257,13 +1296,14 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             recordVec.push_back(vecIt.second);
                         }
                         // Put the cache operation before job done, to avoid some synchronization issues
-                        for (auto mapIt : currentFileProcessMap) {
-                            struct timeval tv;
-                            gettimeofday(&tv, 0);
-                            putKeyValueVectorToAppendableCacheIfNotExist(mapIt.first.data_, mapIt.first.size_, mapIt.second);
-                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
-                            debug_trace("Insert to cache key = %.*s delta num = %lu\n", mapIt.first.size_, mapIt.first.data_, mapIt.second.size());
-                        }
+//                        for (auto mapIt : currentFileProcessMap) {
+//                            struct timeval tv;
+//                            gettimeofday(&tv, 0);
+//                            putKeyValueVectorToAppendableCacheIfNotExist(mapIt.first.data_, mapIt.first.size_, mapIt.second);
+//                            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+//                            debug_trace("Insert to cache key = %.*s delta num = %lu\n", mapIt.first.size_, mapIt.first.data_, mapIt.second.size());
+//                        }
+                        putKeyValueVectorToAppendableCacheIfNotExist(currentKey.data_, currentKey.size_, mapIt->second); 
                         fileHandler->file_ownership_flag_ = 0;
                         return true;
                     }

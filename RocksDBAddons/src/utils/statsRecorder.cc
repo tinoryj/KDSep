@@ -132,11 +132,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("ycsb-update-gen", YCSB_UPDATE_GEN, total_time);
     PRINT_FULL("ycsb-insert-gen", YCSB_INSERT_GEN, total_time);
 
-    fprintf(stdout, "------------------------- DELTAKV Temp  -------------------------------------\n");
-    PRINT_FULL("DeltaKV-create-new-bucket", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_PUT]);
-    PRINT_FULL("DeltaKV-create-gc-bucket", DELTAKV_HASHSTORE_CREATE_GC_BUCKET, time[DELTAKV_PUT]);
-    PRINT_FULL("DKV-gc-write-back", DELTAKV_GC_WRITE_BACK, time[DELTAKV_GC_WRITE_BACK]);
-    PRINT_FULL("DKV-get-write-back", DELTAKV_GET_WRITE_BACK, time[DELTAKV_GET_WRITE_BACK]);
+    fprintf(stdout, "------------------------- DELTAKV Write back  -------------------------------------\n");
+    PRINT_FULL("get-directly-write-back", DELTAKV_GET_WRITE_BACK, time[DELTAKV_GET_WRITE_BACK]);
+    PRINT_FULL("gc-write-back-to-queue", DELTAKV_GC_WRITE_BACK, time[DELTAKV_GC_WRITE_BACK]);
+    PRINT_FULL("gc-write-back-worker", DELTAKV_WRITE_BACK, time[DELTAKV_WRITE_BACK]);
 
     fprintf(stdout, "------------------------- DELTAKV Request -----------------------------------\n");
     PRINT_FULL("DeltaKV-put", DELTAKV_PUT, time[DELTAKV_PUT]);
@@ -205,6 +204,12 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("op-read", OP_GET, time[OP_GET]);
     PRINT_FULL("op-multiput", OP_MULTIPUT, time[OP_MULTIPUT]);
     PRINT_FULL("op-put", OP_PUT, time[OP_PUT]);
+
+    fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
+    PRINT_FULL("gen-prefix", DSTORE_PREFIX, time[DSTORE_PREFIX]);
+    PRINT_FULL("get-exist-flag", DSTORE_EXIST_FLAG, time[DSTORE_EXIST_FLAG]);
+    PRINT_FULL("create-and-get-hdl", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_HASHSTORE_CREATE_NEW_BUCKET]);
+    PRINT_FULL("get-hdl", DSTORE_GET_HANDLER, time[DSTORE_GET_HANDLER]);
 
     fprintf(stdout, "-------------- DeltaKV HashStore Put Breakdown ------------------------------\n");
     PRINT_FULL("worker-put-file-handler", DELTAKV_HASHSTORE_PUT, (time[DELTAKV_MERGE] + time[DELTAKV_PUT]));
