@@ -18,15 +18,10 @@ public:
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler);
-    bool putReadOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>*& valueVec);
-    bool putReadOperationsVectorIntoJobQueue(vector<hashStoreFileMetaDataHandler*> fileHandlerVec, vector<string> keyVec, vector<vector<string>>& valueVecVec);
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec);
-    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec, vector<hashStoreRecordHeader>& recordVec);
-    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<str_cpy_t>& valueCpyVec);
-    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<str_cpy_t>& valueCpyVec, vector<hashStoreRecordHeader>& recordVec);
     bool waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler);
     // threads with job queue support
     void operationWorker(int threadID);
@@ -43,12 +38,10 @@ private:
     bool enableGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer);
     bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
-    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<pair<str_t, hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal, const str_t& currentKey);
     void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
@@ -57,7 +50,6 @@ private:
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
-    AppendAbleLRUCache<string, vector<string>>* keyToValueListCache_ = nullptr;
     AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
     bool useStrTCache_ = true;
     std::mutex operationNotifyMtx_;

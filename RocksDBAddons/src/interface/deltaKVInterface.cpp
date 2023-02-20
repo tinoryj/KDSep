@@ -216,7 +216,8 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
 
     // Use deltaStore
     string internalValueStr;
-    bool ret = lsmTreeInterface_.Get(key, &internalValueStr); // (, maxSequenceNumber, getByWriteBackFlag);
+    bool ret;
+    STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &internalValueStr), StatsType::LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
 
     if (ret == false) {
         debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());

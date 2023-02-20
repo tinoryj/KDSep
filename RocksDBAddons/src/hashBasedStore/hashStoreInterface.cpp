@@ -240,41 +240,10 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
 }
 
-bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec, vector<hashStoreRecordHeader>& recordVec)
-{
-    debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
-    hashStoreFileMetaDataHandler* tempFileHandler;
-    bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
-    if (ret != true) {
-        return true;
-    } else {
-        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
-            ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec, recordVec);
-            return ret;
-        } else {
-            tempFileHandler->file_ownership_flag_ = 0;
-            return true;
-        }
-    }
-}
-
 bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>>& valueStrVecVec)
 {
-    vector<hashStoreFileMetaDataHandler*> tempFileHandlerVec;
-    for (auto i = 0; i < keyStrVec.size(); i++) {
-        hashStoreFileMetaDataHandler* currentFileHandlerPtr;
-        if (hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStrVec[i].c_str(), keyStrVec[i].size(), kGet, currentFileHandlerPtr, false) != true) {
-            return false;
-        } else {
-            tempFileHandlerVec.push_back(currentFileHandlerPtr);
-        }
-    }
-    if (hashStoreFileOperatorPtr_->putReadOperationsVectorIntoJobQueue(tempFileHandlerVec, keyStrVec, valueStrVecVec) != true) {
-        return false;
-    } else {
-        return true;
-    }
+    debug_error("Not implemented %s\n", "");
+    return false;
 }
 
 bool HashStoreInterface::forcedManualGarbageCollection()

@@ -144,7 +144,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-put-dStore", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT]);
     fprintf(stdout, "\n");
     PRINT_FULL("DeltaKV-get", DELTAKV_GET, time[DELTAKV_GET]);
-    PRINT_FULL("DeltaKV-get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
+    PRINT_FULL("Deltakv-lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
+    PRINT_FULL("  get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
     fprintf(stdout, "\n");
