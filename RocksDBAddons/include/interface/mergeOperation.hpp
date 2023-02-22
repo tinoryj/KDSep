@@ -11,17 +11,19 @@ namespace DELTAKV_NAMESPACE {
 
 class DeltaKVMergeOperator {
 public:
-    virtual bool Merge(string rawValue, const vector<string>& operandList, string* finalValue) = 0;
+    virtual bool Merge(const string& rawValue, const vector<string>& operandList, string* finalValue) = 0;
+    virtual bool Merge(const str_t& rawValue, const vector<str_t>& operandList, string* finalValue) = 0;
     virtual bool PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList) = 0;
-    virtual bool PartialMerge(const vector<str_t>& operandList, vector<str_t>& finalOperandList) = 0;
+    virtual bool PartialMerge(const vector<str_t>& operandList, str_t& finalOperand) = 0;
     virtual string kClassName() = 0;
 };
 
 class DeltaKVFieldUpdateMergeOperator : public DeltaKVMergeOperator {
 public:
-    bool Merge(string rawValue, const vector<string>& operandList, string* finalValue);
+    bool Merge(const string& rawValue, const vector<string>& operandList, string* finalValue);
+    bool Merge(const str_t& rawValue, const vector<str_t>& operandList, string* finalValue);
     bool PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList);
-    bool PartialMerge(const vector<str_t>& operandList, vector<str_t>& finalOperandList);
+    bool PartialMerge(const vector<str_t>& operandList, str_t& finalOperandList);
     string kClassName();
 };
 
@@ -39,8 +41,8 @@ public:
     const char* Name() const override { return kClassName(); }
 
 private:
-    bool FullMergeFieldUpdates(string& rawValue, vector<string>& operandList, string* finalValue) const;
-    bool PartialMergeFieldUpdates(vector<pair<internalValueType, string>> batchedOperandVec, string& finalDeltaListStr) const;
+    bool FullMergeFieldUpdates(str_t& rawValue, vector<str_t>& operandList, str_t* finalValue) const;
+    bool PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& batchedOperandVec, str_t& finalDeltaListStr) const;
 };
 
 } // namespace DELTAKV_NAMESPACE

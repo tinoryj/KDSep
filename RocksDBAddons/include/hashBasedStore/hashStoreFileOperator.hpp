@@ -35,6 +35,7 @@ private:
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
+    shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     bool enableGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
@@ -45,7 +46,6 @@ private:
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal, const str_t& currentKey);
     void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
-    void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<pair<str_t, hashStoreRecordHeader>>& values);
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;

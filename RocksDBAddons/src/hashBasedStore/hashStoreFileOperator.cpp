@@ -26,6 +26,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
         workerThreadNumber_ = options->deltaStore_op_worker_thread_number_limit_;
         workingThreadExitFlagVec_ = 0;
     }
+    deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
 }
 
 HashStoreFileOperator::~HashStoreFileOperator()
@@ -429,7 +430,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
 bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler)
 {
     // insert into GC job queue if exceed the threshold
-    if (fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize() >= perFileGCSizeLimit_) {
+    if (fileHandler->filter->ShouldRebuild() || fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize() >= perFileGCSizeLimit_) {
         if (fileHandler->gc_result_status_flag_ == kNoGC) {
             fileHandler->no_gc_wait_operation_number_++;
             if (fileHandler->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
@@ -465,19 +466,19 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
 inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor)
 {
     str_t currentKeyStr(keyPtr, keySize);
+    vector<str_t>* cacheVector;
 
-    if (keyToValueListCacheStr_->existsInCache(currentKeyStr)) {
-        auto& cacheVector = keyToValueListCacheStr_->getFromCache(currentKeyStr);
+    if ((cacheVector = keyToValueListCacheStr_->getFromCache(currentKeyStr)) != nullptr) {
         // insert into cache only if the key has been read
         if (isAnchor == true) {
-            for (auto& it : cacheVector) {
+            for (auto& it : *cacheVector) {
                 delete[] it.data_;
             }
-            cacheVector.clear();
+            cacheVector->clear();
         } else {
             str_t newValueStr(new char[valueSize], valueSize);
             memcpy(newValueStr.data_, valuePtr, valueSize);
-            cacheVector.push_back(newValueStr);
+            cacheVector->push_back(newValueStr);
         }
     }
 }
@@ -490,32 +491,14 @@ inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(
         str_t newKeyStr(new char[keySize], keySize);
         memcpy(newKeyStr.data_, keyPtr, keySize);
 
-        vector<str_t> valuesForInsert;
+        vector<str_t>* valuesForInsertPtr = new vector<str_t>;
         for (auto& it : values) {
             str_t newValueStr(new char[it.size_], it.size_);
             memcpy(newValueStr.data_, it.data_, it.size_);
-            valuesForInsert.push_back(newValueStr);
+            valuesForInsertPtr->push_back(newValueStr);
         }
 
-        keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsert);
-    } 
-}
-
-inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<pair<str_t, hashStoreRecordHeader>>& values) {
-    str_t currentKeyStr(keyPtr, keySize);
-
-    if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == false) {
-        str_t newKeyStr(new char[keySize], keySize);
-        memcpy(newKeyStr.data_, keyPtr, keySize);
-
-        vector<str_t> valuesForInsert;
-        for (auto& it : values) {
-            str_t newValueStr(new char[it.first.size_], it.first.size_);
-            memcpy(newValueStr.data_, it.first.data_, it.first.size_);
-            valuesForInsert.push_back(newValueStr);
-        }
-
-        keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsert);
+        keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsertPtr);
     } 
 }
 
@@ -756,13 +739,13 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     // try extract from cache first
     if (keyToValueListCacheStr_ != nullptr) {
         str_t currentKey(key.data(), key.size());
-        if (keyToValueListCacheStr_->existsInCache(currentKey)) {
+        vector<str_t>* tempResultVec = keyToValueListCacheStr_->getFromCache(currentKey);
+        if (tempResultVec != nullptr) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            vector<str_t> tempResultVec = keyToValueListCacheStr_->getFromCache(currentKey);
-            debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec.size());
+            debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec->size());
             valueVec.clear();
-            for (auto& it : tempResultVec) {
+            for (auto& it : *tempResultVec) {
                 valueVec.push_back(string(it.data_, it.size_));
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);

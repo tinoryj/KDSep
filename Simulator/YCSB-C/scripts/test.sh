@@ -67,7 +67,7 @@ func() {
                                             cacheSize=$(( ${cacheSize} / 4 * 3 ))
                                             scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                                 cache$cacheSize kdcache${kdcacheSize} \
-                                                threads$threadNumber workerT$works gcT$gcs bn$bucketNumber \
+                                                threads$threadNumber workerT$works gcT$gcs gcThres0.8 bn$bucketNumber \
                                                 readRatio$ratio Exp$ExpName bs${bs} bf${bf} cif #paretokey
                                         elif [[ "$runMode" == "kd" ]]; then
                                             if [[ "$ratio" == "1" ]]; then
@@ -114,8 +114,8 @@ runModeSet=('kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kvkd' 'kd' 'bkv' 'kv' 'raw')
 runModeSet=('bkvkd' 'kd' 'bkv' 'kv' 'raw' 'kvkd')
 
-runModeSet=('kvkd' 'kd' 'bkvkd')
-cacheSizes=(4096 2048 1024)
+runModeSet=('kvkd' 'kd' 'bkvkd' 'raw' 'bkv' 'kv')
+cacheSizes=(4096)
 indexSet=(0 5 1 10)
 ops=("10M")
 # memSizes the same
@@ -123,12 +123,12 @@ ops=("10M")
 reqs=("10M")
 
 ### Base test!!!
-#works=4
-#gcs=2
-#runModeSet=('kvkd')
+works=8
+gcs=2
+runModeSet=('kvkd')
 #cacheSizes=(4096)
-#indexSet=(1)
-#ops=("10M")
+indexSet=(1)
+ops=("10M")
 
 func
 exit

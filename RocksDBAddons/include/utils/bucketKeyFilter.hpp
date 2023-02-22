@@ -32,6 +32,8 @@ class BucketKeyFilter {
     static int hash1(const string& s, int arrSize); 
     static int hash2(const string& s, int arrSize); 
     static int hash3(const string& s, int arrSize); 
+
+    bool ShouldRebuild();
     private:
     bool SingleInsertToBitmap(const string& key);
 };

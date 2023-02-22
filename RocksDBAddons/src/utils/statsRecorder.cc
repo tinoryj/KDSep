@@ -146,7 +146,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-get", DELTAKV_GET, time[DELTAKV_GET]);
     PRINT_FULL("Deltakv-lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
     PRINT_FULL("  get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
-    PRINT_FULL("DeltaKV-get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("  get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
     PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
     fprintf(stdout, "\n");
     PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, time[DELTAKV_MERGE]);
@@ -170,13 +170,18 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("Partial Merge", PARTIAL_MERGE, time[PARTIAL_MERGE]);
 
     fprintf(stdout, "-------------- DeltaKV Batch Get Breakdown ------------------------------\n");
-    PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("  Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("  Buffer-read", DELTAKV_BATCH_READ_NO_WAIT_BUFFER, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("    Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("    Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("    Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_GET_HASHSTORE]);
-    PRINT_FULL("  Get-internal", DELTAKV_BATCH_READ_STORE, time[DELTAKV_GET_HASHSTORE]);
+    PRINT_FULL("Buffer-wait", DELTAKV_BATCH_READ_WAIT_BUFFER, time[DELTAKV_GET]);
+    PRINT_FULL("Buffer-read", DELTAKV_BATCH_READ_NO_WAIT_BUFFER, time[DELTAKV_GET]);
+    PRINT_FULL("  Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_GET]);
+    PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_GET]);
+    PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_GET]);
+    PRINT_FULL("Get-internal", DELTAKV_BATCH_READ_STORE, time[DELTAKV_GET]);
+    PRINT_FULL("  lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
+    PRINT_FULL("    get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
+    PRINT_FULL("    get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("  process-buffer", DELTAKV_GET_PROCESS_BUFFER, time[DELTAKV_GET]);
+    PRINT_FULL("  get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("  full merge", DELTAKV_GET_FULL_MERGE, time[DELTAKV_GET]);
 
     fprintf(stdout, "-------------- DeltaKV Single batch ------------------------------\n");
     PRINT_FULL("Plain-rocksdb", BATCH_PLAIN_ROCKSDB, time[BATCH_PLAIN_ROCKSDB]);
@@ -201,6 +206,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("op-put", OP_PUT, time[OP_PUT]);
 
     fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
+    PRINT_FULL("push-to-mempool", DELTAKV_INSERT_MEMPOOL, time[DELTAKV_INSERT_MEMPOOL]);
     PRINT_FULL("gen-prefix", DSTORE_PREFIX, time[DSTORE_PREFIX]);
     PRINT_FULL("get-exist-flag", DSTORE_EXIST_FLAG, time[DSTORE_EXIST_FLAG]);
     PRINT_FULL("create-and-get-hdl", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_HASHSTORE_CREATE_NEW_BUCKET]);

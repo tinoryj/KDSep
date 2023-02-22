@@ -34,7 +34,6 @@ endif ()
 
 add_library(DeltaKV STATIC 
       utils/murmurHash.cpp
-      utils/lruCache.cpp
       utils/statsRecorder.cc
       utils/timer.cpp
       utils/debug.cpp

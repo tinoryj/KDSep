@@ -212,6 +212,9 @@ for param in $*; do
         RocksDBThreadNumber=$(echo $param | sed 's/threads//g')
     elif [[ "$param" =~ ^gcT[0-9]+$ ]]; then
         gcThreadNumber=$(echo $param | sed 's/gcT//g')
+    elif [[ "$param" =~ ^gcThres[0-9.]+$ ]]; then
+        deltaLogGCThreshold=$(echo $param | sed 's/gcThres//g')
+        run_suffix=${run_suffix}_${param}
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
         workerThreadNumber=$(echo $param | sed 's/workerT//g')
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
@@ -317,6 +320,7 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bn" temp.ini
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
+    sed -i "/deltaLogGCThreshold/c\\deltaLogGCThreshold = $deltaLogGCThreshold" temp.ini
     sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 fi

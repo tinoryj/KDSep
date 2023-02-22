@@ -30,13 +30,19 @@ typedef struct mempoolHandler_t {
     mempoolHandler_t() { }
 } mempoolHandler_t;
 
-class KeyValueMemPool {
+class KeyValueMemPoolBase {
+public:
+    virtual bool insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler) = 0;
+    virtual bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler) = 0;
 
+};
+
+class KeyValueMemPool : public KeyValueMemPoolBase {
 public:
     KeyValueMemPool(uint32_t objectNumberThreshold, uint32_t maxBlockSize);
     ~KeyValueMemPool();
-    bool insertContentToMemPoolAndGetHandler(string keyStr, string valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler);
-    bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler);
+    bool insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler) override;
+    bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler) override;
 
 private:
     char** mempool_;
@@ -47,5 +53,4 @@ private:
     uint32_t mempoolFreeHandlerVecEndPtr_;
     std::shared_mutex managerMtx_;
 };
-
 }

@@ -233,115 +233,115 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         assert(0);
     }
 
-    if (tempInternalValueHeader.mergeFlag_ == true) {
-        if (enableLsmTreeDeltaMeta_ == false) {
-            debug_error("[ERROR] settings with no metadata but LSM-tree has metadata, key %s\n", key.c_str());
-            exit(1);
-        }
-
-        // get deltas from delta store
-        vector<pair<bool, string>> deltaInfoVec;
-        processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, maxSequenceNumber);
-
-        char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
-        memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-        string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
-        rawValueStr.assign(internalRawValueStr);
-
-        bool isAnyDeltasAreExtratedFlag = false;
-        for (auto& it : deltaInfoVec) {
-            if (it.first == true) {
-                isAnyDeltasAreExtratedFlag = true;
+    if (enableLsmTreeDeltaMeta_ == true) {
+        if (tempInternalValueHeader.mergeFlag_ == true) {
+            if (enableLsmTreeDeltaMeta_ == false) {
+                debug_error("[ERROR] settings with no metadata but LSM-tree has metadata, key %s\n", key.c_str());
+                exit(1);
             }
-        }
 
-        if (isAnyDeltasAreExtratedFlag == true) {
-            // should read external delta store
-            vector<string> deltaValueFromExternalStoreVec;
-            bool ret;
-            STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
-            if (ret != true) {
-                debug_error("[ERROR] Read external deltaStore fault, key = %s\n", key.c_str());
-                return false;
-            } else {
-                vector<string> finalDeltaOperatorsVec;
-                auto index = 0;
-                debug_trace("Read from deltaStore object number = %lu, target delta number in RocksDB = %lu\n", deltaValueFromExternalStoreVec.size(), deltaInfoVec.size());
-                for (auto i = 0; i < deltaInfoVec.size(); i++) {
-                    if (deltaInfoVec[i].first == true) {
-                        if (index >= deltaValueFromExternalStoreVec.size()) {
-                            debug_error("[ERROR] Read external deltaStore number mismatch with requested number (may overflow), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec.size(), deltaInfoVec.size());
-                            exit(1);
-                            return false;
-                        }
-                        finalDeltaOperatorsVec.push_back(deltaValueFromExternalStoreVec.at(index));
-                        index++;
-                    } else {
-                        finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
-                    }
+            // get deltas from delta store
+            vector<pair<bool, string>> deltaInfoVec;
+            STAT_PROCESS(processValueWithMergeRequestToValueAndMergeOperations(internalValueStr, sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_, deltaInfoVec, maxSequenceNumber), StatsType::DELTAKV_GET_PROCESS_BUFFER);
+
+            char rawValueContentBuffer[tempInternalValueHeader.rawValueSize_];
+            memcpy(rawValueContentBuffer, internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+            string internalRawValueStr(rawValueContentBuffer, tempInternalValueHeader.rawValueSize_);
+            rawValueStr.assign(internalRawValueStr);
+
+            bool isAnyDeltasAreExtratedFlag = false;
+            for (auto& it : deltaInfoVec) {
+                if (it.first == true) {
+                    isAnyDeltasAreExtratedFlag = true;
                 }
+            }
 
-                if (index != deltaValueFromExternalStoreVec.size()) {
-                    debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltaValueFromExternalStoreVec.size(), deltaInfoVec.size());
-                    exit(1);
+            if (isAnyDeltasAreExtratedFlag == true) {
+                // should read external delta store
+                vector<string> deltasFromDeltaStoreVec;
+                bool ret;
+                STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
+                if (ret != true) {
+                    debug_error("[ERROR] Read external deltaStore fault, key = %s\n", key.c_str());
                     return false;
-                } 
+                } else {
+                    vector<string> finalDeltaOperatorsVec;
+                    auto index = 0;
+                    debug_trace("Read from deltaStore object number = %lu, target delta number in RocksDB = %lu\n", deltasFromDeltaStoreVec.size(), deltaInfoVec.size());
+                    for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                        if (deltaInfoVec[i].first == true) {
+                            if (index >= deltasFromDeltaStoreVec.size()) {
+                                debug_error("[ERROR] Read external deltaStore number mismatch with requested number (may overflow), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltasFromDeltaStoreVec.size(), deltaInfoVec.size());
+                                exit(1);
+                                return false;
+                            }
+                            finalDeltaOperatorsVec.push_back(deltasFromDeltaStoreVec.at(index));
+                            index++;
+                        } else {
+                            finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
+                        }
+                    }
 
+                    if (index != deltasFromDeltaStoreVec.size()) {
+                        debug_error("[ERROR] Read external deltaStore number mismatch with requested number (Inconsistent), key = %s, request delta number in HashStore = %d, delta number get from HashStore = %lu, total read delta number from RocksDB = %lu\n", key.c_str(), index, deltasFromDeltaStoreVec.size(), deltaInfoVec.size());
+                        exit(1);
+                        return false;
+                    } 
+
+                    debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
+                    STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
+                    if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                        STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
+                        //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+                        //                    writeBackOperationsQueue_->push(newPair);
+                    }
+                    return true;
+                }
+            } else {
+                // all deltas are stored internal
+                vector<string> finalDeltaOperatorsVec;
+                for (auto i = 0; i < deltaInfoVec.size(); i++) {
+                    finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
+                }
                 debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
                 if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
-//                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
-//                    writeBackOperationsQueue_->push(newPair);
+                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+                    writeBackOperationsQueue_->push(newPair);
                 }
                 return true;
             }
-        } else {
-            // all deltas are stored internal
-            vector<string> finalDeltaOperatorsVec;
-            for (auto i = 0; i < deltaInfoVec.size(); i++) {
-                finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
+        } else  {
+            maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
+            if (internalValueStr.size() < sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_) {
+                debug_error("string size %lu raw value size %u\n", internalValueStr.size(), tempInternalValueHeader.rawValueSize_); 
+                exit(1);
             }
-            debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::FULL_MERGE);
-            if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
-                writeBackOperationsQueue_->push(newPair);
-            }
+            value->assign(string(internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_));
             return true;
         }
-    } else if (enableLsmTreeDeltaMeta_ == true) {
-        maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
-        if (internalValueStr.size() < sizeof(internalValueType) + tempInternalValueHeader.rawValueSize_) {
-            debug_error("string size %lu raw value size %u\n", internalValueStr.size(), tempInternalValueHeader.rawValueSize_); 
-            exit(1);
-        }
-        value->assign(string(internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_));
-        return true;
     } else {
         // do not have metadata
-        string internalRawValueStr(internalValueStr.c_str() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-        int cnt = 0;
-        for (int i = 0; i < internalRawValueStr.size(); i++) {
-            if (internalRawValueStr[i] == ',') {
-                cnt++;
-            }
-        }
+        str_t internalRawValueStrT(internalValueStr.data() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
         maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
         // get deltas from delta store
-        vector<string> deltaValueFromExternalStoreVec;
+        vector<string> deltasFromDeltaStoreVec;
         bool ret = false;
-        STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltaValueFromExternalStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
+        STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
         if (ret != true) {
             debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
             return false;
         } 
         
-        if (deltaValueFromExternalStoreVec.empty() == false) {
+        if (deltasFromDeltaStoreVec.empty() == false) {
             bool mergeOperationStatus;
-            STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStr, deltaValueFromExternalStoreVec, value), StatsType::FULL_MERGE);
+            vector<str_t> deltaInStrT;
+            for (auto& it : deltasFromDeltaStoreVec) {
+                deltaInStrT.push_back(str_t(it.data(), it.size()));
+            }
+            STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStrT, deltaInStrT /*deltasFromDeltaStoreVec*/, value), StatsType::DELTAKV_GET_FULL_MERGE);
             if (mergeOperationStatus == true) {
-                if (enableWriteBackOperationsFlag_ == true && deltaValueFromExternalStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                if (enableWriteBackOperationsFlag_ == true && deltasFromDeltaStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
                     STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
 //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
 //                    writeBackOperationsQueue_->push(newPair);
@@ -352,7 +352,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 return false;
             }
         } else {
-            value->assign(internalRawValueStr);
+            value->assign(internalRawValueStrT.data_, internalRawValueStrT.size_);
             return true;
         }
     }
@@ -380,7 +380,8 @@ bool DeltaKV::PutImpl(const string& key, const string& value) {
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
     mempoolHandler_t mempoolHandler;
-    bool insertMemPoolStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, true, mempoolHandler);
+    bool insertMemPoolStatus;
+    STAT_PROCESS(insertMemPoolStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, true, mempoolHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
     if (insertMemPoolStatus == false) {
         debug_error("insert to mempool failed, key %s value size %lu\n", key.c_str(), value.size());
         exit(1);
@@ -429,6 +430,7 @@ bool DeltaKV::Get(const string& key, string* value)
             return true;
         }
     }
+    vector<str_t> tempNewMergeOperatorsStrTVec;
     vector<string> tempNewMergeOperatorsVec;
     bool needMergeWithInBufferOperationsFlag = false;
     struct timeval tvAll;
@@ -460,29 +462,33 @@ bool DeltaKV::Get(const string& key, string* value)
             }
             struct timeval tv0;
             gettimeofday(&tv0, 0);
-            string newValueStr;
+            str_t newValueStr;
             bool findNewValueFlag = false;
             for (auto queueIt : mapIt->second) {
                 if (queueIt.first == kPutOp) {
-                    newValueStr.assign(queueIt.second.valuePtr_, queueIt.second.valueSize_);
-                    tempNewMergeOperatorsVec.clear();
+                    newValueStr = str_t(queueIt.second.valuePtr_, queueIt.second.valueSize_);
+                    tempNewMergeOperatorsStrTVec.clear();
                     findNewValueFlag = true;
                 } else {
-                    string currentValue(queueIt.second.valuePtr_, queueIt.second.valueSize_);
-                    tempNewMergeOperatorsVec.push_back(currentValue);
+                    str_t currentValue(queueIt.second.valuePtr_, queueIt.second.valueSize_);
+                    tempNewMergeOperatorsStrTVec.push_back(currentValue);
                 }
             }
             if (findNewValueFlag == true) {
-                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
-                debug_info("get raw value and deltas from unflushed buffer, for key = %s, value = %s, deltas number = %lu\n", key.c_str(), newValueStr.c_str(), tempNewMergeOperatorsVec.size());
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsStrTVec, value), StatsType::FULL_MERGE);
+                debug_info("get raw value and deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsStrTVec.size());
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE, tv0);
                 return true;
             }
-            if (tempNewMergeOperatorsVec.size() != 0) {
+            if (tempNewMergeOperatorsStrTVec.size() != 0) {
                 needMergeWithInBufferOperationsFlag = true;
-                debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsVec.size());
+                debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsStrTVec.size());
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE_ALL, tv0);
+        }
+        
+        for (auto& it : tempNewMergeOperatorsStrTVec) {
+            tempNewMergeOperatorsVec.push_back(string(it.data_, it.size_));
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
     } 
@@ -501,11 +507,16 @@ bool DeltaKV::Get(const string& key, string* value)
         if (needMergeWithInBufferOperationsFlag == true) {
             string tempValueStr;
             tempValueStr.assign(*value);
+            str_t tempValueStrT(tempValueStr.data(), tempValueStr.size());
+            vector<str_t> tempVec;
+            for (auto& it : tempNewMergeOperatorsVec) {
+                tempVec.push_back(str_t(it.data(), it.size()));
+            }
             value->clear();
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempValueStr, tempNewMergeOperatorsVec, value), StatsType::FULL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempValueStrT, tempVec, value), StatsType::FULL_MERGE);
             if (mergeStatus == false) {
-                debug_error("[ERROR] merge failed: key %s number of deltas %lu raw value size %lu\n", key.c_str(), tempNewMergeOperatorsVec.size(), tempValueStr.size());
+                debug_error("[ERROR] merge failed: key %s number of deltas %lu raw value size %lu\n", key.c_str(), tempVec.size(), tempValueStr.size());
                 exit(1);
             }
         }
@@ -546,7 +557,8 @@ bool DeltaKV::Merge(const string& key, const string& value)
     globalSequenceNumberGeneratorMtx_.unlock();
 
     mempoolHandler_t mempoolHandler;
-    objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, mempoolHandler);
+    ;
+    STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, mempoolHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
     bool shouldDeleteMemPoolHandler = false;
     bool mergeOperationStatus = false;
     switch (deltaKVRunningMode_) {
@@ -888,7 +900,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
             uint32_t currentSequenceNumber = globalSequenceNumber_++;
             globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, currentSequenceNumber, true, newHandler);
+            STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, currentSequenceNumber, true, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
             it->second.push_back(make_pair(kPutOp, newHandler));
             validObjectNumber++;
         } else if (it->second.front().first == kMergeOp && it->second.size() >= 2) {
@@ -914,7 +926,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
             uint32_t currentSequenceNumber = globalSequenceNumber_++;
             globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], currentSequenceNumber, false, newHandler);
+            STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], currentSequenceNumber, false, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
             it->second.push_back(make_pair(kMergeOp, newHandler));
             validObjectNumber++;
         }
@@ -1145,36 +1157,6 @@ bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string inter
             mergeOperatorsVec.push_back(make_pair(false, currentValue));
         } else {
             mergeOperatorsVec.push_back(make_pair(true, ""));
-        }
-    }
-    return true;
-}
-
-bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, uint32_t& maxSequenceNumber)
-{
-    uint64_t internalValueSize = internalValue.size();
-    debug_trace("internalValueSize = %lu, skipSize = %lu\n", internalValueSize, skipSize);
-    uint64_t currentProcessLocationIndex = skipSize;
-    while (currentProcessLocationIndex != internalValueSize) {
-        internalValueType currentInternalValueTypeHeader;
-        memcpy(&currentInternalValueTypeHeader, internalValue.c_str() + currentProcessLocationIndex, sizeof(internalValueType));
-        currentProcessLocationIndex += sizeof(internalValueType);
-        if (maxSequenceNumber < currentInternalValueTypeHeader.sequenceNumber_) {
-            maxSequenceNumber = currentInternalValueTypeHeader.sequenceNumber_;
-        }
-        if (currentInternalValueTypeHeader.mergeFlag_ == true) {
-            debug_error("[ERROR] Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
-            assert(0);
-        }
-        if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
-            assert(currentProcessLocationIndex + currentInternalValueTypeHeader.rawValueSize_ <= internalValue.size());
-            string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
-            currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;
-            mergeOperatorsVec.push_back(make_pair(false, currentValue));
-            mergeOperatorsRecordVec.push_back(currentInternalValueTypeHeader);
-        } else {
-            mergeOperatorsVec.push_back(make_pair(true, ""));
-            mergeOperatorsRecordVec.push_back(currentInternalValueTypeHeader);
         }
     }
     return true;

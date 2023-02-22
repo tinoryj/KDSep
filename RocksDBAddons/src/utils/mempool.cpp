@@ -30,7 +30,7 @@ KeyValueMemPool::~KeyValueMemPool()
     delete[] mempool_;
 }
 
-bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(string keyStr, string valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler)
+bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler)
 {
     if (valueStr.size() + keyStr.size() >= mempoolBlockSizeThreshold_) {
         debug_error("[ERROR] current key size = %lu, value size = %lu, may exceed mempool block size = %u\n", keyStr.size(), valueStr.size(), mempoolBlockSizeThreshold_);

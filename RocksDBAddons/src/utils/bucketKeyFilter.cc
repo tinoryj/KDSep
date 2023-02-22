@@ -126,4 +126,8 @@ void BucketKeyFilter::Clear() {
     erased_keys.clear();
 }
 
+bool BucketKeyFilter::ShouldRebuild() {
+    return erased_keys.size() > REBUILD_THRESHOLD;
+}
+
 }

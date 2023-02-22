@@ -1228,17 +1228,20 @@ uint64_t HashStoreFileManager::partialMergeGcResultMap(unordered_map<str_t, pair
 //                debug_error("value size %d %.*s\n", keyIt.second.first[i].size_, keyIt.second.first[i].size_, keyIt.second.first[i].data_); 
 //            }
 
-            vector<str_t> resultVec;
+            str_t result;
             vector<hashStoreRecordHeader> headerVec;
             hashStoreRecordHeader newRecordHeader;
 
-            deltaKVMergeOperatorPtr_->PartialMerge(keyIt.second.first, resultVec);
+            deltaKVMergeOperatorPtr_->PartialMerge(keyIt.second.first, result);
 
             newRecordHeader.key_size_ = keyIt.first.size_;
-            newRecordHeader.value_size_ = resultVec[0].size_; 
+            newRecordHeader.value_size_ = result.size_; 
             newRecordHeader.sequence_number_ = keyIt.second.second[keyIt.second.second.size()-1].sequence_number_;
             newRecordHeader.is_anchor_ = false;
             headerVec.push_back(newRecordHeader);
+
+            vector<str_t> resultVec;
+            resultVec.push_back(result);
 
             keyIt.second = make_pair(resultVec, headerVec); // directly update the map
 
