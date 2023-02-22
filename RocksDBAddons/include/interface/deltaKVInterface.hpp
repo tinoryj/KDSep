@@ -73,6 +73,7 @@ private:
     bool enableLsmTreeDeltaMeta_ = true;
 
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
+    int writeBackWhenReadDeltaSizeThreshold_ = 4;
     uint64_t deltaExtractSize_ = 0;
     uint64_t valueExtractSize_ = 0;
     std::shared_mutex DeltaKVOperationsMtx_;

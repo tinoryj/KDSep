@@ -67,6 +67,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     if (options.enable_write_back_optimization_ == true) {
         enableWriteBackOperationsFlag_ = true;
         writeBackWhenReadDeltaNumerThreshold_ = options.deltaStore_write_back_during_reads_threshold;
+        writeBackWhenReadDeltaSizeThreshold_ = options.deltaStore_write_back_during_reads_size_threshold;
         writeBackOperationsQueue_ = new messageQueue<writeBackObjectStruct*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processWriteBackOperationsWorker, this));
         thList_.push_back(th);
@@ -291,7 +292,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                     debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                     STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
                     if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                        STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
+                        STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
                         //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                         //                    writeBackOperationsQueue_->push(newPair);
                     }
@@ -336,13 +337,17 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         if (deltasFromDeltaStoreVec.empty() == false) {
             bool mergeOperationStatus;
             vector<str_t> deltaInStrT;
+            int totalDeltaSizes = 0;
             for (auto& it : deltasFromDeltaStoreVec) {
                 deltaInStrT.push_back(str_t(it.data(), it.size()));
+                totalDeltaSizes += it.size();
             }
             STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStrT, deltaInStrT /*deltasFromDeltaStoreVec*/, value), StatsType::DELTAKV_GET_FULL_MERGE);
             if (mergeOperationStatus == true) {
-                if (enableWriteBackOperationsFlag_ == true && deltasFromDeltaStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_WRITE_BACK);
+                if (enableWriteBackOperationsFlag_ == true && !getByWriteBackFlag &&  
+                        ((deltasFromDeltaStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0) ||
+                        totalDeltaSizes > writeBackWhenReadDeltaSizeThreshold_ && writeBackWhenReadDeltaSizeThreshold_ != 0)) {
+                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
 //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
 //                    writeBackOperationsQueue_->push(newPair);
                 }
@@ -635,7 +640,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
             }
         }
         batchedBufferOperationMtx_.lock();
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_WAIT_BUFFER, tvAll);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_WAIT_BUFFER, tvAll);
         struct timeval tv;
         gettimeofday(&tv, 0);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -650,7 +655,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
                 if (queueIt.first == kPutOp) {
                     debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
                     batchedBufferOperationMtx_.unlock();
-                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
+                    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_NO_WAIT_BUFFER, tv);
                     return true;
                 } else {
                     tempNewMergeOperatorsVec.push_back(string(queueIt.second.valuePtr_, queueIt.second.valueSize_));
@@ -660,20 +665,21 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
                 needMergeWithInBufferOperationsFlag = true;
                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsVec.size());
             }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE_ALL, tv0);
         }
         batchedBufferOperationMtx_.unlock();
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_CHECK_BUFFER, tvAll);
     // get content from underlying DB
     string newValueStr;
     uint32_t maxSequenceNumber = 0;
     string tempRawValueStr;
-    bool getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, maxSequenceNumber, true);
+    bool getNewValueStrSuccessFlag;
+    STAT_PROCESS(getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, maxSequenceNumber, true), StatsType::DELTAKV_WRITE_BACK_GET);
     bool mergeStatus;
     if (getNewValueStrSuccessFlag) { 
         if (needMergeWithInBufferOperationsFlag == true) {
-            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::FULL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempRawValueStr, tempNewMergeOperatorsVec, &newValueStr), StatsType::DELTAKV_WRITE_BACK_FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("merge failed: key %s raw value size %lu\n", key.c_str(), tempRawValueStr.size());
                 exit(1);
@@ -689,6 +695,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     }
 
     debug_warn("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
+
+    bool ret;
+    STAT_PROCESS(ret = PutImpl(key, newValueStr), StatsType::DELTAKV_WRITE_BACK_PUT);
 
     return PutImpl(key, newValueStr);
 }

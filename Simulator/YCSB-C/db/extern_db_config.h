@@ -47,6 +47,7 @@ class ExternDBConfig {
     bool deltaStore_enable_gc;
     bool deltaKV_enable_batch;
     uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
+    uint64_t deltaStore_write_back_during_reads_size_threshold_ = 5;
     uint64_t deltaStore_gc_write_back_delta_num_ = 5;
     uint64_t deltaStore_gc_write_back_delta_size_ = 2000;
     uint64_t deltaKVWriteBatchSize_ = 5;
@@ -103,6 +104,7 @@ class ExternDBConfig {
         deltaStore_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC");
         deltaKV_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
         deltaStore_write_back_during_reads_threshold_ = pt_.get<uint64_t>("deltaStore.deltaStoreWriteBackDuringReadsThreshold");
+        deltaStore_write_back_during_reads_size_threshold_ = pt_.get<uint64_t>("deltaStore.deltaStoreWriteBackDuringReadsSizeThreshold", 1000);
         deltaStore_gc_write_back_delta_num_ = pt_.get<uint64_t>("deltaStore.deltaStoreGcWriteBackDeltaNumThreshold", 0);
         deltaStore_gc_write_back_delta_size_ = pt_.get<uint64_t>("deltaStore.deltaStoreGcWriteBackDeltaSizeThreshold", 1000);
         deltaKVWriteBatchSize_ = pt_.get<uint64_t>("config.deltaKVWriteBatchSize");
@@ -233,6 +235,10 @@ class ExternDBConfig {
 
     uint64_t getDeltaStoreWriteBackDuringReadsThreshold() {
         return deltaStore_write_back_during_reads_threshold_;
+    }
+
+    uint64_t getDeltaStoreWriteBackDuringReadsSizeThreshold() {
+        return deltaStore_write_back_during_reads_size_threshold_;
     }
 
     uint64_t getDeltaStoreGcWriteBackDeltaNumThreshold() {

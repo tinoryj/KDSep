@@ -133,9 +133,14 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("ycsb-insert-gen", YCSB_INSERT_GEN, total_time);
 
     fprintf(stdout, "------------------------- DELTAKV Write back  -------------------------------------\n");
-    PRINT_FULL("get-directly-write-back", DELTAKV_GET_WRITE_BACK, time[DELTAKV_GET_WRITE_BACK]);
+    PRINT_FULL("get-directly-write-back", DELTAKV_GET_PUT_WRITE_BACK, time[DELTAKV_GET]);
     PRINT_FULL("gc-write-back-to-queue", DELTAKV_GC_WRITE_BACK, time[DELTAKV_GC_WRITE_BACK]);
     PRINT_FULL("gc-write-back-worker", DELTAKV_WRITE_BACK, time[DELTAKV_WRITE_BACK]);
+    PRINT_FULL("  wait buffer", DELTAKV_WRITE_BACK_WAIT_BUFFER, time[DELTAKV_WRITE_BACK]);
+    PRINT_FULL("  no wait buffer", DELTAKV_WRITE_BACK_NO_WAIT_BUFFER, time[DELTAKV_WRITE_BACK]);
+    PRINT_FULL("  check buffer", DELTAKV_WRITE_BACK_CHECK_BUFFER, time[DELTAKV_WRITE_BACK]);
+    PRINT_FULL("  get-internal", DELTAKV_WRITE_BACK_GET, time[DELTAKV_WRITE_BACK]);
+    PRINT_FULL("  put", DELTAKV_WRITE_BACK_PUT, time[DELTAKV_WRITE_BACK]);
 
     fprintf(stdout, "------------------------- DELTAKV Request -----------------------------------\n");
     PRINT_FULL("DeltaKV-put", DELTAKV_PUT, time[DELTAKV_PUT]);
@@ -143,11 +148,12 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("DeltaKV-put-vLog", DELTAKV_PUT_INDEXSTORE, time[DELTAKV_PUT]);
     PRINT_FULL("DeltaKV-put-dStore", DELTAKV_PUT_HASHSTORE, time[DELTAKV_PUT]);
     fprintf(stdout, "\n");
-    PRINT_FULL("DeltaKV-get", DELTAKV_GET, time[DELTAKV_GET]);
-    PRINT_FULL("Deltakv-lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
+    PRINT_FULL("get", DELTAKV_GET, time[DELTAKV_GET]);
+    PRINT_FULL("lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
     PRINT_FULL("  get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
     PRINT_FULL("  get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
-    PRINT_FULL("DeltaKV-get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("directly-write-back", DELTAKV_GET_PUT_WRITE_BACK, time[DELTAKV_GET]);
     fprintf(stdout, "\n");
     PRINT_FULL("DeltaKV-merge", DELTAKV_MERGE, time[DELTAKV_MERGE]);
     PRINT_FULL("DeltaKV-merge-rocksdb", DELTAKV_MERGE_ROCKSDB, time[DELTAKV_MERGE]);

@@ -16,6 +16,9 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
 
+    if (options->enable_deltaStore_KDLevel_cache == true) {
+        options->keyToValueListCacheStr_ = new AppendAbleLRUCacheStrT(options->deltaStore_KDLevel_cache_item_number);
+    }
     if (options->enable_write_back_optimization_ == true) {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
     } else {

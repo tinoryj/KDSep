@@ -3,6 +3,7 @@
 #include "common/dataStructure.hpp"
 #include "interface/mergeOperation.hpp"
 #include "rocksdb/options.h"
+#include "utils/appendAbleLRUCacheStr.hpp"
 #include "utils/debug.hpp"
 #include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
@@ -54,6 +55,7 @@ public:
     float deltaStore_garbage_collection_force_single_file_minimum_occupancy = 0.95;
     float deltaStore_garbage_collection_force_total_storage_minimum_occupancy = 0.95;
     uint64_t deltaStore_write_back_during_reads_threshold = 5;
+    uint64_t deltaStore_write_back_during_reads_size_threshold = 5;
     uint64_t deltaStore_gc_write_back_delta_num = 5;
     uint64_t deltaStore_gc_write_back_delta_size = 1000;
     uint64_t deltaStore_prefix_tree_initial_bit_number_ = 2;
@@ -94,6 +96,8 @@ public:
     bool rocksdb_sync_merge = false;
     bool rocksdb_sync = false;
     bool internalRocksDBBatchedOperation_ = false;
+
+    AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
 
     // dump options
     bool dumpOptions(string dumpPath);

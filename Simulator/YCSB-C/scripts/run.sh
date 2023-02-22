@@ -114,6 +114,8 @@ blobCacheSize=0
 kdcache=0
 workerThreadNumber=12
 gcThreadNumber=2
+deltaLogGCThreshold=0.9
+deltaLogSplitGCThreshold=0.45
 batchSize=2000
 cacheIndexFilter=false
 paretokey="false"
@@ -213,8 +215,17 @@ for param in $*; do
     elif [[ "$param" =~ ^gcT[0-9]+$ ]]; then
         gcThreadNumber=$(echo $param | sed 's/gcT//g')
     elif [[ "$param" =~ ^gcThres[0-9.]+$ ]]; then
-        deltaLogGCThreshold=$(echo $param | sed 's/gcThres//g')
-        run_suffix=${run_suffix}_${param}
+        tmp=$(echo $param | sed 's/gcThres//g')
+        if [[ "$tmp" != "$deltaLogGCThreshold" ]]; then
+            deltaLogGCThreshold=$(echo $param | sed 's/gcThres//g')
+            run_suffix=${run_suffix}_${param}
+        fi
+    elif [[ "$param" =~ ^splitThres[0-9.]+$ ]]; then
+        tmp=$(echo $param | sed 's/splitThres//g')
+        if [[ "$tmp" != "$deltaLogSplitGCThreshold" ]]; then
+            deltaLogSplitGCThreshold=$(echo $param | sed 's/splitThres//g')
+            run_suffix=${run_suffix}_${param}
+        fi
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
         workerThreadNumber=$(echo $param | sed 's/workerT//g')
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
@@ -321,6 +332,7 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
     sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
     sed -i "/deltaLogGCThreshold/c\\deltaLogGCThreshold = $deltaLogGCThreshold" temp.ini
+    sed -i "/deltaLogSplitGCThreshold/c\\deltaLogSplitGCThreshold = $deltaLogSplitGCThreshold" temp.ini
     sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
 fi

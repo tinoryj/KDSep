@@ -62,7 +62,7 @@ public:
         }
     }
 
-    value_type get(key_type& key)
+    value_type get(const key_type& key)
     {
         // lookup value in the cache
         map_type::iterator i = m_map.find(key);
@@ -170,7 +170,7 @@ public:
         }
     }
 
-    value_type getFromCache(str_t& cacheKey) {
+    value_type getFromCache(const str_t& cacheKey) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
         value_type newValue = Cache_->get(cacheKey);
         return newValue;

@@ -18,6 +18,9 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     } else {
         initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
     }
+    if (options->keyToValueListCacheStr_ != nullptr) {
+        keyToValueListCacheStr_ = options->keyToValueListCacheStr_;
+    } 
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
     maxBucketSize_ = options->deltaStore_single_file_maximum_size;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
@@ -1259,6 +1262,36 @@ inline void HashStoreFileManager::clearMemoryForTemporaryMergedDeltas(unordered_
     }
 }
 
+inline void HashStoreFileManager::putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values) {
+    vector<str_t>* cacheVector;
+
+    if ((cacheVector = keyToValueListCacheStr_->getFromCache(currentKeyStr)) != nullptr) {
+        // insert into cache only if the key has been read
+        for (auto& it : *cacheVector) {
+            delete[] it.data_;
+        }
+        cacheVector->clear();
+
+        for (auto& it : values) {
+            str_t newValueStr(new char[it.size_], it.size_);
+            memcpy(newValueStr.data_, it.data_, it.size_);
+            cacheVector->push_back(newValueStr);
+        }
+    } else {
+        str_t newKeyStr(new char[currentKeyStr.size_], currentKeyStr.size_);
+        memcpy(newKeyStr.data_, currentKeyStr.data_, currentKeyStr.size_);
+
+        cacheVector = new vector<str_t>;
+
+        for (auto& it : values) { 
+            str_t newValueStr(new char[it.size_], it.size_);
+            memcpy(newValueStr.data_, it.data_, it.size_);
+            cacheVector->push_back(newValueStr);
+        }
+        keyToValueListCacheStr_->insertToCache(newKeyStr, cacheVector);
+    }
+}
+
 bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag)
 {
     struct timeval tv;
@@ -1907,6 +1940,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
                             (totalValueSizes > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
                         fileContainsReWriteKeysFlag = true;
+                        putKeyValueListToAppendableCache(keyIt.first, keyIt.second.first);
                         string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
                         writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(currentKeyForWriteBack, "", 0);
                         targetWriteBackVec.push_back(newWriteBackObject);

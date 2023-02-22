@@ -13,12 +13,12 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
         operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
+    if (options->keyToValueListCacheStr_ != nullptr) {
+        keyToValueListCacheStr_ = options->keyToValueListCacheStr_;
+    }
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     notifyGCToManagerMQ_ = notifyGCToManagerMQ;
-    if (options->enable_deltaStore_KDLevel_cache == true) {
-        keyToValueListCacheStr_ = new AppendAbleLRUCacheStrT(options->deltaStore_KDLevel_cache_item_number);
-    }
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForForcedSingleFileGCThreshold_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
@@ -31,7 +31,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
 
 HashStoreFileOperator::~HashStoreFileOperator()
 {
-    if (keyToValueListCacheStr_) {
+    if (keyToValueListCacheStr_ != nullptr) {
         delete keyToValueListCacheStr_;
     }
     if (operationToWorkerMQ_ != nullptr) {

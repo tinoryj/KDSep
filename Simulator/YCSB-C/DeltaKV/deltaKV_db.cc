@@ -197,6 +197,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
         options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
+        options_.deltaStore_write_back_during_reads_size_threshold = config.getDeltaStoreWriteBackDuringReadsSizeThreshold();
         options_.deltaStore_gc_write_back_delta_num = config.getDeltaStoreGcWriteBackDeltaNumThreshold();
         options_.deltaStore_gc_write_back_delta_size = config.getDeltaStoreGcWriteBackDeltaSizeThreshold();
         if (options_.deltaStore_write_back_during_reads_threshold == 0 && options_.deltaStore_gc_write_back_delta_num == 0) {
