@@ -466,19 +466,15 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
 inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor)
 {
     str_t currentKeyStr(keyPtr, keySize);
-    vector<str_t>* cacheVector;
 
-    if ((cacheVector = keyToValueListCacheStr_->getFromCache(currentKeyStr)) != nullptr) {
+    if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == true) {
         // insert into cache only if the key has been read
         if (isAnchor == true) {
-            for (auto& it : *cacheVector) {
-                delete[] it.data_;
-            }
-            cacheVector->clear();
+            keyToValueListCacheStr_->updateCache(currentKeyStr, new vector<str_t>);
         } else {
-            str_t newValueStr(new char[valueSize], valueSize);
-            memcpy(newValueStr.data_, valuePtr, valueSize);
-            cacheVector->push_back(newValueStr);
+            str_t valueStr(new char[valueSize], valueSize);
+            memcpy(valueStr.data_, valuePtr, valueSize);
+            keyToValueListCacheStr_->appendToCache(currentKeyStr, valueStr);
         }
     }
 }

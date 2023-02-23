@@ -27,7 +27,13 @@ source $DN/common.sh
 #concatFunc "sst_r" "sst_rc" "blob_r" "blob_rc" "d_gc_r" "d_op_r" "d_gc_rc" "d_op_rc" "v_r" "v_rc" "rock_io" "d_rw" "v_rw" "tot_rw" "thpt" "fname"
 concatFunc "sst_r" "blob_r" "v_r" "d_gc_r" "d_op_r" "tot_r" "comp_r" "|" "v_rc" "tot_rc" "|" "rock_io" "d_rw" "v_rw" "tot_rw" "|" "thpt   " "fname"
 
-for file in $*; do
+files=$*
+
+if [[ "$sortedByTime" == "true" ]]; then
+    files=`ls -lht $* | awk '{print $NF;}'`
+fi
+
+for file in ${files[@]}; do
     comp_r=`grep "rocksdb.compact.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
 
     act_sst=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`

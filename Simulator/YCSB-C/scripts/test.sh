@@ -127,8 +127,13 @@ reqs=("10M")
 works=8
 gcs=2
 runModeSet=('kvkd' 'kd' 'bkvkd')
+runModeSet=('kvkd')
 cacheSizes=(4096 2048)
+cacheSizes=(4096)
+cacheSizes=(2048)
+cacheSizes=(1024)
 indexSet=(5 1)
+indexSet=(5)
 ops=("10M")
 
 func

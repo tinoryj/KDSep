@@ -322,8 +322,7 @@ fi
 # KD cache (append only)
 
 if [[ $kdcache -ne 0 ]]; then
-    deltaLogCacheSize=$(($kdcache / ($fieldcount * $fieldlength / 2)))
-    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $deltaLogCacheSize" temp.ini
+    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $kdcache" temp.ini
 fi
 
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then

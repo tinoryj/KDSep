@@ -16,19 +16,27 @@ class lru_cache_str_t {
 public:
 
     lru_cache_str_t(size_t capacity)
-        : m_capacity(capacity)
+        : m_capacity(capacity), data_size(0)
     {
     }
 
     ~lru_cache_str_t()
     {
-        debug_error("deconstruct %lu\n", m_map.size());
+        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
         clear();
+    }
+
+    static inline size_t size_of_value(value_type value) {
+        size_t result = value->size() * sizeof(str_t);
+        for (auto& it : *value) {
+            result += it.size_;
+        }
+        return result;
     }
 
     size_t size()
     {
-        return m_map.size();
+        return data_size; //m_map.size();
     }
 
     size_t capacity()
@@ -50,15 +58,120 @@ public:
     {
         map_type::iterator i = m_map.find(key);
         if (i == m_map.end()) {
+            size_t insert_size = size_of_value(value) + key.size_ + sizeof(key_type); 
             // insert item into the cache, but first check if it is full
-            if (size() >= m_capacity) {
+            while (size() + insert_size >= m_capacity) {
                 // cache is full, evict the least recently used item
                 evict();
             }
 
             // insert the new item
+            data_size += insert_size;
             m_list.push_front(key);
             m_map[key] = std::make_pair(value, m_list.begin());
+        }
+    }
+
+    // The caller don't need to allocate space for key.
+    void update(key_type& key, value_type value) {
+        map_type::iterator i = m_map.find(key);
+        if (i == m_map.end()) {
+            size_t insert_size = size_of_value(value) + key.size_ + sizeof(key_type); 
+            data_size += insert_size;
+                
+            // insert item into the cache, but first check if it is full
+            while (size() >= m_capacity) {
+                // cache is full, evict the least recently used item
+                evict();
+            }
+
+            // insert the new item
+            str_t new_key(new char[key.size_], key.size_);
+            memcpy(new_key.data_, key.data_, key.size_);
+            m_list.push_front(new_key);
+            m_map[new_key] = std::make_pair(value, m_list.begin());
+        } else {
+            size_t insert_size = size_of_value(value); 
+
+            value_type old_value = i->second.first;
+            data_size -= old_value->size() * sizeof(str_t);
+            for (auto& it : *old_value) {
+                delete[] it.data_;
+                data_size -= it.size_;
+            }
+            delete old_value;
+            i->second.first = value;
+            data_size += insert_size;
+
+            promote(i, value);
+
+            while (size() >= m_capacity) {
+                evict();
+            }
+        }
+    }
+
+    void append(key_type& key, value_type value) {
+        map_type::iterator i = m_map.find(key);
+        if (i == m_map.end()) {
+            size_t insert_size = size_of_value(value) + key.size_ + sizeof(key_type);
+            data_size += insert_size;
+
+            // insert item into the cache, but first check if it is full
+            while (size() >= m_capacity) {
+                // cache is full, evict the least recently used item
+                evict();
+            }
+
+            // insert the new item
+            str_t new_key(new char[key.size_], key.size_);
+            memcpy(new_key.data_, key.data_, key.size_);
+            m_list.push_front(new_key);
+            m_map[new_key] = std::make_pair(value, m_list.begin());
+        } else {
+            size_t insert_size = size_of_value(value);
+            data_size += insert_size;
+            value_type old_value = i->second.first;
+
+            for (auto& it : *value) {
+                old_value->push_back(it);
+            }
+            promote(i, old_value);
+            while (size() >= m_capacity) {
+                evict();
+            }
+        }
+    }
+
+    void append(key_type& key, str_t& value_element) {
+        map_type::iterator i = m_map.find(key);
+        if (i == m_map.end()) {
+            size_t insert_size = value_element.size_ + key.size_ + 2 * sizeof(str_t);
+            data_size += insert_size;
+
+            // insert item into the cache, but first check if it is full
+            while (size() >= m_capacity) {
+                // cache is full, evict the least recently used item
+                evict();
+            }
+
+            value_type value = new vector<str_t>; 
+            value->push_back(value_element);
+
+            // insert the new item
+            str_t new_key(new char[key.size_], key.size_);
+            memcpy(new_key.data_, key.data_, key.size_);
+            m_list.push_front(new_key);
+            m_map[new_key] = std::make_pair(value, m_list.begin());
+        } else {
+            size_t insert_size = value_element.size_ + sizeof(str_t);
+            data_size += insert_size;
+            value_type old_value = i->second.first;
+            old_value->push_back(value_element);
+            promote(i, old_value);
+            while (size() >= m_capacity) {
+                evict();
+            }
         }
     }
 
@@ -70,27 +183,28 @@ public:
             return nullptr;
         }
 
-        str_t keyStored = i->first;
         // return the value, but first update its place in the most
         // recently used list
-        list_type::iterator j = i->second.second;
-        if (j != m_list.begin()) {
-            // move item to the front of the most recently used list
-            m_list.erase(j);
-            m_list.push_front(keyStored);
-
-            // update iterator in map
-            j = m_list.begin();
-            value_type value = i->second.first;
-            m_map[keyStored] = std::make_pair(value, j);
-
-            // return the value
-            return value;
-        } else {
-            // the item is already at the front of the most recently
-            // used list so just return it
-            return i->second.first;
-        }
+        value_type value = i->second.first;
+        promote(i, value);
+        return value;
+//        if (j != m_list.begin()) {
+//            // move item to the front of the most recently used list
+//            m_list.erase(j);
+//            m_list.push_front(keyStored);
+//
+//            // update iterator in map
+//            j = m_list.begin();
+//            value_type value = i->second.first;
+//            m_map[keyStored] = std::make_pair(value, j);
+//
+//            // return the value
+//            return value;
+//        } else {
+//            // the item is already at the front of the most recently
+//            // used list so just return it
+//            return i->second.first;
+//        }
     }
 
     void clear()
@@ -109,19 +223,26 @@ public:
         }
         debug_error("clear, key total sizes %lu, value total sizes %lu\n", keySizes, valueSizes);
         m_map.clear();
+        data_size = 0;
     }
 
 private:
-    void evict()
+    inline void evict()
     {
+        if (evicted <= 10) {
+            debug_error("evict, size %lu\n", data_size); 
+            evicted++;
+        }
         // evict item from the end of most recently used list
         list_type::iterator i = --m_list.end();
         vector<char*> char_ptr_vec;
-        vector<str_t>* str_vec_ptr = m_map[*i].first; 
+        value_type evict_value = m_map[*i].first; 
+        data_size -= i->size_ + (1 + evict_value->size()) * sizeof(str_t);
 
         // values
-        for (auto& it : *str_vec_ptr) {
+        for (auto& it : *evict_value) {
             char_ptr_vec.push_back(it.data_);
+            data_size -= it.size_;
         }
         // key
         char_ptr_vec.push_back(i->data_);
@@ -131,13 +252,28 @@ private:
         for (auto& it : char_ptr_vec) {
             delete[] it;
         }
-        delete str_vec_ptr;
+        delete evict_value;
     }
 
-private:
+    inline void promote(map_type::iterator i, value_type v) {
+        list_type::iterator j = i->second.second;
+        str_t keyStored = i->first;
+        if (j != m_list.begin()) {
+            // move item to the front of the most recently used list
+            m_list.erase(j);
+            m_list.push_front(keyStored);
+
+            // update iterator in map
+            j = m_list.begin();
+            m_map[keyStored] = std::make_pair(v, j);
+        }
+    }
+
     map_type m_map;
     list_type m_list;
     size_t m_capacity;
+    size_t data_size;
+    unsigned int evicted = 0;
 };
 
 class AppendAbleLRUCacheStrT {
@@ -155,14 +291,15 @@ public:
     ~AppendAbleLRUCacheStrT() {
         delete Cache_;
     }
-    void insertToCache(str_t& cacheKey, value_type data) {
+
+    void insertToCache(str_t& cache_key, value_type data) {
         std::scoped_lock<std::shared_mutex> w_lock(cacheMtx_);
-        Cache_->insert(cacheKey, data);
+        Cache_->insert(cache_key, data);
     }
 
-    bool existsInCache(str_t& cacheKey) {
+    bool existsInCache(str_t& cache_key) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-        bool status = Cache_->contains(cacheKey);
+        bool status = Cache_->contains(cache_key);
         if (status == true) {
             return true;
         } else {
@@ -170,10 +307,26 @@ public:
         }
     }
 
-    value_type getFromCache(const str_t& cacheKey) {
+    // The cache_key does not needs allocation by the caller
+    // But the data needs allocation.
+    void updateCache(str_t& cache_key, value_type data) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-        value_type newValue = Cache_->get(cacheKey);
-        return newValue;
+        Cache_->update(cache_key, data);
+    }
+
+    void appendToCache(str_t& cache_key, value_type data) {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        Cache_->append(cache_key, data);
+    }
+
+    void appendToCache(str_t& cache_key, str_t& data) {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        Cache_->append(cache_key, data);
+    }
+
+    value_type getFromCache(const str_t& cache_key) {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        return Cache_->get(cache_key);
     }
 };
 

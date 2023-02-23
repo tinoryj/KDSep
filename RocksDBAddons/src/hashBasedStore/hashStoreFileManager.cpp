@@ -1263,33 +1263,16 @@ inline void HashStoreFileManager::clearMemoryForTemporaryMergedDeltas(unordered_
 }
 
 inline void HashStoreFileManager::putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values) {
-    vector<str_t>* cacheVector;
-
-    if ((cacheVector = keyToValueListCacheStr_->getFromCache(currentKeyStr)) != nullptr) {
-        // insert into cache only if the key has been read
-        for (auto& it : *cacheVector) {
-            delete[] it.data_;
-        }
-        cacheVector->clear();
-
-        for (auto& it : values) {
-            str_t newValueStr(new char[it.size_], it.size_);
-            memcpy(newValueStr.data_, it.data_, it.size_);
-            cacheVector->push_back(newValueStr);
-        }
-    } else {
-        str_t newKeyStr(new char[currentKeyStr.size_], currentKeyStr.size_);
-        memcpy(newKeyStr.data_, currentKeyStr.data_, currentKeyStr.size_);
-
-        cacheVector = new vector<str_t>;
-
-        for (auto& it : values) { 
-            str_t newValueStr(new char[it.size_], it.size_);
-            memcpy(newValueStr.data_, it.data_, it.size_);
-            cacheVector->push_back(newValueStr);
-        }
-        keyToValueListCacheStr_->insertToCache(newKeyStr, cacheVector);
+    vector<str_t>* cacheVector = new vector<str_t>;
+    for (auto& it : values) {
+        str_t newValueStr(new char[it.size_], it.size_);
+        memcpy(newValueStr.data_, it.data_, it.size_);
+        cacheVector->push_back(newValueStr);
     }
+
+    str_t keyStr = currentKeyStr;
+
+    keyToValueListCacheStr_->updateCache(keyStr, cacheVector);
 }
 
 bool HashStoreFileManager::singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag)

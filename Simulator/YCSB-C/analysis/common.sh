@@ -21,3 +21,5 @@ concatFunc() {
     done
     echo "$str"
 }
+
+sortedByTime="true"
