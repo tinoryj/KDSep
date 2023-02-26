@@ -230,7 +230,7 @@ for param in $*; do
         workerThreadNumber=$(echo $param | sed 's/workerT//g')
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
         bucketSize=$(echo $param | sed 's/bucketSize//g')
-    elif [[ "$param" =~ ^batchSize[0-9]+$ ]]; then
+    elif [[ "$param" =~ ^batchSize[0-9kK]+$ ]]; then
         num=$(echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g')
         batchSize=$num
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
@@ -473,7 +473,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     cp workloads/workloadTemplate.spec $SPEC 
     sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
 #    sed -i "10s/NaN/10000000/g" $SPEC 
-    sed -i "10s/NaN/10000/g" $SPEC 
+    sed -i "10s/NaN/10000000/g" $SPEC 
     sed -i "15s/0/1/g" $SPEC
     sed -i "16s/0/0/g" $SPEC
     sed -i "24s/NaN/$fieldcount/g" $SPEC

@@ -233,6 +233,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("          file-write-func", DS_WRITE_FUNCTION, time[DELTAKV_PUT_HASHSTORE]);
     PRINT_FULL("            file-op", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DELTAKV_PUT_HASHSTORE]);
     PRINT_FULL("          insert-cache", DS_MULTIPUT_INSERT_CACHE, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("            check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DELTAKV_PUT_HASHSTORE]);
+    PRINT_FULL("            update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DELTAKV_PUT_HASHSTORE]);
     PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[DELTAKV_PUT_HASHSTORE]);
     PRINT_FULL("  put-merge", DELTAKV_PUT_MERGE_ROCKSDB, time[DELTAKV_PUT_HASHSTORE]);
 
@@ -244,6 +246,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  get-file-process", DELTAKV_HASHSTORE_GET_PROCESS, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  get-file-io", DELTAKV_HASHSTORE_GET_IO, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_GET_HASHSTORE]));
+
+    fprintf(stdout, "-------------- DeltaKV HashStore Cache Breakdown ------------------------------\n");
+    PRINT_FULL("map find", DELTAKV_HASHSTORE_CACHE_FIND, (time[DELTAKV_HASHSTORE_CACHE_FIND]));
+    PRINT_FULL("promote", DELTAKV_HASHSTORE_CACHE_PROMOTE, (time[DELTAKV_HASHSTORE_CACHE_PROMOTE]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
     PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_HASHSTORE_WORKER_GC]));

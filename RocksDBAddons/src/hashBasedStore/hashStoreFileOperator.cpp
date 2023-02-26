@@ -467,15 +467,12 @@ inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* key
 {
     str_t currentKeyStr(keyPtr, keySize);
 
-    if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == true) {
-        // insert into cache only if the key has been read
-        if (isAnchor == true) {
-            keyToValueListCacheStr_->updateCache(currentKeyStr, new vector<str_t>);
-        } else {
-            str_t valueStr(new char[valueSize], valueSize);
-            memcpy(valueStr.data_, valuePtr, valueSize);
-            keyToValueListCacheStr_->appendToCache(currentKeyStr, valueStr);
-        }
+    // insert into cache only if the key has been read
+    if (isAnchor == true) {
+        keyToValueListCacheStr_->cleanCacheIfExist(currentKeyStr);
+    } else {
+        str_t valueStr(valuePtr, valueSize);
+        keyToValueListCacheStr_->appendToCacheIfExist(currentKeyStr, valueStr);
     }
 }
 

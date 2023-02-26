@@ -28,7 +28,7 @@ public:
 //    bool SingleDelete(const string& key);
 
 private:
-    KeyValueMemPool* objectPairMemPool_ = nullptr;
+    KeyValueMemPoolBase* objectPairMemPool_ = nullptr;
     // batched write
     unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;

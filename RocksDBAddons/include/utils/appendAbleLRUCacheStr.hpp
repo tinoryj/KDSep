@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/dataStructure.hpp" 
+#include "utils/statsRecorder.hh"
 
 using namespace std;
 
@@ -111,6 +112,53 @@ public:
         }
     }
 
+    void updateIfExist(key_type& key, value_type value) {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        map_type::iterator i = m_map.find(key);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_CACHE_FIND, tv);
+        if (i != m_map.end()) {
+            size_t insert_size = size_of_value(value); 
+
+            value_type old_value = i->second.first;
+            data_size -= old_value->size() * sizeof(str_t);
+            for (auto& it : *old_value) {
+                delete[] it.data_;
+                data_size -= it.size_;
+            }
+            delete old_value;
+            i->second.first = value;
+            data_size += insert_size;
+
+            promote(i, value);
+
+            while (size() >= m_capacity) {
+                evict();
+            }
+        }
+    }
+
+    void cleanIfExist(key_type& key) {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        map_type::iterator i = m_map.find(key);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_CACHE_FIND, tv);
+        if (i != m_map.end()) {
+            value_type old_value = i->second.first;
+            data_size -= old_value->size() * sizeof(str_t);
+            for (auto& it : *old_value) {
+                delete[] it.data_;
+                data_size -= it.size_;
+            }
+            old_value->clear();
+
+            promote(i, old_value);
+            while (size() >= m_capacity) {
+                evict();
+            }
+        }
+    }
+
     void append(key_type& key, value_type value) {
         map_type::iterator i = m_map.find(key);
         if (i == m_map.end()) {
@@ -169,6 +217,27 @@ public:
             value_type old_value = i->second.first;
             old_value->push_back(value_element);
             promote(i, old_value);
+            while (size() >= m_capacity) {
+                evict();
+            }
+        }
+    }
+
+    // value_element is external
+    void appendIfExist(key_type& key, str_t& value_element) {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        map_type::iterator i = m_map.find(key);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_CACHE_FIND, tv);
+        if (i != m_map.end()) {
+            size_t insert_size = value_element.size_ + sizeof(str_t);
+            data_size += insert_size;
+            value_type old_value = i->second.first;
+            str_t new_value_ele(new char[value_element.size_], value_element.size_);
+            memcpy(new_value_ele.data_, value_element.data_, new_value_ele.size_);
+            old_value->push_back(new_value_ele);
+            promote(i, old_value);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_CACHE_FIND, tv);
             while (size() >= m_capacity) {
                 evict();
             }
@@ -276,19 +345,19 @@ private:
     unsigned int evicted = 0;
 };
 
-class AppendAbleLRUCacheStrT {
+class AppendAbleLRUCacheStrTShard {
 private:
     lru_cache_str_t* Cache_;
     uint64_t cacheSize_ = 0;
     std::shared_mutex cacheMtx_;
 
 public:
-    AppendAbleLRUCacheStrT(uint64_t cacheSize) {
+    AppendAbleLRUCacheStrTShard(uint64_t cacheSize) {
         cacheSize_ = cacheSize;
         Cache_ = new lru_cache_str_t(cacheSize_);
     }
 
-    ~AppendAbleLRUCacheStrT() {
+    ~AppendAbleLRUCacheStrTShard() {
         delete Cache_;
     }
 
@@ -314,19 +383,93 @@ public:
         Cache_->update(cache_key, data);
     }
 
+    void updateCacheIfExist(str_t& cache_key, value_type data) {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        Cache_->updateIfExist(cache_key, data);
+    }
+
+    void cleanCacheIfExist(str_t& cache_key) {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        STAT_PROCESS(Cache_->cleanIfExist(cache_key), StatsType::DELTAKV_HASHSTORE_CACHE_PROMOTE);
+    }
+
     void appendToCache(str_t& cache_key, value_type data) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
         Cache_->append(cache_key, data);
     }
 
-    void appendToCache(str_t& cache_key, str_t& data) {
+    // data is from external
+    void appendToCacheIfExist(str_t& cache_key, str_t& data) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-        Cache_->append(cache_key, data);
+        STAT_PROCESS(Cache_->appendIfExist(cache_key, data), StatsType::DELTAKV_HASHSTORE_CACHE_PROMOTE);
     }
 
-    value_type getFromCache(const str_t& cache_key) {
+    value_type getFromCache(str_t& cache_key) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
         return Cache_->get(cache_key);
+    }
+};
+
+class AppendAbleLRUCacheStrT {
+private:
+    AppendAbleLRUCacheStrTShard** shards_ = nullptr;
+    uint32_t shard_num_ = 32;
+    const uint32_t SHARD_MASK = 31;
+    uint64_t cacheSize_ = 0;
+
+    inline unsigned int hash(str_t& cache_key) {
+        return charBasedHashFunc(cache_key.data_, cache_key.size_) & SHARD_MASK;
+    }
+
+public:
+    AppendAbleLRUCacheStrT(uint64_t cacheSize) {
+        cacheSize_ = cacheSize;
+        shards_ = new AppendAbleLRUCacheStrTShard*[shard_num_];
+        for (int i = 0; i < shard_num_; i++) {
+            shards_[i] = new AppendAbleLRUCacheStrTShard(cacheSize / shard_num_);
+        }
+    }
+
+    ~AppendAbleLRUCacheStrT() {
+        for (int i = 0; i < shard_num_; i++) {
+            delete shards_[i];
+        }
+        delete[] shards_;
+    }
+
+    void insertToCache(str_t& cache_key, value_type data) {
+        shards_[hash(cache_key)]->insertToCache(cache_key, data);
+    }
+
+    bool existsInCache(str_t& cache_key) {
+        return shards_[hash(cache_key)]->existsInCache(cache_key);
+    }
+
+    // The cache_key does not needs allocation by the caller
+    // But the data needs allocation.
+    void updateCache(str_t& cache_key, value_type data) {
+        shards_[hash(cache_key)]->updateCache(cache_key, data);
+    }
+
+    void updateCacheIfExist(str_t& cache_key, value_type data) {
+        shards_[hash(cache_key)]->updateCacheIfExist(cache_key, data);
+    }
+
+    void cleanCacheIfExist(str_t& cache_key) {
+        shards_[hash(cache_key)]->cleanCacheIfExist(cache_key);
+    }
+
+    void appendToCache(str_t& cache_key, value_type data) {
+        shards_[hash(cache_key)]->appendToCache(cache_key, data);
+    }
+
+    // data is from external
+    void appendToCacheIfExist(str_t& cache_key, str_t& data) {
+        shards_[hash(cache_key)]->appendToCacheIfExist(cache_key, data);
+    }
+
+    value_type getFromCache(str_t& cache_key) {
+        return shards_[hash(cache_key)]->getFromCache(cache_key);
     }
 };
 

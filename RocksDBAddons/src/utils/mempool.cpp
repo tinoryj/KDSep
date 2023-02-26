@@ -102,4 +102,48 @@ bool KeyValueMemPool::eraseContentFromMemPool(mempoolHandler_t mempoolHandler)
     mempoolFreeHandlerVec_[mempoolFreeHandlerVecEndPtr_] = mempoolHandler.mempoolHandlerID_;
     return true;
 }
+
+// Simple version
+
+KeyValueMemPoolSimple::KeyValueMemPoolSimple(uint32_t objectNumberThreshold, uint32_t maxBlockSize)
+{
+    cerr << "Mempool object number = " << objectNumberThreshold << ", block size = " << maxBlockSize << endl;
+    mempoolBlockSizeThreshold_ = maxBlockSize;
+}
+
+KeyValueMemPoolSimple::~KeyValueMemPoolSimple()
+{
+//    delete[] mempoolFreeHandlerVec_;
+//    for (uint32_t i = 0; i < mempoolBlockNumberThreshold_; i++) {
+//        if (mempool_[i] != nullptr) {
+//            delete[] mempool_[i];
+//        }
+//    }
+//    delete[] mempool_;
+}
+
+bool KeyValueMemPoolSimple::insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler)
+{
+    std::scoped_lock<std::shared_mutex> wlock(managerMtx_);
+    {
+        mempoolHandler.mempoolHandlerID_ = 0;
+        mempoolHandler.keySize_ = keyStr.size();
+        mempoolHandler.valueSize_ = valueStr.size();
+        char* buffer = new char[mempoolBlockSizeThreshold_]; //[keyStr.size() + valueStr.size()];
+        memcpy(buffer, keyStr.c_str(), keyStr.size());
+        memcpy(buffer + mempoolHandler.keySize_, valueStr.c_str(), valueStr.size());
+        mempoolHandler.keyPtr_ = buffer;
+        mempoolHandler.valuePtr_ = buffer + mempoolHandler.keySize_;
+        mempoolHandler.sequenceNumber_ = sequenceNumber;
+        mempoolHandler.isAnchorFlag_ = isAnchorFlag;
+        return true;
+    }
+}
+
+bool KeyValueMemPoolSimple::eraseContentFromMemPool(mempoolHandler_t mempoolHandler)
+{
+    std::scoped_lock<std::shared_mutex> wlock(managerMtx_);
+    delete[] mempoolHandler.keyPtr_;
+    return true;
+}
 }

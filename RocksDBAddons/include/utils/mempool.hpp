@@ -32,6 +32,7 @@ typedef struct mempoolHandler_t {
 
 class KeyValueMemPoolBase {
 public:
+    virtual ~KeyValueMemPoolBase() {}
     virtual bool insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler) = 0;
     virtual bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler) = 0;
 
@@ -51,6 +52,18 @@ private:
     uint32_t* mempoolFreeHandlerVec_;
     uint32_t mempoolFreeHandlerVecStartPtr_;
     uint32_t mempoolFreeHandlerVecEndPtr_;
+    std::shared_mutex managerMtx_;
+};
+
+class KeyValueMemPoolSimple : public KeyValueMemPoolBase {
+public:
+    KeyValueMemPoolSimple(uint32_t objectNumberThreshold, uint32_t maxBlockSize);
+    ~KeyValueMemPoolSimple();
+    bool insertContentToMemPoolAndGetHandler(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchorFlag, mempoolHandler_t& mempoolHandler) override;
+    bool eraseContentFromMemPool(mempoolHandler_t mempoolHandler) override;
+
+private:
+    uint32_t mempoolBlockSizeThreshold_;
     std::shared_mutex managerMtx_;
 };
 }
