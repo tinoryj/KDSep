@@ -298,10 +298,10 @@ public:
 private:
     inline void evict()
     {
-        if (evicted <= 10) {
-            debug_error("evict, size %lu\n", data_size); 
-            evicted++;
-        }
+//        if (evicted <= 10) {
+//            debug_error("evict, size %lu\n", data_size); 
+//            evicted++;
+//        }
         // evict item from the end of most recently used list
         list_type::iterator i = --m_list.end();
         vector<char*> char_ptr_vec;
@@ -342,7 +342,7 @@ private:
     list_type m_list;
     size_t m_capacity;
     size_t data_size;
-    unsigned int evicted = 0;
+//    unsigned int evicted = 0;
 };
 
 class AppendAbleLRUCacheStrTShard {

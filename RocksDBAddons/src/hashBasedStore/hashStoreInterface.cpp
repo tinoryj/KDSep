@@ -86,7 +86,7 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
 
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DELTAKV_HASHSTORE_PUT);
+    STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DS_PUT_GET_HANDLER);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", objectPairMempoolHandler.keyPtr_);
         return false;
@@ -127,7 +127,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
         bool getFileHandlerStatus;
         string prefixStr;
-        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(objectPairMemPoolHandlerVec[i].keyPtr_, objectPairMemPoolHandlerVec[i].keySize_, kPut, currentFileHandlerPtr, prefixStr, objectPairMemPoolHandlerVec[i].isAnchorFlag_), StatsType::DELTAKV_HASHSTORE_PUT);
+        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(objectPairMemPoolHandlerVec[i].keyPtr_, objectPairMemPoolHandlerVec[i].keySize_, kPut, currentFileHandlerPtr, prefixStr, objectPairMemPoolHandlerVec[i].isAnchorFlag_), StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
         if (getFileHandlerStatus != true) {
             debug_error("[ERROR] Get file handler for key = %s error during multiput\n", objectPairMemPoolHandlerVec[i].keyPtr_);
             return false;
@@ -176,42 +176,36 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
         unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
         vector<hashStoreOperationHandler*> handlers; 
         for (auto mapIt : fileHandlerToIndexMap) {
-            uint64_t targetWriteSize = 0;
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            handlerVecTemp[processedHandlerIndex].resize(mapIt.second.size());
             for (auto index = 0; index < mapIt.second.size(); index++) {
-                debug_info("[MergeOp-multiput] key = %s, sequence number = %u\n", string(objectPairMemPoolHandlerVec[mapIt.second[index]].keyPtr_, objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_).c_str(), objectPairMemPoolHandlerVec[mapIt.second[index]].sequenceNumber_);
-                handlerVecTemp[processedHandlerIndex].push_back(objectPairMemPoolHandlerVec[mapIt.second[index]]);
-                if (objectPairMemPoolHandlerVec[mapIt.second[index]].isAnchorFlag_ == true) {
-                    targetWriteSize += (sizeof(hashStoreRecordHeader) + objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_);
-                } else {
-                    targetWriteSize += (sizeof(hashStoreRecordHeader) + objectPairMemPoolHandlerVec[mapIt.second[index]].keySize_ + objectPairMemPoolHandlerVec[mapIt.second[index]].valueSize_);
-                }
+                handlerVecTemp[processedHandlerIndex][index] = objectPairMemPoolHandlerVec[mapIt.second[index]];
             }
-            if (false && targetWriteSize + mapIt.first->file_operation_func_ptr_->getFileBufferedSize() < fileFlushThreshold_) {
-                tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVecTemp[processedHandlerIndex]));
-            } else {
-                mapIt.first->markedByMultiPut_ = false;
-                hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
-                currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = &handlerVecTemp[processedHandlerIndex];
-                currentOperationHandler->jobDone_ = kNotDone;
-                currentOperationHandler->opType_ = kMultiPut;
-                STAT_PROCESS(hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
-                handlers.push_back(currentOperationHandler);
-            }
+            StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
+            mapIt.first->markedByMultiPut_ = false;
+            hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
+            currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = &handlerVecTemp[processedHandlerIndex];
+            currentOperationHandler->jobDone_ = kNotDone;
+            currentOperationHandler->opType_ = kMultiPut;
+            STAT_PROCESS(hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
+            handlers.push_back(currentOperationHandler);
             processedHandlerIndex++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
         gettimeofday(&tv, 0);
         bool putStatus;
         if (tempFileHandlerMap.size() != 0) {
-            STAT_PROCESS(putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap), DS_MULTIPUT_DIRECT_WRITE);
+            putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
             if (putStatus != true) {
                 debug_error("[ERROR] write to dLog error for keys, number = %lu\n", tempFileHandlerMap.size());
             } 
         }
 
         for (auto& it : handlers) {
-            STAT_PROCESS(hashStoreFileOperatorPtr_->waitOperationHandlerDone(it), StatsType::DS_MULTIPUT_WAIT_HANDLERS);
+            hashStoreFileOperatorPtr_->waitOperationHandlerDone(it);
         }
+        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_WAIT_HANDLERS, tv);
         return true;
     }
 }

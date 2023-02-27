@@ -164,7 +164,7 @@ bool DeltaKV::PutInternal(const mempoolHandler_t& mempoolHandler)
             debug_error("[ERROR] Put LSM-tree failed, key = %s\n", mempoolHandler.keyPtr_);
         }
         bool updateAnchorStatus;
-        STAT_PROCESS(updateAnchorStatus = HashStoreInterfaceObjPtr_->put(mempoolHandler), StatsType::DELTAKV_PUT_HASHSTORE);
+        STAT_PROCESS(updateAnchorStatus = HashStoreInterfaceObjPtr_->put(mempoolHandler), StatsType::DKV_PUT_DSTORE);
         return updateAnchorStatus;
     }
 }
@@ -450,7 +450,7 @@ bool DeltaKV::Get(const string& key, string* value)
             }
         }
         scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_WAIT_BUFFER, tvAll);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_WAIT_BUFFER, tvAll);
         struct timeval tv;
         gettimeofday(&tv, 0);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -480,7 +480,7 @@ bool DeltaKV::Get(const string& key, string* value)
                 }
             }
             if (findNewValueFlag == true) {
-                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsStrTVec, value), StatsType::FULL_MERGE);
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(newValueStr, tempNewMergeOperatorsStrTVec, value), StatsType::DKV_GET_FULL_MERGE);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), tempNewMergeOperatorsStrTVec.size());
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_MERGE, tv0);
                 return true;
@@ -495,7 +495,7 @@ bool DeltaKV::Get(const string& key, string* value)
         for (auto& it : tempNewMergeOperatorsStrTVec) {
             tempNewMergeOperatorsVec.push_back(string(it.data_, it.size_));
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_BATCH_READ_NO_WAIT_BUFFER, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_READ_BUFFER, tv);
     } 
 
     struct timeval tv;
@@ -519,7 +519,7 @@ bool DeltaKV::Get(const string& key, string* value)
             }
             value->clear();
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempValueStrT, tempVec, value), StatsType::FULL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(tempValueStrT, tempVec, value), StatsType::DKV_GET_FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] merge failed: key %s number of deltas %lu raw value size %lu\n", key.c_str(), tempVec.size(), tempValueStr.size());
                 exit(1);
@@ -552,7 +552,7 @@ bool DeltaKV::Merge(const string& key, const string& value)
             string finalValue;
             vector<string> operandListForCacheUpdate;
             operandListForCacheUpdate.push_back(value);
-            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue), StatsType::FULL_MERGE);
+            STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue), StatsType::DKV_MERGE_FULL_MERGE);
             keyToValueListCache_->getFromCache(cacheKey).assign(finalValue);
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_CACHE_INSERT_MERGE, tv);
         }
@@ -752,10 +752,10 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             }
         }
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_1, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_1, tv);
     gettimeofday(&tv, 0);
     scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_2, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
     if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
@@ -787,7 +787,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_APPEND_BUFFER, tv);
         return true;
     } else {
         // only insert
@@ -809,7 +809,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_APPEND_BUFFER, tv);
         return true;
     }
 }
@@ -830,10 +830,10 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
             }
         }
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_1, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_LOCK_1, tv);
     gettimeofday(&tv, 0);
     scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-    StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_LOCK_2, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
     if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
@@ -858,7 +858,7 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_APPEND_BUFFER, tv);
         return true;
     } else {
         // only insert
@@ -873,7 +873,7 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_AFTER_LOCK_FULL, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_APPEND_BUFFER, tv);
         return true;
     }
 }
@@ -895,7 +895,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
                 operandList.push_back(operandStr);
             }
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue), StatsType::FULL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue), StatsType::DKV_DEDUP_FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size() - 1);
                 return false;
@@ -921,7 +921,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
             }
             vector<string> finalOperandList;
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(operandList, finalOperandList), StatsType::PARTIAL_MERGE);
+            STAT_PROCESS(mergeStatus = deltaKVMergeOperatorPtr_->PartialMerge(operandList, finalOperandList), StatsType::DKV_DEDUP_PARTIAL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size());
                 return false;
@@ -956,11 +956,14 @@ void DeltaKV::processBatchedOperationsWorker()
         }
         unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
             oneBufferDuringProcessFlag_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
 //            if (deltaKVRunningMode_ != kBatchedWithNoDeltaStore) {
-                performInBatchedBufferDeduplication(currentHandler);
+                STAT_PROCESS(performInBatchedBufferDeduplication(currentHandler), StatsType::DKV_FLUSH_DEDUP);
+                StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_PLAIN_ROCKSDB, tv);
 //            }
             vector<mempoolHandler_t> handlerToValueStoreVec, handlerToDeltaStoreVec;
             for (auto it = currentHandler->begin(); it != currentHandler->end(); it++) {
@@ -987,8 +990,6 @@ void DeltaKV::processBatchedOperationsWorker()
                 struct timeval tv;
                 gettimeofday(&tv, 0);
                 rocksdb::Status rocksDBStatus;
-                rocksdb::WriteOptions batchedWriteOperation;
-                batchedWriteOperation.sync = false;
                 rocksdb::WriteBatch mergeBatch;
                 for (auto index = 0; index < handlerToDeltaStoreVec.size(); index++) {
                     if (handlerToDeltaStoreVec[index].isAnchorFlag_ == false) {
@@ -1006,7 +1007,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 bool lsmTreeInterfaceStatus = lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch);
-                StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_PLAIN_ROCKSDB, tv);
+                StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_NO_DSTORE, tv);
                 break;
             }
             case kBatchedWithDeltaStore: {
@@ -1027,7 +1028,7 @@ void DeltaKV::processBatchedOperationsWorker()
                     }
                 }
                 // cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
-                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DELTAKV_PUT_HASHSTORE);
+                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DKV_FLUSH_MUTIPUT_DSTORE);
                 if (putToDeltaStoreStatus == false) {
                     debug_error("[ERROR] could not put %zu object into delta store, as well as not separated object number = %zu\n", handlerToDeltaStoreVec.size(), notSeparatedDeltasVec.size());
                     break;
@@ -1075,8 +1076,9 @@ void DeltaKV::processBatchedOperationsWorker()
                     }
                 }
                 rocksdb::Status rocksDBStatus;
-                lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch);
+                STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch), StatsType::DKV_FLUSH_LSM_INTERFACE);
                 
+                StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_DSTORE, tv);
                 break;
             }
             default:
@@ -1096,6 +1098,7 @@ void DeltaKV::processBatchedOperationsWorker()
             currentHandler->clear();
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
             oneBufferDuringProcessFlag_ = false;
+            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH, tv);
         }
     }
     writeBatchOperationWorkExitFlag = true;

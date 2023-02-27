@@ -230,14 +230,14 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     }
 
     rocksdb::Status rocksDBStatus;
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::DELTAKV_PUT_MERGE_ROCKSDB);
+    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::LSM_FLUSH_ROCKSDB);
 
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Write with batch on underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
     }
 
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::BATCH_FLUSH_WAL);
+    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::LSM_FLUSH_WAL);
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Flush WAL, status = %s\n", rocksDBStatus.ToString().c_str());
         return false;
