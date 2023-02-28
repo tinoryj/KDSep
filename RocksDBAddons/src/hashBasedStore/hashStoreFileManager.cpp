@@ -955,7 +955,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
     }
 }
 
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting)
+bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting)
 {
     if (opType == kMultiPut) {
         operationCounterMtx_.lock();
@@ -963,16 +963,15 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         operationCounterMtx_.unlock();
     }
 
+    uint64_t prefixU64;
     bool genPrefixStatus;
-    STAT_PROCESS(genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixStr), StatsType::DSTORE_PREFIX);
+    STAT_PROCESS(genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixU64), StatsType::DSTORE_PREFIX);
     if (!genPrefixStatus) {
         debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", string(keyBuffer, keySize).c_str());
         return false;
     }
-//    bool fileHandlerExistFlag;
-//    STAT_PROCESS(fileHandlerExistFlag = getHashStoreFileHandlerExistFlag(prefixStr), StatsType::DSTORE_EXIST_FLAG);
     bool getFileHandlerStatus;
-    STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+    STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixU64, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
 
     if (getFileHandlerStatus == false && getForAnchorWriting == true) {
         // Anchor: handler does not exist, do not create the file and directly return
@@ -982,7 +981,7 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
     } else if (getFileHandlerStatus == false && getForAnchorWriting == false) {
         // Anchor: handler does not exist, need create the file
         bool createNewFileHandlerStatus;
-        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixU64, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (createNewFileHandlerStatus == false || fileHandlerPtr == nullptr) {
             debug_error("[ERROR] create new bucket for put operation error, key = %s\n", string(keyBuffer, keySize).c_str());
             return false;
@@ -996,13 +995,13 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
         bool first = true;
         while (true) {
             if (!first) {
-                STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixStr, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
+                STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixU64, fileHandlerPtr), StatsType::DSTORE_GET_HANDLER);
             } else {
                 first = false;
             }
             if (!getFileHandlerStatus) {
                 bool createNewFileHandlerStatus;
-                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixStr, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixU64, fileHandlerPtr), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
                 if (!createNewFileHandlerStatus) {
                     debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", string(keyBuffer, keySize).c_str());
                     return false;
@@ -1046,6 +1045,13 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
 }
 
 // file operations - private
+bool HashStoreFileManager::generateHashBasedPrefix(char* rawStr, uint32_t strSize, uint64_t& prefixU64) {
+    u_char murmurHashResultBuffer[16];
+    MurmurHash3_x64_128((void*)rawStr, strSize, 0, murmurHashResultBuffer);
+    memcpy(&prefixU64, murmurHashResultBuffer, sizeof(uint64_t));
+    return true;
+}
+
 bool HashStoreFileManager::generateHashBasedPrefix(char* rawStr, uint32_t strSize, string& prefixStr)
 {
     u_char murmurHashResultBuffer[16];
@@ -1054,10 +1060,13 @@ bool HashStoreFileManager::generateHashBasedPrefix(char* rawStr, uint32_t strSiz
     memcpy(&firstFourByte, murmurHashResultBuffer, sizeof(uint64_t));
     char buffer[64];
     int index = 0;
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     while (firstFourByte != 0) {
         buffer[index++] = (firstFourByte & 1) + '0';
         firstFourByte >>= 1;
     }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DS_GEN_PREFIX_SHIFT, tv);
     prefixStr.assign(buffer, index);
     return true;
 }
@@ -1099,6 +1108,18 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const string& prefixS
     }
 }
 
+bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& fileHandlerPtr)
+{
+    uint64_t prefixLen;
+    bool handlerGetStatus = objectFileMetaDataTrie_.get(prefixU64, fileHandlerPtr);
+    if (handlerGetStatus == true) {
+        return true;
+    } else {
+        debug_trace("Could not find prefix = %lx for any length in trie, need to create\n", prefixU64);
+        return false;
+    }
+}
+
 bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
     hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
@@ -1114,6 +1135,32 @@ bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(co
     currentFileHandlerPtr->filter = new BucketKeyFilter();
     // move pointer for return
     uint64_t finalInsertLevel = objectFileMetaDataTrie_.insert(prefixStr, currentFileHandlerPtr);
+    if (finalInsertLevel == 0) {
+        debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", currentFileHandlerPtr->current_prefix_used_bit_, currentFileHandlerPtr->target_file_id_);
+        fileHandlerPtr = nullptr;
+        return false;
+    } else {
+        currentFileHandlerPtr->current_prefix_used_bit_ = finalInsertLevel;
+        fileHandlerPtr = currentFileHandlerPtr;
+        return true;
+    }
+}
+
+bool HashStoreFileManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& fileHandlerPtr)
+{
+    hashStoreFileMetaDataHandler* currentFileHandlerPtr = new hashStoreFileMetaDataHandler;
+    currentFileHandlerPtr->file_operation_func_ptr_ = new FileOperation(fileOperationMethod_, maxBucketSize_, singleFileFlushSize_);
+    currentFileHandlerPtr->target_file_id_ = generateNewFileID();
+    currentFileHandlerPtr->file_ownership_flag_ = 0;
+    currentFileHandlerPtr->gc_result_status_flag_ = kNew;
+    currentFileHandlerPtr->total_object_bytes_ = 0;
+    currentFileHandlerPtr->total_on_disk_bytes_ = 0;
+    currentFileHandlerPtr->total_object_count_ = 0;
+    currentFileHandlerPtr->previous_file_id_first_ = 0xffffffffffffffff;
+    currentFileHandlerPtr->file_create_reason_ = kNewFile;
+    currentFileHandlerPtr->filter = new BucketKeyFilter();
+    // move pointer for return
+    uint64_t finalInsertLevel = objectFileMetaDataTrie_.insert(prefixU64, currentFileHandlerPtr);
     if (finalInsertLevel == 0) {
         debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", currentFileHandlerPtr->current_prefix_used_bit_, currentFileHandlerPtr->target_file_id_);
         fileHandlerPtr = nullptr;

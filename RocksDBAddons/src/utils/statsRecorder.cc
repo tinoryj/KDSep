@@ -246,6 +246,7 @@ StatsRecorder::~StatsRecorder()
     fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
     PRINT_FULL("push-to-mempool", DELTAKV_INSERT_MEMPOOL, time[DELTAKV_INSERT_MEMPOOL]);
     PRINT_FULL("gen-prefix", DSTORE_PREFIX, time[DSTORE_PREFIX]);
+    PRINT_FULL("  shift", DS_GEN_PREFIX_SHIFT, time[DSTORE_PREFIX]);
     PRINT_FULL("create-and-get-hdl", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_HASHSTORE_CREATE_NEW_BUCKET]);
     PRINT_FULL("get-hdl", DSTORE_GET_HANDLER, time[DSTORE_GET_HANDLER]);
 

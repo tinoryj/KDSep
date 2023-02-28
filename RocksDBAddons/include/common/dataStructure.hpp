@@ -174,7 +174,8 @@ typedef struct hashStoreWriteOperationHandler {
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    vector<mempoolHandler_t>* mempool_handler_vec_ptr_;
+    mempoolHandler_t* mempool_handler_vec_ptr_;
+    unsigned int size;
 } hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {

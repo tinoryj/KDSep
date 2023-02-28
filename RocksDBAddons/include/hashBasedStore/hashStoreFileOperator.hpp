@@ -17,7 +17,9 @@ public:
     ~HashStoreFileOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
-    bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler);
+    inline bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler) {
+        return operationToWorkerMQ_->push(currentOperationHandler);
+    }
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);

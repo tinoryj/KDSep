@@ -22,8 +22,9 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
+    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting);
     bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, string& prefixStr);
+    bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
     void processSingleFileGCRequestWorker(int threadID);
@@ -82,7 +83,9 @@ private:
     // user-side operations
     bool getHashStoreFileHandlerExistFlag(const string& prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
+    bool getHashStoreFileHandlerByPrefix(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string& prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr); // previousFileID only used when createByGCFlag == true
+    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& fileHandlerPtr);
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management

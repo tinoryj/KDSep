@@ -100,6 +100,27 @@ public:
         }
     }
 
+    uint64_t insert(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& newData)
+    {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        if (currentFileNumber_ >= maxFileNumber_) {
+            debug_error("[ERROR] Could note insert new node, since there are too many files, number = %lu, threshold = %lu\n", currentFileNumber_, maxFileNumber_);
+            printNodeMap();
+            return 0;
+        }
+        uint64_t insertAtLevel = 0;
+        bool status = addPrefixTreeNode(rootNode_, prefixU64, newData, insertAtLevel);
+        if (status == true) {
+            currentFileNumber_++;
+            debug_trace("Insert to new node success at level = %lu, for prefix = %lx, current file number = %lu\n", insertAtLevel, prefixU64, currentFileNumber_);
+            return insertAtLevel;
+        } else {
+            debug_error("[ERROR] Insert to new node fail at level = %lu, for prefix = %lx\n", insertAtLevel, prefixU64);
+            printNodeMap();
+            return 0;
+        }
+    }
+
     pair<uint64_t, uint64_t> insertPairOfNodes(const string& prefixStr1, hashStoreFileMetaDataHandler*& newData1, const string& prefixStr2, hashStoreFileMetaDataHandler*& newData2)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
@@ -159,6 +180,18 @@ public:
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         uint64_t findAtLevelID = 0;
         bool status = findPrefixTreeNode(rootNode_, prefixStr, newData, findAtLevelID);
+        if (status == true) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    bool get(const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& newData)
+    {
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        uint64_t findAtLevelID = 0;
+        bool status = findPrefixTreeNode(rootNode_, prefixU64, newData, findAtLevelID);
         if (status == true) {
             return true;
         } else {
@@ -470,6 +503,105 @@ private:
         return false;
     }
 
+    bool addPrefixTreeNode(prefixTreeNode* root, const uint64_t& prefixU64, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
+    {
+        uint64_t currentLevel = 0;
+        char prefixStr[64]; 
+        for (; currentLevel < 64; currentLevel++) {
+            // cout << "Current level = " << currentLevel << endl;
+            if ((prefixU64 & (1 << currentLevel)) == 0) {
+                prefixStr[currentLevel] = '0';
+                // go to left if 0
+                if (root->leftChildNodePtr_ == nullptr) {
+                    root->leftChildNodePtr_ = new prefixTreeNode;
+                    // insert at next level
+                    root = root->leftChildNodePtr_;
+                    root->isLeafNodeFlag_ = true;
+                    root->data_ = newDataObj;
+                    root->currentNodePrefix = string(prefixStr, currentLevel + 1);
+                    root->thisNodeID_ = nextNodeID_;
+                    nextNodeID_++;
+                    insertAtLevelID = currentLevel + 1;
+                    return true;
+                } else {
+                    root = root->leftChildNodePtr_;
+                    if (root->isLeafNodeFlag_ == true) {
+                        root->isLeafNodeFlag_ = false;
+                        currentFileNumber_--;
+                        debug_info("Meet old leaf node (left) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s, currentFilnumber = %lu\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str(), currentFileNumber_);
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
+            } else {
+                prefixStr[currentLevel] = '1';
+                // go to right if 1
+                if (root->rightChildNodePtr_ == nullptr) {
+                    root->rightChildNodePtr_ = new prefixTreeNode;
+                    // insert at next level
+                    root = root->rightChildNodePtr_;
+                    root->isLeafNodeFlag_ = true;
+                    root->data_ = newDataObj;
+                    root->currentNodePrefix = string(prefixStr, currentLevel + 1);
+                    root->thisNodeID_ = nextNodeID_;
+                    nextNodeID_++;
+                    insertAtLevelID = currentLevel + 1;
+                    return true;
+                } else {
+                    root = root->rightChildNodePtr_;
+                    if (root->isLeafNodeFlag_ == true) {
+                        root->isLeafNodeFlag_ = false;
+                        currentFileNumber_--;
+                        debug_info("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s, currentFilnumber = %lu\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str(), currentFileNumber_);
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
+            }
+        }
+        currentLevel++;
+        if ((prefixU64 & (1 << currentLevel)) == 0) {
+            prefixStr[currentLevel] = '0';
+            // go to left if 0
+            if (root->leftChildNodePtr_ == nullptr) {
+                root->leftChildNodePtr_ = new prefixTreeNode;
+                // insert at next level
+                root = root->leftChildNodePtr_;
+                root->isLeafNodeFlag_ = true;
+                root->data_ = newDataObj;
+                root->currentNodePrefix = string(prefixStr, currentLevel + 1);
+                root->thisNodeID_ = nextNodeID_;
+                nextNodeID_++;
+                insertAtLevelID = currentLevel + 1;
+                return true;
+            } else {
+                debug_error("[ERROR] Find left node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                return false;
+            }
+        } else {
+            prefixStr[currentLevel] = '1';
+            // go to right if 1
+            if (root->rightChildNodePtr_ == nullptr) {
+                root->rightChildNodePtr_ = new prefixTreeNode;
+                // insert at next level
+                root = root->rightChildNodePtr_;
+                root->isLeafNodeFlag_ = true;
+                root->data_ = newDataObj;
+                root->currentNodePrefix = string(prefixStr, currentLevel + 1);
+                root->thisNodeID_ = nextNodeID_;
+                nextNodeID_++;
+                insertAtLevelID = currentLevel + 1;
+                return true;
+            } else {
+                debug_error("[ERROR] Find right node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                return false;
+            }
+        }
+        return false;
+    }
+
     bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, const string& bitBasedPrefixStr, uint64_t fixedBitNumber, hashStoreFileMetaDataHandler* newDataObj, uint64_t& insertAtLevelID)
     {
         uint64_t currentLevel = 0;
@@ -555,6 +687,55 @@ private:
         uint64_t currentLevel = 0;
         for (; currentLevel < bitBasedPrefixStr.size(); currentLevel++) {
             if (bitBasedPrefixStr.at(currentLevel) == '0') {
+                // go to left if 0
+                if (root->isLeafNodeFlag_ == true) {
+                    currentDataTObj = root->data_;
+                    findAtLevelID = currentLevel;
+                    return true;
+                } else {
+                    if (root->leftChildNodePtr_ == nullptr) {
+                        debug_info("No left node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        return false;
+                    } else {
+                        root = root->leftChildNodePtr_;
+                    }
+                }
+            } else {
+                // go to right if 1
+                if (root->isLeafNodeFlag_ == true) {
+                    currentDataTObj = root->data_;
+                    findAtLevelID = currentLevel;
+                    return true;
+                } else {
+                    if (root->rightChildNodePtr_ == nullptr) {
+                        debug_info("No right node, but this node is not leaf node, not exist. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                        return false;
+                    } else {
+                        root = root->rightChildNodePtr_;
+                    }
+                }
+            }
+        }
+        if (root == nullptr) {
+            debug_info("This node not exist, may be deleted. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+            return false;
+        } else {
+            if (root->isLeafNodeFlag_ == true) {
+                currentDataTObj = root->data_;
+                findAtLevelID = currentLevel;
+                return true;
+            } else {
+                debug_info("This node is not leaf node. current level = %lu, node prefix length = %lu, prefix = %s\n", currentLevel, root->currentNodePrefix.size(), root->currentNodePrefix.c_str());
+                return false;
+            }
+        }
+    }
+
+    bool findPrefixTreeNode(prefixTreeNode* root, const uint64_t& prefixU64, hashStoreFileMetaDataHandler*& currentDataTObj, uint64_t& findAtLevelID)
+    {
+        uint64_t currentLevel = 0;
+        for (; currentLevel < 64; currentLevel++) {
+            if ((prefixU64 & (1 << currentLevel)) == 0) {
                 // go to left if 0
                 if (root->isLeafNodeFlag_ == true) {
                     currentDataTObj = root->data_;

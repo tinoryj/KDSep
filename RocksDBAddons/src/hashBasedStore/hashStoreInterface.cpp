@@ -126,8 +126,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
     for (auto i = 0; i < objectPairMemPoolHandlerVec.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
         bool getFileHandlerStatus;
-        string prefixStr;
-        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(objectPairMemPoolHandlerVec[i].keyPtr_, objectPairMemPoolHandlerVec[i].keySize_, kPut, currentFileHandlerPtr, prefixStr, objectPairMemPoolHandlerVec[i].isAnchorFlag_), StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
+        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(objectPairMemPoolHandlerVec[i].keyPtr_, objectPairMemPoolHandlerVec[i].keySize_, kPut, currentFileHandlerPtr, objectPairMemPoolHandlerVec[i].isAnchorFlag_), StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
         if (getFileHandlerStatus != true) {
             debug_error("[ERROR] Get file handler for key = %s error during multiput\n", objectPairMemPoolHandlerVec[i].keyPtr_);
             return false;
@@ -170,37 +169,31 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
             return true;
         }
     } else {
-        vector<mempoolHandler_t> handlerVecTemp[fileHandlerToIndexMap.size()];
-        // for selective putinto job queue
-        auto processedHandlerIndex = 0;
-        unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
+        uint32_t handlerVecIndex = 0;
+        uint32_t handlerStartVecIndex = 0;
+        uint32_t opHandlerIndex = 0;
+        mempoolHandler_t handlerVecTemp[objectPairMemPoolHandlerVec.size()];
         vector<hashStoreOperationHandler*> handlers; 
+        handlers.resize(fileHandlerToIndexMap.size());
         for (auto mapIt : fileHandlerToIndexMap) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            handlerVecTemp[processedHandlerIndex].resize(mapIt.second.size());
+            handlerStartVecIndex = handlerVecIndex;
             for (auto index = 0; index < mapIt.second.size(); index++) {
-                handlerVecTemp[processedHandlerIndex][index] = objectPairMemPoolHandlerVec[mapIt.second[index]];
+                handlerVecTemp[handlerVecIndex++] = objectPairMemPoolHandlerVec[mapIt.second[index]];
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
             mapIt.first->markedByMultiPut_ = false;
             hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
-            currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = &handlerVecTemp[processedHandlerIndex];
+            currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = handlerVecTemp + handlerStartVecIndex;
+            currentOperationHandler->batched_write_operation_.size = handlerVecIndex - handlerStartVecIndex;
             currentOperationHandler->jobDone_ = kNotDone;
             currentOperationHandler->opType_ = kMultiPut;
             STAT_PROCESS(hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
-            handlers.push_back(currentOperationHandler);
-            processedHandlerIndex++;
+            handlers[opHandlerIndex++] = currentOperationHandler;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
         gettimeofday(&tv, 0);
-        bool putStatus;
-        if (tempFileHandlerMap.size() != 0) {
-            putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
-            if (putStatus != true) {
-                debug_error("[ERROR] write to dLog error for keys, number = %lu\n", tempFileHandlerMap.size());
-            } 
-        }
 
         for (auto& it : handlers) {
             hashStoreFileOperatorPtr_->waitOperationHandlerDone(it);
