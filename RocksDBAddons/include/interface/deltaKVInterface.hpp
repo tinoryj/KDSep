@@ -65,12 +65,14 @@ private:
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
+    void processLsmInterfaceOperationsWorker();
 
     bool isDeltaStoreInUseFlag_ = false;
     bool useInternalRocksDBBatchOperationsFlag_ = false;
     bool isBatchedOperationsWithBufferInUse_ = false;
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
+    bool enableParallelLsmInterface = true;
 
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
     int writeBackWhenReadDeltaSizeThreshold_ = 4;
@@ -84,6 +86,7 @@ private:
     std::shared_mutex batchedBufferOperationMtx_;
 
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
+    messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;
     bool enableKeyValueCache_ = false;

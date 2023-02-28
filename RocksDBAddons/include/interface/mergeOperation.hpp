@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/dataStructure.hpp"
-#include "common/rocksdbHeaders.hpp"
 #include "utils/debug.hpp"
 #include <bits/stdc++.h>
 using namespace std;

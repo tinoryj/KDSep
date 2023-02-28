@@ -6,6 +6,7 @@
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
 #include <shared_mutex>
+#include "common/rocksdbHeaders.hpp"
 
 using namespace std;
 
@@ -228,6 +229,15 @@ typedef struct writeBackObjectStruct {
     };
     writeBackObjectStruct() {};
 } writeBackObjectStruct; // key to value pair fpr write back
+
+struct lsmInterfaceOperationStruct {
+    string key;
+    string* value;
+    rocksdb::WriteBatch* mergeBatch;
+    vector<mempoolHandler_t>* handlerToValueStoreVecPtr;
+    bool is_write;
+    operationStatus job_done = kNotDone;
+};
 
 // following enums are used for indexStore only
 enum DataType {

@@ -104,6 +104,8 @@ enum StatsType {
     DKV_MERGE_APPEND_BUFFER,
     DKV_MERGE_FULL_MERGE,
 
+    DKV_LSM_INTERFACE_OP,
+
     /* put requests */
     DKV_PUT_LOCK_1,
     DKV_PUT_LOCK_2,
@@ -111,6 +113,7 @@ enum StatsType {
 
     /* get requests */
     DKV_GET_FULL_MERGE,
+    DKV_LSM_INTERFACE_GET,
 
     /* Flush buffer */
     DKV_FLUSH,
@@ -121,6 +124,7 @@ enum StatsType {
     DKV_FLUSH_WITH_NO_DSTORE,
     DKV_FLUSH_MUTIPUT_DSTORE,
     DKV_FLUSH_LSM_INTERFACE,
+    LSM_FLUSH_VLOG,
     LSM_FLUSH_ROCKSDB,
     LSM_FLUSH_WAL,
 

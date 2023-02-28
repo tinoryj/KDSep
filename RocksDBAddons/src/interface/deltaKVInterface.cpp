@@ -18,6 +18,10 @@ DeltaKV::~DeltaKV()
     if (enableWriteBackOperationsFlag_ == true) {
         delete writeBackOperationsQueue_;
     }
+    cerr << "[DeltaKV Interface] Try delete lsm interface" << endl;
+    if (enableParallelLsmInterface == true) {
+        delete lsmInterfaceOperationsQueue_;
+    }
     cerr << "[DeltaKV Interface] Try delete Read Cache" << endl;
     if (enableKeyValueCache_ == true) {
         delete keyToValueListCache_;
@@ -70,6 +74,13 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         writeBackWhenReadDeltaSizeThreshold_ = options.deltaStore_write_back_during_reads_size_threshold;
         writeBackOperationsQueue_ = new messageQueue<writeBackObjectStruct*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processWriteBackOperationsWorker, this));
+        thList_.push_back(th);
+    }
+
+    if (options.enable_parallel_lsm_interface_ == true) {
+        enableParallelLsmInterface = true;
+        lsmInterfaceOperationsQueue_ = new messageQueue<lsmInterfaceOperationStruct*>;
+        boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processLsmInterfaceOperationsWorker, this));
         thList_.push_back(th);
     }
 
@@ -143,6 +154,14 @@ bool DeltaKV::Close()
         cerr << "\tFlush write batch done" << endl;
     }
     cerr << "[DeltaKV Close DB] Set job done" << endl;
+    if (enableParallelLsmInterface == true) {
+        lsmInterfaceOperationsQueue_->done_ = true;
+        while (lsmInterfaceOperationsQueue_->isEmpty() == false) {
+            asm volatile("");
+        }
+        cerr << "\tLSM tree interface operations done" << endl;
+    }
+    cerr << "[DeltaKV Close DB] LSM-tree interface" << endl;
     if (isDeltaStoreInUseFlag_ == true) {
         HashStoreInterfaceObjPtr_->setJobDone();
         cerr << "\tHashStore set job done" << endl;
@@ -215,26 +234,26 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         return true;
     }
 
-    // Use deltaStore
-    string internalValueStr;
-    bool ret;
-    STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &internalValueStr), StatsType::LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
-
-    if (ret == false) {
-        debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
-        return false;
-    } 
-
-    internalValueType tempInternalValueHeader;
-    memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
-    string rawValueStr;
-
-    if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
-        debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
-        assert(0);
-    }
-
     if (enableLsmTreeDeltaMeta_ == true) {
+        // Use deltaStore
+        string internalValueStr;
+        bool ret;
+        STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &internalValueStr), StatsType::LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
+
+        if (ret == false) {
+            debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
+            return false;
+        } 
+
+        internalValueType tempInternalValueHeader;
+        memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
+        string rawValueStr;
+
+        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+            debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
+            assert(0);
+        }
+
         if (tempInternalValueHeader.mergeFlag_ == true) {
             if (enableLsmTreeDeltaMeta_ == false) {
                 debug_error("[ERROR] settings with no metadata but LSM-tree has metadata, key %s\n", key.c_str());
@@ -323,16 +342,54 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         }
     } else {
         // do not have metadata
-        str_t internalRawValueStrT(internalValueStr.data() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
-        maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
+
+        // Use deltaStore
+        string internalValueStr;
+        bool ret;
+        struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr;
+       
+        if (enableParallelLsmInterface == true) {
+            lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
+            lsmInterfaceOpPtr->key = key;
+            lsmInterfaceOpPtr->value = &internalValueStr;
+            lsmInterfaceOpPtr->is_write = false;
+            lsmInterfaceOpPtr->job_done = kNotDone;
+            lsmInterfaceOperationsQueue_->push(lsmInterfaceOpPtr);
+        } else {
+            STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &internalValueStr), StatsType::LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
+            if (ret == false) {
+                debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
+                return false;
+            }
+        }
+
         // get deltas from delta store
         vector<string> deltasFromDeltaStoreVec;
-        bool ret = false;
+        ret = false;
         STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
         if (ret != true) {
             debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
             return false;
         } 
+
+        if (enableParallelLsmInterface == true) {
+            while (lsmInterfaceOpPtr->job_done == kNotDone) {
+                asm volatile("");
+            }
+            delete lsmInterfaceOpPtr;
+        }
+
+        internalValueType tempInternalValueHeader;
+        memcpy(&tempInternalValueHeader, internalValueStr.c_str(), sizeof(internalValueType));
+        string rawValueStr;
+
+        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+            debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
+            assert(0);
+        }
+
+        str_t internalRawValueStrT(internalValueStr.data() + sizeof(internalValueType), tempInternalValueHeader.rawValueSize_);
+        maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
         
         if (deltasFromDeltaStoreVec.empty() == false) {
             bool mergeOperationStatus;
@@ -1027,18 +1084,12 @@ void DeltaKV::processBatchedOperationsWorker()
                         spearateTrueCounter++;
                     }
                 }
-                // cerr << "handlerToDeltaStoreVec size = " << handlerToDeltaStoreVec.size() << ", notSeparatedDeltasVec size = " << notSeparatedDeltasVec.size() << ", separate flag number = " << separateFlagVec.size() << ", separated counter = " << spearateTrueCounter << ", not separated counter = " << separateFalseCounter << endl;
-                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), StatsType::DKV_FLUSH_MUTIPUT_DSTORE);
-                if (putToDeltaStoreStatus == false) {
-                    debug_error("[ERROR] could not put %zu object into delta store, as well as not separated object number = %zu\n", handlerToDeltaStoreVec.size(), notSeparatedDeltasVec.size());
-                    break;
-                }
 
                 rocksdb::WriteBatch mergeBatch;
 
                 auto separatedID = 0, notSeparatedID = 0;
-                for (auto separatedDeltaFlagIndex = 0; separatedDeltaFlagIndex < separateFlagVec.size(); separatedDeltaFlagIndex++) {
-                    if (enableLsmTreeDeltaMeta_ == true) {
+                if (enableLsmTreeDeltaMeta_ == true) {
+                    for (auto separatedDeltaFlagIndex = 0; separatedDeltaFlagIndex < separateFlagVec.size(); separatedDeltaFlagIndex++) {
                         if (separateFlagVec[separatedDeltaFlagIndex] == false) {
                             if (notSeparatedDeltasVec[notSeparatedID].isAnchorFlag_ == false) {
                                 char writeInternalValueBuffer[sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
@@ -1047,7 +1098,6 @@ void DeltaKV::processBatchedOperationsWorker()
                                 memcpy(writeInternalValueBuffer + sizeof(internalValueType), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
                                 rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
                                 rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                rocksdb::Status rocksDBStatus;
                                 debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
@@ -1062,7 +1112,6 @@ void DeltaKV::processBatchedOperationsWorker()
                                 memcpy(writeInternalValueBuffer, &currentInternalValueType, sizeof(internalValueType));
                                 rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
                                 rocksdb::Slice newValue(writeInternalValueBuffer, sizeof(internalValueType));
-                                rocksdb::Status rocksDBStatus;
                                 debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
@@ -1071,12 +1120,45 @@ void DeltaKV::processBatchedOperationsWorker()
                             }
                             separatedID++;
                         }
-                    } else {
-                        // don't do anything
-                    }
+                    } 
+                } else {
+                    // don't do anything
                 }
-                rocksdb::Status rocksDBStatus;
-                STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch), StatsType::DKV_FLUSH_LSM_INTERFACE);
+
+                // LSM interface
+                struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr = nullptr;
+                if (enableParallelLsmInterface == true) {
+                    lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
+                    lsmInterfaceOpPtr->mergeBatch = &mergeBatch; 
+                    lsmInterfaceOpPtr->handlerToValueStoreVecPtr = &handlerToValueStoreVec;
+                    lsmInterfaceOpPtr->is_write = true;
+                    lsmInterfaceOpPtr->job_done = kNotDone;
+                    lsmInterfaceOperationsQueue_->push(lsmInterfaceOpPtr);
+                } else {
+                    STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch), 
+                            StatsType::DKV_FLUSH_LSM_INTERFACE);
+                }
+
+                // DeltaStore interface
+                STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), 
+                        StatsType::DKV_FLUSH_MUTIPUT_DSTORE);
+                if (putToDeltaStoreStatus == false) {
+                    debug_error("[ERROR] could not put %zu object into delta store,"
+                            " as well as not separated object number = %zu\n", 
+                            handlerToDeltaStoreVec.size(), notSeparatedDeltasVec.size());
+                    break;
+                }
+
+                // Check LSM interface
+                if (enableParallelLsmInterface == true) {
+                    while (lsmInterfaceOpPtr->job_done == kNotDone) {
+                        asm volatile("");
+                    }
+                    if (lsmInterfaceOpPtr->job_done == kError) {
+                        debug_error("lsmInterfaceOp error %s\n", ""); 
+                    }
+                    delete lsmInterfaceOpPtr;
+                }
                 
                 StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_DSTORE, tv);
                 break;
@@ -1125,6 +1207,29 @@ void DeltaKV::processWriteBackOperationsWorker()
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
             delete currentProcessPair;
+        }
+    }
+    return;
+}
+
+void DeltaKV::processLsmInterfaceOperationsWorker()
+{
+    while (true) {
+        if (lsmInterfaceOperationsQueue_->done_ == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
+            break;
+        }
+        lsmInterfaceOperationStruct* op;
+        if (lsmInterfaceOperationsQueue_->pop(op)) {
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            if (op->is_write == false) {
+                STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
+            } else {
+                STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(*(op->handlerToValueStoreVecPtr), op->mergeBatch), 
+                            StatsType::DKV_FLUSH_LSM_INTERFACE);
+            }
+            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
+            op->job_done = kDone;
         }
     }
     return;

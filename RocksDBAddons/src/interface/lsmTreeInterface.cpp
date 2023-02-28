@@ -221,7 +221,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         }
 
         if (!memPoolHandlerForPutVlog.empty()) {
-            IndexStoreInterfaceObjPtr_->multiPut(memPoolHandlersPut);
+            STAT_PROCESS(IndexStoreInterfaceObjPtr_->multiPut(memPoolHandlersPut), StatsType::LSM_FLUSH_VLOG);
         }
     }
 

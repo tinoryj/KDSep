@@ -196,6 +196,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
     PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);
     PRINT_FULL("  lsm-interface", DKV_FLUSH_LSM_INTERFACE, time[DKV_FLUSH]);
+    PRINT_FULL("    put-merge", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
     PRINT_FULL("    put-merge", LSM_FLUSH_ROCKSDB, time[DKV_FLUSH]);
     PRINT_FULL("    flush-wal", LSM_FLUSH_WAL, time[DKV_FLUSH]);
 
@@ -215,9 +216,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_GET]);
     PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_GET]);
     PRINT_FULL("Get-internal", DELTAKV_BATCH_READ_STORE, time[DELTAKV_GET]);
-    PRINT_FULL("  lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
-    PRINT_FULL("    get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
-    PRINT_FULL("    get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
+    PRINT_FULL("  dkv-lsm", DKV_LSM_INTERFACE_OP, time[DELTAKV_GET]);
+    PRINT_FULL("    lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
+    PRINT_FULL("      get-rocksdb", DELTAKV_GET_ROCKSDB, time[DELTAKV_GET]);
+    PRINT_FULL("      get-vLog", DELTAKV_GET_INDEXSTORE, time[DELTAKV_GET]);
     PRINT_FULL("  process-buffer", DELTAKV_GET_PROCESS_BUFFER, time[DELTAKV_GET]);
     PRINT_FULL("  get-dStore", DELTAKV_GET_HASHSTORE, time[DELTAKV_GET]);
     PRINT_FULL("  full merge", DELTAKV_GET_FULL_MERGE, time[DELTAKV_GET]);
