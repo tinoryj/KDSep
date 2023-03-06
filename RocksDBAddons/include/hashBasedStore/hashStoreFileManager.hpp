@@ -34,6 +34,8 @@ public:
     bool forcedManualDelteAllObsoleteFiles();
     bool setJobDone();
 
+    void pushToGCQueue(hashStoreFileMetaDataHandler* fileHandlerPtr);
+
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
     std::condition_variable deltaStore_workers_cond;
@@ -113,7 +115,9 @@ private:
     messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
     AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
     std::mutex operationNotifyMtx_;
+    std::mutex metaCommitMtx_;
     std::condition_variable operationNotifyCV_;
+    std::condition_variable metaCommitCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
 };

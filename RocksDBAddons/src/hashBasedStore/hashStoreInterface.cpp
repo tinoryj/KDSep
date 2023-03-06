@@ -24,7 +24,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     } else {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_);
     }
-    hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, notifyGCMQ_);
+    hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, hashStoreFileManager);
     if (!hashStoreFileManager) {
         debug_error("[ERROR] Create HashStoreFileManager error,  file path = %s\n", workingDirStr.c_str());
     }

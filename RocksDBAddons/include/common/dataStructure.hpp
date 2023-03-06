@@ -5,6 +5,7 @@
 #include "utils/mempool.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
+#include <condition_variable>
 #include <shared_mutex>
 #include "common/rocksdbHeaders.hpp"
 

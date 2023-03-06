@@ -90,6 +90,7 @@ HashStoreFileManager::~HashStoreFileManager()
 bool HashStoreFileManager::setJobDone()
 {
     metadataUpdateShouldExit_ = true;
+    metaCommitCV_.notify_all();
     if (enableGCFlag_ == true) {
         notifyGCMQ_->done_ = true;
         while (workingThreadExitFlagVec_ != singleFileGCWorkerThreadsNumebr_) {
@@ -97,6 +98,11 @@ bool HashStoreFileManager::setJobDone()
         }
     }
     return true;
+}
+
+void HashStoreFileManager::pushToGCQueue(hashStoreFileMetaDataHandler* fileHandlerPtr) {
+    notifyGCMQ_->push(fileHandlerPtr);
+    operationNotifyCV_.notify_all();
 }
 
 // Recovery
@@ -960,6 +966,9 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(char*
     if (opType == kMultiPut) {
         operationCounterMtx_.lock();
         operationCounterForMetadataCommit_++;
+        if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
+            metaCommitCV_.notify_one();
+        }
         operationCounterMtx_.unlock();
     }
 
@@ -1917,7 +1926,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
     while (true) {
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            operationNotifyCV_.wait(lk);
+            while (notifyGCMQ_->done_ == false && notifyGCMQ_->isEmpty() == true) {
+                operationNotifyCV_.wait(lk);
+            }
         }
         if (notifyGCMQ_->done_ == true && notifyGCMQ_->isEmpty() == true) {
             break;
@@ -2154,9 +2165,10 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 void HashStoreFileManager::scheduleMetadataUpdateWorker()
 {
     while (true) {
-        if (enableGCFlag_ == true) {
-            if (notifyGCMQ_->isEmpty() == false) {
-                operationNotifyCV_.notify_all();
+        {
+            std::unique_lock<std::mutex> lk(metaCommitMtx_);
+            while (metadataUpdateShouldExit_ == false && operationCounterForMetadataCommit_ < operationNumberForMetadataCommitThreshold_) {
+                metaCommitCV_.wait(lk);
             }
         }
         if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
@@ -2189,6 +2201,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             if (fileHandlerIt.second->total_on_disk_bytes_ + fileHandlerIt.second->file_operation_func_ptr_->getFileBufferedSize() > singleFileGCTriggerSize_) {
                 debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, but size overflow\n", fileHandlerIt.second->target_file_id_, fileHandlerIt.second->total_on_disk_bytes_);
                 notifyGCMQ_->push(fileHandlerIt.second);
+                operationNotifyCV_.notify_one();
                 // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
                 continue;
             } else {
@@ -2206,6 +2219,7 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
             if (fileHandlerIt.second->total_on_disk_bytes_ + fileHandlerIt.second->file_operation_func_ptr_->getFileBufferedSize() > singleFileGCTriggerSize_) {
                 // cerr << "Push file ID = " << fileHandlerIt.second->target_file_id_ << endl;
                 notifyGCMQ_->push(fileHandlerIt.second);
+                operationNotifyCV_.notify_one();
             }
         }
     }

@@ -1,10 +1,11 @@
 #include "hashBasedStore/hashStoreFileOperator.hpp"
+#include "hashBasedStore/hashStoreFileManager.hpp"
 #include "utils/bucketKeyFilter.hpp"
 #include "utils/statsRecorder.hh"
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ)
+HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, HashStoreFileManager* hashStoreFileManager)
 {
     perFileFlushBufferSizeLimit_ = options->deltaStore_file_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_single_file_maximum_size;
@@ -18,7 +19,8 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     }
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
-    notifyGCToManagerMQ_ = notifyGCToManagerMQ;
+//    notifyGCToManagerMQ_ = notifyGCToManagerMQ;
+    hashStoreFileManager_ = hashStoreFileManager;
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForForcedSingleFileGCThreshold_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
@@ -43,8 +45,9 @@ bool HashStoreFileOperator::setJobDone()
 {
     if (operationToWorkerMQ_ != nullptr) {
         operationToWorkerMQ_->done_ = true;
+        operationNotifyCV_.notify_all();
         while (workingThreadExitFlagVec_ != workerThreadNumber_) {
-            operationNotifyCV_.notify_all();
+            asm volatile("");
         }
     }
     return true;
@@ -58,6 +61,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     currentHandler->write_operation_.mempoolHandler_ptr_ = mempoolHandler;
     currentHandler->opType_ = kPut;
     operationToWorkerMQ_->push(currentHandler);
+    operationNotifyCV_.notify_all();
     if (currentHandler->jobDone_ == kNotDone) {
         debug_trace("Wait for write job done%s\n", "");
         while (currentHandler->jobDone_ == kNotDone) {
@@ -74,10 +78,12 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     }
 }
 
-//bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler)
-//{
-//    return operationToWorkerMQ_->push(currentOperationHandler);
-//}
+bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler)
+{
+    bool ret = operationToWorkerMQ_->push(currentOperationHandler);
+    operationNotifyCV_.notify_all();
+    return ret;
+}
 
 bool HashStoreFileOperator::waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler) {
     while (currentOperationHandler->jobDone_ == kNotDone) {
@@ -441,7 +447,8 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
             if (fileHandler->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
                 fileHandler->file_ownership_flag_ = -1;
                 fileHandler->gc_result_status_flag_ = kMayGC;
-                notifyGCToManagerMQ_->push(fileHandler);
+//                notifyGCToManagerMQ_->push(fileHandler);
+                hashStoreFileManager_->pushToGCQueue(fileHandler);
                 debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue, no gc wait count = %lu, threshold = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
                 fileHandler->no_gc_wait_operation_number_ = 0;
                 return true;
@@ -454,7 +461,8 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
             }
         } else if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
             fileHandler->file_ownership_flag_ = -1;
-            notifyGCToManagerMQ_->push(fileHandler);
+//            notifyGCToManagerMQ_->push(fileHandler);
+            hashStoreFileManager_->pushToGCQueue(fileHandler);
             debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize());
             return true;
         } else {
@@ -843,7 +851,9 @@ void HashStoreFileOperator::operationWorker(int threadID)
     while (true) {
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            operationNotifyCV_.wait(lk);
+            while (operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done_ == false) {
+                operationNotifyCV_.wait(lk);
+            }
         }
         if (operationToWorkerMQ_->done_ == true && operationToWorkerMQ_->isEmpty() == true) {
             break;

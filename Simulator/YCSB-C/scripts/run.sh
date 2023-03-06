@@ -122,6 +122,7 @@ paretokey="false"
 nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
+gcWriteBackSize=1000
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -138,11 +139,12 @@ usekvkd="false"
 usebkvkd="false"
 gc="true"
 maxFileNumber="16"
-blockSize=4096
+blockSize=65536
 fake="false"
 nodirect="false"
 nommap="false"
 checkRepeat="false"
+rmw="false"
 sstsz=64
 l1sz=256
 memtable=64
@@ -195,7 +197,7 @@ for param in $*; do
     elif [[ "$param" =~ ^bn[0-9]+$ ]]; then
         bn=`echo $param | sed 's/bn//g'`
         run_suffix=${run_suffix}_${param}
-    elif [[ "$param" =~ ^Exp[0-9]+$ ]]; then
+    elif [[ "$param" =~ ^Exp[0-9a-zA-Z]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
 #        ResultLogFolder="$storagePrefix/Exp$ExpID/ResultLogs"
 #        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
@@ -255,8 +257,13 @@ for param in $*; do
         run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=$(echo $param | sed 's/blockSize//g')
-        if [[ $blockSize -ne 4096 ]]; then
+        if [[ $blockSize -ne 65536 ]]; then
             suffix=${suffix}_$param
+        fi
+    elif [[ "$param" =~ ^gcWriteBackSize[0-9]+$ ]]; then
+        gcWriteBackSize=$(echo $param | sed 's/gcWriteBackSize//g')
+        if [[ $gcWriteBackSize -ne 1000 ]]; then
+            run_suffix=${run_suffix}_$param
         fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         sstsz=`echo $param | sed 's/sst//g'`
@@ -303,6 +310,8 @@ for param in $*; do
         nogc="true"
     elif [[ "$param" == "checkrepeat" ]]; then
         checkRepeat="true"
+    elif [[ "$param" == "rmw" ]]; then
+        rmw="true"
     fi
 done
 
@@ -334,6 +343,7 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/deltaLogSplitGCThreshold/c\\deltaLogSplitGCThreshold = $deltaLogSplitGCThreshold" temp.ini
     sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
+    sed -i "/deltaStoreGcWriteBackDeltaSizeThreshold/c\\deltaStoreGcWriteBackDeltaSizeThreshold = $gcWriteBackSize" temp.ini
 fi
 
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
@@ -503,7 +513,11 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
     sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
     sed -i "15s/0/$ReadProportion/g" workload-temp.spec
-    sed -i "16s/0/$UpdateProportion/g" workload-temp.spec
+    if [[ "$rmw" == "false" ]]; then
+        sed -i "16s/0/$UpdateProportion/g" workload-temp.spec
+    else
+        sed -i "17s/0/$UpdateProportion/g" workload-temp.spec
+    fi
     sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
     sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
     if [[ $paretokey == "true" ]]; then

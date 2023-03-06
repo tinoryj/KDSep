@@ -105,6 +105,9 @@ private:
     HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
+
+    std::mutex lsm_interface_mutex;
+    std::condition_variable lsm_interface_cv;
 };
 
 } // namespace DELTAKV_NAMESPACE

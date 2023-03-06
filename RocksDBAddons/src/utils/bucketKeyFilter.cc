@@ -32,18 +32,7 @@ BucketKeyFilter::BucketKeyFilter() {
 }
 
 BucketKeyFilter::~BucketKeyFilter() {
-    for (auto& it : keys) {
-        delete[] it.data_;
-    }
-    keys.clear();
-    for (auto& it : erased_keys) {
-        delete[] it.data_;
-    }
-    erased_keys.clear();
-    if (bm != nullptr) {
-        delete bm;
-        bm = nullptr;
-    }
+    Clear();
 }
 
 bool BucketKeyFilter::SingleInsertToBitmap(const str_t& key) {
@@ -139,8 +128,10 @@ bool BucketKeyFilter::Erase(const str_t& key) {
 }
 
 void BucketKeyFilter::Clear() {
-    delete bm;
-    bm = nullptr;
+    if (bm != nullptr) {
+        delete bm;
+        bm = nullptr;
+    }
     for (auto& it : keys) {
         delete[] it.data_;
     }

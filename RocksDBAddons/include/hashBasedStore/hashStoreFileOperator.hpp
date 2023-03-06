@@ -11,15 +11,15 @@
 
 namespace DELTAKV_NAMESPACE {
 
+class HashStoreFileManager;
+
 class HashStoreFileOperator {
 public:
-    HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ);
+    HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, HashStoreFileManager* hashStoreFileManager /*messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ*/);
     ~HashStoreFileOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
-    inline bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler) {
-        return operationToWorkerMQ_->push(currentOperationHandler);
-    }
+    bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler); 
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
@@ -51,7 +51,7 @@ private:
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
-    messageQueue<hashStoreFileMetaDataHandler*>* notifyGCToManagerMQ_ = nullptr;
+    HashStoreFileManager* hashStoreFileManager_ = nullptr;
     AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
     bool useStrTCache_ = true;
     std::mutex operationNotifyMtx_;
