@@ -59,7 +59,7 @@ class ExternDBConfig {
     uint64_t blockSize;
     uint64_t minBlobSize;
     bool cacheIndexAndFilterBlocks_;
-    uint64_t maxKeyValueSize_;
+    uint64_t maxKeyValueSize;
     uint64_t maxOpenFiles;
     bool deltaStore_KDLevel_cache_use_str_t_;
 
@@ -112,7 +112,7 @@ class ExternDBConfig {
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
         enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
-        maxKeyValueSize_ = pt_.get<uint64_t>("config.maxKeyValueSize_", 4096);
+        maxKeyValueSize = pt_.get<uint64_t>("config.maxKeyValueSize", 4096);
         maxOpenFiles = pt_.get<uint64_t>("config.maxOpenFiles", 1048576);
         minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 800);
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
@@ -272,7 +272,7 @@ class ExternDBConfig {
         return blockSize;
     }
     uint64_t getMaxKeyValueSize() {
-        return maxKeyValueSize_;
+        return maxKeyValueSize;
     }
     uint64_t getMaxOpenFiles() {
         return maxOpenFiles;

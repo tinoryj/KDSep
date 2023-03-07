@@ -403,7 +403,7 @@ if [[ $nogc == "true" ]]; then
 fi
 
 maxKeyValueSize=$(( (${fieldcount} * ${fieldlength} + 4095) / 4096 * 4096))
-sed -i "/maxKeyValueSize_/c\\maxKeyValueSize_ = $maxKeyValueSize" temp.ini 
+sed -i "/maxKeyValueSize/c\\maxKeyValueSize = $maxKeyValueSize" temp.ini 
 sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini 
 sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
 sed -i "/maxBytesForLevelBase/c\\maxBytesForLevelBase = $(( $l1sz * 1024 ))" temp.ini 
@@ -483,7 +483,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     cp workloads/workloadTemplate.spec $SPEC 
     sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
 #    sed -i "10s/NaN/10000000/g" $SPEC 
-    sed -i "10s/NaN/10000000/g" $SPEC 
+    sed -i "10s/NaN/10000/g" $SPEC 
     sed -i "15s/0/1/g" $SPEC
     sed -i "16s/0/0/g" $SPEC
     sed -i "24s/NaN/$fieldcount/g" $SPEC
@@ -526,10 +526,16 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     echo "<===================== Modified spec file content =====================>"
     cat workload-temp.spec | head -n 25 | tail -n 17
 
-    output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
-    if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
-        output_file=`generate_file_name $ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}`
+    fileprefix=$ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}
+    if [[ "$rmw" == "true" ]]; then
+        fileprefix=$ResultLogFolder/Read-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
     fi
+
+    output_file=`generate_file_name ${fileprefix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
+    if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
+        output_file=`generate_file_name ${fileprefix}`
+    fi
+
     echo "output at $output_file"
     if [[ "$checkRepeat" == "true" ]]; then
         if [[ `echo $output_file | grep "Round-1" | wc -l` -eq 0 ]]; then

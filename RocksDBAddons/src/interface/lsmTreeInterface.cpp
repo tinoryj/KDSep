@@ -169,7 +169,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
 
             // replace the external value index with the raw value
             if (remainingDeltas.empty() == false) {
-                Slice key("", 0);
+                Slice key("lsmInterface", 12);
                 Slice existingValue(valueBuffer, valueBufferSize);
                 deque<string> operandList;
                 operandList.push_back(remainingDeltas);

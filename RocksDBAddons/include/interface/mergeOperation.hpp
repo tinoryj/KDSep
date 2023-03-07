@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/dataStructure.hpp"
+#include "common/rocksdbHeaders.hpp"
 #include "utils/debug.hpp"
 #include <bits/stdc++.h>
 using namespace std;
@@ -40,6 +41,7 @@ public:
     const char* Name() const override { return kClassName(); }
 
 private:
+    bool ExtractDeltas(bool value_separated, str_t& operand, uint64_t& delta_off, vector<str_t>& deltas, str_t& new_value_index, int& leading_index) const; 
     bool FullMergeFieldUpdates(str_t& rawValue, vector<str_t>& operandList, str_t* finalValue) const;
     bool PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& batchedOperandVec, str_t& finalDeltaListStr) const;
 };

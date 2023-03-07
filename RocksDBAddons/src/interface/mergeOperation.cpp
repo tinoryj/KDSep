@@ -2,7 +2,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-bool stringSplit(string str, const string& token, vector<string>& result)
+bool StringSplit(string str, const string& token, vector<string>& result)
 {
     while (str.size()) {
         size_t index = str.find(token);
@@ -17,7 +17,7 @@ bool stringSplit(string str, const string& token, vector<string>& result)
     return true;
 }
 
-bool stringSplit(const str_t& str, const char& tokenChar, vector<str_t>& result)
+bool StringSplit(const str_t& str, const char& tokenChar, vector<str_t>& result)
 {
     char* data = str.data_;
     char* anchor = data;
@@ -41,15 +41,15 @@ bool stringSplit(const str_t& str, const char& tokenChar, vector<str_t>& result)
     return true;
 }
 
-vector<string> stringSplit(string str, const string& token) {
+vector<string> StringSplit(string str, const string& token) {
     vector<string> result;
-    stringSplit(str, token, result);
+    StringSplit(str, token, result);
     return result;
 }
 
-vector<str_t> stringSplit(const str_t& str, const char tokenChar) {
+vector<str_t> StringSplit(const str_t& str, const char tokenChar) {
     vector<str_t> result;
-    stringSplit(str, tokenChar, result);
+    StringSplit(str, tokenChar, result);
     return result;
 }
 
@@ -62,32 +62,41 @@ int str_t_stoi(const str_t& str) {
     return ret;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::Merge(const string& rawValue, const vector<string>& operandList, string* finalValue)
-{
-    str_t rawValueStrT(const_cast<char*>(rawValue.data()), rawValue.size());
-    vector<str_t> operandListStrT;
-    for (auto& it : operandList) {
-        operandListStrT.push_back(str_t(const_cast<char*>(it.data()), it.size()));
+int IntToStringSize(int num) {
+    int result = 1;
+    while (num >= 10) {
+        result++;
+        num /= 10;
     }
-    return Merge(rawValueStrT, operandListStrT, finalValue);
+    return result;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& rawValue, const vector<str_t>& operandList, string* finalValue) {
+bool DeltaKVFieldUpdateMergeOperator::Merge(const string& raw_value, const vector<string>& operands, string* result)
+{
+    str_t rawValueStrT(const_cast<char*>(raw_value.data()), raw_value.size());
+    vector<str_t> operandListStrT;
+    for (auto& it : operands) {
+        operandListStrT.push_back(str_t(const_cast<char*>(it.data()), it.size()));
+    }
+    return Merge(rawValueStrT, operandListStrT, result);
+}
+
+bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& raw_value, const vector<str_t>& operands, string* result) {
     unordered_map<int, str_t> operandMap;
     vector<str_t> rawOperandListVec;
 //    struct timeval tv;
 //    gettimeofday(&tv, 0);
-    for (auto& it : operandList) {
-        stringSplit(it, ',', rawOperandListVec);
+    for (auto& it : operands) {
+        StringSplit(it, ',', rawOperandListVec);
     }
     for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
         int index = str_t_stoi(rawOperandListVec[it]);
         operandMap[index] = rawOperandListVec[it + 1];
     }
-    vector<str_t> rawValueFieldsVec = stringSplit(rawValue, ',');
+    vector<str_t> raw_value_fields = StringSplit(raw_value, ',');
     for (auto q : operandMap) {
-        // debug_trace("merge operand = %s, current index =  %d, content = %s, rawValue at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), rawValueFieldsVec[index].c_str());
-        rawValueFieldsVec[q.first] = q.second;
+        // debug_trace("merge operand = %s, current index =  %d, content = %s, raw_value at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), raw_value_fields[index].c_str());
+        raw_value_fields[q.first] = q.second;
     }
 
 //    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_SPLIT, &tv);
@@ -95,16 +104,16 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& rawValue, const vector<
 
     int resultSize = -1;
     int index = 0;
-    for (auto& it : rawValueFieldsVec) {
+    for (auto& it : raw_value_fields) {
         resultSize += it.size_ + 1;
     }
 
-    finalValue->resize(resultSize);
-    for (auto i = 0; i < rawValueFieldsVec.size(); i++) {
-        auto& it = rawValueFieldsVec[i];
-        memcpy(finalValue->data() + index, it.data_, it.size_); 
-        if (i < rawValueFieldsVec.size() - 1) {
-            finalValue->data()[index + it.size_] = ',';
+    result->resize(resultSize);
+    for (auto i = 0; i < raw_value_fields.size(); i++) {
+        auto& it = raw_value_fields[i];
+        memcpy(result->data() + index, it.data_, it.size_); 
+        if (i < raw_value_fields.size() - 1) {
+            result->data()[index + it.size_] = ',';
             index += it.size_ + 1;
         } else {
             index += it.size_;
@@ -116,12 +125,12 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& rawValue, const vector<
     return true;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList)
+bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operands, vector<string>& finalOperandList)
 {
     unordered_map<int, string> operandMap;
     vector<string> rawOperandListVec;
-    for (auto& it : operandList) {
-        stringSplit(it, ",", rawOperandListVec);
+    for (auto& it : operands) {
+        StringSplit(it, ",", rawOperandListVec);
     }
     // cerr << "[Partial] rawOperandListVec size = " << rawOperandListVec.size() << endl;
     for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
@@ -142,12 +151,12 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operand
     return true;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operandList, str_t& result)
+bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operands, str_t& result)
 {
     unordered_map<int, str_t> operandMap;
     vector<str_t> rawOperandListVec;
-    for (auto& it : operandList) {
-        stringSplit(it, ',', rawOperandListVec);
+    for (auto& it : operands) {
+        StringSplit(it, ',', rawOperandListVec);
     }
     for (auto it = 0; it < rawOperandListVec.size(); it += 2) {
         int index = str_t_stoi(rawOperandListVec[it]);
@@ -162,10 +171,10 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operandL
 
     for (auto& it : operandMap) {
         if (first) {
-            result.size_ += 3 + it.second.size_;
+            result.size_ += IntToStringSize(it.first) + it.second.size_ + 2;
             first = false;
         } else {
-            result.size_ += 4 + it.second.size_;
+            result.size_ += IntToStringSize(it.first) + it.second.size_ + 2;
         }
     }
 
@@ -193,156 +202,201 @@ string DeltaKVFieldUpdateMergeOperator::kClassName()
     return "DeltaKVFieldUpdateMergeOperator";
 }
 
+inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
+        str_t& operand, uint64_t& delta_off, vector<str_t>& deltas, str_t&
+        new_value_index, int& leading_index) const {
+    const int header_size = sizeof(internalValueType);
+    const int value_index_size = sizeof(externalIndexInfo);
+    str_t operand_delta;
+
+    while (delta_off < operand.size_) {
+        internalValueType* header_ptr = (internalValueType*)(operand.data_ + delta_off);
+
+        // extract the oprand
+        if (header_ptr->mergeFlag_ == true) {
+            // index update
+            // TODO fix a bug: If the value is not separated, but there is an index update.
+            assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= operand.size_);
+            new_value_index = str_t(operand.data_ + delta_off, header_size + value_index_size);
+            delta_off += header_size + value_index_size;
+        } else {
+            // Check whether we need to collect the raw deltas for immediate merging.
+            // 1. The value should be not separated (i.e., should be raw value)
+            // 2. The previous deltas (if exists) should also be raw deltas
+            // 3. The current deltas should be a raw delta
+
+            if (header_ptr->valueSeparatedFlag_ == false) {
+                // raw delta
+                auto& delta_sz = header_ptr->rawValueSize_;
+                assert(delta_off + header_size + delta_sz <= operand.size_);
+                deltas.push_back(str_t(operand.data_ + delta_off, 
+                            header_size + delta_sz));
+                delta_off += header_size + delta_sz;
+
+                if (value_separated == false && (int)deltas.size() == leading_index + 1) {
+                    // Extract the raw delta, prepare for field updates
+                    leading_index++;
+                }
+            } else {
+                // separated delta
+                assert(delta_off + header_size <= operand.size_);
+                deltas.push_back(str_t(operand.data_ + delta_off, header_size));
+                delta_off += header_size;
+            }
+
+        }
+    }
+    return true;
+}
+
 bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* existing_value,
     const std::deque<std::string>& operand_list,
     std::string* new_value, Logger* logger) const
 {
     // request meRGE Operation when the value is found
-    debug_info("Full merge for key = %s, value size = %lu, content = %s\n", key.ToString().c_str(), existing_value->size(), existing_value->ToString().c_str());
+    debug_info("Full merge for key = %s, value size = %lu, content = %s\n",
+            key.ToString().c_str(), existing_value->size(),
+            existing_value->ToString().c_str());
+//    for (auto& it : operand_list) {
+//        debug_error("operand size %lu\n", it.size());
+//    }
 //    debug_error("Full merge for key = %s, value size = %lu\n", key.ToString().c_str(), existing_value->size());
-    str_t newValueIndexStr;
-    str_t filteredOperandStr;
-    vector<str_t> filteredOperandStrVec;
-    int headerSize = sizeof(internalValueType), valueIndexSize = sizeof(externalIndexInfo);
-    int filteredOperandStrVecTotalSize = 0;
+    str_t new_value_index(nullptr, 0);
+    const int header_size = sizeof(internalValueType);
+    const int value_index_size = sizeof(externalIndexInfo);
 
-    internalValueType* existingValueTypePtr; 
-    internalValueType outputValueType;
+    internalValueType* value_header_ptr; 
+    internalValueType output_header;
 
-    existingValueTypePtr = (internalValueType*)const_cast<char*>(existing_value->data());
-    int operandIndex = 0;
-    bool findUpdatedValueIndex = false;
+    value_header_ptr = (internalValueType*)const_cast<char*>(existing_value->data());
+
     vector<str_t> leadingRawDeltas;
+    vector<str_t> deltas;
     str_t operand;
 
+    bool value_separated = value_header_ptr->valueSeparatedFlag_;
+    int leading_index = 0;
+
+    // TODO There may be deltas in the existing value (e.g., for kv, or
+    // selective KD separation). Do partial merge for them.
+
     // Output format:
-    // If value is separated:    [internalValueType] [externalIndexInfo] [appended deltas if any]
-    // If value is not separated:[internalValueType] [   raw   value   ] [appended deltas if any]
+    // If value is separated:    
+    //      [internalValueType] [externalIndexInfo] [appended deltas if any]
+    // If value is not separated:
+    //      [internalValueType] [   raw   value   ] [appended deltas if any]
 
-    // Step 1. Scan the operand list
-    for (auto& operandListIt : operand_list) {
-        uint64_t deltaOffset = 0;
-
-        while (deltaOffset < operandListIt.size()) {
-            internalValueType tempInternalValueType;
-            memcpy(&tempInternalValueType, operandListIt.c_str() + deltaOffset, headerSize);
-
-            // extract the oprand
-            if (tempInternalValueType.mergeFlag_ == true) {
-                // index update
-                assert(tempInternalValueType.valueSeparatedFlag_ == true && deltaOffset + headerSize + valueIndexSize <= operandListIt.size());
-                operand = str_t(const_cast<char*>(operandListIt.data()) + deltaOffset, headerSize + valueIndexSize);
-                deltaOffset += headerSize + valueIndexSize;
-            } else {
-                if (tempInternalValueType.valueSeparatedFlag_ == false) {
-                    // raw delta
-                    assert(deltaOffset + headerSize + tempInternalValueType.rawValueSize_ <= operandListIt.size());
-                    operand = str_t(const_cast<char*>(operandListIt.data()) + deltaOffset, headerSize + tempInternalValueType.rawValueSize_);
-                    deltaOffset += headerSize + tempInternalValueType.rawValueSize_;
-                } else {
-                    // separated delta
-                    assert(deltaOffset + headerSize <= operandListIt.size());
-                    operand = str_t(const_cast<char*>(operandListIt.data()) + deltaOffset, headerSize);
-                    deltaOffset += headerSize;
-                }
-            }
-
-            // Find a delta from normal merge operator
-            if (tempInternalValueType.mergeFlag_ == false) {
-                // Check whether we need to collect the raw deltas for immediate merging.
-                // 1. The value should be not separated (i.e., should be raw value)
-                // 2. The previous deltas (if exists) should also be raw deltas
-                // 3. The current deltas should be a raw delta
-                if (existingValueTypePtr->valueSeparatedFlag_ == false && (int)leadingRawDeltas.size() == operandIndex && tempInternalValueType.valueSeparatedFlag_ == false) {
-                    // Extract the raw delta, prepare for field updates
-                    leadingRawDeltas.push_back(str_t(operand.data_ + headerSize, operand.size_ - headerSize));
-                } else {
-                    // Append to the string
-                    filteredOperandStrVec.push_back(str_t(operand.data_, operand.size_));
-                    filteredOperandStrVecTotalSize += operand.size_;
-                }
-            } else { // Find a delta from vLog GC
-                if (existingValueTypePtr->valueSeparatedFlag_ == false) {
-                    debug_error("[ERROR] updating a value index but the value is not separated! key [%s]\n", key.ToString().c_str());
-                    exit(1);
-                }
-                findUpdatedValueIndex = true;
-                newValueIndexStr = str_t(operand.data_, operand.size_);
-            }
-            operandIndex++;
-        }
-    }
-
-    // Step 2. Check index updates and output
-    //         output format     [internalValueType] [externalIndexInfo] [appended deltas]
-    if (findUpdatedValueIndex == true) {
-        memcpy(&outputValueType, newValueIndexStr.data_, headerSize);
-
-        new_value->resize(newValueIndexStr.size_ + filteredOperandStrVecTotalSize);
-        char* valueBuffer = new_value->data();
-        if (filteredOperandStrVecTotalSize == 0) {
-            outputValueType.mergeFlag_ = false;
-            memcpy(valueBuffer, &outputValueType, headerSize);
-            memcpy(valueBuffer + headerSize, newValueIndexStr.data_ + headerSize, newValueIndexStr.size_ - headerSize); 
+    // Step 1. Scan the deltas in the value 
+    {
+        uint64_t delta_off = 0;
+        if (value_header_ptr->valueSeparatedFlag_ == false) {
+            delta_off = header_size + value_header_ptr->rawValueSize_;
         } else {
-            memcpy(valueBuffer, newValueIndexStr.data_, newValueIndexStr.size_);
-            int i = newValueIndexStr.size_;
-            for (auto& it : filteredOperandStrVec) {
-                memcpy(valueBuffer + i, it.data_, it.size_);
-                i += it.size_; 
-            }
+            delta_off = header_size + sizeof(externalIndexInfo);
         }
 
-        debug_error("Full merge finished for key = %s, value size = %lu\n", key.ToString().c_str(), existing_value->size());
-        return true;
-    }
+        str_t operand_it(const_cast<char*>(existing_value->data()),
+                existing_value->size());
 
-    // Step 3.1 Prepare the header
-    outputValueType = *existingValueTypePtr;
-    if (filteredOperandStrVecTotalSize > 0) {
-        outputValueType.mergeFlag_ = true;
+        ExtractDeltas(value_separated, operand_it,
+                delta_off, deltas, new_value_index, leading_index);
     }
+//    debug_error("In value: num deltas %lu, leading %d\n", 
+//            deltas.size(), leading_index);
 
-    // Step 3.2 Prepare the value, if some merges on raw deltas can be performed
-    str_t mergedValueWithoutValueType;
-    str_t rawValue(const_cast<char*>(existing_value->data() + headerSize), existing_value->size() - headerSize);
-    bool needFree = false;
-    if (!leadingRawDeltas.empty()) {
-        FullMergeFieldUpdates(rawValue, leadingRawDeltas, &mergedValueWithoutValueType);
-        needFree = true;
-        if (mergedValueWithoutValueType.size_ != existingValueTypePtr->rawValueSize_) {
-            debug_error("[ERROR] value size differs after merging: %u v.s. %u\n", mergedValueWithoutValueType.size_, existingValueTypePtr->rawValueSize_);
+    // Step 2. Scan the deltas in the operand list
+    for (auto& operand_list_it : operand_list) {
+        uint64_t delta_off = 0;
+        str_t operand_it(const_cast<char*>(operand_list_it.data()),
+                operand_list_it.size());
+        ExtractDeltas(value_separated, operand_it,
+                delta_off, deltas, new_value_index, leading_index);
+    }
+//    debug_error("After deltas: num deltas %lu, leading %d\n", 
+//            deltas.size(), leading_index);
+
+    // Step 3. Do full merge on the value
+    str_t merged_raw_value(nullptr, 0);
+    bool need_free = false;
+    str_t raw_value(const_cast<char*>(existing_value->data()) + header_size, value_header_ptr->rawValueSize_);
+    if (leading_index > 0) {
+        vector<str_t> raw_deltas;
+        for (int i = 0; i < leading_index; i++) {
+            raw_deltas.push_back(str_t(deltas[i].data_ + header_size, deltas[i].size_ - header_size));
+        }
+        FullMergeFieldUpdates(raw_value, raw_deltas, &merged_raw_value);
+        need_free = true;
+
+        if (merged_raw_value.size_ != value_header_ptr->rawValueSize_) {
+            debug_error("[ERROR] value size differs after merging: %u v.s. %u\n", merged_raw_value.size_, value_header_ptr->rawValueSize_);
+        }
+    } else if (value_separated) {
+        if (new_value_index.data_ != nullptr) {
+            merged_raw_value = new_value_index;
+        } else {
+            merged_raw_value = str_t(raw_value.data_, value_index_size); 
         }
     } else {
-        mergedValueWithoutValueType = rawValue;
+        merged_raw_value = raw_value; 
     }
 
-    // Step 3.3 Prepare the following deltas (whether raw or not raw)
-    //          Already prepared, don't need to do anything
+    // Step 4. Do partial merge on the remaining deltas
+    str_t partial_merged_delta(nullptr, 0);
+    bool need_free_partial = false;
+    if (deltas.size() - leading_index > 0) {
+        if (deltas.size() - leading_index == 1) {
+            partial_merged_delta = deltas[leading_index]; 
+        } else {
+            vector<pair<internalValueType*, str_t>> operand_type_vec;
+            operand_type_vec.resize(deltas.size() - leading_index);
+            uint64_t total_delta_size = 0;
+            for (int i = leading_index; i < (int)deltas.size(); i++) {
+                operand_type_vec[i - leading_index] = 
+                    make_pair((internalValueType*)deltas[i].data_, 
+                            str_t(deltas[i].data_ + header_size, 
+                                deltas[i].size_ - header_size)); 
+                total_delta_size += deltas[i].size_;
+            }
 
-    // Step 3.4 Append everything
+            PartialMergeFieldUpdates(operand_type_vec, 
+                    partial_merged_delta);
 
-    new_value->resize(headerSize + mergedValueWithoutValueType.size_ + filteredOperandStrVecTotalSize);
+            debug_info("After partial merge: num deltas %lu, tot sz %lu, "
+                    "merged delta size %u\n",
+                    operand_type_vec.size(), total_delta_size, 
+                    partial_merged_delta.size_);
+            need_free_partial = true;
+        }
+    }
+
+    // Step 5. Update header
+    output_header = *value_header_ptr;
+    if (partial_merged_delta.size_ > 0) {
+        output_header.mergeFlag_ = true;
+    }
+
+    new_value->resize(header_size + merged_raw_value.size_ + partial_merged_delta.size_);
     char* buffer = new_value->data();
-    memcpy(buffer, &outputValueType, headerSize);
-    if (mergedValueWithoutValueType.size_ != 0) {
-        memcpy(buffer + headerSize, mergedValueWithoutValueType.data_, mergedValueWithoutValueType.size_);
-        if (needFree) {
-            delete[] mergedValueWithoutValueType.data_;
+    memcpy(buffer, &output_header, header_size);
+    if (merged_raw_value.size_ > 0) {
+        memcpy(buffer + header_size, merged_raw_value.data_, merged_raw_value.size_);
+        if (need_free) {
+            delete[] merged_raw_value.data_;
         }
     }
-    if (filteredOperandStrVecTotalSize != 0) {
-        int i = headerSize + mergedValueWithoutValueType.size_;
-//        debug_error("i = %d, headerSize = %d, mergedValueWithoutValueType.size_ = %d\n", i, headerSize, mergedValueWithoutValueType.size_);
-        for (auto& it : filteredOperandStrVec) {
-            memcpy(buffer + i, it.data_, it.size_);
-//            debug_error("i = %d\n", i);
-            i += it.size_;
+    if (partial_merged_delta.size_ > 0) {
+        memcpy(buffer + header_size + merged_raw_value.size_, 
+                partial_merged_delta.data_, 
+                partial_merged_delta.size_);
+        if (need_free_partial) {
+            delete[] partial_merged_delta.data_;
         }
     }
 
-
-//    debug_error("Full merge finished for key = %s, value size = %lu\n", key.ToString().c_str(), existing_value->size());
+    debug_info("Full merge finished for key = %s, value size = %lu, "
+            "number of deltas = %lu, num of leading %u, final size = %lu\n", 
+            key.ToString().c_str(), existing_value->size(), 
+            deltas.size(), leading_index, new_value->size());
     return true;
 }
 
@@ -350,46 +404,51 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     const Slice& right_operand, std::string* new_value,
     Logger* logger) const
 {
+    const int header_size = sizeof(internalValueType);
+    const int value_index_size = sizeof(externalIndexInfo);
     vector<str_t> operandStrs;
     operandStrs.push_back(str_t(const_cast<char*>(left_operand.data()), left_operand.size()));
     operandStrs.push_back(str_t(const_cast<char*>(right_operand.data()), right_operand.size()));
-    str_t newValueIndexStrT(nullptr, 0);
-    vector<pair<internalValueType*, str_t>> batchedOperandVec;
+    str_t new_value_index(nullptr, 0);
+    vector<pair<internalValueType*, str_t>> operand_type_vec;
+
+    // An simplified version of ExtractDeltas()
     for (auto& it : operandStrs) {
-        uint64_t deltaOffset = 0;
-        while (deltaOffset < it.size_) {
-            internalValueType* tempInternalValueType = (internalValueType*)it.data_ + deltaOffset;
+        uint64_t delta_off = 0;
+        while (delta_off < it.size_) {
+            internalValueType* header_ptr = (internalValueType*)(it.data_ + delta_off);
             // extract the oprand
-            if (tempInternalValueType->mergeFlag_ == true) {
+            if (header_ptr->mergeFlag_ == true) {
                 // index update
-                assert(tempInternalValueType->valueSeparatedFlag_ == true && (deltaOffset + sizeof(internalValueType) + sizeof(externalIndexInfo)) <= it.size_);
-                newValueIndexStrT.data_ = it.data_ + deltaOffset; 
-                newValueIndexStrT.size_ = sizeof(internalValueType) + sizeof(externalIndexInfo);
-                deltaOffset += (sizeof(internalValueType) + sizeof(externalIndexInfo));
-//                batchedOperandVec.clear(); // clear since new value
+                assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= it.size_);
+                new_value_index = str_t(it.data_ + delta_off, header_size + value_index_size);
+                delta_off += header_size + value_index_size;
             } else {
-                if (tempInternalValueType->valueSeparatedFlag_ == false) {
+                if (header_ptr->valueSeparatedFlag_ == false) {
                     // raw delta
-                    assert(deltaOffset + sizeof(internalValueType) + tempInternalValueType->rawValueSize_ <= it.size_);
-                    batchedOperandVec.push_back(make_pair(tempInternalValueType, str_t(it.data_ + deltaOffset + sizeof(internalValueType), tempInternalValueType->rawValueSize_)));
-                    deltaOffset += (sizeof(internalValueType) + tempInternalValueType->rawValueSize_);
+                    auto& delta_sz = header_ptr->rawValueSize_;
+                    assert(delta_off + header_size + delta_sz <= it.size_);
+                    operand_type_vec.push_back(make_pair(header_ptr, 
+                                str_t(it.data_ + delta_off + header_size, delta_sz)));
+                    delta_off += header_size + delta_sz;
                 } else {
                     // separated delta
-                    assert(deltaOffset + sizeof(internalValueType) <= it.size_);
-                    batchedOperandVec.push_back(make_pair(tempInternalValueType, str_t(it.data_, 0)));
-                    deltaOffset += sizeof(internalValueType);
+                    assert(delta_off + header_size <= it.size_);
+                    operand_type_vec.push_back(make_pair(header_ptr, 
+                                str_t(it.data_ + delta_off, 0)));
+                    delta_off += header_size;
                 }
             }
         }
     }
 
     str_t finalDeltaListStrT;
-    PartialMergeFieldUpdates(batchedOperandVec, finalDeltaListStrT);
-    if (newValueIndexStrT.size_ > 0) {
-        new_value->resize(newValueIndexStrT.size_ + finalDeltaListStrT.size_);
+    PartialMergeFieldUpdates(operand_type_vec, finalDeltaListStrT);
+    if (new_value_index.size_ > 0) {
+        new_value->resize(new_value_index.size_ + finalDeltaListStrT.size_);
         char* buffer = new_value->data();
-        memcpy(buffer, newValueIndexStrT.data_, newValueIndexStrT.size_);
-        memcpy(buffer + newValueIndexStrT.size_, finalDeltaListStrT.data_, finalDeltaListStrT.size_);
+        memcpy(buffer, new_value_index.data_, new_value_index.size_);
+        memcpy(buffer + new_value_index.size_, finalDeltaListStrT.data_, finalDeltaListStrT.size_);
     } else {
         new_value->assign(finalDeltaListStrT.data_, finalDeltaListStrT.size_);
     }
@@ -397,101 +456,142 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     return true;
 }
 
-// batchedOperandVec[i].second do not have the header
+// operand_type_vec[i].second do not have the header
 // If all of them are raw values, can do the partial merge.
 // Otherwise, do the partial merge only when the raw values are continuous.
 // Example: [separated] [1,A] [2,B] [1,C] [separated] -> [separated] [2,B] [1,C] [separated]
 // The original implementation is incorrect; it keeps only the earliest one, and the sequence is all reversed
-bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& batchedOperandVec, str_t& finalDeltaListStr) const
+inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& operand_type_vec, str_t& final_result) const
 {
-    vector<pair<internalValueType*, str_t>> finalResultVec;
-    unordered_map<int, pair<internalValueType*, str_t>> rawFields;
+    vector<internalValueType*> separated_headers;
+    unordered_map<int, str_t> raw_fields;
 
-    int finalDeltaSize = 0;
+    // empty - separated deltas; not empty, raw deltas
+    vector<unordered_map<int, str_t>> raw_fields_result; 
 
-    for (auto i = batchedOperandVec.size() - 1; i != 0; i--) {
-        if (batchedOperandVec[i].first->valueSeparatedFlag_ == false) {
-            int commaIndex = 0;
-            str_t& it = batchedOperandVec[i].second;
-            while (commaIndex < it.size_ && it.data_[commaIndex] != ',') {
-                commaIndex++;
+    int final_result_size = 0;
+    const int header_size = sizeof(internalValueType);
+
+    // Extract the raw fields 
+    for (auto i = 0; i < operand_type_vec.size(); i++) {
+        if (operand_type_vec[i].first->valueSeparatedFlag_ == false) {
+            vector<str_t> operand_list;
+            StringSplit(operand_type_vec[i].second, ',', operand_list);
+
+            for (auto j = 0; j < operand_list.size(); j += 2) {
+                int index = str_t_stoi(operand_list[j]);
+                raw_fields[index] = operand_list[j+1];
             }
-            int index = str_t_stoi(str_t(it.data_, commaIndex)); 
-           
-            rawFields[index] = batchedOperandVec[i];
         } else {
-            if (!rawFields.empty()) {
-                for (auto& it : rawFields) {
-                    finalResultVec.push_back(it.second);
-                    finalDeltaSize += sizeof(internalValueType) + it.second.second.size_;
-                }
-                rawFields.clear();
+            if (!raw_fields.empty()) {
+                raw_fields_result.push_back(raw_fields);
+                raw_fields.clear();
             }
-            finalResultVec.push_back(batchedOperandVec[i]);
-            finalDeltaSize += sizeof(internalValueType) + batchedOperandVec[i].second.size_;
+            raw_fields_result.push_back({});
+            separated_headers.push_back(operand_type_vec[i].first);
         }
     }
 
-    if (!rawFields.empty()) {
-        for (auto& it : rawFields) {
-            finalResultVec.push_back(it.second);
-            finalDeltaSize += sizeof(internalValueType) + it.second.second.size_;
+    if (!raw_fields.empty()) {
+        raw_fields_result.push_back(raw_fields);
+        raw_fields.clear();
+    }
+
+    // Calculate the final delta size
+    for (auto& it : raw_fields_result) {
+        final_result_size += header_size;
+        if (it.empty() == false) {
+            for (auto& it0 : it) {
+                final_result_size += IntToStringSize(it0.first) + it0.second.size_ + 2;
+            }
+            final_result_size--;
         }
     }
 
-    debug_info("PartialMerge raw delta number = %lu, valid delta number = %lu", batchedOperandVec.size(), finalResultVec.size());
-    vector<str_t> finalDeltaList;
+    debug_info("PartialMerge raw delta number %lu, "
+            "separated deltas %lu, final result size %d\n", 
+            operand_type_vec.size(), separated_headers.size(),
+            final_result_size);
 
-    char* result = new char[finalDeltaSize];
-    int resultIndex = 0;
+    char* result = new char[final_result_size + 1];
+    int result_i = 0;
 
-    for (auto& it : finalResultVec) {
-        memcpy(result + resultIndex, it.first, sizeof(internalValueType));
-        if (it.second.size_ > 0) {
-            memcpy(result + resultIndex + sizeof(internalValueType), it.second.data_, it.second.size_);
+    // Build the final delta
+    // the index of separated deltas
+    int i = 0;
+
+    for (auto& it : raw_fields_result) {
+        internalValueType header;
+        if (it.empty() == false) {
+            bool first = true;
+            int tmp_i = result_i;
+            result_i += header_size;
+            for (auto& it0 : it) {
+                if (first) {
+                    sprintf(result + result_i, "%d,%.*s", it0.first,
+                            it0.second.size_, it0.second.data_);
+                    first = false;
+                } else {
+                    sprintf(result + result_i, ",%d,%.*s", it0.first,
+                            it0.second.size_, it0.second.data_);
+                }
+                result_i += it0.second.size_ + 1;
+                while (result[result_i]) 
+                    result_i++;
+            }
+            header.rawValueSize_ = result_i - tmp_i - header_size;
+            memcpy(result + tmp_i, &header, header_size);
+        } else {
+            memcpy(result + result_i, separated_headers[i],
+                    header_size);
+            result_i += header_size;
+            i++;
         }
-        resultIndex += sizeof(internalValueType) + it.second.size_;
     }
 
-    finalDeltaListStr = str_t(result, finalDeltaSize);
+    debug_info("result_i %d final_result_size %d header %d\n", 
+            result_i, final_result_size, header_size);
+
+    final_result = str_t(result, final_result_size);
     return true;
 }
 
-bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(str_t& rawValue, vector<str_t>& operandList, str_t* finalValue) const
+inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(str_t& raw_value, vector<str_t>& operands, str_t* result) const
 {
     size_t pos = 0;
-    char delimiter = ',';
-    int bufferSize = -1;
+    int buffer_size = -1;
 
-    vector<str_t> rawValueFieldsVec;
-    stringSplit(rawValue, delimiter, rawValueFieldsVec);
+    vector<str_t> raw_value_fields;
+    StringSplit(raw_value, ',', raw_value_fields);
 
     vector<str_t> rawOperandsVec;
 
-    for (auto& it : operandList) {
-        stringSplit(it, ',', rawOperandsVec); 
+    for (auto& it : operands) {
+        StringSplit(it, ',', rawOperandsVec); 
     }
 
     for (auto it = 0; it < rawOperandsVec.size(); it += 2) {
         int index = str_t_stoi(rawOperandsVec[it]);
-        rawValueFieldsVec[index] = rawOperandsVec[it+1];
+        raw_value_fields[index] = rawOperandsVec[it+1];
     }
 
-    for (auto& it : rawValueFieldsVec) {
-        bufferSize += it.size_ + 1;
+    for (auto& it : raw_value_fields) {
+        buffer_size += it.size_ + 1;
     }
 
-    char* buffer = new char[bufferSize];
-    int bufferIndex = 0;
+    char* buffer = new char[buffer_size];
+    int buffer_index = 0;
 
-    for (auto i = 0; i < rawValueFieldsVec.size() - 1; i++) {
-        memcpy(buffer + bufferIndex, rawValueFieldsVec[i].data_, rawValueFieldsVec[i].size_);
-        buffer[bufferIndex + rawValueFieldsVec[i].size_] = ',';
-        bufferIndex += rawValueFieldsVec[i].size_ + 1; 
+    for (auto i = 0; i < raw_value_fields.size() - 1; i++) {
+        memcpy(buffer + buffer_index, raw_value_fields[i].data_, raw_value_fields[i].size_);
+        buffer[buffer_index + raw_value_fields[i].size_] = ',';
+        buffer_index += raw_value_fields[i].size_ + 1; 
     }
-    memcpy(buffer + bufferIndex, rawValueFieldsVec[rawValueFieldsVec.size()-1].data_, rawValueFieldsVec[rawValueFieldsVec.size()-1].size_);
-    finalValue->data_ = buffer;
-    finalValue->size_ = bufferSize;
+    memcpy(buffer + buffer_index, 
+            raw_value_fields[raw_value_fields.size()-1].data_, 
+            raw_value_fields[raw_value_fields.size()-1].size_);
+    result->data_ = buffer;
+    result->size_ = buffer_size;
     return true;
 }
 
