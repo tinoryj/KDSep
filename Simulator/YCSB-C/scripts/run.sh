@@ -107,7 +107,7 @@ MAXRunTimes=1
 Thread_number=1
 RocksDBThreadNumber=16
 rawConfigPath="configDir/deltakv.ini"
-bucketSize="$(( 256 * 1024 ))"
+bucketSize="$(( 1024 * 1024 ))"
 cacheSize="$((1024 * 1024 * 1024))"
 kvCacheSize=0
 blobCacheSize=0
@@ -197,7 +197,7 @@ for param in $*; do
     elif [[ "$param" =~ ^bn[0-9]+$ ]]; then
         bn=`echo $param | sed 's/bn//g'`
         run_suffix=${run_suffix}_${param}
-    elif [[ "$param" =~ ^Exp[0-9a-zA-Z]+$ ]]; then
+    elif [[ "$param" =~ ^Exp[0-9a-zA-Z_]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
 #        ResultLogFolder="$storagePrefix/Exp$ExpID/ResultLogs"
 #        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
@@ -226,12 +226,13 @@ for param in $*; do
         tmp=$(echo $param | sed 's/splitThres//g')
         if [[ "$tmp" != "$deltaLogSplitGCThreshold" ]]; then
             deltaLogSplitGCThreshold=$(echo $param | sed 's/splitThres//g')
-            run_suffix=${run_suffix}_${param}
+            run_suffix=${run_suffix}_sp${tmp}
         fi
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
         workerThreadNumber=$(echo $param | sed 's/workerT//g')
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
         bucketSize=$(echo $param | sed 's/bucketSize//g')
+        run_suffix=${run_suffix}_${param}
     elif [[ "$param" =~ ^batchSize[0-9kK]+$ ]]; then
         num=$(echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g')
         batchSize=$num
@@ -242,19 +243,19 @@ for param in $*; do
     elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/cache//g')
         cacheSize=$(($num * 1024 * 1024))
-        run_suffix=${run_suffix}_$param
+        run_suffix=${run_suffix}_bkc${num}
     elif [[ "$param" =~ ^kvcache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/kvcache//g')
         kvCacheSize=$(($num * 1024 * 1024))
-        run_suffix=${run_suffix}_$param
+        run_suffix=${run_suffix}_kvc${num}
     elif [[ "$param" =~ ^blobcache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/blobcache//g')
         blobCacheSize=$(($num * 1024 * 1024))
-        run_suffix=${run_suffix}_$param
+        run_suffix=${run_suffix}_blc${num}
     elif [[ "$param" =~ ^kdcache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/kdcache//g')
         kdcache=$(($num * 1024 * 1024))
-        run_suffix=${run_suffix}_$param
+        run_suffix=${run_suffix}_kdc${num}
     elif [[ "$param" =~ ^blockSize[0-9]+$ ]]; then
         blockSize=$(echo $param | sed 's/blockSize//g')
         if [[ $blockSize -ne 65536 ]]; then
@@ -263,7 +264,7 @@ for param in $*; do
     elif [[ "$param" =~ ^gcWriteBackSize[0-9]+$ ]]; then
         gcWriteBackSize=$(echo $param | sed 's/gcWriteBackSize//g')
         if [[ $gcWriteBackSize -ne 1000 ]]; then
-            run_suffix=${run_suffix}_$param
+            run_suffix=${run_suffix}_gcwbsz${gcWriteBackSize}
         fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         sstsz=`echo $param | sed 's/sst//g'`
@@ -352,7 +353,7 @@ sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
 sed -i "/blockSize/c\\blockSize = ${blockSize}" temp.ini
 
 totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024));
-run_suffix=${run_suffix}_totcache${totCacheSize}
+run_suffix=${run_suffix}_tc${totCacheSize}
 
 if [[ "$maxFileNumber" -ne 16 ]]; then
     run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
@@ -526,9 +527,9 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     echo "<===================== Modified spec file content =====================>"
     cat workload-temp.spec | head -n 25 | tail -n 17
 
-    fileprefix=$ResultLogFolder/Read-$ReadProportion-Update-$UpdateProportion-${run_suffix}
+    fileprefix=$ResultLogFolder/Rd-$ReadProportion-Ud-$UpdateProportion-${run_suffix}
     if [[ "$rmw" == "true" ]]; then
-        fileprefix=$ResultLogFolder/Read-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
+        fileprefix=$ResultLogFolder/Rd-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
     fi
 
     output_file=`generate_file_name ${fileprefix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`

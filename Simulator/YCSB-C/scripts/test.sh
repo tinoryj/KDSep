@@ -29,7 +29,7 @@ func() {
                                 for ((k=0; k<${#cacheSizes[@]}; k++)); do
                                     cacheSize=${cacheSizes[$k]}
 #                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 262144 / 0.5"|bc)
-                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 262144 / 0.5"|bc)
+                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 1024 / 1024 / 0.5"|bc)
                                     if [[ $bucketNumber -gt 40000 ]]; then
                                         bucketNumber=40000
                                     fi
@@ -158,6 +158,28 @@ runModeSet=('raw')
 #ops=("10K")
 #func
 #exit
+
+bonus=""
+flengths=(400)
+ExpName="_p23_test_bucketsize"
+indexSet=(1 3 5 7 9)
+indexSet=(5)
+works=8
+#indexSet=(5)
+reqs=("10M")
+ops=("10M")
+#ops=("100M")
+#runModeSet=('kvkd' 'kv' 'bkvkd' 'kd' 'raw' 'bkv')
+runModeSet=('kvkd')
+cacheSizes=(2048)
+splitThres=0.3
+gcWriteBackSize=2000
+
+func
+#
+#works=16
+#func
+exit
 
 indexSet=(5)
 runModeSet=('bkv')

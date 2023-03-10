@@ -240,6 +240,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     options_.enable_key_value_cache_ = config.getDeltaKVCacheEnableStatus();
     options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta(); 
+    options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);

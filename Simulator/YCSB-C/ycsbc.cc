@@ -113,7 +113,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
         // if (i % processLabel_base == 0) {
-        if (i % output_base == 0) {
+        if (i % output_base == 0 || i % processLabel_base == 0) {
             std::cerr << "\r";
             double tot_duration = timerStart.End() / 1000000.0;
             double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;

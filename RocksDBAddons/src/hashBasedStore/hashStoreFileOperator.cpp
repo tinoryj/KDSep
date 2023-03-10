@@ -44,7 +44,7 @@ HashStoreFileOperator::~HashStoreFileOperator()
 bool HashStoreFileOperator::setJobDone()
 {
     if (operationToWorkerMQ_ != nullptr) {
-        operationToWorkerMQ_->done_ = true;
+        operationToWorkerMQ_->done = true;
         operationNotifyCV_.notify_all();
         while (workingThreadExitFlagVec_ != workerThreadNumber_) {
             asm volatile("");
@@ -54,22 +54,22 @@ bool HashStoreFileOperator::setJobDone()
 }
 
 // file operations
-bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* mempoolHandler)
+bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* file_handler, mempoolHandler_t* mempoolHandler)
 {
-    hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(fileHandler);
-    currentHandler->jobDone_ = kNotDone;
+    hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(file_handler);
+    currentHandler->job_done = kNotDone;
     currentHandler->write_operation_.mempoolHandler_ptr_ = mempoolHandler;
-    currentHandler->opType_ = kPut;
+    currentHandler->op_type = kPut;
     operationToWorkerMQ_->push(currentHandler);
     operationNotifyCV_.notify_all();
-    if (currentHandler->jobDone_ == kNotDone) {
+    if (currentHandler->job_done == kNotDone) {
         debug_trace("Wait for write job done%s\n", "");
-        while (currentHandler->jobDone_ == kNotDone) {
+        while (currentHandler->job_done == kNotDone) {
             asm volatile("");
         }
         debug_trace("Wait for write job done%s over\n", "");
     }
-    if (currentHandler->jobDone_ == kError) {
+    if (currentHandler->job_done == kError) {
         delete currentHandler;
         return false;
     } else {
@@ -86,28 +86,28 @@ bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperat
 }
 
 bool HashStoreFileOperator::waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler) {
-    while (currentOperationHandler->jobDone_ == kNotDone) {
+    while (currentOperationHandler->job_done == kNotDone) {
         asm volatile("");
     }
-    if (currentOperationHandler->jobDone_ == kDone) {
-        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)currentOperationHandler->opType_, currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.size);
+    if (currentOperationHandler->job_done == kDone) {
+        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)currentOperationHandler->op_type, currentOperationHandler->file_handler->file_id, currentOperationHandler->batched_write_operation_.size);
         delete currentOperationHandler;
         return true;
     } else {
-        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)currentOperationHandler->opType_, currentOperationHandler->file_handler_->target_file_id_, currentOperationHandler->batched_write_operation_.size);
+        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)currentOperationHandler->op_type, currentOperationHandler->file_handler->file_id, currentOperationHandler->batched_write_operation_.size);
         delete currentOperationHandler;
         return false;
     }
 }
 
-bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer)
+bool HashStoreFileOperator::readContentFromFile(hashStoreFileMetaDataHandler* file_handler, char* contentBuffer)
 {
-    debug_trace("Read content from file ID = %lu\n", fileHandler->target_file_id_);
+    debug_trace("Read content from file ID = %lu\n", file_handler->file_id);
     fileOperationStatus_t readFileStatus;
-    STAT_PROCESS(readFileStatus = fileHandler->file_operation_func_ptr_->readFile(contentBuffer, fileHandler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
-    StatsRecorder::getInstance()->DeltaOPBytesRead(fileHandler->total_on_disk_bytes_, fileHandler->total_object_bytes_, syncStatistics_);
+    STAT_PROCESS(readFileStatus = file_handler->file_operation_func_ptr_->readFile(contentBuffer, file_handler->total_object_bytes_), StatsType::DELTAKV_HASHSTORE_GET_IO);
+    StatsRecorder::getInstance()->DeltaOPBytesRead(file_handler->total_on_disk_bytes_, file_handler->total_object_bytes_, syncStatistics_);
     if (readFileStatus.success_ == false) {
-        debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", fileHandler->target_file_id_);
+        debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", file_handler->file_id);
         return false;
     } else {
         return true;
@@ -193,21 +193,21 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(char* contentBuff
     return processedObjectNumber;
 }
 
-bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber)
+bool HashStoreFileOperator::writeContentToFile(hashStoreFileMetaDataHandler* file_handler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber)
 {
-    debug_trace("Write content to file ID = %lu\n", fileHandler->target_file_id_);
+    debug_trace("Write content to file ID = %lu\n", file_handler->file_id);
     fileOperationStatus_t onDiskWriteSizePair;
-    STAT_PROCESS(onDiskWriteSizePair = fileHandler->file_operation_func_ptr_->writeFile(contentBuffer, contentSize), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+    STAT_PROCESS(onDiskWriteSizePair = file_handler->file_operation_func_ptr_->writeFile(contentBuffer, contentSize), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
     StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
     if (onDiskWriteSizePair.success_ == false) {
-        debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu, logical size = %lu, physical size = %lu\n", fileHandler->target_file_id_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_);
+        debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu, logical size = %lu, physical size = %lu\n", file_handler->file_id, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_);
         return false;
     } else {
         // update metadata
-        fileHandler->total_object_bytes_ += contentSize;
-        fileHandler->total_on_disk_bytes_ += onDiskWriteSizePair.physicalSize_;
-        fileHandler->total_object_count_ += contentObjectNumber;
-        debug_trace("Write content to file ID = %lu done, write to disk size = %lu\n", fileHandler->target_file_id_, onDiskWriteSizePair.physicalSize_);
+        file_handler->total_object_bytes_ += contentSize;
+        file_handler->total_on_disk_bytes_ += onDiskWriteSizePair.physicalSize_;
+        file_handler->total_object_count_ += contentObjectNumber;
+        debug_trace("Write content to file ID = %lu done, write to disk size = %lu\n", file_handler->file_id, onDiskWriteSizePair.physicalSize_);
         return true;
     }
 }
@@ -216,11 +216,11 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
 {
     str_t currentKeyStr(currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keySize_);
     if (currentHandlerPtr->write_operation_.mempoolHandler_ptr_->isAnchorFlag_ == true) {
-        if (currentHandlerPtr->file_handler_->filter->MayExist(currentKeyStr)) {
-            currentHandlerPtr->file_handler_->filter->Erase(currentKeyStr);
+        if (currentHandlerPtr->file_handler->filter->MayExist(currentKeyStr)) {
+            currentHandlerPtr->file_handler->filter->Erase(currentKeyStr);
         }
     } else {
-        currentHandlerPtr->file_handler_->filter->Insert(currentKeyStr);
+        currentHandlerPtr->file_handler->filter->Insert(currentKeyStr);
     }
     // construct record header
     hashStoreRecordHeader newRecordHeader;
@@ -228,15 +228,15 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
     newRecordHeader.key_size_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keySize_;
     newRecordHeader.sequence_number_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->sequenceNumber_;
     newRecordHeader.value_size_ = currentHandlerPtr->write_operation_.mempoolHandler_ptr_->valueSize_;
-    if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
+    if (currentHandlerPtr->file_handler->file_operation_func_ptr_->isFileOpen() == false) {
         // since file not created, shoud not flush anchors
         // construct file header
         hashStoreFileHeader newFileHeader;
-        newFileHeader.current_prefix_used_bit_ = currentHandlerPtr->file_handler_->current_prefix_used_bit_;
-        newFileHeader.previous_file_id_first_ = currentHandlerPtr->file_handler_->previous_file_id_first_;
-        newFileHeader.previous_file_id_second_ = currentHandlerPtr->file_handler_->previous_file_id_second_;
+        newFileHeader.current_prefix_used_bit_ = currentHandlerPtr->file_handler->current_prefix_used_bit_;
+        newFileHeader.previous_file_id_first_ = currentHandlerPtr->file_handler->previous_file_id_first_;
+        newFileHeader.previous_file_id_second_ = currentHandlerPtr->file_handler->previous_file_id_second_;
         newFileHeader.file_create_reason_ = kNewFile;
-        newFileHeader.file_id_ = currentHandlerPtr->file_handler_->target_file_id_;
+        newFileHeader.file_id_ = currentHandlerPtr->file_handler->file_id;
         // place file header and record header in write buffer
         uint64_t writeBufferSize = sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
         uint64_t targetWriteSize = 0;
@@ -255,17 +255,17 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         }
 
         // open target file
-        debug_info("First open newly created file ID = %lu, target prefix bit number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->file_handler_->current_prefix_used_bit_);
-        string targetFilePathStr = workingDir_ + "/" + to_string(currentHandlerPtr->file_handler_->target_file_id_) + ".delta";
+        debug_info("First open newly created file ID = %lu, target prefix bit number = %lu\n", currentHandlerPtr->file_handler->file_id, currentHandlerPtr->file_handler->current_prefix_used_bit_);
+        string targetFilePathStr = workingDir_ + "/" + to_string(currentHandlerPtr->file_handler->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePathStr) != true) {
-            currentHandlerPtr->file_handler_->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
+            currentHandlerPtr->file_handler->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
         } else {
-            currentHandlerPtr->file_handler_->file_operation_func_ptr_->openFile(targetFilePathStr);
+            currentHandlerPtr->file_handler->file_operation_func_ptr_->openFile(targetFilePathStr);
         }
         // write contents of file
-        bool writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler_, writeBuffer, targetWriteSize, 1);
+        bool writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler, writeBuffer, targetWriteSize, 1);
         if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler->file_id);
             return false;
         } else {
             // insert to cache if current key exist in cache && cache is enabled
@@ -295,9 +295,9 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         }
 
         // write contents of file
-        bool writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler_, writeBuffer, targetWriteSize, 1);
+        bool writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler, writeBuffer, targetWriteSize, 1);
         if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler_->target_file_id_);
+            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", currentHandlerPtr->file_handler->file_id);
             return false;
         } else {
             // insert to cache if current key exist in cache && cache is enabled
@@ -318,7 +318,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     struct timeval tv;
     gettimeofday(&tv, 0);
 
-    if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
+    if (currentHandlerPtr->file_handler->file_operation_func_ptr_->isFileOpen() == false) {
         // prepare write buffer, file not open, may load, skip;
         bool onlyAnchorFlag = true;
         for (auto index = 0; index < currentHandlerPtr->batched_write_operation_.size; index++) {
@@ -326,15 +326,15 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
                     currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_[index].keySize_);
             if (currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_[index].isAnchorFlag_ == false) {
                 onlyAnchorFlag = false;
-                currentHandlerPtr->file_handler_->filter->Insert(currentKeyStr);
+                currentHandlerPtr->file_handler->filter->Insert(currentKeyStr);
             } else {
-                if (currentHandlerPtr->file_handler_->filter->MayExist(currentKeyStr)) {
-                    currentHandlerPtr->file_handler_->filter->Erase(currentKeyStr);
+                if (currentHandlerPtr->file_handler->filter->MayExist(currentKeyStr)) {
+                    currentHandlerPtr->file_handler->filter->Erase(currentKeyStr);
                 }
             }
         }
         if (onlyAnchorFlag == true) {
-            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", currentHandlerPtr->file_handler_->target_file_id_);
+            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", currentHandlerPtr->file_handler->file_id);
             return true;
         }
     } else {
@@ -342,10 +342,10 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             str_t currentKeyStr(currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_[index].keyPtr_, 
                     currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_[index].keySize_);
             if (currentHandlerPtr->batched_write_operation_.mempool_handler_vec_ptr_[index].isAnchorFlag_ == false) {
-                currentHandlerPtr->file_handler_->filter->Insert(currentKeyStr);
+                currentHandlerPtr->file_handler->filter->Insert(currentKeyStr);
             } else {
-                if (currentHandlerPtr->file_handler_->filter->MayExist(currentKeyStr)) {
-                    currentHandlerPtr->file_handler_->filter->Erase(currentKeyStr);
+                if (currentHandlerPtr->file_handler->filter->MayExist(currentKeyStr)) {
+                    currentHandlerPtr->file_handler->filter->Erase(currentKeyStr);
                 }
             }
         }
@@ -357,19 +357,19 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetWriteBufferSize = 0;
     hashStoreFileHeader newFileHeader;
     bool needFlushFileHeader = false;
-    if (currentHandlerPtr->file_handler_->file_operation_func_ptr_->isFileOpen() == false) {
-        string targetFilePath = workingDir_ + "/" + to_string(currentHandlerPtr->file_handler_->target_file_id_) + ".delta";
+    if (currentHandlerPtr->file_handler->file_operation_func_ptr_->isFileOpen() == false) {
+        string targetFilePath = workingDir_ + "/" + to_string(currentHandlerPtr->file_handler->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePath) == false) {
-            currentHandlerPtr->file_handler_->file_operation_func_ptr_->createThenOpenFile(targetFilePath);
-            newFileHeader.current_prefix_used_bit_ = currentHandlerPtr->file_handler_->current_prefix_used_bit_;
-            newFileHeader.file_create_reason_ = currentHandlerPtr->file_handler_->file_create_reason_;
-            newFileHeader.file_id_ = currentHandlerPtr->file_handler_->target_file_id_;
-            newFileHeader.previous_file_id_first_ = currentHandlerPtr->file_handler_->previous_file_id_first_;
-            newFileHeader.previous_file_id_second_ = currentHandlerPtr->file_handler_->previous_file_id_second_;
+            currentHandlerPtr->file_handler->file_operation_func_ptr_->createThenOpenFile(targetFilePath);
+            newFileHeader.current_prefix_used_bit_ = currentHandlerPtr->file_handler->current_prefix_used_bit_;
+            newFileHeader.file_create_reason_ = currentHandlerPtr->file_handler->file_create_reason_;
+            newFileHeader.file_id_ = currentHandlerPtr->file_handler->file_id;
+            newFileHeader.previous_file_id_first_ = currentHandlerPtr->file_handler->previous_file_id_first_;
+            newFileHeader.previous_file_id_second_ = currentHandlerPtr->file_handler->previous_file_id_second_;
             needFlushFileHeader = true;
             targetWriteBufferSize += sizeof(hashStoreFileHeader);
         } else {
-            currentHandlerPtr->file_handler_->file_operation_func_ptr_->openFile(targetFilePath);
+            currentHandlerPtr->file_handler->file_operation_func_ptr_->openFile(targetFilePath);
         }
     }
     for (auto i = 0; i < currentHandlerPtr->batched_write_operation_.size; i++) {
@@ -415,9 +415,9 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetObjectNumber = currentHandlerPtr->batched_write_operation_.size;
     // write content
     bool writeContentStatus;
-    STAT_PROCESS(writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler_, writeContentBuffer, targetWriteBufferSize, targetObjectNumber), StatsType::DS_WRITE_FUNCTION);
+    STAT_PROCESS(writeContentStatus = writeContentToFile(currentHandlerPtr->file_handler, writeContentBuffer, targetWriteBufferSize, targetObjectNumber), StatsType::DS_WRITE_FUNCTION);
     if (writeContentStatus == false) {
-        debug_error("[ERROR] Could not write content to file, target file ID = %lu, content size = %lu, content bytes number = %lu\n", currentHandlerPtr->file_handler_->target_file_id_, targetObjectNumber, targetWriteBufferSize);
+        debug_error("[ERROR] Could not write content to file, target file ID = %lu, content size = %lu, content bytes number = %lu\n", currentHandlerPtr->file_handler->file_id, targetObjectNumber, targetWriteBufferSize);
         exit(1);
         return false;
     } else {
@@ -438,39 +438,39 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     }
 }
 
-bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler)
+bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_handler)
 {
     // insert into GC job queue if exceed the threshold
-    if (fileHandler->filter->ShouldRebuild() || fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize() >= perFileGCSizeLimit_) {
-        if (fileHandler->gc_result_status_flag_ == kNoGC) {
-            fileHandler->no_gc_wait_operation_number_++;
-            if (fileHandler->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
-                fileHandler->file_ownership_flag_ = -1;
-                fileHandler->gc_result_status_flag_ = kMayGC;
-//                notifyGCToManagerMQ_->push(fileHandler);
-                hashStoreFileManager_->pushToGCQueue(fileHandler);
-                debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue, no gc wait count = %lu, threshold = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
-                fileHandler->no_gc_wait_operation_number_ = 0;
+    if (file_handler->filter->ShouldRebuild() || file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize() >= perFileGCSizeLimit_) {
+        if (file_handler->gc_result_status_flag_ == kNoGC) {
+            file_handler->no_gc_wait_operation_number_++;
+            if (file_handler->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
+                file_handler->file_ownership = -1;
+                file_handler->gc_result_status_flag_ = kMayGC;
+//                notifyGCToManagerMQ_->push(file_handler);
+                hashStoreFileManager_->pushToGCQueue(file_handler);
+                debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue, no gc wait count = %lu, threshold = %lu\n", file_handler->file_id, perFileGCSizeLimit_, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize(), file_handler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
+                file_handler->no_gc_wait_operation_number_ = 0;
                 return true;
             } else {
-                if (fileHandler->no_gc_wait_operation_number_ % 10 == 1) {
-                    debug_error("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->gc_result_status_flag_, fileHandler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
+                if (file_handler->no_gc_wait_operation_number_ % 10 == 1) {
+                    debug_error("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", file_handler->file_id, perFileGCSizeLimit_, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize(), file_handler->gc_result_status_flag_, file_handler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
                 }
-                debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->gc_result_status_flag_, fileHandler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
+                debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", file_handler->file_id, perFileGCSizeLimit_, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize(), file_handler->gc_result_status_flag_, file_handler->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
                 return false;
             }
-        } else if (fileHandler->gc_result_status_flag_ == kNew || fileHandler->gc_result_status_flag_ == kMayGC) {
-            fileHandler->file_ownership_flag_ = -1;
-//            notifyGCToManagerMQ_->push(fileHandler);
-            hashStoreFileManager_->pushToGCQueue(fileHandler);
-            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize());
+        } else if (file_handler->gc_result_status_flag_ == kNew || file_handler->gc_result_status_flag_ == kMayGC) {
+            file_handler->file_ownership = -1;
+//            notifyGCToManagerMQ_->push(file_handler);
+            hashStoreFileManager_->pushToGCQueue(file_handler);
+            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", file_handler->file_id, perFileGCSizeLimit_, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize());
             return true;
         } else {
-            debug_trace("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", fileHandler->target_file_id_, perFileGCSizeLimit_, fileHandler->total_object_bytes_, fileHandler->total_on_disk_bytes_ + fileHandler->file_operation_func_ptr_->getFileBufferedSize(), fileHandler->gc_result_status_flag_);
+            debug_trace("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", file_handler->file_id, perFileGCSizeLimit_, file_handler->total_object_bytes_, file_handler->total_on_disk_bytes_ + file_handler->file_operation_func_ptr_->getFileBufferedSize(), file_handler->gc_result_status_flag_);
             return false;
         }
     } else {
-        debug_trace("Current file ID = %lu should not GC, skip\n", fileHandler->target_file_id_);
+        debug_trace("Current file ID = %lu should not GC, skip\n", file_handler->file_id);
         return false;
     }
 }
@@ -508,17 +508,17 @@ inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(
     } 
 }
 
-bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* mempoolHandler)
+bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler* file_handler, mempoolHandler_t* mempoolHandler)
 {
-    std::scoped_lock<std::shared_mutex> w_lock(fileHandler->fileOperationMutex_);
+    std::scoped_lock<std::shared_mutex> w_lock(file_handler->fileOperationMutex_);
     // update search set
     str_t currentKeyStr(mempoolHandler->keyPtr_, mempoolHandler->keySize_);
     if (mempoolHandler->isAnchorFlag_ == true) {
-        if (fileHandler->filter->MayExist(currentKeyStr)) {
-            fileHandler->filter->Erase(currentKeyStr);
+        if (file_handler->filter->MayExist(currentKeyStr)) {
+            file_handler->filter->Erase(currentKeyStr);
         }
     } else {
-        fileHandler->filter->Insert(currentKeyStr);
+        file_handler->filter->Insert(currentKeyStr);
     }
     // construct record header
     hashStoreRecordHeader newRecordHeader;
@@ -526,15 +526,15 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
     newRecordHeader.key_size_ = mempoolHandler->keySize_;
     newRecordHeader.sequence_number_ = mempoolHandler->sequenceNumber_;
     newRecordHeader.value_size_ = mempoolHandler->valueSize_;
-    if (fileHandler->file_operation_func_ptr_->isFileOpen() == false) {
+    if (file_handler->file_operation_func_ptr_->isFileOpen() == false) {
         // since file not created, shoud not flush anchors
         // construct file header
         hashStoreFileHeader newFileHeader;
-        newFileHeader.current_prefix_used_bit_ = fileHandler->current_prefix_used_bit_;
-        newFileHeader.previous_file_id_first_ = fileHandler->previous_file_id_first_;
-        newFileHeader.previous_file_id_second_ = fileHandler->previous_file_id_second_;
+        newFileHeader.current_prefix_used_bit_ = file_handler->current_prefix_used_bit_;
+        newFileHeader.previous_file_id_first_ = file_handler->previous_file_id_first_;
+        newFileHeader.previous_file_id_second_ = file_handler->previous_file_id_second_;
         newFileHeader.file_create_reason_ = kNewFile;
-        newFileHeader.file_id_ = fileHandler->target_file_id_;
+        newFileHeader.file_id_ = file_handler->file_id;
         // place file header and record header in write buffer
         uint64_t writeBufferSize = sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
         uint64_t targetWriteSize = 0;
@@ -553,26 +553,26 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         }
 
         // open target file
-        debug_info("First open newly created file ID = %lu, target prefix bit number = %lu\n", fileHandler->target_file_id_, fileHandler->current_prefix_used_bit_);
-        string targetFilePathStr = workingDir_ + "/" + to_string(fileHandler->target_file_id_) + ".delta";
+        debug_info("First open newly created file ID = %lu, target prefix bit number = %lu\n", file_handler->file_id, file_handler->current_prefix_used_bit_);
+        string targetFilePathStr = workingDir_ + "/" + to_string(file_handler->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePathStr) != true) {
-            fileHandler->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
+            file_handler->file_operation_func_ptr_->createThenOpenFile(targetFilePathStr);
         } else {
-            fileHandler->file_operation_func_ptr_->openFile(targetFilePathStr);
+            file_handler->file_operation_func_ptr_->openFile(targetFilePathStr);
         }
         // write contents of file
-        bool writeContentStatus = writeContentToFile(fileHandler, writeBuffer, targetWriteSize, 1);
+        bool writeContentStatus = writeContentToFile(file_handler, writeBuffer, targetWriteSize, 1);
         if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
+            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", file_handler->file_id);
             return false;
         } else {
             if (enableGCFlag_ == true) {
-                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(fileHandler);
+                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(file_handler);
                 if (putIntoGCJobQueueStatus == false) {
-                    fileHandler->file_ownership_flag_ = 0;
+                    file_handler->file_ownership = 0;
                 }
             } else {
-                fileHandler->file_ownership_flag_ = 0;
+                file_handler->file_ownership = 0;
             }
             // insert to cache if current key exist in cache && cache is enabled
             if (keyToValueListCacheStr_ != nullptr) {
@@ -597,18 +597,18 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
         }
 
         // write contents of file
-        bool writeContentStatus = writeContentToFile(fileHandler, writeBuffer, targetWriteSize, 1);
+        bool writeContentStatus = writeContentToFile(file_handler, writeBuffer, targetWriteSize, 1);
         if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", fileHandler->target_file_id_);
+            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", file_handler->file_id);
             return false;
         } else {
             if (enableGCFlag_ == true) {
-                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(fileHandler);
+                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(file_handler);
                 if (putIntoGCJobQueueStatus == false) {
-                    fileHandler->file_ownership_flag_ = 0;
+                    file_handler->file_ownership = 0;
                 }
             } else {
-                fileHandler->file_ownership_flag_ = 0;
+                file_handler->file_ownership = 0;
             }
             // insert to cache if current key exist in cache && cache is enabled
             if (keyToValueListCacheStr_ != nullptr) {
@@ -638,8 +638,8 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             }
         }
         if (onlyAnchorFlag == true && batchIt.first->file_operation_func_ptr_->isFileOpen() == false) {
-            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", batchIt.first->target_file_id_);
-            batchIt.first->file_ownership_flag_ = 0;
+            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", batchIt.first->file_id);
+            batchIt.first->file_ownership = 0;
             jobeDoneStatus.push_back(true);
             continue;
         }
@@ -647,12 +647,12 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
         hashStoreFileHeader newFileHeader;
         bool needFlushFileHeader = false;
         if (batchIt.first->file_operation_func_ptr_->isFileOpen() == false) {
-            string targetFilePath = workingDir_ + "/" + to_string(batchIt.first->target_file_id_) + ".delta";
+            string targetFilePath = workingDir_ + "/" + to_string(batchIt.first->file_id) + ".delta";
             if (std::filesystem::exists(targetFilePath) == false) {
                 batchIt.first->file_operation_func_ptr_->createThenOpenFile(targetFilePath);
                 newFileHeader.current_prefix_used_bit_ = batchIt.first->current_prefix_used_bit_;
                 newFileHeader.file_create_reason_ = batchIt.first->file_create_reason_;
-                newFileHeader.file_id_ = batchIt.first->target_file_id_;
+                newFileHeader.file_id_ = batchIt.first->file_id;
                 newFileHeader.previous_file_id_first_ = batchIt.first->previous_file_id_first_;
                 newFileHeader.previous_file_id_second_ = batchIt.first->previous_file_id_second_;
                 needFlushFileHeader = true;
@@ -696,8 +696,8 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
         // write content
         bool writeContentStatus = writeContentToFile(batchIt.first, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
         if (writeContentStatus == false) {
-            debug_error("[ERROR] Could not write content to file ID = %lu, object number = %lu, object total size = %lu\n", batchIt.first->target_file_id_, targetObjectNumber, targetWriteBufferSize);
-            batchIt.first->file_ownership_flag_ = 0;
+            debug_error("[ERROR] Could not write content to file ID = %lu, object number = %lu, object total size = %lu\n", batchIt.first->file_id, targetObjectNumber, targetWriteBufferSize);
+            batchIt.first->file_ownership = 0;
             jobeDoneStatus.push_back(false);
         } else {
             // insert to cache if need
@@ -710,10 +710,10 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             if (enableGCFlag_ == true) {
                 bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(batchIt.first);
                 if (putIntoGCJobQueueStatus == false) {
-                    batchIt.first->file_ownership_flag_ = 0;
+                    batchIt.first->file_ownership = 0;
                 }
             } else {
-                batchIt.first->file_ownership_flag_ = 0;
+                batchIt.first->file_ownership = 0;
             }
             jobeDoneStatus.push_back(true);
         }
@@ -738,9 +738,9 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
     }
 }
 
-bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec)
+bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* file_handler, string key, vector<string>& valueVec)
 {
-    std::scoped_lock<std::shared_mutex> r_lock(fileHandler->fileOperationMutex_);
+    std::scoped_lock<std::shared_mutex> r_lock(file_handler->fileOperationMutex_);
     // check if not flushed anchors exit, return directly.
     // try extract from cache first
     if (keyToValueListCacheStr_ != nullptr) {
@@ -755,25 +755,25 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 valueVec.push_back(string(it.data_, it.size_));
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
-            fileHandler->file_ownership_flag_ = 0;
+            file_handler->file_ownership = 0;
             return true;
         } else {
             // Not exist in cache, find the content in the file
-            char readContentBuffer[fileHandler->total_object_bytes_];
-            bool readFromFileStatus = readContentFromFile(fileHandler, readContentBuffer);
+            char readContentBuffer[file_handler->total_object_bytes_];
+            bool readFromFileStatus = readContentFromFile(file_handler, readContentBuffer);
             if (readFromFileStatus == false) {
                 debug_error("[ERROR] Could not read from file for key = %s\n", key.c_str());
                 valueVec.clear();
-                fileHandler->file_ownership_flag_ = 0;
+                file_handler->file_ownership = 0;
                 return false;
             } else {
                 unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
                 uint64_t processedObjectNumber = 0;
-                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap, currentKey), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
-                if (processedObjectNumber != fileHandler->total_object_count_) {
-                    debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
+                STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, file_handler->total_object_bytes_, currentFileProcessMap, currentKey), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+                if (processedObjectNumber != file_handler->total_object_count_) {
+                    debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, file_handler->total_object_count_);
                     valueVec.clear();
-                    fileHandler->file_ownership_flag_ = 0;
+                    file_handler->file_ownership = 0;
                     return false;
                 } else {
                     auto mapIt = currentFileProcessMap.find(currentKey);
@@ -783,7 +783,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             exit(1);
                         }
                         valueVec.clear();
-                        fileHandler->file_ownership_flag_ = 0;
+                        file_handler->file_ownership = 0;
                         return true;
                     } else {
                         debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
@@ -799,27 +799,27 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             putKeyValueVectorToAppendableCacheIfNotExist(mapIt->first.data_, mapIt->first.size_, mapIt->second);
                             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
 //                        }
-                        fileHandler->file_ownership_flag_ = 0;
+                        file_handler->file_ownership = 0;
                         return true;
                     }
                 }
             }
         }
     } else {
-        char readContentBuffer[fileHandler->total_object_bytes_];
-        bool readFromFileStatus = readContentFromFile(fileHandler, readContentBuffer);
+        char readContentBuffer[file_handler->total_object_bytes_];
+        bool readFromFileStatus = readContentFromFile(file_handler, readContentBuffer);
         if (readFromFileStatus == false) {
             valueVec.clear();
-            fileHandler->file_ownership_flag_ = 0;
+            file_handler->file_ownership = 0;
             return false;
         } else {
             unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t> currentFileProcessMap;
             uint64_t processedObjectNumber = 0;
-            STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, fileHandler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
-            if (processedObjectNumber != fileHandler->total_object_count_) {
-                debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, fileHandler->total_object_count_);
+            STAT_PROCESS(processedObjectNumber = processReadContentToValueLists(readContentBuffer, file_handler->total_object_bytes_, currentFileProcessMap), StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+            if (processedObjectNumber != file_handler->total_object_count_) {
+                debug_error("[ERROR] processed object number during read = %lu, not equal to object number in metadata = %lu\n", processedObjectNumber, file_handler->total_object_count_);
                 valueVec.clear();
-                fileHandler->file_ownership_flag_ = 0;
+                file_handler->file_ownership = 0;
                 return false;
             } else {
                 str_t currentKey((char*)key.c_str(), key.size());
@@ -830,7 +830,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                         exit(1);
                     }
                     valueVec.clear();
-                    fileHandler->file_ownership_flag_ = 0;
+                    file_handler->file_ownership = 0;
                     return true;
                 } else {
                     debug_trace("Get current key related values success, key = %s, value number = %lu\n", key.c_str(), currentFileProcessMap.at(currentKey).size());
@@ -839,7 +839,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                         valueVec.push_back(string(vecIt.data_, vecIt.size_));
                     }
                 }
-                fileHandler->file_ownership_flag_ = 0;
+                file_handler->file_ownership = 0;
                 return true;
             }
         }
@@ -851,54 +851,54 @@ void HashStoreFileOperator::operationWorker(int threadID)
     while (true) {
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            while (operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done_ == false) {
+            while (operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done == false) {
                 operationNotifyCV_.wait(lk);
             }
         }
-        if (operationToWorkerMQ_->done_ == true && operationToWorkerMQ_->isEmpty() == true) {
+        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
             break;
         }
         hashStoreOperationHandler* currentHandlerPtr;
         if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
             bool operationsStatus;
-            std::scoped_lock<std::shared_mutex> w_lock(currentHandlerPtr->file_handler_->fileOperationMutex_);
-            switch (currentHandlerPtr->opType_) {
+            std::scoped_lock<std::shared_mutex> w_lock(currentHandlerPtr->file_handler->fileOperationMutex_);
+            switch (currentHandlerPtr->op_type) {
             case kGet:
-                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentHandlerPtr->file_handler_->target_file_id_);
+                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentHandlerPtr->file_handler->file_id);
                 operationsStatus = false;
                 break;
             case kMultiPut:
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.size);
+                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_handler->file_id, currentHandlerPtr->batched_write_operation_.size);
                 STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(currentHandlerPtr), StatsType::OP_MULTIPUT);
-                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_handler_->target_file_id_, currentHandlerPtr->batched_write_operation_.size);
+                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_handler->file_id, currentHandlerPtr->batched_write_operation_.size);
                 break;
             case kPut:
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->file_handler_->target_file_id_);
+                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->file_handler->file_id);
                 STAT_PROCESS(operationsStatus = operationWorkerPutFunction(currentHandlerPtr), StatsType::OP_PUT);
                 break;
             default:
-                debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->opType_);
+                debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->op_type);
                 break;
             }
             if (operationsStatus == false) {
-                currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
-                debug_trace("Process file ID = %lu error\n", currentHandlerPtr->file_handler_->target_file_id_);
-                currentHandlerPtr->jobDone_ = kError;
+                currentHandlerPtr->file_handler->file_ownership = 0;
+                debug_trace("Process file ID = %lu error\n", currentHandlerPtr->file_handler->file_id);
+                currentHandlerPtr->job_done = kError;
             } else {
-                if (currentHandlerPtr->opType_ != kGet && enableGCFlag_ == true) {
-                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(currentHandlerPtr->file_handler_);
+                if (currentHandlerPtr->op_type != kGet && enableGCFlag_ == true) {
+                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(currentHandlerPtr->file_handler);
                     if (putIntoGCJobQueueStatus == false) {
-                        currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
-                        debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_handler_->target_file_id_);
-                        currentHandlerPtr->jobDone_ = kDone;
+                        currentHandlerPtr->file_handler->file_ownership = 0;
+                        debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_handler->file_id);
+                        currentHandlerPtr->job_done = kDone;
                     } else {
-                        debug_trace("Process file ID = %lu done, file should GC\n", currentHandlerPtr->file_handler_->target_file_id_);
-                        currentHandlerPtr->jobDone_ = kDone;
+                        debug_trace("Process file ID = %lu done, file should GC\n", currentHandlerPtr->file_handler->file_id);
+                        currentHandlerPtr->job_done = kDone;
                     }
                 } else {
-                    currentHandlerPtr->file_handler_->file_ownership_flag_ = 0;
-                    debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_handler_->target_file_id_);
-                    currentHandlerPtr->jobDone_ = kDone;
+                    currentHandlerPtr->file_handler->file_ownership = 0;
+                    debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_handler->file_id);
+                    currentHandlerPtr->job_done = kDone;
                 }
             }
         }
@@ -911,7 +911,7 @@ void HashStoreFileOperator::operationWorker(int threadID)
 void HashStoreFileOperator::notifyOperationWorkerThread()
 {
     while (true) {
-        if (operationToWorkerMQ_->done_ == true && operationToWorkerMQ_->isEmpty() == true) {
+        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
             break;
         }
         if (operationToWorkerMQ_->isEmpty() == false) {

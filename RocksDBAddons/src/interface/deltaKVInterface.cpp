@@ -136,7 +136,7 @@ bool DeltaKV::Close()
     }
     cerr << "[DeltaKV Close DB] Wait write back" << endl;
     if (enableWriteBackOperationsFlag_ == true) {
-        writeBackOperationsQueue_->done_ = true;
+        writeBackOperationsQueue_->done = true;
         while (writeBackOperationsQueue_->isEmpty() == false) {
             asm volatile("");
         }
@@ -149,7 +149,7 @@ bool DeltaKV::Close()
                 notifyWriteBatchMQ_->push(writeBatchMapForSearch_[i]);
             }
         }
-        notifyWriteBatchMQ_->done_ = true;
+        notifyWriteBatchMQ_->done = true;
         while (writeBatchOperationWorkExitFlag == false) {
             asm volatile("");
         }
@@ -157,7 +157,7 @@ bool DeltaKV::Close()
     }
     cerr << "[DeltaKV Close DB] Set job done" << endl;
     if (enableParallelLsmInterface == true) {
-        lsmInterfaceOperationsQueue_->done_ = true;
+        lsmInterfaceOperationsQueue_->done = true;
         lsm_interface_cv.notify_one();
         while (lsmInterfaceOperationsQueue_->isEmpty() == false) {
             asm volatile("");
@@ -377,8 +377,16 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         } 
 
         if (enableParallelLsmInterface == true) {
+            struct timeval tv1, tv2;
+            gettimeofday(&tv1, 0);
+            int mx = 0;
             while (lsmInterfaceOpPtr->job_done == kNotDone) {
-                asm volatile("");
+                gettimeofday(&tv2, 0);
+                if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 
+                        tv2.tv_sec - tv1.tv_sec > mx) {
+                    mx = tv2.tv_sec - tv1.tv_sec;
+                    debug_error("Wait for %d seconds\n", mx);
+                }
             }
             delete lsmInterfaceOpPtr;
         }
@@ -1012,7 +1020,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
 void DeltaKV::processBatchedOperationsWorker()
 {
     while (true) {
-        if (notifyWriteBatchMQ_->done_ == true && notifyWriteBatchMQ_->isEmpty() == true) {
+        if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
         }
         unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
@@ -1156,8 +1164,16 @@ void DeltaKV::processBatchedOperationsWorker()
 
                 // Check LSM interface
                 if (enableParallelLsmInterface == true) {
+                    struct timeval tv1, tv2;
+                    gettimeofday(&tv1, 0);
+                    int mx = 0;
                     while (lsmInterfaceOpPtr->job_done == kNotDone) {
-                        asm volatile("");
+                        gettimeofday(&tv2, 0);
+                        if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 
+                                tv2.tv_sec - tv1.tv_sec > mx) {
+                            mx = tv2.tv_sec - tv1.tv_sec;
+                            debug_error("Wait for %d seconds\n", mx);
+                        }
                     }
                     if (lsmInterfaceOpPtr->job_done == kError) {
                         debug_error("lsmInterfaceOp error %s\n", ""); 
@@ -1196,7 +1212,7 @@ void DeltaKV::processBatchedOperationsWorker()
 void DeltaKV::processWriteBackOperationsWorker()
 {
     while (true) {
-        if (writeBackOperationsQueue_->done_ == true && writeBackOperationsQueue_->isEmpty() == true) {
+        if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
         }
         writeBackObjectStruct* currentProcessPair;
@@ -1220,7 +1236,7 @@ void DeltaKV::processWriteBackOperationsWorker()
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
     while (true) {
-        if (lsmInterfaceOperationsQueue_->done_ == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
+        if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;
         }
         lsmInterfaceOperationStruct* op;
@@ -1228,7 +1244,7 @@ void DeltaKV::processLsmInterfaceOperationsWorker()
         lsm_interface_cv.wait(lock, [this] { 
                 return 
                 this->lsmInterfaceOperationsQueue_->isEmpty() == false || 
-                this->lsmInterfaceOperationsQueue_->done_; 
+                this->lsmInterfaceOperationsQueue_->done; 
                 });
 
         if (lsmInterfaceOperationsQueue_->pop(op)) {

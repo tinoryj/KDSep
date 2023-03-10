@@ -29,10 +29,11 @@ uint32_t BucketKeyFilter::hash3(const str_t& s, int arrSize) {
 }
 
 BucketKeyFilter::BucketKeyFilter() {
+    bm = new BitMap(BITMAP_SIZE);
 }
 
 BucketKeyFilter::~BucketKeyFilter() {
-    Clear();
+    Clear(false);
 }
 
 bool BucketKeyFilter::SingleInsertToBitmap(const str_t& key) {
@@ -127,10 +128,14 @@ bool BucketKeyFilter::Erase(const str_t& key) {
     return true;
 }
 
-void BucketKeyFilter::Clear() {
+void BucketKeyFilter::Clear(bool build) {
     if (bm != nullptr) {
         delete bm;
-        bm = nullptr;
+        if (build) {
+            bm = new BitMap(BITMAP_SIZE);
+        } else {
+            bm = nullptr;
+        }
     }
     for (auto& it : keys) {
         delete[] it.data_;

@@ -32,7 +32,8 @@ private:
     DeltaKVOptions* internalOptionsPtr_ = nullptr;
     uint64_t fileFlushThreshold_ = 0;
     bool shouldUseDirectOperationsFlag_;
-    bool enableLsmTreeDeltaMeta_ = true;
+    bool enable_lsm_tree_delta_meta_ = true;
+    bool enable_index_block_ = false;
     // size information
     uint64_t extractValueSizeThreshold_;
     // get function pointers

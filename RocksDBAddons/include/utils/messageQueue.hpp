@@ -15,7 +15,7 @@ class messageQueue {
 public:
     messageQueue();
     ~messageQueue() = default;
-    boost::atomic<bool> done_;
+    boost::atomic<bool> done;
     bool push(T& data);
     bool pop(T& data);
     bool isEmpty();
@@ -27,7 +27,7 @@ private:
 template <typename T>
 messageQueue<T>::messageQueue()
 {
-    done_ = false;
+    done = false;
 }
 
 template <typename T>

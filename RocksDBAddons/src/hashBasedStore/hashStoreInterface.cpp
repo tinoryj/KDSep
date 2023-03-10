@@ -11,7 +11,8 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     }
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
-    enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
+    enable_lsm_tree_delta_meta_ = options->enable_lsm_tree_delta_meta;
+    enable_index_block_ = options->enable_index_block;
     if (options->enable_deltaStore_garbage_collection == true) {
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
@@ -55,7 +56,7 @@ HashStoreInterface::~HashStoreInterface()
 bool HashStoreInterface::setJobDone()
 {
     if (notifyGCMQ_ != nullptr) {
-        notifyGCMQ_->done_ = true;
+        notifyGCMQ_->done = true;
     }
     if (hashStoreFileManagerPtr_->setJobDone() == true) {
         if (hashStoreFileOperatorPtr_->setJobDone() == true) {
@@ -93,12 +94,12 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
     } else {
         if (objectPairMempoolHandler.isAnchorFlag_ == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes_ == 0)) {
             if (tempFileHandler != nullptr) {
-                tempFileHandler->file_ownership_flag_ = 0;
+                tempFileHandler->file_ownership = 0;
             }
             return true;
         }
         ret = hashStoreFileOperatorPtr_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
-        tempFileHandler->file_ownership_flag_ = 0;
+        tempFileHandler->file_ownership = 0;
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", objectPairMempoolHandler.keyPtr_);
             return false;
@@ -187,8 +188,8 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
             hashStoreOperationHandler* currentOperationHandler = new hashStoreOperationHandler(mapIt.first);
             currentOperationHandler->batched_write_operation_.mempool_handler_vec_ptr_ = handlerVecTemp + handlerStartVecIndex;
             currentOperationHandler->batched_write_operation_.size = handlerVecIndex - handlerStartVecIndex;
-            currentOperationHandler->jobDone_ = kNotDone;
-            currentOperationHandler->opType_ = kMultiPut;
+            currentOperationHandler->job_done = kNotDone;
+            currentOperationHandler->op_type = kMultiPut;
             STAT_PROCESS(hashStoreFileOperatorPtr_->putWriteOperationsVectorIntoJobQueue(currentOperationHandler), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
             handlers[opHandlerIndex++] = currentOperationHandler;
         }
@@ -214,7 +215,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
         return true;
     } else {
         StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
-        if (enableLsmTreeDeltaMeta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+        if (enable_lsm_tree_delta_meta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
             ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
             bool deltaExistFlag = (!valueStrVec.empty());
             if (deltaExistFlag) {
@@ -224,7 +225,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
             }
             return ret;
         } else {
-            tempFileHandler->file_ownership_flag_ = 0;
+            tempFileHandler->file_ownership = 0;
             return true;
         }
     }

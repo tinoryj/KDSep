@@ -393,6 +393,14 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         }
     }
 
+    if (new_value->size() > 4100) {
+        debug_error("Full merge finished for key = %s, value size = %lu, "
+                "number of deltas = %lu, num of leading %u, final size = %lu\n", 
+                key.ToString().c_str(), existing_value->size(), 
+                deltas.size(), leading_index, new_value->size());
+        exit(1);
+    }
+
     debug_info("Full merge finished for key = %s, value size = %lu, "
             "number of deltas = %lu, num of leading %u, final size = %lu\n", 
             key.ToString().c_str(), existing_value->size(), 

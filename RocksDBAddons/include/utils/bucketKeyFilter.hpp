@@ -17,7 +17,7 @@ class BucketKeyFilter {
     bool MayExist(const string& key);
     bool MayExist(const str_t& key);
     bool Erase(const str_t& key);
-    void Clear();
+    void Clear(bool build = true);
 
     // keys are used only when bm is disabled.
     unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> keys;

@@ -153,7 +153,7 @@ enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal
     kShouldDelete = 4 }; // gc done, split/merge to new file, this file should be delete
 
 struct hashStoreFileMetaDataHandler {
-    uint64_t target_file_id_ = 0;
+    uint64_t file_id = 0;
     uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
     uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
     uint64_t current_prefix_used_bit_ = 0;
@@ -164,7 +164,7 @@ struct hashStoreFileMetaDataHandler {
     uint64_t no_gc_wait_operation_number_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     bool markedByMultiPut_ = false;
-    int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
+    int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
 //    std::unordered_set<string> storedKeysSet_;
@@ -192,14 +192,14 @@ enum operationStatus {
 };
 
 typedef struct hashStoreOperationHandler {
-    hashStoreFileMetaDataHandler* file_handler_;
+    hashStoreFileMetaDataHandler* file_handler;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
     hashStoreBatchedWriteOperationHandler batched_write_operation_;
-    hashStoreFileOperationType opType_;
-    operationStatus jobDone_ = kNotDone;
+    hashStoreFileOperationType op_type;
+    operationStatus job_done = kNotDone;
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler)
-        : file_handler_(file_handler) {};
+        : file_handler(file_handler) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {

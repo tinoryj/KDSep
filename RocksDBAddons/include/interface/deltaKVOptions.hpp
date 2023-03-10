@@ -98,6 +98,8 @@ public:
     bool rocksdb_sync = false;
     bool internalRocksDBBatchedOperation_ = false;
 
+    bool enable_index_block = true;
+
     AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
 
     // dump options
