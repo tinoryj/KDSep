@@ -192,6 +192,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("        prepare-content", DS_MULTIPUT_PREPARE_FILE_CONTENT, time[DKV_FLUSH]);
     PRINT_FULL("        file-write-func", DS_WRITE_FUNCTION, time[DKV_FLUSH]);
     PRINT_FULL("          file-op", DELTAKV_HASHSTORE_PUT_IO_TRAFFIC, time[DKV_FLUSH]);
+    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_WRITE, time[DKV_FLUSH]);
+    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_FLUSH, time[DKV_FLUSH]);
     PRINT_FULL("        insert-cache", DS_MULTIPUT_INSERT_CACHE, time[DKV_FLUSH]);
     PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
     PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);

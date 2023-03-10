@@ -1,4 +1,5 @@
 #include "utils/fileOperation.hpp"
+#include "utils/statsRecorder.hh"
 
 using namespace std;
 
@@ -263,7 +264,10 @@ fileOperationStatus_t FileOperation::writeFile(char* contentBuffer, uint64_t con
                 memset(globalWriteBuffer_, 0, globalBufferSize_);
                 bufferUsedSize_ = 0;
             }
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             auto wReturn = pwrite(fileDirect_, writeBuffer, actualNeedWriteSize, directIOWriteFileSize_);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
             if (wReturn != actualNeedWriteSize) {
                 free(writeBuffer);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
@@ -392,7 +396,10 @@ fileOperationStatus_t FileOperation::flushFile()
                     processedPageNumber++;
                 }
             }
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             auto wReturn = pwrite(fileDirect_, writeBuffer, writeBufferSize, directIOWriteFileSize_);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_FLUSH, tv);
             if (wReturn != writeBufferSize) {
                 free(writeBuffer);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fileDirect_, strerror(errno));
