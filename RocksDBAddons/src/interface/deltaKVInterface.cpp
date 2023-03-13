@@ -380,6 +380,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             struct timeval tv1, tv2;
             gettimeofday(&tv1, 0);
             int mx = 0;
+            lsm_interface_cv.notify_one();
             while (lsmInterfaceOpPtr->job_done == kNotDone) {
                 gettimeofday(&tv2, 0);
                 if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 

@@ -7,6 +7,7 @@
 #include <boost/atomic.hpp>
 #include <condition_variable>
 #include <shared_mutex>
+#include <string_view>
 #include "common/rocksdbHeaders.hpp"
 
 using namespace std;
@@ -14,6 +15,8 @@ using namespace std;
 namespace DELTAKV_NAMESPACE {
 
 class BucketKeyFilter;
+
+typedef rocksdb::Slice rSlice;
 
 typedef struct str_t {
     char* data_;
@@ -26,28 +29,24 @@ typedef struct str_t {
     }
 } str_t;
 
-typedef struct str_cpy_t {
-    char* data_ = nullptr;
-    uint32_t size_ = 0;
-    str_cpy_t() {
-        data_ = nullptr;
-        size_ = 0;
-    }
-    str_cpy_t(char* data, uint32_t size)
-    {
-        data_ = new char[size];
-        memcpy(data_, data, size);
-        size_ = size;
-    }
-    ~str_cpy_t()
-    {
-        if (data_ != nullptr) {
-            delete[] data_;
-        }
-    }
-} str_cpy_t;
-
 static unsigned int charBasedHashFunc(char* data, uint32_t n)
+{
+    unsigned int hash = 388650013;
+    unsigned int scale = 388650179;
+    unsigned int hardener = 1176845762;
+    uint32_t i;
+    for (i = 0; i < n / 4 * 4; i+=4) {
+        hash *= scale;
+        hash += *((uint32_t*)(data + i));
+    }
+    for (; i < n; i++) {
+        hash *= scale;
+        hash += data[i];
+    }
+    return hash ^ hardener;
+}
+
+static unsigned int charBasedHashFuncConst(const char* data, uint32_t n)
 {
     unsigned int hash = 388650013;
     unsigned int scale = 388650179;
@@ -78,6 +77,23 @@ struct mapHashKeyForStr_t {
     size_t operator()(str_t const& s) const
     {
         return charBasedHashFunc(s.data_, s.size_);
+    }
+};
+
+struct mapEqualKeyForSlice {
+    bool operator()(rocksdb::Slice const& a, rocksdb::Slice const& b) const
+    {
+        if (a.size() == b.size()) {
+            return (memcmp(a.data(), b.data(), a.size()) == 0);
+        }
+        return false;
+    }
+};
+
+struct mapHashKeyForSlice {
+    size_t operator()(rocksdb::Slice const& s) const
+    {
+        return charBasedHashFuncConst(s.data(), s.size());
     }
 };
 

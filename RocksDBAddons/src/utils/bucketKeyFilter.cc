@@ -39,7 +39,7 @@ BucketKeyFilter::~BucketKeyFilter() {
 bool BucketKeyFilter::SingleInsertToBitmap(const str_t& key) {
     if (bm == nullptr) bm = new BitMap(BITMAP_SIZE);
     bm->setBit(hash1(key, BITMAP_SIZE));
-    bm->setBit(hash2(key, BITMAP_SIZE));
+//    bm->setBit(hash2(key, BITMAP_SIZE));
     bm->setBit(hash3(key, BITMAP_SIZE));
     return true;
 }
@@ -95,9 +95,9 @@ bool BucketKeyFilter::MayExist(const str_t& key) {
         if (bm->getBit(hash1(key, BITMAP_SIZE)) == false) {
             return false;
         }
-        if (bm->getBit(hash2(key, BITMAP_SIZE)) == false) {
-            return false;
-        }
+//        if (bm->getBit(hash2(key, BITMAP_SIZE)) == false) {
+//            return false;
+//        }
         if (bm->getBit(hash3(key, BITMAP_SIZE)) == false) {
             return false;
         }

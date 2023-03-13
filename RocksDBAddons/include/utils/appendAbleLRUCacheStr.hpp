@@ -413,8 +413,8 @@ public:
 class AppendAbleLRUCacheStrT {
 private:
     AppendAbleLRUCacheStrTShard** shards_ = nullptr;
-    uint32_t shard_num_ = 32;
-    const uint32_t SHARD_MASK = 31;
+    uint32_t shard_num_ = 64;
+    const uint32_t SHARD_MASK = 63;
     uint64_t cacheSize_ = 0;
 
     inline unsigned int hash(str_t& cache_key) {
