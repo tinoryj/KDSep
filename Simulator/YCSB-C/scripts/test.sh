@@ -29,7 +29,7 @@ func() {
                                 for ((k=0; k<${#cacheSizes[@]}; k++)); do
                                     cacheSize=${cacheSizes[$k]}
 #                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 262144 / 0.5"|bc)
-                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 1024 / 1024 / 0.5"|bc)
+                                    bucketNumber=$(echo "( $opnum * (10 - $index) / 10 * (38 + $fl) ) / 256 / 1024 / 0.5"|bc)
                                     if [[ $bucketNumber -gt 40000 ]]; then
                                         bucketNumber=40000
                                     fi
@@ -161,9 +161,9 @@ runModeSet=('raw')
 
 bonus=""
 flengths=(400)
-ExpName="_p23_test_bucketsize"
+ExpName="_p24_test_newtree"
 indexSet=(1 3 5 7 9)
-indexSet=(5)
+indexSet=(1)
 works=8
 #indexSet=(5)
 reqs=("10M")

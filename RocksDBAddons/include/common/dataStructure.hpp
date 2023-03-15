@@ -63,6 +63,26 @@ static unsigned int charBasedHashFuncConst(const char* data, uint32_t n)
     return hash ^ hardener;
 }
 
+inline static uint64_t prefixSubstr(uint64_t prefix, uint64_t len) {
+    return prefix & ((1 << len) - 1);
+} 
+
+inline static uint64_t prefixStrToU64(const string& prefix) {
+    uint64_t prefix_u64 = 0;
+    for (auto i = prefix.size() - 1; i >= 0; i--) {
+        prefix_u64 = (prefix_u64 << 1) + (prefix[i] - '0');
+    }
+    return prefix_u64;
+}
+
+inline static uint64_t prefixExtract(uint64_t k) {
+    return k & ((1ull << 56) - 1);
+}
+
+inline static uint64_t prefixLenExtract(uint64_t k) {
+    return k >> 56;
+}
+
 struct mapEqualKeForStr_t {
     bool operator()(str_t const& a, str_t const& b) const
     {
@@ -172,19 +192,23 @@ struct hashStoreFileMetaDataHandler {
     uint64_t file_id = 0;
     uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
     uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
-    uint64_t current_prefix_used_bit_ = 0;
+    uint64_t prefix_bit = 0;
     hashStoreFileCreateReason file_create_reason_ = kNewFile;
-    uint64_t total_object_count_ = 0;
-    uint64_t total_object_bytes_ = 0;
-    uint64_t total_on_disk_bytes_ = 0;
+    uint64_t total_object_cnt = 0;
+    uint64_t total_object_bytes = 0;
+    uint64_t total_on_disk_bytes = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
     hashStoreFileGCType gc_result_status_flag_ = kNew;
     bool markedByMultiPut_ = false;
     int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
-    FileOperation* file_operation_func_ptr_;
+    FileOperation* file_op_ptr;
     std::shared_mutex fileOperationMutex_;
 //    std::unordered_set<string> storedKeysSet_;
     BucketKeyFilter* filter = nullptr;
+    bool DiskAndBufferSizeExceeds(uint64_t threshold) {
+        return total_on_disk_bytes + file_op_ptr->getFileBufferedSize() >
+            threshold;
+    }
 };
 
 typedef struct hashStoreWriteOperationHandler {
@@ -222,7 +246,7 @@ typedef struct hashStoreFileHeader {
     uint64_t file_id_;
     uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
     uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
-    uint64_t current_prefix_used_bit_;
+    uint64_t prefix_bit;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
 

@@ -26,10 +26,10 @@ endif ()
 
 if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
    message (STATUS "CMAKE_BUILD_TYPE as Release selected")
-   add_compile_options(-std=c++17 -fPIC -frtti -g) 
+   add_compile_options(-std=c++17 -fPIC -frtti -g -DXXH_PRIVATE_API) 
 else()
    message (STATUS "CMAKE_BUILD_TYPE as Debug selected")
-   add_compile_options(-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak) 
+   add_compile_options(-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak -DXXH_PRIVATE_API) 
 endif ()
 
 add_library(DeltaKV STATIC 

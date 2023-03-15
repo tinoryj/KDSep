@@ -92,7 +92,7 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", objectPairMempoolHandler.keyPtr_);
         return false;
     } else {
-        if (objectPairMempoolHandler.isAnchorFlag_ == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes_ == 0)) {
+        if (objectPairMempoolHandler.isAnchorFlag_ == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes == 0)) {
             if (tempFileHandler != nullptr) {
                 tempFileHandler->file_ownership = 0;
             }
