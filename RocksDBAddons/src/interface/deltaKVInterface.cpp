@@ -377,17 +377,26 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         } 
 
         if (enableParallelLsmInterface == true) {
-            struct timeval tv1, tv2;
-            gettimeofday(&tv1, 0);
-            int mx = 0;
-            lsm_interface_cv.notify_one();
+//            struct timeval tv1, tv2;
+//            gettimeofday(&tv1, 0);
+//            uint64_t mx = 100000;
+//            lsm_interface_cv.notify_one();
+//            while (lsmInterfaceOpPtr->job_done == kNotDone) {
+//                gettimeofday(&tv2, 0);
+//                if ((tv2.tv_sec - tv1.tv_sec) * 1000000 + tv2.tv_sec -
+//                        tv1.tv_sec > mx) {
+//                    mx += 100000; 
+//                    if (mx > 10 * 1e6) {
+//                        debug_error("Wait for %.2lf second. Notify\n", mx / 1000000.0);
+//                        lsm_interface_cv.notify_one();
+//                    }
+//                }
+//            }
             while (lsmInterfaceOpPtr->job_done == kNotDone) {
-                gettimeofday(&tv2, 0);
-                if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 
-                        tv2.tv_sec - tv1.tv_sec > mx) {
-                    mx = tv2.tv_sec - tv1.tv_sec;
-                    debug_error("Wait for %d seconds\n", mx);
-                }
+                asm volatile("");
+            }
+            if (lsmInterfaceOpPtr->job_done == kError) {
+                debug_error("lsmInterfaceOp error %s\n", ""); 
             }
             delete lsmInterfaceOpPtr;
         }
@@ -1168,12 +1177,14 @@ void DeltaKV::processBatchedOperationsWorker()
                     struct timeval tv1, tv2;
                     gettimeofday(&tv1, 0);
                     int mx = 0;
+                    lsm_interface_cv.notify_one();
                     while (lsmInterfaceOpPtr->job_done == kNotDone) {
                         gettimeofday(&tv2, 0);
                         if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 
                                 tv2.tv_sec - tv1.tv_sec > mx) {
                             mx = tv2.tv_sec - tv1.tv_sec;
-                            debug_error("Wait for %d seconds\n", mx);
+                            debug_error("Wait for %d seconds. Notify\n", mx);
+                            lsm_interface_cv.notify_one();
                         }
                     }
                     if (lsmInterfaceOpPtr->job_done == kError) {
@@ -1217,7 +1228,7 @@ void DeltaKV::processWriteBackOperationsWorker()
             break;
         }
         writeBackObjectStruct* currentProcessPair;
-        if (writeBackOperationsQueue_->pop(currentProcessPair)) {
+        while (writeBackOperationsQueue_->pop(currentProcessPair)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
             debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
@@ -1236,19 +1247,48 @@ void DeltaKV::processWriteBackOperationsWorker()
 
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
+    int counter = 0;
     while (true) {
         if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;
         }
         lsmInterfaceOperationStruct* op;
-        std::unique_lock<std::mutex> lock(lsm_interface_mutex);
-        lsm_interface_cv.wait(lock, [this] { 
-                return 
-                this->lsmInterfaceOperationsQueue_->isEmpty() == false || 
-                this->lsmInterfaceOperationsQueue_->done; 
-                });
 
-        if (lsmInterfaceOperationsQueue_->pop(op)) {
+//        {
+//            std::unique_lock<std::mutex> lock(lsm_interface_mutex);
+//            struct timeval tv1, tv2, res;
+//            gettimeofday(&tv1, 0);
+//            while (lsmInterfaceOperationsQueue_->isEmpty() == true && 
+//                    this->lsmInterfaceOperationsQueue_->done == false) {
+//                gettimeofday(&tv2, 0);
+//                timersub(&tv2, &tv1, &res);
+//                auto t = timevalToMicros(res);
+//
+//                if (t > 10000) {
+//                    lsm_interface_cv.wait(lock);
+//                    tv1 = tv2;
+//                }
+//            }
+//        }
+        {
+            std::unique_lock<std::mutex> lock(lsm_interface_mutex);
+            if (counter == 0 && 
+                    lsmInterfaceOperationsQueue_->isEmpty() == true && 
+                    this->lsmInterfaceOperationsQueue_->done == false) {
+                struct timeval tv1, tv2;
+                gettimeofday(&tv1, 0);
+                lsm_interface_cv.wait(lock);
+                gettimeofday(&tv2, 0);
+                if (tv2.tv_sec - tv1.tv_sec > 8) {
+                    debug_error("Wait for %.2lf seconds\n", 
+                            tv2.tv_sec - tv1.tv_sec + (tv2.tv_usec -
+                                tv1.tv_usec) / 1000000.0);
+                }
+                counter++; 
+            }
+        }
+
+        while (lsmInterfaceOperationsQueue_->pop(op)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (op->is_write == false) {
@@ -1259,6 +1299,9 @@ void DeltaKV::processLsmInterfaceOperationsWorker()
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
             op->job_done = kDone;
+            if (counter > 0) {
+                counter--;
+            }
         }
     }
     return;

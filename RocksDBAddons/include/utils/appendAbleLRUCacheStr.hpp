@@ -23,7 +23,7 @@ public:
 
     ~lru_cache_str_t()
     {
-        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
+//        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
         clear();
     }
 
@@ -237,7 +237,6 @@ public:
             memcpy(new_value_ele.data_, value_element.data_, new_value_ele.size_);
             old_value->push_back(new_value_ele);
             promote(i, old_value);
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_CACHE_FIND, tv);
             while (size() >= m_capacity) {
                 evict();
             }
@@ -278,19 +277,19 @@ public:
 
     void clear()
     {
-        uint64_t valueSizes = 0;
-        uint64_t keySizes = 0;
+//        uint64_t valueSizes = 0;
+//        uint64_t keySizes = 0;
         m_list.clear();
         for (auto& it : m_map) {
             for (auto& it0 : *it.second.first) {
-                valueSizes += it0.size_;
+//                valueSizes += it0.size_;
                 delete[] it0.data_;
             }
-            keySizes += it.first.size_;
+//            keySizes += it.first.size_;
             delete[] it.first.data_;
             delete it.second.first;
         }
-        debug_error("clear, key total sizes %lu, value total sizes %lu\n", keySizes, valueSizes);
+//        debug_error("clear, key total sizes %lu, value total sizes %lu\n", keySizes, valueSizes);
         m_map.clear();
         data_size = 0;
     }
@@ -325,6 +324,8 @@ private:
     }
 
     inline void promote(map_type::iterator i, value_type v) {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         list_type::iterator j = i->second.second;
         str_t keyStored = i->first;
         if (j != m_list.begin()) {
@@ -336,6 +337,8 @@ private:
             j = m_list.begin();
             m_map[keyStored] = std::make_pair(v, j);
         }
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::DELTAKV_HASHSTORE_CACHE_PROMOTE, tv);
     }
 
     map_type m_map;
@@ -390,7 +393,7 @@ public:
 
     void cleanCacheIfExist(str_t& cache_key) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-        STAT_PROCESS(Cache_->cleanIfExist(cache_key), StatsType::DELTAKV_HASHSTORE_CACHE_PROMOTE);
+        Cache_->cleanIfExist(cache_key);
     }
 
     void appendToCache(str_t& cache_key, value_type data) {
@@ -401,7 +404,7 @@ public:
     // data is from external
     void appendToCacheIfExist(str_t& cache_key, str_t& data) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
-        STAT_PROCESS(Cache_->appendIfExist(cache_key, data), StatsType::DELTAKV_HASHSTORE_CACHE_PROMOTE);
+        Cache_->appendIfExist(cache_key, data);
     }
 
     value_type getFromCache(str_t& cache_key) {

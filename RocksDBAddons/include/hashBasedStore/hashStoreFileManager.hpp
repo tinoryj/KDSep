@@ -4,7 +4,6 @@
 #include "interface/deltaKVOptions.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-#include "utils/xxhash.h"
 #include "utils/prefixTreeForHashStore.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
@@ -38,7 +37,6 @@ public:
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
-    std::condition_variable deltaStore_workers_cond;
 
 private:
     // settings
@@ -59,6 +57,7 @@ private:
     bool enableWriteBackDuringGCFlag_ = false;
     bool enableBatchedOperations_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
+    bool enable_index_block_ = true;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
@@ -107,7 +106,11 @@ private:
             previousFileID2, hashStoreFileHeader& newFileHeader);
 
     void putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values); 
-    bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
+    bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr,
+            unordered_map<str_t, pair<vector<str_t>,
+            vector<hashStoreRecordHeader>>, mapHashKeyForStr_t,
+            mapEqualKeForStr_t>& gcResultMap, 
+            uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
     bool singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t prefixBitNumber, bool fileContainsReWriteKeysFlag);
     bool twoAdjacentFileMerge(hashStoreFileMetaDataHandler* currentHandlerPtr1,
             hashStoreFileMetaDataHandler* currentHandlerPtr2, 

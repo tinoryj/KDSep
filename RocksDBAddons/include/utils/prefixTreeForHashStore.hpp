@@ -60,6 +60,8 @@ public:
                 delete targetDeleteVec[i];
             }
         }
+
+        delete[] roots_;
     }
 
     void init(uint64_t initBitNumber, uint64_t maxFileNumber)

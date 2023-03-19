@@ -215,7 +215,9 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
         return true;
     } else {
         StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
-        if (enable_lsm_tree_delta_meta_ == true || tempFileHandler->filter->MayExist(keyStr)) {
+        if (enable_lsm_tree_delta_meta_ == true ||
+                tempFileHandler->filter->MayExist(keyStr) ||
+                tempFileHandler->sorted_filter->MayExist(keyStr)) {
             ret = hashStoreFileOperatorPtr_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
             bool deltaExistFlag = (!valueStrVec.empty());
             if (deltaExistFlag) {

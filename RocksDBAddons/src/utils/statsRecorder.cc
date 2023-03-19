@@ -5,11 +5,6 @@ namespace DELTAKV_NAMESPACE {
 
 StatsRecorder* StatsRecorder::mInstance = NULL;
 
-unsigned long long inline timevalToMicros(struct timeval& res)
-{
-    return res.tv_sec * S2US + res.tv_usec;
-}
-
 long long unsigned int StatsRecorder::timeAddto(timeval& start_time, long long unsigned int& resTime)
 {
     struct timeval end_time, res;
@@ -261,6 +256,9 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  insert-cache", DELTAKV_HASHSTORE_GET_INSERT_CACHE, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  get-file-process", DELTAKV_HASHSTORE_GET_PROCESS, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  get-file-io", DELTAKV_HASHSTORE_GET_IO, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-io-whole", DELTAKV_HASHSTORE_GET_IO_ALL, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-io-unsorted", DELTAKV_HASHSTORE_GET_IO_UNSORTED, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-io-sorted", DELTAKV_HASHSTORE_GET_IO_SORTED, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_GET_HASHSTORE]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore Cache Breakdown ------------------------------\n");

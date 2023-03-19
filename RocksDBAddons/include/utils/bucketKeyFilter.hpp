@@ -1,6 +1,5 @@
 #pragma once
 
-#include "utils/murmurHash.hpp"
 #include "indexBasedStore/ds/bitmap.hh"
 #include <unordered_set>
 

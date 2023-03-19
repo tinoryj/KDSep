@@ -19,12 +19,12 @@ public:
     HashStoreFileOperator(DeltaKVOptions* options, string workingDirStr, HashStoreFileManager* hashStoreFileManager /*messageQueue<hashStoreFileMetaDataHandler*>* fileManagerNotifyGCMQ*/);
     ~HashStoreFileOperator();
     // file operations with job queue support
-    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
+    bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
     bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler); 
     // file operations without job queue support-> only support single operation
-    bool directlyWriteOperation(hashStoreFileMetaDataHandler* fileHandler, mempoolHandler_t* memPoolHandler);
+    bool directlyWriteOperation(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
-    bool directlyReadOperation(hashStoreFileMetaDataHandler* fileHandler, string key, vector<string>& valueVec);
+    bool directlyReadOperation(hashStoreFileMetaDataHandler* file_hdl, string key, vector<string>& valueVec);
     bool waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler);
     // threads with job queue support
     void operationWorker(int threadID);
@@ -41,15 +41,26 @@ private:
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     bool enableGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
+    bool enable_index_block_ = true;
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool readContentFromFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer);
-    bool writeContentToFile(hashStoreFileMetaDataHandler* fileHandler, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
+    uint64_t readWholeFile(hashStoreFileMetaDataHandler* file_hdl, char** buf);
+    uint64_t readUnsortedPart(hashStoreFileMetaDataHandler* file_hdl, char** buf);
+    uint64_t readSortedPart(hashStoreFileMetaDataHandler* file_hdl, const string_view& key_view, char** buf, bool& key_exists);
+    bool writeContentToFile(hashStoreFileMetaDataHandler* file_hdl, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
+    bool readAndProcessSortedPart(hashStoreFileMetaDataHandler* file_hdl,
+            string& key, vector<string_view>& kd_list, char** buf);
+    bool readAndProcessWholeFile(hashStoreFileMetaDataHandler* file_hdl,
+            string& key, vector<string_view>& kd_list, char** buf);
+    bool readAndProcessUnsortedPart(hashStoreFileMetaDataHandler* file_hdl,
+            string& key, vector<string_view>& kd_list, char** buf);
+    
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string_view, vector<string_view>>& resultMapInternal, const string_view& currentKey);
+    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, vector<string_view>& kd_list, const string_view& currentKey);
     void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
-    bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* fileHandler);
+    bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     HashStoreFileManager* hashStoreFileManager_ = nullptr;

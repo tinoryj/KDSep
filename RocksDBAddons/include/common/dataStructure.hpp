@@ -1,9 +1,10 @@
 #pragma once
 
 #include "boost/thread.hpp"
+#include "utils/utils.hpp"
 #include "utils/fileOperation.hpp"
 #include "utils/mempool.hpp"
-#include <bits/stdc++.h>
+#include "utils/xxhash.h"
 #include <boost/atomic.hpp>
 #include <condition_variable>
 #include <shared_mutex>
@@ -14,9 +15,8 @@ using namespace std;
 
 namespace DELTAKV_NAMESPACE {
 
+class BucketIndexBlock;
 class BucketKeyFilter;
-
-typedef rocksdb::Slice rSlice;
 
 typedef struct str_t {
     char* data_;
@@ -61,26 +61,6 @@ static unsigned int charBasedHashFuncConst(const char* data, uint32_t n)
         hash += data[i];
     }
     return hash ^ hardener;
-}
-
-inline static uint64_t prefixSubstr(uint64_t prefix, uint64_t len) {
-    return prefix & ((1 << len) - 1);
-} 
-
-inline static uint64_t prefixStrToU64(const string& prefix) {
-    uint64_t prefix_u64 = 0;
-    for (auto i = prefix.size() - 1; i >= 0; i--) {
-        prefix_u64 = (prefix_u64 << 1) + (prefix[i] - '0');
-    }
-    return prefix_u64;
-}
-
-inline static uint64_t prefixExtract(uint64_t k) {
-    return k & ((1ull << 56) - 1);
-}
-
-inline static uint64_t prefixLenExtract(uint64_t k) {
-    return k >> 56;
 }
 
 struct mapEqualKeForStr_t {
@@ -198,13 +178,17 @@ struct hashStoreFileMetaDataHandler {
     uint64_t total_object_bytes = 0;
     uint64_t total_on_disk_bytes = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
-    hashStoreFileGCType gc_result_status_flag_ = kNew;
+    hashStoreFileGCType gc_status = kNew;
     bool markedByMultiPut_ = false;
     int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_op_ptr;
     std::shared_mutex fileOperationMutex_;
 //    std::unordered_set<string> storedKeysSet_;
     BucketKeyFilter* filter = nullptr;
+    BucketKeyFilter* sorted_filter = nullptr;
+    BucketIndexBlock* index_block = nullptr;
+    uint64_t unsorted_part_offset = 0;
+
     bool DiskAndBufferSizeExceeds(uint64_t threshold) {
         return total_on_disk_bytes + file_op_ptr->getFileBufferedSize() >
             threshold;
@@ -232,21 +216,23 @@ enum operationStatus {
 };
 
 typedef struct hashStoreOperationHandler {
-    hashStoreFileMetaDataHandler* file_handler;
+    hashStoreFileMetaDataHandler* file_hdl;
     hashStoreWriteOperationHandler write_operation_;
     hashStoreReadOperationHandler read_operation_;
     hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType op_type;
     operationStatus job_done = kNotDone;
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler)
-        : file_handler(file_handler) {};
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_hdl)
+        : file_hdl(file_hdl) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
-    uint64_t file_id_;
+    uint64_t file_id;
     uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
     uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
     uint64_t prefix_bit;
+    uint32_t index_block_size = 0;
+    uint32_t unsorted_part_offset = 0;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
 

@@ -15,12 +15,12 @@ enum fileOperationType { kFstream = 0,
     kDirectIO = 1,
     kAlignLinuxIO = 2 };
 
-typedef struct fileOperationStatus_t {
+typedef struct FileOpStatus {
     bool success_;
     uint64_t physicalSize_;
     uint64_t logicalSize_;
     uint64_t bufferedSize_;
-    fileOperationStatus_t(bool success,
+    FileOpStatus(bool success,
         uint64_t physicalSize,
         uint64_t logicalSize,
         uint64_t bufferedSize)
@@ -30,17 +30,18 @@ typedef struct fileOperationStatus_t {
         logicalSize_ = logicalSize;
         bufferedSize_ = bufferedSize;
     };
-    fileOperationStatus_t() {};
-} fileOperationStatus_t;
+    FileOpStatus() {};
+} FileOpStatus;
 
 class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
     FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize);
     ~FileOperation();
-    fileOperationStatus_t writeFile(char* contentBuffer, uint64_t contentSize);
-    fileOperationStatus_t readFile(char* contentBuffer, uint64_t contentSize);
-    fileOperationStatus_t flushFile();
+    FileOpStatus writeFile(char* write_buf, uint64_t size);
+    FileOpStatus readFile(char* read_buf, uint64_t size);
+    FileOpStatus positionedReadFile(char* read_buf, uint64_t offset, uint64_t size);
+    FileOpStatus flushFile();
 
     bool openFile(string path);
     bool createFile(string path);
@@ -54,14 +55,15 @@ public:
 private:
     fileOperationType operationType_;
     fstream fileStream_;
-    int fileDirect_;
-    uint64_t directIOPageSize_ = sysconf(_SC_PAGESIZE);
-    uint64_t directIOWriteFileSize_ = 0;
-    uint64_t directIOActualWriteFileSize_ = 0;
+    int fd_;
+    uint64_t page_size_ = sysconf(_SC_PAGESIZE);
+    uint64_t data_page_size_ = sysconf(_SC_PAGESIZE) - sizeof(uint32_t);
+    uint64_t direct_io_disk_size_ = 0;
+    uint64_t direct_io_data_size_ = 0;
     uint64_t newlyCreatedFileFlag_ = false;
     uint64_t preAllocateFileSize_ = 0;
     char* globalWriteBuffer_ = nullptr;
-    uint64_t bufferUsedSize_ = 0;
+    uint64_t buf_used_size_ = 0;
     uint64_t globalBufferSize_ = 0;
 };
 
