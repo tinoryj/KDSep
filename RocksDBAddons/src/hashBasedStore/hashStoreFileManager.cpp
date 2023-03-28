@@ -1115,10 +1115,19 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(
                     fileHandlerPtr->markedByMultiPut_ = true;
                     return true;
                 }
-                debug_trace("Wait for file ownership, exist file ID = %lu, for key = %s\n", fileHandlerPtr->file_id, string(keyBuffer, keySize).c_str());
+
+                bool flag = false;
+                if (fileHandlerPtr->file_ownership != 0) {
+                    flag = true;
+                    debug_error("get 4 %p ownership \n", keyBuffer);
+                    debug_error("Wait for file ownership, exist file ID = %lu, for key = %s\n", fileHandlerPtr->file_id, string(keyBuffer, keySize).c_str());
+                }
                 while (fileHandlerPtr->file_ownership != 0) {
                     asm volatile("");
                     // wait if file is using in gc
+                }
+                if (flag) {
+                    debug_error("file ownership finished, exist file ID = %lu, for key = %s\n", fileHandlerPtr->file_id, string(keyBuffer, keySize).c_str());
                 }
                 debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", fileHandlerPtr->file_id, string(keyBuffer, keySize).c_str());
                 if (fileHandlerPtr->gc_status == kShouldDelete) {
@@ -2177,7 +2186,15 @@ void HashStoreFileManager::processMergeGCRequestWorker()
 void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 {
     int counter = 0;
+    uint64_t mx = 120;
+    struct timeval tvs, tve;
+    gettimeofday(&tvs, 0);
     while (true) {
+        gettimeofday(&tve, 0);
+        if (tve.tv_sec - tvs.tv_sec > mx) {
+            debug_error("gc thread heart beat %lu id %d\n", mx, threadID); 
+            mx += 120;
+        }
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
             while (counter == 0 && notifyGCMQ_->done == false && notifyGCMQ_->isEmpty() == true) {
@@ -2191,6 +2208,13 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
         hashStoreFileMetaDataHandler* file_hdl;
         if (notifyGCMQ_->pop(file_hdl)) {
             counter--;
+            bool flag = false;
+
+            if (file_hdl->file_id == 2522) {
+                flag = true;
+                debug_error("start gc on file 2522, owner %d\n", 
+                        (int)file_hdl->file_ownership);
+            }
 
             struct timeval tv;
             gettimeofday(&tv, 0);
@@ -2299,6 +2323,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         }
                     }
                 }
+                if (flag) {
+                    debug_error("end gc on file 2522 %d\n", 0);
+                }
                 continue;
             }
 
@@ -2314,6 +2341,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                             STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
+                }
+                if (flag) {
+                    debug_error("end gc on file 2522 %d\n", 0);
                 }
                 continue;
             }
@@ -2363,6 +2393,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                             }
                         }
                     }
+                }
+                if (flag) {
+                    debug_error("end gc on file 2522 %d\n", 0);
                 }
                 clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
                 continue;
@@ -2433,6 +2466,9 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         }
                     }
                 }
+            }
+            if (flag) {
+                debug_error("end gc on file 2522 %d\n", 0);
             }
             clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
         }

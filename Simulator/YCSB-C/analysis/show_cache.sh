@@ -26,7 +26,13 @@ source $DN/common.sh
 
 concatFunc "ind_rc" "fil_rc" "dat_rc" "tot_rc" "|" "ind_r" "fil_r" "dat_r" "ind_pr" "fil_pr" "dat_pr" "thpt" "file"
 
-for file in $*; do
+files=$*
+
+if [[ "$sortedByTime" == "true" ]]; then
+    files=`ls -lht $* | awk '{print $NF;}'`
+fi
+
+for file in ${files[@]}; do
     ind_rc=`grep "rocksdb.block.cache.index.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
     fil_rc=`grep "rocksdb.block.cache.filter.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`
     dat_rc=`grep "rocksdb.block.cache.data.add" $file | awk '{t+=$NF;} END {print t/1000000;}'`

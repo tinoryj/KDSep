@@ -192,56 +192,11 @@ gcWriteBackSize=2000
 ExpName="_p28_100g_no_pmem"
 flengths=(100 400)
 reqs=("100M" "25M")
-flengths=(100)
-reqs=("100M")
+indexSet=(5)
 cacheSizes=(4096)
-ops=("100M")
-indexSet=(1 3 5 7 9)
 runModeSet=('kv' 'raw' 'bkv' 'bkvkd' 'kd' 'kvkd')
-runModeSet=('raw')
-bonus=""
+runModeSet=('bkv')
+bonus="rmw"
 #runModeSet=('bkvkd' 'kd' 'kvkd')
 #runModeSet=('bkvkd')
-func
-
-bonus="rmw"
-func
-
-indexSet=(5)
-runModeSet=('kv')
-func
-
-bonus=""
-func
-
-ops=("40M")
-func
-
-bonus="rmw"
-func
-exit
-
-indexSet=(5)
-runModeSet=('bkv')
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=2000
-gcWriteBackSize=500
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=3000
-func
-
-runModeSet=('bkv' 'raw')
-ops=("100M")
-func
-exit
-
-indexSet=(0)
-ops=("20M")
-
 func

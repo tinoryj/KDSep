@@ -103,8 +103,8 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
             }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
-//            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::notifyOperationWorkerThread, hashStoreFileOperatorPtr_));
-//            thList_.push_back(th);
+            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::notifyOperationWorkerThread, hashStoreFileOperatorPtr_));
+            thList_.push_back(th);
             for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
                 th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_, threadID));
                 thList_.push_back(th);
@@ -1029,7 +1029,15 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
 
 void DeltaKV::processBatchedOperationsWorker()
 {
+    uint64_t mx = 120;
+    struct timeval tvs, tve;
+    gettimeofday(&tvs, 0);
     while (true) {
+        gettimeofday(&tve, 0);
+        if (tve.tv_sec - tvs.tv_sec > mx) {
+            debug_error("batched operation thread heart beat %lu\n", mx); 
+            mx += 120;
+        }
         if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
         }
@@ -1223,7 +1231,15 @@ void DeltaKV::processBatchedOperationsWorker()
 
 void DeltaKV::processWriteBackOperationsWorker()
 {
+    uint64_t mx = 120;
+    struct timeval tvs, tve;
+    gettimeofday(&tvs, 0);
     while (true) {
+        gettimeofday(&tve, 0);
+        if (tve.tv_sec - tvs.tv_sec > mx) {
+            debug_error("write back thread heart beat %lu\n", mx); 
+            mx += 120;
+        }
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
         }
@@ -1248,7 +1264,15 @@ void DeltaKV::processWriteBackOperationsWorker()
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
     int counter = 0;
+    uint64_t mx = 120;
+    struct timeval tvs, tve;
+    gettimeofday(&tvs, 0);
     while (true) {
+        gettimeofday(&tve, 0);
+        if (tve.tv_sec - tvs.tv_sec > mx) {
+            debug_error("lsm thread heart beat %lu\n", mx); 
+            mx += 120;
+        }
         if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;
         }
@@ -1275,15 +1299,7 @@ void DeltaKV::processLsmInterfaceOperationsWorker()
             if (counter == 0 && 
                     lsmInterfaceOperationsQueue_->isEmpty() == true && 
                     this->lsmInterfaceOperationsQueue_->done == false) {
-                struct timeval tv1, tv2;
-                gettimeofday(&tv1, 0);
-                lsm_interface_cv.wait(lock);
-                gettimeofday(&tv2, 0);
-                if (tv2.tv_sec - tv1.tv_sec > 8) {
-                    debug_error("Wait for %.2lf seconds\n", 
-                            tv2.tv_sec - tv1.tv_sec + (tv2.tv_usec -
-                                tv1.tv_usec) / 1000000.0);
-                }
+//                lsm_interface_cv.wait(lock);
                 counter++; 
             }
         }

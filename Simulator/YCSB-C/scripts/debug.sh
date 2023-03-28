@@ -102,39 +102,26 @@ func() {
     done
 }
 
-ExpName=2
 works=8
 gcs=2
 rounds=1
 bfs=(10)
 batchSize=2000
 indexSet=(1 3 5 7 9 10)
-runModeSet=('raw' 'bkv')
 
 indexSet=(1 5 10)
 cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
 
 indexSet=(5 1)
 blocksizes=(65536)
-flengths=(400)
 reqs=("25M")
 sstSizes=(8)
-runModeSet=('kvkd' 'kd' 'bkvkd' 'raw' 'bkv' 'kv')
 cacheSizes=(4096)
 indexSet=(0 5 1 10)
 # memSizes the same
 
 
 ### Base test!!!
-works=8
-gcs=2
-flengths=(100 400 100 400)
-flengths=(400)
-flengths=(100 400)
-runModeSet=('kvkd' 'kd' 'bkvkd' 'kv' 'raw' 'bkv')
-runModeSet=('kd' 'bkvkd')
-runModeSet=('kvkd' 'bkvkd' 'kd')
-runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
 cacheSizes=(2048)
 indexSet=(1 3 5 7 9 10)
 ops=("10M")
@@ -144,104 +131,24 @@ reqs=("100M" "25M")
 
 bonus="rmw"
 
-flengths=(100)
-ExpName="motivation"
 indexSet=(1 3 5 7 9)
 reqs=("100M")
 ops=("30M")
-cacheSizes=(4096)
-runModeSet=('raw')
-
-#ExpName="debug"
-#bonus=""
-#runModeSet=('kv')
-#indexSet=(5)
-#reqs=("1M")
-#ops=("10K")
-#func
-#exit
 
 bonus=""
-ExpName="_p27_test_partial_merge"
 indexSet=(1)
 works=8
-#indexSet=(5)
-flengths=(400 100)
-reqs=("25M" "100M")
-ops=("10M")
-#ops=("100M")
-#runModeSet=('kvkd' 'kv' 'bkvkd' 'kd' 'raw' 'bkv')
-runModeSet=('kvkd')
-cacheSizes=(2048)
-cacheSizes=(4096)
 splitThres=0.3
 gcWriteBackSize=2000
 
-#func
-#
-#works=16
-#func
+flengths=("100")
 
-#indexSet=(1 3 5 7 9)
-#runModeSet=('kv' 'bkvkd' 'bkv' 'kd' 'raw')
-#runModeSet=('kv' 'bkv' 'raw')
-#runModeSet=('kv' 'raw' 'bkv')
-#runModeSet=('bkvkd' 'kd' 'kvkd')
-#func
-
-ExpName="_p28_100g_no_pmem"
-flengths=(100 400)
-reqs=("100M" "25M")
-flengths=(100)
+ExpName="_d1"
 reqs=("100M")
 cacheSizes=(4096)
-ops=("100M")
-indexSet=(1 3 5 7 9)
-runModeSet=('kv' 'raw' 'bkv' 'bkvkd' 'kd' 'kvkd')
-runModeSet=('raw')
-bonus=""
-#runModeSet=('bkvkd' 'kd' 'kvkd')
-#runModeSet=('bkvkd')
-func
-
-bonus="rmw"
-func
-
+ops=("10M")
 indexSet=(5)
-runModeSet=('kv')
-func
-
+runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
+runModeSet=('bkvkd')
 bonus=""
-func
-
-ops=("40M")
-func
-
-bonus="rmw"
-func
-exit
-
-indexSet=(5)
-runModeSet=('bkv')
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=2000
-gcWriteBackSize=500
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=3000
-func
-
-runModeSet=('bkv' 'raw')
-ops=("100M")
-func
-exit
-
-indexSet=(0)
-ops=("20M")
-
 func

@@ -62,7 +62,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     currentHandler->write_operation_.mempoolHandler_ptr_ = mempoolHandler;
     currentHandler->op_type = kPut;
     operationToWorkerMQ_->push(currentHandler);
-    operationNotifyCV_.notify_one();
+    operationNotifyCV_.notify_all();
     if (currentHandler->job_done == kNotDone) {
         debug_trace("Wait for write job done%s\n", "");
         while (currentHandler->job_done == kNotDone) {
@@ -82,7 +82,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
 bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler)
 {
     bool ret = operationToWorkerMQ_->push(currentOperationHandler);
-    operationNotifyCV_.notify_one();
+    operationNotifyCV_.notify_all();
     return ret;
 }
 
@@ -1152,13 +1152,19 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
 
 void HashStoreFileOperator::operationWorker(int threadID)
 {
-    int counter = 0; 
+    uint64_t mx = 120;
+    struct timeval tvs, tve;
+    gettimeofday(&tvs, 0);
     while (true) {
+        gettimeofday(&tve, 0);
+        if (tve.tv_sec - tvs.tv_sec > mx) {
+            debug_error("worker thread heart beat %lu id %d\n", mx, threadID); 
+            mx += 120;
+        }
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            if (counter == 0 && operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done == false) {
+            if (operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done == false) {
                 operationNotifyCV_.wait(lk);
-                counter++;
             }
         }
         if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
@@ -1166,8 +1172,17 @@ void HashStoreFileOperator::operationWorker(int threadID)
         }
         hashStoreOperationHandler* currentHandlerPtr;
         if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
+            bool flag = false;
             bool operationsStatus;
             std::scoped_lock<std::shared_mutex> w_lock(currentHandlerPtr->file_hdl->fileOperationMutex_);
+
+            if (currentHandlerPtr->file_hdl->file_id == 2522) {
+                flag = true;
+                debug_error("file 2522, op type %d, thread id %d, own %d\n",
+                        (int)currentHandlerPtr->op_type, threadID,
+                        (int)currentHandlerPtr->file_hdl->file_ownership);
+            }
+
             switch (currentHandlerPtr->op_type) {
             case kGet:
                 debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentHandlerPtr->file_hdl->file_id);
@@ -1207,9 +1222,10 @@ void HashStoreFileOperator::operationWorker(int threadID)
                     currentHandlerPtr->job_done = kDone;
                 }
             }
-        }
-        if (counter > 0) {
-            counter--;
+
+            if (flag) {
+                debug_error("file 2522 finished %s \n", "");
+            }
         }
     }
     debug_info("Thread of operation worker exit success %p\n", this);
@@ -1225,6 +1241,7 @@ void HashStoreFileOperator::notifyOperationWorkerThread()
         }
         if (operationToWorkerMQ_->isEmpty() == false) {
             operationNotifyCV_.notify_all();
+            usleep(10000);
         }
     }
     return;

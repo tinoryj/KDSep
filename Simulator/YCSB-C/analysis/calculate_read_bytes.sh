@@ -6,7 +6,13 @@ source $DN/common.sh
 #concatFunc "rd_rock" "r_blob" "actual" "act_bl" "comp_w" "flush" "wal" "rock_io" "sst_sz" "rss_gb" "cache-g" "d_rw" "br_sz" "v_rw" "tot_rw" "thpt" "fname"
 concatFunc "sst_lr" "blb_lr" "sst_sz" "rss" "c_sz" "thpt" "file"
 
-for file in $*; do
+files=$*
+
+if [[ "$sortedByTime" == "true" ]]; then
+    files=`ls -lht $* | awk '{print $NF;}'`
+fi
+
+for file in ${files[@]}; do
     rd_rock=`grep "rocksdb.last.level.read.bytes\|rocksdb.non.last.level.read.bytes" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t / 1024 / 1024 / 1024;}'`
     blb_lr=`grep "rocksdb.blobdb.blob.file.bytes.read " $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
     sst_lr=`echo $rd_rock $blb_lr | awk '{print $1-$2;}'` 

@@ -192,7 +192,7 @@ for param in $*; do
     elif [[ "$param" =~ ^fl[0-9]+$ ]]; then
         num=$(echo $param | sed 's/fl//g')
         fieldlength=$num
-    elif [[ "$param" =~ ^readRatio[0-9].[0-9]$ || "$param" == "readRatio1" ]]; then
+    elif [[ "$param" =~ ^readRatio[0-9].[0-9]*$ || "$param" == "readRatio1" ]]; then
         ReadProportion=`echo $param | sed 's/readRatio//g'`
     elif [[ "$param" =~ ^bn[0-9]+$ ]]; then
         bn=`echo $param | sed 's/bn//g'`
