@@ -10,8 +10,7 @@
 
 #cd /home/jhli/workspace/deltakv/DeltaKV-work/RocksDBAddons
 
-DIR=`dirname $0`
-echo $DIR
+DIR=$(dirname $(realpath $0))
 
 cd ${DIR}/../../../RocksDBAddons
 scripts/buildDebug.sh
