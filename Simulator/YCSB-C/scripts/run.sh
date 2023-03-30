@@ -117,7 +117,7 @@ gcThreadNumber=2
 deltaLogGCThreshold=0.9
 deltaLogSplitGCThreshold=0.45
 batchSize=100000
-cacheIndexFilter=false
+cacheIndexFilter="true"
 paretokey="false"
 nogc="false"
 bloomBits=10
@@ -185,6 +185,10 @@ for param in $*; do
         KVPairsNumber=$num
     elif [[ "$param" =~ ^op[0-9]+[mMkK]*$ ]]; then
         num=`echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g'`
+#        if [[ $num -eq 20000000 ]]; then
+#            echo "Alert! temporary change"
+#            num=50000000
+#        fi
         OperationsNumber=$num
     elif [[ "$param" =~ ^fc[0-9]+$ ]]; then
         num=$(echo $param | sed 's/fc//g')
