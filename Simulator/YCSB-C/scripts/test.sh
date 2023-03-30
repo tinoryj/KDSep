@@ -45,14 +45,19 @@ func() {
                                         continue
                                     fi
 
+                                    checkrepeat="checkrepeat"
+                                    if [[ "$ratio" == "0.5" ]]; then
+                                        checkrepeat=""
+                                    fi
+
                                     if [[ "$runMode" == "raw" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} checkrepeat # paretokey 
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat # paretokey 
                                     elif [[ "$runMode" == "bkv" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} checkrepeat #paretokey
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "bkvkd" ]]; then
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
@@ -66,7 +71,7 @@ func() {
                                     elif [[ "$runMode" == "kv" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} checkrepeat #paretokey
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "kvkd" ]]; then
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
@@ -102,24 +107,20 @@ func() {
     done
 }
 
-ExpName=2
 works=8
 gcs=2
 rounds=1
 bfs=(10)
-batchSize=2000
+batchSize=100000
 indexSet=(1 3 5 7 9 10)
-runModeSet=('raw' 'bkv')
 
 indexSet=(1 5 10)
 cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
 
 indexSet=(5 1)
 blocksizes=(65536)
-flengths=(400)
 reqs=("25M")
 sstSizes=(8)
-runModeSet=('kvkd' 'kd' 'bkvkd' 'raw' 'bkv' 'kv')
 cacheSizes=(4096)
 indexSet=(0 5 1 10)
 # memSizes the same
@@ -189,59 +190,43 @@ gcWriteBackSize=2000
 #runModeSet=('bkvkd' 'kd' 'kvkd')
 #func
 
-ExpName="_p28_100g_no_pmem"
 flengths=(100 400)
 reqs=("100M" "25M")
 flengths=(100)
 reqs=("100M")
 cacheSizes=(4096)
-ops=("100M")
+ops=("40M")
 indexSet=(1 3 5 7 9)
 runModeSet=('kv' 'raw' 'bkv' 'bkvkd' 'kd' 'kvkd')
 runModeSet=('raw')
 bonus=""
 #runModeSet=('bkvkd' 'kd' 'kvkd')
 #runModeSet=('bkvkd')
-func
+#func
+#
+#bonus="rmw"
+#func
+
 
 bonus="rmw"
+ExpName="_p32_exp1_ycsb_buffer2M"
+indexSet=(5 95 10 5) # A, B, C, F
+ops=("20M")
+runModeSet=('bkv' 'kv' 'raw')
 func
 
+ExpName="_p33_motivation_buffer2M"
+bonus="rmw"
 indexSet=(5)
-runModeSet=('kv')
+runModeSet=('bkv')
 func
 
 bonus=""
 func
 
-ops=("40M")
+indexSet=(1 3 5 7 9)
+runModeSet=('raw')
 func
 
 bonus="rmw"
-func
-exit
-
-indexSet=(5)
-runModeSet=('bkv')
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=2000
-gcWriteBackSize=500
-func
-exit
-
-splitThres=0.3
-gcWriteBackSize=3000
-func
-
-runModeSet=('bkv' 'raw')
-ops=("100M")
-func
-exit
-
-indexSet=(0)
-ops=("20M")
-
 func

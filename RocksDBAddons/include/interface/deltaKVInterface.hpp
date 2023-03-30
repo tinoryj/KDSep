@@ -33,8 +33,10 @@ private:
     unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* writeBatchMapForSearch_[2]; // key to <operation type, value>
     uint64_t currentWriteBatchDequeInUse = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
+    uint64_t maxBatchOperationBeforeCommitSize_ = 2 * 1024 * 1024;
     messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
     uint64_t batchedOperationsCounter[2] = { 0UL, 0UL };
+    uint64_t batchedOperationsSizes[2] = { 0UL, 0UL };
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 

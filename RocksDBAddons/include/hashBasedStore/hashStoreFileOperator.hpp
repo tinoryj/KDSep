@@ -65,7 +65,6 @@ private:
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     HashStoreFileManager* hashStoreFileManager_ = nullptr;
     AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
-    bool useStrTCache_ = true;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;

@@ -396,8 +396,6 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
                                     // (last bit in use = 0)
                                     uint64_t leftFatherFileID = file_header.previous_file_id_first_;
                                     hashStoreFileMetaDataHandler* tempHandlerForRightFileID;
-                                    uint64_t prefixU64Left = prefix1; //prefixStrToU64(left_prefix);
-                                    uint64_t prefixU64Right = prefix2; //prefixStrToU64(right_prefix);
                                     file_trie_.get(prefix2, tempHandlerForRightFileID);
                                     uint64_t rightFatherFileID = tempHandlerForRightFileID->file_id;
                                     // delete left father
@@ -1162,7 +1160,6 @@ bool HashStoreFileManager::getHashStoreFileHandlerByPrefix(
         const uint64_t& prefixU64, 
         hashStoreFileMetaDataHandler*& fileHandlerPtr)
 {
-    uint64_t prefixLen;
     bool handlerGetStatus = file_trie_.get(prefixU64, fileHandlerPtr);
     if (handlerGetStatus == true) {
         return true;
@@ -2262,7 +2259,6 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             }
 
             for (auto keyIt : gcResultMap) {
-                bool merged = false;
                 size_t total_kd_size = 0;
 
                 for (auto valueIt : keyIt.second.first) {

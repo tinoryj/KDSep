@@ -218,7 +218,7 @@ bool DeltaKV::MergeInternal(const mempoolHandler_t& mempoolHandler)
         }
     } else {
         bool status;
-        STAT_PROCESS(HashStoreInterfaceObjPtr_->put(mempoolHandler), StatsType::DELTAKV_MERGE_HASHSTORE);
+        STAT_PROCESS(status = HashStoreInterfaceObjPtr_->put(mempoolHandler), StatsType::DELTAKV_MERGE_HASHSTORE);
         return status;
     }
 }
@@ -351,7 +351,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         bool ret;
         struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr;
        
-        if (enableParallelLsmInterface == true) {
+        if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
             lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
             lsmInterfaceOpPtr->key = key;
             lsmInterfaceOpPtr->value = &internalValueStr;
@@ -376,7 +376,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             return false;
         } 
 
-        if (enableParallelLsmInterface == true) {
+        if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
 //            struct timeval tv1, tv2;
 //            gettimeofday(&tv1, 0);
 //            uint64_t mx = 100000;
@@ -424,8 +424,11 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStrT, deltaInStrT /*deltasFromDeltaStoreVec*/, value), StatsType::DELTAKV_GET_FULL_MERGE);
             if (mergeOperationStatus == true) {
                 if (enableWriteBackOperationsFlag_ == true && !getByWriteBackFlag &&  
-                        ((deltasFromDeltaStoreVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0) ||
-                        totalDeltaSizes > writeBackWhenReadDeltaSizeThreshold_ && writeBackWhenReadDeltaSizeThreshold_ != 0)) {
+                        ((deltasFromDeltaStoreVec.size() >
+                          writeBackWhenReadDeltaNumerThreshold_ &&
+                          writeBackWhenReadDeltaNumerThreshold_ != 0) ||
+                        (totalDeltaSizes > writeBackWhenReadDeltaSizeThreshold_
+                         && writeBackWhenReadDeltaSizeThreshold_ != 0))) {
                     STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
 //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
 //                    writeBackOperationsQueue_->push(newPair);
@@ -579,7 +582,7 @@ bool DeltaKV::Get(const string& key, string* value)
 
     struct timeval tv;
     gettimeofday(&tv, 0);
-    uint32_t maxSequenceNumberPlaceHolder;
+    uint32_t maxSequenceNumberPlaceHolder = 0;
     bool ret;
 
     // Read from deltastore (or no deltastore)
@@ -778,7 +781,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     bool ret;
     STAT_PROCESS(ret = PutImpl(key, newValueStr), StatsType::DELTAKV_WRITE_BACK_PUT);
 
-    return PutImpl(key, newValueStr);
+    return ret;
 }
 
 // TODO: following functions are not complete
@@ -815,6 +818,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
 
 bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
 {
+    static uint64_t cnt = 0;
     if (mempoolHandler.isAnchorFlag_ == false) {
         debug_error("[ERROR] put operation should has an anchor flag%s\n", "");
         return false;
@@ -823,7 +827,9 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     // cerr << "Key size = " << mempoolHandler.keySize_ << endl;
     struct timeval tv;
     gettimeofday(&tv, 0);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_)
+    {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
             while (oneBufferDuringProcessFlag_ == true) {
@@ -837,10 +843,18 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_) 
+    {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
         debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
+        cnt++;
+        if (cnt % 100 == 0) {
+            debug_error("put operations %lu count %lu\n", 
+                    batchedOperationsCounter[currentWriteBatchDequeInUse],
+                    cnt); 
+        }
         // insert to another deque
         if (currentWriteBatchDequeInUse == 1) {
             currentWriteBatchDequeInUse = 0;
@@ -848,6 +862,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             currentWriteBatchDequeInUse = 1;
         }
         batchedOperationsCounter[currentWriteBatchDequeInUse] = 0;
+        batchedOperationsSizes[currentWriteBatchDequeInUse] = 0;
         str_t currentKey(mempoolHandler.keyPtr_, mempoolHandler.keySize_);
         // cerr << "Key in pool = " << mempoolHandler.keyPtr_ << endl;
         // cerr << "Key in str_t = " << currentKey.data_ << endl;
@@ -855,15 +870,17 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             for (auto it : mapIt->second) {
                 objectPairMemPool_->eraseContentFromMemPool(it.second);
-                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
+//                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
             }
             mapIt->second.clear();
             mapIt->second.push_back(make_pair(kPutOp, mempoolHandler));
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
             vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kPutOp, mempoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_APPEND_BUFFER, tv);
@@ -877,15 +894,17 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             for (auto it : mapIt->second) {
                 objectPairMemPool_->eraseContentFromMemPool(it.second);
-                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
+//                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
             }
             mapIt->second.clear();
             mapIt->second.push_back(make_pair(kPutOp, mempoolHandler));
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         } else {
             vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kPutOp, mempoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_APPEND_BUFFER, tv);
@@ -901,7 +920,9 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     }
     struct timeval tv;
     gettimeofday(&tv, 0);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_)
+    {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
             while (oneBufferDuringProcessFlag_ == true) {
@@ -915,10 +936,13 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
-    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) {
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_) 
+    {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
         debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
+        batchedOperationsSizes[currentWriteBatchDequeInUse] = 0;
         // insert to another deque
         if (currentWriteBatchDequeInUse == 1) {
             currentWriteBatchDequeInUse = 0;
@@ -926,16 +950,19 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
             currentWriteBatchDequeInUse = 1;
         }
         batchedOperationsCounter[currentWriteBatchDequeInUse] = 0;
+        batchedOperationsSizes[currentWriteBatchDequeInUse] = 0;
         str_t currentKey(mempoolHandler.keyPtr_, mempoolHandler.keySize_);
         auto mapIt = writeBatchMapForSearch_[currentWriteBatchDequeInUse]->find(currentKey);
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             mapIt->second.push_back(make_pair(kMergeOp, mempoolHandler));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
         } else {
             vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, mempoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_APPEND_BUFFER, tv);
         return true;
@@ -946,11 +973,13 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             mapIt->second.push_back(make_pair(kMergeOp, mempoolHandler));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
         } else {
             vector<pair<DBOperationType, mempoolHandler_t>> tempDeque;
             tempDeque.push_back(make_pair(kMergeOp, mempoolHandler));
             writeBatchMapForSearch_[currentWriteBatchDequeInUse]->insert(make_pair(currentKey, tempDeque));
             batchedOperationsCounter[currentWriteBatchDequeInUse]++;
+            batchedOperationsSizes[currentWriteBatchDequeInUse] += mempoolHandler.keySize_ + mempoolHandler.valueSize_;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_APPEND_BUFFER, tv);
         return true;
@@ -1023,7 +1052,9 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
     // for (auto it = operationsMap->begin(); it != operationsMap->end(); it++) {
     //     counter += it->second.size();
     // }
-    // cerr << "Total object number = " << totalObjectNumber << ", valid object number = " << validObjectNumber << ", map size = " << operationsMap->size() << ", object number in map = " << counter << endl;
+    debug_info("Total object number = %u, valid object number = %u, "
+            "map size = %lu\n",
+            totalObjectNumber, validObjectNumber, operationsMap->size());
     return true;
 }
 
@@ -1094,6 +1125,9 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 bool lsmTreeInterfaceStatus = lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch);
+                if (lsmTreeInterfaceStatus == false) {
+                    debug_error("lsmTreeInterfaceStatus %d\n", (int)lsmTreeInterfaceStatus);
+                }
                 StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_NO_DSTORE, tv);
                 break;
             }
@@ -1157,7 +1191,7 @@ void DeltaKV::processBatchedOperationsWorker()
 
                 // LSM interface
                 struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr = nullptr;
-                if (enableParallelLsmInterface == true) {
+                if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
                     lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
                     lsmInterfaceOpPtr->mergeBatch = &mergeBatch; 
                     lsmInterfaceOpPtr->handlerToValueStoreVecPtr = &handlerToValueStoreVec;
@@ -1181,7 +1215,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 // Check LSM interface
-                if (enableParallelLsmInterface == true) {
+                if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
                     struct timeval tv1, tv2;
                     gettimeofday(&tv1, 0);
                     int mx = 0;

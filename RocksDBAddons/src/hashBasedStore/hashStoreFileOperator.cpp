@@ -1016,7 +1016,6 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
         } else if (enable_index_block_) { 
             // Do not enable index block, directly write 
             // Not exist in cache, find the content in the file
-            string_view key_view(key);
             str_t key_str_t(key.data(), key.size());
 
             vector<string_view> kd_list;

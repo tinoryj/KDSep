@@ -566,7 +566,6 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<i
 
 inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(str_t& raw_value, vector<str_t>& operands, str_t* result) const
 {
-    size_t pos = 0;
     int buffer_size = -1;
 
     vector<str_t> raw_value_fields;

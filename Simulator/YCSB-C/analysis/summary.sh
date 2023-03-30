@@ -12,10 +12,10 @@ if [[ "$sortedByTime" == "true" ]]; then
 fi
 
 for file in ${files[@]}; do
-    readLatency=`grep "per read" $file | awk '{print $(NF-1) * 1000;}'`
-    mergeLatency=`grep "per update" $file | awk '{print $(NF-1) * 1000;}'`
+    readLatency=`grep "per read" $file | awk 'BEGIN {t=0;} {t = $(NF-1) * 1000;} END {print t;}'`
+    mergeLatency=`grep "per update" $file | awk 'BEGIN {t=0;} {t = $(NF-1) * 1000;} END {print t;}'`
     if [[ $(echo "$mergeLatency" | grep "nan" | wc -l) -ne 0 ]]; then
-        mergeLatency=`grep "per R-M-W" $file | awk '{print $(NF-1) * 1000;}'`
+        mergeLatency=`grep "per R-M-W" $file | awk 'BEGIN {t=0;} {t = $(NF-1) * 1000;} END {print t;}'`
     fi
     sst_sz=`grep "sst, num" $file | awk 'BEGIN {t=0;} {t=$1;} END {print t / 1024.0;}'`
     rss=`grep "resident" $file | awk 'BEGIN {t=0;} {t=$(NF-1);} END {print t;}'`

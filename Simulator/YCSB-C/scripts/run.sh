@@ -116,7 +116,7 @@ workerThreadNumber=12
 gcThreadNumber=2
 deltaLogGCThreshold=0.9
 deltaLogSplitGCThreshold=0.45
-batchSize=2000
+batchSize=100000
 cacheIndexFilter=false
 paretokey="false"
 nogc="false"
@@ -483,8 +483,8 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC 
     sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
-#    sed -i "10s/NaN/10000000/g" $SPEC 
-    sed -i "10s/NaN/10000/g" $SPEC 
+    sed -i "10s/NaN/10000000/g" $SPEC 
+#    sed -i "10s/NaN/10000/g" $SPEC 
     sed -i "15s/0/1/g" $SPEC
     sed -i "16s/0/0/g" $SPEC
     sed -i "24s/NaN/$fieldcount/g" $SPEC
