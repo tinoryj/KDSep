@@ -62,6 +62,12 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
 
     debug_trace("get key [%.*s] offset %x%x valueSize %d\n", (int)keyStr.length(), keyStr.c_str(), storageInfo.externalFileID_, storageInfo.externalFileOffset_, storageInfo.externalContentSize_);
 
+    uint64_t tmpAddr = ((uint64_t)(storageInfo.externalFileID_) << 32) + storageInfo.externalFileOffset_; 
+
+    if (tmpAddr > 200ull * 1024 * 1024 * 1024) {
+        debug_error("addr too large: %lu\n", tmpAddr);
+    }
+
     STAT_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
 
     if (seqNumberPtr != nullptr) {

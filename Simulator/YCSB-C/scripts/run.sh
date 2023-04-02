@@ -131,6 +131,7 @@ suffix=""
 run_suffix=""
 only_copy=""
 only_load=""
+no_store="false"
 
 cleanFlag="false"
 usekv="false"
@@ -177,6 +178,8 @@ for param in $*; do
         only_copy="true"
     elif [[ $param == "load" ]]; then
         only_load="true"
+    elif [[ $param == "no_store" ]]; then
+        no_store="true"
     elif [[ "$param" == "req" || "$param" == "op" || "$param" == "readRatio" ]]; then
         echo "Param error: $param"
         exit
@@ -203,9 +206,6 @@ for param in $*; do
         run_suffix=${run_suffix}_${param}
     elif [[ "$param" =~ ^Exp[0-9a-zA-Z_]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
-#        ResultLogFolder="$storagePrefix/Exp$ExpID/ResultLogs"
-#        DB_Working_Path="/mnt/lvm/Exp$ExpID/RunDB"
-#        DB_Loaded_Path="/mnt/lvm/Exp$ExpID/BackupDB"
         ResultLogFolder="Exp$ExpID/ResultLogs"
         if [ ! -d $DB_Working_Path ]; then
             mkdir -p $DB_Working_Path
@@ -442,6 +442,17 @@ loaded="false"
 workingDB=${DB_Working_Path}/workingDB
 loadedDB=${DB_Loaded_Path}/${DB_Name}
 
+if [[ "$only_load" != "true" ]]; then
+    if [[ "$usekd" == "true" ]]; then
+        loadedDB="$(echo $loadedDB | sed "s/kd/raw/g")"
+    elif [[ "$usebkvkd" == "true" ]]; then
+        loadedDB="$(echo $loadedDB | sed "s/bkvkd/bkv/g")"
+    elif [[ "$usekvkd" == "true" ]]; then
+        loadedDB="$(echo $loadedDB | sed "s/kvkd/kv/g")"
+    fi
+    echo "Real loadedDB $loadedDB"
+fi
+
 if [[ ! -d $loadedDB ]]; then
     echo "no loaded db $loadedDB"
 fi
@@ -462,11 +473,15 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     fi
     output_file=`generate_file_name $ResultLogFolder/LoadDB${run_suffix}`
     echo "output at $output_file"
-    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
+    ./ycsbc_release -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath >${output_file}
     #    gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase load -configpath $configPath # > ${output_file}
     retvalue=$?
     loaded="true"
     echo "output at $output_file"
+    if [[ "$no_store" == "true" ]]; then
+        echo "no store, exit"
+        exit
+    fi
 
     t_output_file=$output_file
     log_db_status $workingDB $t_output_file
@@ -536,9 +551,19 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fileprefix=$ResultLogFolder/Rd-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
     fi
 
-    output_file=`generate_file_name ${fileprefix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-BatchSize-${batchSize}`
+    output_file=$(generate_file_name ${fileprefix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-fixB2k)
     if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
         output_file=`generate_file_name ${fileprefix}`
+    else
+        t="${fileprefix}"
+        if [[ "$gcThreadNumber" != "2" ]]; then
+            t="${t}-gcT${gcThreadNumber}" 
+        fi
+        if [[ "$workerThreadNumber" != "8" ]]; then
+            t="${t}-workerT${workerThreadNumber}" 
+        fi
+        t="${t}-fixB2k"
+        output_file=`generate_file_name ${t}`
     fi
 
     echo "output at $output_file"

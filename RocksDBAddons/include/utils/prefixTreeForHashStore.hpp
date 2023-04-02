@@ -15,16 +15,19 @@ class PrefixTreeForHashStore {
 public:
     PrefixTreeForHashStore(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         init(initBitNumber, maxFileNumber);
     }
 
     PrefixTreeForHashStore()
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
 //        root_ = new prefixTreeNode;
     }
 
     ~PrefixTreeForHashStore()
     {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         for (int i = 0; i < (1 << fixed_bit_num_); i++) {
             stack<prefixTreeNode*> stk;
             prefixTreeNode *p = roots_[i], *pre = nullptr;
@@ -88,6 +91,7 @@ public:
             newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+
         if (current_file_num_ >= max_file_num_) {
             debug_error("[ERROR] Could note insert new node, since there are "
                     "too many files, number = %lu, threshold = %lu\n",
@@ -117,6 +121,7 @@ public:
             hashStoreFileMetaDataHandler*& newData2)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+
         if (current_file_num_ >= (max_file_num_ + 1)) {
             debug_error("[ERROR] Could note insert new node, since there are"
                     " too many files, number = %lu, threshold = %lu\n",
@@ -161,6 +166,7 @@ public:
             fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+
         debug_info("Current file number = %lu, threshold = %lu\n",
                 current_file_num_, max_file_num_);
         if (current_file_num_ >= max_file_num_) {
@@ -189,12 +195,20 @@ public:
         }
     }
 
-    bool get(const uint64_t& prefix_u64, hashStoreFileMetaDataHandler*& newData)
+    bool get(const uint64_t prefix_u64,
+            hashStoreFileMetaDataHandler*& newData, 
+            uint64_t prefix_len = 64)
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+
+        if (fixed_bit_num_ > prefix_len) {
+            newData = nullptr;
+            return false;
+        }
+
         uint64_t find_at_level_id = 0;
         bool status = findPrefixTreeNode(roots_[prefix_u64 & fixed_bit_mask_],
-                prefix_u64, newData, find_at_level_id);
+                prefix_u64, newData, find_at_level_id, prefix_len);
         return status;
     }
 
@@ -497,6 +511,10 @@ public:
         }
     }
 
+    bool isMergableLength(uint64_t prefix_len) {
+        return prefix_len > fixed_bit_num_;
+    }
+
 private:
     typedef struct prefixTreeNode {
         uint64_t node_id = 0;
@@ -517,8 +535,9 @@ private:
     uint64_t max_file_num_ = 0;
     uint64_t current_file_num_ = 0;
 //    prefixTreeNode* root_;
-    prefixTreeNode** roots_;
+    prefixTreeNode** roots_ = nullptr;
 
+    // The previous fixed_bit_num_ layers are compacted to an array
     void initializeTree()
     {
         roots_ = new prefixTreeNode*[1 << fixed_bit_num_];
@@ -758,10 +777,10 @@ private:
 
     bool findPrefixTreeNode(prefixTreeNode* root, const uint64_t& prefix_u64,
             hashStoreFileMetaDataHandler*& currentDataTObj, 
-            uint64_t& find_at_level_id)
+            uint64_t& find_at_level_id, uint64_t prefix_len = 64)
     {
         uint64_t lvl = fixed_bit_num_;
-        for (; lvl < 64; lvl++) {
+        for (; lvl < prefix_len; lvl++) {
             if ((prefix_u64 & (1 << lvl)) == 0) {
                 // go to left if 0
                 if (root->is_leaf == true) {
@@ -849,6 +868,7 @@ private:
             const uint64_t& prefix_u64, const uint64_t prefix_len, 
             uint64_t& find_at_level_id)
     {
+        auto& pre_root = root;
         find_at_level_id = fixed_bit_num_;
         char prefix_str[64];
         for (int i = 0; i < find_at_level_id; i++) {
@@ -890,8 +910,10 @@ private:
             if (root != nullptr) {
                 debug_error("[ERROR] Could not delete target node (not leaf)" 
                         " ID = %lu, node prefix length = %lu, prefix = %s "
-                        " remove it now\n", root->node_id, prefix_len,
-                        root->current_prefix.c_str());
+                        " remove it now. pre_root %p root %p\n", 
+                        root->node_id, prefix_len,
+                        root->current_prefix.c_str(),
+                        pre_root, root);
             } else {
                 debug_error("[ERROR] Could not delete target node (not exist) pointer = %p\n", (void*)root);
             }

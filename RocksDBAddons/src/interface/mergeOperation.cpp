@@ -217,7 +217,7 @@ inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
             // index update
             // TODO fix a bug: If the value is not separated, but there is an index update.
             assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= operand.size_);
-            new_value_index = str_t(operand.data_ + delta_off, header_size + value_index_size);
+            new_value_index = str_t(operand.data_ + delta_off + header_size, value_index_size);
             delta_off += header_size + value_index_size;
         } else {
             // Check whether we need to collect the raw deltas for immediate merging.
@@ -253,6 +253,9 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     const std::deque<std::string>& operand_list,
     std::string* new_value, Logger* logger) const
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
     // request meRGE Operation when the value is found
     debug_info("Full merge for key = %s, value size = %lu, content = %s\n",
             key.ToString().c_str(), existing_value->size(),
@@ -316,6 +319,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 //            deltas.size(), leading_index);
 
     // Step 3. Do full merge on the value
+    // TODO fix if the value size has changed
     str_t merged_raw_value(nullptr, 0);
     bool need_free = false;
     str_t raw_value(const_cast<char*>(existing_value->data()) + header_size, value_header_ptr->rawValueSize_);
@@ -405,6 +409,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
             "number of deltas = %lu, num of leading %u, final size = %lu\n", 
             key.ToString().c_str(), existing_value->size(), 
             deltas.size(), leading_index, new_value->size());
+    StatsRecorder::getInstance()->timeProcess(StatsType::LSM_FLUSH_ROCKSDB_FULLMERGE, tv);
     return true;
 }
 
@@ -412,6 +417,8 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
     const Slice& right_operand, std::string* new_value,
     Logger* logger) const
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     const int header_size = sizeof(internalValueType);
     const int value_index_size = sizeof(externalIndexInfo);
     vector<str_t> operandStrs;
@@ -461,6 +468,7 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
         new_value->assign(finalDeltaListStrT.data_, finalDeltaListStrT.size_);
     }
     delete[] finalDeltaListStrT.data_;
+    StatsRecorder::getInstance()->timeProcess(StatsType::LSM_FLUSH_ROCKSDB_PARTIALMERGE, tv);
     return true;
 }
 

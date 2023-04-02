@@ -103,8 +103,8 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
             }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
-            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::notifyOperationWorkerThread, hashStoreFileOperatorPtr_));
-            thList_.push_back(th);
+//            th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::notifyOperationWorkerThread, hashStoreFileOperatorPtr_));
+//            thList_.push_back(th);
             for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
                 th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_, threadID));
                 thList_.push_back(th);
@@ -176,7 +176,7 @@ bool DeltaKV::Close()
     return true;
 }
 
-bool DeltaKV::PutInternal(const mempoolHandler_t& mempoolHandler) 
+bool DeltaKV::SinglePutInternal(const mempoolHandler_t& mempoolHandler) 
 {
     if (deltaKVRunningMode_ == kWithNoDeltaStore) {
         return lsmTreeInterface_.Put(mempoolHandler);
@@ -191,7 +191,7 @@ bool DeltaKV::PutInternal(const mempoolHandler_t& mempoolHandler)
     }
 }
 
-bool DeltaKV::MergeInternal(const mempoolHandler_t& mempoolHandler)
+bool DeltaKV::SingleMergeInternal(const mempoolHandler_t& mempoolHandler)
 {
     if (deltaKVRunningMode_ == kWithNoDeltaStore) {
         return lsmTreeInterface_.Merge(mempoolHandler);
@@ -482,7 +482,7 @@ bool DeltaKV::PutImpl(const string& key, const string& value) {
         break;
     case kWithDeltaStore:
     case kWithNoDeltaStore:
-        putOperationStatus = PutInternal(mempoolHandler);
+        putOperationStatus = SinglePutInternal(mempoolHandler);
         deleteMemPoolHandlerStatus = true;
         break;
     default:
@@ -655,7 +655,7 @@ bool DeltaKV::Merge(const string& key, const string& value)
         break;
     case kWithDeltaStore:
     case kWithNoDeltaStore:
-        mergeOperationStatus = MergeInternal(mempoolHandler);
+        mergeOperationStatus = SingleMergeInternal(mempoolHandler);
         shouldDeleteMemPoolHandler = true;
         break;
     default:
@@ -818,7 +818,7 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
 
 bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
 {
-    static uint64_t cnt = 0;
+//    static uint64_t cnt = 0;
     if (mempoolHandler.isAnchorFlag_ == false) {
         debug_error("[ERROR] put operation should has an anchor flag%s\n", "");
         return false;
@@ -828,7 +828,11 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     struct timeval tv;
     gettimeofday(&tv, 0);
 //    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_)
+    if ((deltaKVRunningMode_ == kBatchedWithNoDeltaStore &&
+            batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_) || 
+            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 2000))
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -844,17 +848,21 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
 //    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_) 
+    if ((deltaKVRunningMode_ == kBatchedWithNoDeltaStore &&
+            batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_) || 
+            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 2000))
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
         debug_info("put batched contents into job worker, current buffer in use = %lu\n", currentWriteBatchDequeInUse);
-        cnt++;
-        if (cnt % 100 == 0) {
-            debug_error("put operations %lu count %lu\n", 
-                    batchedOperationsCounter[currentWriteBatchDequeInUse],
-                    cnt); 
-        }
+//        cnt++;
+//        if (cnt % 100 == 0) {
+//            debug_error("put operations %lu count %lu\n", 
+//                    batchedOperationsCounter[currentWriteBatchDequeInUse],
+//                    cnt); 
+//        }
         // insert to another deque
         if (currentWriteBatchDequeInUse == 1) {
             currentWriteBatchDequeInUse = 0;
@@ -1060,14 +1068,14 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
 
 void DeltaKV::processBatchedOperationsWorker()
 {
-    uint64_t mx = 120;
+    uint64_t mx = 1200;
     struct timeval tvs, tve;
     gettimeofday(&tvs, 0);
     while (true) {
         gettimeofday(&tve, 0);
         if (tve.tv_sec - tvs.tv_sec > mx) {
             debug_error("batched operation thread heart beat %lu\n", mx); 
-            mx += 120;
+            mx += 1200;
         }
         if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
@@ -1104,7 +1112,8 @@ void DeltaKV::processBatchedOperationsWorker()
             }
             bool putToDeltaStoreStatus = false;
             switch (deltaKVRunningMode_) {
-            case kBatchedWithNoDeltaStore: {
+            case kBatchedWithNoDeltaStore: 
+             {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
                 rocksdb::Status rocksDBStatus;
@@ -1131,7 +1140,8 @@ void DeltaKV::processBatchedOperationsWorker()
                 StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_NO_DSTORE, tv);
                 break;
             }
-            case kBatchedWithDeltaStore: {
+            case kBatchedWithDeltaStore:
+            {
                 struct timeval tv;
                 gettimeofday(&tv, 0);
                 vector<bool> separateFlagVec;
@@ -1191,7 +1201,7 @@ void DeltaKV::processBatchedOperationsWorker()
 
                 // LSM interface
                 struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr = nullptr;
-                if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
+                if (enableParallelLsmInterface == true) {
                     lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
                     lsmInterfaceOpPtr->mergeBatch = &mergeBatch; 
                     lsmInterfaceOpPtr->handlerToValueStoreVecPtr = &handlerToValueStoreVec;
@@ -1215,7 +1225,7 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 // Check LSM interface
-                if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
+                if (enableParallelLsmInterface == true) {
                     struct timeval tv1, tv2;
                     gettimeofday(&tv1, 0);
                     int mx = 0;
@@ -1265,14 +1275,14 @@ void DeltaKV::processBatchedOperationsWorker()
 
 void DeltaKV::processWriteBackOperationsWorker()
 {
-    uint64_t mx = 120;
+    uint64_t mx = 1200;
     struct timeval tvs, tve;
     gettimeofday(&tvs, 0);
     while (true) {
         gettimeofday(&tve, 0);
         if (tve.tv_sec - tvs.tv_sec > mx) {
             debug_error("write back thread heart beat %lu\n", mx); 
-            mx += 120;
+            mx += 1200;
         }
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
@@ -1298,14 +1308,14 @@ void DeltaKV::processWriteBackOperationsWorker()
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
     int counter = 0;
-    uint64_t mx = 120;
+    uint64_t mx = 1200;
     struct timeval tvs, tve;
     gettimeofday(&tvs, 0);
     while (true) {
         gettimeofday(&tve, 0);
         if (tve.tv_sec - tvs.tv_sec > mx) {
             debug_error("lsm thread heart beat %lu\n", mx); 
-            mx += 120;
+            mx += 1200;
         }
         if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;

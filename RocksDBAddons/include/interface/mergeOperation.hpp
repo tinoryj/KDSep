@@ -2,6 +2,7 @@
 
 #include "common/dataStructure.hpp"
 #include "common/rocksdbHeaders.hpp"
+#include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
 #include <bits/stdc++.h>
 using namespace std;

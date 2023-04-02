@@ -5,18 +5,11 @@ func() {
         for ((j=0; j<${#flengths[@]}; j++)); do
             for ((si=0; si<${#sstSizes[@]}; si++)); do
                 sst=${sstSizes[$si]}
-                memtable=${sst}
-                l1sz=$(( ${sst} * 4 ))
+                memtable=$(( mtSizes[$si] ))
+                l1sz=$(( l1Sizes[$si] ))
 
                 for runMode in "${runModeSet[@]}"; do
-                    threadNumber=14
-                    if [[ $runMode == "bkvkd" ]]; then
-                        threadNumber=4
-                    elif [[ $runMode == "kd" ]]; then
-                        threadNumber=4
-                    elif [[ $runMode == "kvkd" ]]; then
-                        threadNumber=4
-                    fi
+                    threadNumber=16
 
                     fl=${flengths[$j]}
                     req=${reqs[$j]}
@@ -32,8 +25,8 @@ func() {
                                     if [[ $index -gt 10 ]]; then
                                         bucketNumber=$(echo "( $opnum * (100 - $index) / 100 * (38 + $fl) ) / 256 / 1024 / 0.5"|bc)
                                     fi
-                                    if [[ $bucketNumber -gt 40000 ]]; then
-                                        bucketNumber=40000
+                                    if [[ $bucketNumber -gt 16384 ]]; then
+                                        bucketNumber=16384
                                     fi
                                     ratio="0.$index"
                                     if [[ $index -eq 10 ]]; then
@@ -45,54 +38,61 @@ func() {
                                         continue
                                     fi
 
-                                    checkrepeat="checkrepeat"
-                                    if [[ "$ratio" == "0.5" ]]; then
-                                        checkrepeat=""
-                                    fi
-
                                     if [[ "$runMode" == "raw" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat # paretokey 
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus} $checkrepeat # paretokey 
                                     elif [[ "$runMode" == "bkv" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat #paretokey
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "bkvkd" ]]; then
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( ${cacheSize} / 4 ))
-                                        cacheSize=$(( ${cacheSize} / 4 * 3 ))
+                                        kdcacheSize=$(( $kdc ))
+                                        blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
+                                        if [[ "$bonus" == "rmw" ]]; then
+                                            kdcacheSize=$(( ${cacheSize} - 1 ))
+                                            blockCacheSize=$(( 1 ))
+                                        fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
-                                            cache$cacheSize kdcache${kdcacheSize} \
+                                            cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs bn$bucketNumber splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
-                                            readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} #paretokey
+                                            readRatio$ratio Exp$ExpName bs${bs} ${bonus} # load no_store #paretokey
                                     elif [[ "$runMode" == "kv" ]]; then
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
-                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} $checkrepeat #paretokey
+                                            threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "kvkd" ]]; then
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( ${cacheSize} / 4 ))
-                                        cacheSize=$(( ${cacheSize} / 4 * 3 ))
+                                        kdcacheSize=$(( $kdc ))
+                                        blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
+                                        if [[ "$bonus" == "rmw" ]]; then
+                                            kdcacheSize=$(( ${cacheSize} - 1 ))
+                                            blockCacheSize=$(( 1 ))
+                                        fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
-                                            cache$cacheSize kdcache${kdcacheSize} \
+                                            cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs  bn$bucketNumber batchSize${batchSize} splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
-                                            readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} #paretokey
+                                            readRatio$ratio Exp$ExpName bs${bs} ${bonus} #paretokey
 # gcThres0.6 splitThres0.3
                                     elif [[ "$runMode" == "kd" ]]; then
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( ${cacheSize} / 4 ))
-                                        cacheSize=$(( ${cacheSize} / 4 * 3 ))
+                                        kdcacheSize=$(( $kdc ))
+                                        blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
+                                        if [[ "$bonus" == "rmw" ]]; then
+                                            kdcacheSize=$(( ${cacheSize} - 1 ))
+                                            blockCacheSize=$(( 1 ))
+                                        fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
-                                            cache$cacheSize kdcache${kdcacheSize} \
+                                            cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs bn$bucketNumber splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
-                                            readRatio$ratio Exp$ExpName bs${bs} cif ${bonus} #paretokey
+                                            readRatio$ratio Exp$ExpName bs${bs} ${bonus} #paretokey
                                     fi
                                 done
                             done
@@ -100,7 +100,7 @@ func() {
                     done
 #		scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
 #		    cache$cacheSize \
-#		    readRatio$ratio Exp$ExpName bs${bs} cif clean 
+#		    readRatio$ratio Exp$ExpName bs${bs} clean 
                 done
             done
         done
@@ -111,7 +111,7 @@ works=8
 gcs=2
 rounds=1
 bfs=(10)
-batchSize=2000
+batchSize=100000
 indexSet=(1 3 5 7 9 10)
 
 indexSet=(1 5 10)
@@ -120,7 +120,10 @@ cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 102
 indexSet=(5 1)
 blocksizes=(65536)
 reqs=("25M")
-sstSizes=(8)
+sstSizes=(16)
+mtSizes=(64)
+l1Sizes=(64)
+
 cacheSizes=(4096)
 indexSet=(0 5 1 10)
 # memSizes the same
@@ -144,19 +147,40 @@ bonus=""
 indexSet=(1)
 works=8
 splitThres=0.3
-gcWriteBackSize=2000
+gcWriteBackSize=500
 
-flengths=("100")
 
+sstSizes=(8)
+mtSizes=(8)
+l1Sizes=(32)
+
+sstSizes=(16)
+mtSizes=(64)
+l1Sizes=(256)
+
+kdc=512
 
 ExpName="_d1"
-reqs=("100M")
+flengths=("100" "400")
+reqs=("100M" "25M")
+flengths=("400")
+reqs=("25M")
+flengths=("100")
+reqs=("10M")
+cacheSizes=(3072 4096 5120 6144)
 cacheSizes=(4096)
-ops=("10M")
-indexSet=(5)
+ops=("50M")
+indexSet=(1)
 runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
+runModeSet=('kv' 'kvkd')
 runModeSet=('bkv')
-bonus=""
+runModeSet=('kv')
+if [[ $(diff ycsbc ycsbc_debug | wc -l ) -eq 1 ]]; then
+    bonus="noterelease"
+else
+    bnous="notedebug"
+fi
+bonus="rmw"
+checkrepeat=""
 
-reqs=("40M")
 func

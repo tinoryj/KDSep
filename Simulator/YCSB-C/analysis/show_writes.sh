@@ -28,7 +28,13 @@ source $DN/common.sh
 
 concatFunc "comp_w" "flush_w" "wal_w" "d_gc_w" "d_op_w" "v_w" "tot_w" "tot_wc" "|" "rock_io" "d_rw" "v_rw" "tot_rw" "|" "thpt   " "fname"
 
-for file in $*; do
+files=$*
+
+if [[ "$sortedByTime" == "true" ]]; then
+    files=`ls -lht $* | awk '{print $NF;}'`
+fi
+
+for file in ${files[@]}; do
     rock_r=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
 
     comp_w=`grep "rocksdb.compact.write.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`

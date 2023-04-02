@@ -3,7 +3,7 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "sst_sz" "rss" "c_sz" "read_lt" "rmw_lt" "thpt" "file"
+concatFunc "sst_sz" "rss" "c_sz" "read_lt" "rmw_lt" "tot_rw" "thpt" "file"
 
 files=$*
 
@@ -29,5 +29,12 @@ for file in ${files[@]}; do
         thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
     fi
 
-    concatFunc "$sst_sz" "$rss" "$c_sz" "$readLatency" "$mergeLatency" "$thpt" "$file"
+    rock_r=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
+    rock_w=`grep "rocksdb.compact.write.bytes\|rocksdb.flush.write.bytes\|rocksdb.wal.bytes" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t / 1024 / 1024 / 1024;}'`
+    rock_io=`echo $rock_r $rock_w | awk '{t=0; for (i=1; i<=NF;i++) if ($1!=0) t+=$i; print t;}'`
+    v_rw=`grep "Total disk" $file | awk 'BEGIN {t=0;} {t+=$NF;} END {print t/1024/1024/1024;}'`
+    d_rw=`grep "dStore.*Physical.*bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
+    tot_rw=`echo $d_rw $v_rw $rock_io | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
+
+    concatFunc "$sst_sz" "$rss" "$c_sz" "$readLatency" "$mergeLatency" "$tot_rw" "$thpt" "$file"
 done

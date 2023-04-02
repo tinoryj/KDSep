@@ -193,8 +193,11 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
     PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);
     PRINT_FULL("  lsm-interface", DKV_FLUSH_LSM_INTERFACE, time[DKV_FLUSH]);
-    PRINT_FULL("    put-merge", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
-    PRINT_FULL("    put-merge", LSM_FLUSH_ROCKSDB, time[DKV_FLUSH]);
+    PRINT_FULL("    pre-put", LSM_FLUSH_PRE_PUT, time[DKV_FLUSH]);
+    PRINT_FULL("    put-merge-vlog", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
+    PRINT_FULL("    put-merge-rocksdb", LSM_FLUSH_ROCKSDB, time[DKV_FLUSH]);
+    PRINT_FULL("      rocksdb-fm", LSM_FLUSH_ROCKSDB_FULLMERGE, time[DKV_FLUSH]);
+    PRINT_FULL("      rocksdb-pm", LSM_FLUSH_ROCKSDB_PARTIALMERGE, time[DKV_FLUSH]);
     PRINT_FULL("    flush-wal", LSM_FLUSH_WAL, time[DKV_FLUSH]);
 
     fprintf(stdout, "-------------- DeltaKV Delta Merge Breakdown ------------------------------\n");

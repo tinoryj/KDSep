@@ -1151,79 +1151,87 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
 
 void HashStoreFileOperator::operationWorker(int threadID)
 {
-    uint64_t mx = 120;
+    uint64_t mx = 1200;
     struct timeval tvs, tve;
     gettimeofday(&tvs, 0);
+    struct timeval empty_time;
+    bool empty_started = false;
     while (true) {
         gettimeofday(&tve, 0);
         if (tve.tv_sec - tvs.tv_sec > mx) {
             debug_error("worker thread heart beat %lu id %d\n", mx, threadID); 
-            mx += 120;
+            mx += 1200;
         }
+
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            if (operationToWorkerMQ_->isEmpty() && operationToWorkerMQ_->done == false) {
+            if (operationToWorkerMQ_->isEmpty() && 
+                    operationToWorkerMQ_->done == false && 
+                    empty_started == true && 
+                    tve.tv_sec - empty_time.tv_sec > 3) {
                 operationNotifyCV_.wait(lk);
             }
         }
         if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
             break;
         }
-        hashStoreOperationHandler* currentHandlerPtr;
-        if (operationToWorkerMQ_->pop(currentHandlerPtr)) {
+        hashStoreOperationHandler* op_hdl;
+        if (operationToWorkerMQ_->pop(op_hdl)) {
+            empty_started = false;
             bool flag = false;
             bool operationsStatus;
-            std::scoped_lock<std::shared_mutex> w_lock(currentHandlerPtr->file_hdl->fileOperationMutex_);
+            std::scoped_lock<std::shared_mutex> w_lock(op_hdl->file_hdl->fileOperationMutex_);
 
-            if (currentHandlerPtr->file_hdl->file_id == 2522) {
-                flag = true;
-                debug_error("file 2522, op type %d, thread id %d, own %d\n",
-                        (int)currentHandlerPtr->op_type, threadID,
-                        (int)currentHandlerPtr->file_hdl->file_ownership);
-            }
+            auto file_hdl = op_hdl->file_hdl;
 
-            switch (currentHandlerPtr->op_type) {
+            switch (op_hdl->op_type) {
             case kGet:
-                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*currentHandlerPtr->read_operation_.key_str_).c_str(), currentHandlerPtr->file_hdl->file_id);
+                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*op_hdl->read_operation_.key_str_).c_str(), op_hdl->file_hdl->file_id);
                 operationsStatus = false;
                 break;
             case kMultiPut:
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_hdl->file_id, currentHandlerPtr->batched_write_operation_.size);
-                STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(currentHandlerPtr), StatsType::OP_MULTIPUT);
-                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", currentHandlerPtr->file_hdl->file_id, currentHandlerPtr->batched_write_operation_.size);
+                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", op_hdl->file_hdl->file_id, op_hdl->batched_write_operation_.size);
+                STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
+                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", op_hdl->file_hdl->file_id, op_hdl->batched_write_operation_.size);
                 break;
             case kPut:
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", currentHandlerPtr->write_operation_.mempoolHandler_ptr_->keyPtr_, currentHandlerPtr->file_hdl->file_id);
-                STAT_PROCESS(operationsStatus = operationWorkerPutFunction(currentHandlerPtr), StatsType::OP_PUT);
+                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, op_hdl->file_hdl->file_id);
+                STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
                 break;
             default:
-                debug_error("[ERROR] Unknown operation type = %d\n", currentHandlerPtr->op_type);
+                debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
                 break;
             }
             if (operationsStatus == false) {
-                currentHandlerPtr->file_hdl->file_ownership = 0;
-                debug_trace("Process file ID = %lu error\n", currentHandlerPtr->file_hdl->file_id);
-                currentHandlerPtr->job_done = kError;
+                op_hdl->file_hdl->file_ownership = 0;
+                debug_trace("Process file ID = %lu error\n", op_hdl->file_hdl->file_id);
+                op_hdl->job_done = kError;
             } else {
-                if (currentHandlerPtr->op_type != kGet && enableGCFlag_ == true) {
-                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(currentHandlerPtr->file_hdl);
+                if (op_hdl->op_type != kGet && enableGCFlag_ == true) {
+                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(op_hdl->file_hdl);
                     if (putIntoGCJobQueueStatus == false) {
-                        currentHandlerPtr->file_hdl->file_ownership = 0;
-                        debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_hdl->file_id);
-                        currentHandlerPtr->job_done = kDone;
+                        op_hdl->file_hdl->file_ownership = 0;
+                        debug_trace("Process file ID = %lu done, file should not GC, skip\n", op_hdl->file_hdl->file_id);
+                        op_hdl->job_done = kDone;
                     } else {
-                        debug_trace("Process file ID = %lu done, file should GC\n", currentHandlerPtr->file_hdl->file_id);
-                        currentHandlerPtr->job_done = kDone;
+                        debug_trace("Process file ID = %lu done, file should GC\n", op_hdl->file_hdl->file_id);
+                        op_hdl->job_done = kDone;
                     }
                 } else {
-                    currentHandlerPtr->file_hdl->file_ownership = 0;
-                    debug_trace("Process file ID = %lu done, file should not GC, skip\n", currentHandlerPtr->file_hdl->file_id);
-                    currentHandlerPtr->job_done = kDone;
+                    op_hdl->file_hdl->file_ownership = 0;
+                    debug_trace("Process file ID = %lu done, file should not GC, skip\n", op_hdl->file_hdl->file_id);
+                    op_hdl->job_done = kDone;
                 }
             }
 
             if (flag) {
-                debug_error("file 2522 finished %s \n", "");
+                debug_error("file %d finished %p\n", 
+                        (int)file_hdl->file_id, file_hdl);
+            }
+        } else {
+            if (empty_started == false) {
+                empty_started = true;
+                gettimeofday(&empty_time, 0);
             }
         }
     }

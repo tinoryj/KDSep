@@ -114,6 +114,9 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
     bool allAnchoarsFlag = true;
     for (auto it : objectPairMemPoolHandlerVec) {
         allAnchoarsFlag = allAnchoarsFlag && it.isAnchorFlag_;
+        if (it.isAnchorFlag_ == false) {
+            break;
+        }
     }
     if (allAnchoarsFlag == true && anyBucketInitedFlag_ == false) {
         return true;

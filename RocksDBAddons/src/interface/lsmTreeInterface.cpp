@@ -192,6 +192,8 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     rocksdb::WriteOptions batchedWriteOperation;
     batchedWriteOperation.sync = false;
 
+    struct timeval tv;
+    gettimeofday(&tv, 0);
     if (lsmTreeRunningMode_ == kNoValueLog) {
         for (auto& it : memPoolHandlersPut) {
             internalValueType header(false, false, it.sequenceNumber_, it.valueSize_);
@@ -228,6 +230,8 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     if (mergeBatch->Count() == 0) {
         return true;
     }
+
+    StatsRecorder::getInstance()->timeProcess(StatsType::LSM_FLUSH_PRE_PUT, tv);
 
     rocksdb::Status rocksDBStatus;
     STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::LSM_FLUSH_ROCKSDB);

@@ -258,6 +258,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
     options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getMaxBytesForLevelBase() * 1024;
     options_.rocksdbRawOptions_.max_open_files = config.getMaxOpenFiles();
+//    options_.rocksdbRawOptions_.max_write_buffer_number = 
+//        options_.rocksdbRawOptions_.max_bytes_for_level_base /
+//        options_.rocksdbRawOptions_.write_buffer_size; 
+//    // Make L0 size similar to L1 size
 
     cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
     cerr << "write buffer size " << options_.rocksdbRawOptions_.write_buffer_size << endl;
