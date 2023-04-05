@@ -83,11 +83,13 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
     delete[] key;
     return true;
 }
-bool IndexStoreInterface::multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec)
+
+bool IndexStoreInterface::multiGet(const vector<string>& keyStrVec, int numKeys, const vector<externalIndexInfo>& locs, vector<string>& values)
 {
-    for (int i = 0; i < (int)keyStrVec.size(); i++) {
-        get(keyStrVec[i], storageInfoVec[i], valueStrPtrVec[i]);
-    }
+//    for (int i = 0; i < (int)keyStrVec.size(); i++) {
+//        get(keyStrVec[i], locs[i], values[i]);
+//    }
+    kvServer_->getRangeValuesDecoupled(keyStrVec, numKeys, locs, values); 
     return true;
 }
 

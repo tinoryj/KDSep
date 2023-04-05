@@ -73,7 +73,7 @@ public:
     bool persistMeta ();
 
     ValueLocation getKey (const char *keyStr, bool checkExist = false);
-//    RocksDBKeyManager::RocksDBKeyIterator *getKeyIterator (char *keyStr);
+    RocksDBKeyManager::RocksDBKeyIterator *getKeyIterator (char *keyStr);
     void getKeys (char *startingkey, uint32_t n, std::vector<char*> &keys, std::vector<ValueLocation> &locs);
 
 //    bool deleteKey (char *keyStr);

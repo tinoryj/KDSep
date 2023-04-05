@@ -622,6 +622,18 @@ bool DeltaKV::Get(const string& key, string* value)
     }
 }
 
+// The correct procedure: (Not considering deleted keys)
+// 1. Scan the RocksDB/vLog for keys and values
+// 2. Scan the buffer to check whether some keys are updated
+// 3. Scan delta store to find deltas.
+bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values) 
+{
+    // 1. Scan the RocksDB/vLog for keys and values
+    lsmTreeInterface_.Scan(startKey, len, keys, values);
+
+    return true;
+}
+
 bool DeltaKV::Merge(const string& key, const string& value)
 {
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
@@ -784,27 +796,6 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     return ret;
 }
 
-// TODO: following functions are not complete
-
-//vector<bool> DeltaKV::GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values)
-//{
-//    vector<bool> queryStatus;
-//    rocksdb::Iterator* it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
-//    it->Seek(targetStartKey);
-//    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-//        keys.push_back(it->key().ToString());
-//        values.push_back(it->value().ToString());
-//        queryStatus.push_back(true);
-//    }
-//    if (queryStatus.size() < targetGetNumber) {
-//        for (int i = 0; i < targetGetNumber - queryStatus.size(); i++) {
-//            queryStatus.push_back(false);
-//        }
-//    }
-//    delete it;
-//    return queryStatus;
-//}
-//
 //bool DeltaKV::SingleDelete(const string& key)
 //{
 //    rocksdb::Status rocksDBStatus = pointerToRawRocksDB_->SingleDelete(internalWriteOption_, key);

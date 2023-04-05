@@ -249,6 +249,108 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     return true;
 }
 
+bool LsmTreeInterface::Scan(const string& targetStartKey, 
+        int len,
+        vector<string>& keys, vector<string>& values) {
+    rocksdb::Iterator* it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
+    it->Seek(targetStartKey);
+    int cnt = 0;
+    bool ret = true;
+    vector<string> values_lsm;
+    for (; it->Valid() && cnt < len; it->Next()) {
+        keys.push_back(it->key().ToString());
+        values_lsm.push_back(it->value().ToString());
+        cnt++;
+    }
+    delete it;
+
+    if (lsmTreeRunningMode_ == kNoValueLog) {
+        return true;
+    }
+
+    vector<bool> isSeparated;
+    vector<string> separated_keys;
+    vector<externalIndexInfo> vLogIndices;
+    vector<string> remainingDeltasVec;
+
+    len = keys.size();
+
+    isSeparated.resize(len);
+    separated_keys.resize(len);
+    vLogIndices.resize(len);
+    remainingDeltasVec.resize(len);
+
+    vector<string> vLogValues;
+    int separated_cnt = 0;
+
+    for (uint64_t i = 0; i < len; i++) {
+        string& internalValueStr = values_lsm.at(i);
+        internalValueType header;
+        memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+
+        if (header.valueSeparatedFlag_ == true) {
+            isSeparated[i] = true;
+
+            string vLogValue; 
+            externalIndexInfo vLogIndex;
+            memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header), sizeof(vLogIndex));
+
+            separated_keys[separated_cnt] = keys.at(i);
+            vLogIndices[separated_cnt] = vLogIndex;
+            remainingDeltasVec[separated_cnt] = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  
+            separated_cnt++;
+        } else {
+            isSeparated.at(i) = false;
+        }
+    }
+
+    IndexStoreInterfaceObjPtr_->multiGet(separated_keys, len, vLogIndices, vLogValues);
+
+    separated_cnt = 0;
+    values.clear();
+    for (uint64_t i = 0; i < len; i++) {
+        string& internalValueStr = values_lsm.at(i);
+        internalValueType header;
+        memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+
+        if (isSeparated[i] == true) {
+            string& remainingDeltas = remainingDeltasVec.at(separated_cnt);  // remaining deltas
+            string& vLogValue = vLogValues.at(separated_cnt);
+
+            int valueBufferSize = sizeof(header) + vLogValue.size();
+            char valueBuffer[valueBufferSize];
+
+            header.rawValueSize_ -= 4;
+            header.valueSeparatedFlag_ = false;
+            memcpy(valueBuffer, &header, sizeof(header));
+            memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
+
+            string* value;
+
+            // replace the external value index with the raw value
+            if (remainingDeltas.empty() == false) {
+                Slice key("lsmInterface", 12);
+                Slice existingValue(valueBuffer, valueBufferSize);
+                deque<string> operandList;
+                operandList.push_back(remainingDeltas);
+                
+                mergeOperator_->FullMerge(key, &existingValue, operandList, value, nullptr);
+                values.push_back(*value);
+                delete value;
+            } else {
+                values.push_back(string(valueBuffer, valueBufferSize));
+            }
+
+            separated_cnt++;
+        } else {
+            values.push_back(internalValueStr);
+        }
+    }
+
+    return ret;
+}
+
+
 void LsmTreeInterface::GetRocksDBProperty(const string& property, string* str) {
     pointerToRawRocksDB_->GetProperty(property.c_str(), str);
 }

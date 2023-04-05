@@ -52,9 +52,9 @@ func() {
                                         fi
                                         kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
-                                        if [[ "$bonus" == "rmw" ]]; then
-                                            kdcacheSize=$(( ${cacheSize} - 1 ))
-                                            blockCacheSize=$(( 1 ))
+                                        if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
+                                            blockCacheSize=$(( ${cacheSize} - 1 ))
+                                            kdcacheSize=$(( 1 ))
                                         fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
@@ -70,9 +70,9 @@ func() {
                                         fi
                                         kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
-                                        if [[ "$bonus" == "rmw" ]]; then
-                                            kdcacheSize=$(( ${cacheSize} - 1 ))
-                                            blockCacheSize=$(( 1 ))
+                                        if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
+                                            blockCacheSize=$(( ${cacheSize} - 1 ))
+                                            kdcacheSize=$(( 1 ))
                                         fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
@@ -85,9 +85,9 @@ func() {
                                         fi
                                         kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
-                                        if [[ "$bonus" == "rmw" ]]; then
-                                            kdcacheSize=$(( ${cacheSize} - 1 ))
-                                            blockCacheSize=$(( 1 ))
+                                        if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
+                                            blockCacheSize=$(( ${cacheSize} - 1 ))
+                                            kdcacheSize=$(( 1 ))
                                         fi
                                         scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
@@ -112,68 +112,8 @@ gcs=2
 rounds=1
 bfs=(10)
 batchSize=100000
-indexSet=(1 3 5 7 9 10)
-
-indexSet=(1 5 10)
-cacheSizes=(2048 2048 2048 4096 4096 4096 4096 4096 4096 4096 1024 1024 1024 1024)
-
-indexSet=(5 1)
 blocksizes=(65536)
-reqs=("25M")
 sstSizes=(16)
-cacheSizes=(4096)
-indexSet=(0 5 1 10)
-# memSizes the same
-
-
-### Base test!!!
-works=8
-gcs=2
-flengths=(100 400 100 400)
-flengths=(400)
-flengths=(100 400)
-runModeSet=('kvkd' 'kd' 'bkvkd' 'kv' 'raw' 'bkv')
-runModeSet=('kd' 'bkvkd')
-runModeSet=('kvkd' 'bkvkd' 'kd')
-runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
-cacheSizes=(2048)
-indexSet=(1 3 5 7 9 10)
-ops=("10M")
-ops=("20M")
-reqs=("40M" "10M" "100M" "25M")
-reqs=("100M" "25M")
-
-bonus="rmw"
-
-flengths=(100)
-ExpName="motivation"
-indexSet=(1 3 5 7 9)
-reqs=("100M")
-ops=("30M")
-cacheSizes=(4096)
-runModeSet=('raw')
-
-#ExpName="debug"
-#bonus=""
-#runModeSet=('kv')
-#indexSet=(5)
-#reqs=("1M")
-#ops=("10K")
-#func
-#exit
-
-bonus=""
-ExpName="_p27_test_partial_merge"
-indexSet=(1)
-works=8
-#indexSet=(5)
-flengths=(400 100)
-reqs=("25M" "100M")
-ops=("10M")
-#ops=("100M")
-#runModeSet=('kvkd' 'kv' 'bkvkd' 'kd' 'raw' 'bkv')
-runModeSet=('kvkd')
-cacheSizes=(2048)
 cacheSizes=(4096)
 splitThres=0.3
 gcWriteBackSize=500
@@ -183,62 +123,26 @@ if [[ $(diff ycsbc ycsbc_release) -ne 0 ]]; then
     exit
 fi
 
-#func
-#
-#works=16
-#func
-
-#indexSet=(1 3 5 7 9)
-#runModeSet=('kv' 'bkvkd' 'bkv' 'kd' 'raw')
-#runModeSet=('kv' 'bkv' 'raw')
-#runModeSet=('kv' 'raw' 'bkv')
-#runModeSet=('bkvkd' 'kd' 'kvkd')
-#func
-
-flengths=(100 400)
-reqs=("100M" "25M")
 flengths=(100)
 reqs=("100M")
-cacheSizes=(4096)
-ops=("40M")
-indexSet=(1 3 5 7 9)
-runModeSet=('kv' 'raw' 'bkv' 'bkvkd' 'kd' 'kvkd')
-runModeSet=('raw')
-bonus=""
-#runModeSet=('bkvkd' 'kd' 'kvkd')
-#runModeSet=('bkvkd')
-#func
-#
-#bonus="rmw"
-#func
 
-
+#### 0. Motivation
 
 ExpName="_p34_motivation"
 bonus=""
 indexSet=(1 3 5 7 9)
 ops=("50M")
 runModeSet=('raw')
+
 checkrepeat="checkrepeat"
-#func
-#
-#bonus="rmw"
-#func
-
-#indexSet=(5)
-#runModeSet=('bkv')
-##bonus="rmw"
-#func
-#
-#bonus=""
-#func
-
 indexSet=(1 3 5 7 9)
 runModeSet=('bkv' 'kv')
-func
+#func
 
 bonus="rmw"
-func
+#func
+
+#### 1. YCSB 
 
 bonus="rmw"
 ExpName="_p35_exp1_ycsb"
@@ -246,28 +150,24 @@ indexSet=(5 95 10 5) # A, B, C, F
 ops=("20M")
 runModeSet=('bkv' 'kv' 'raw')
 checkrepeat=""
-func
+#func
 
 ops=("50M")
 runModeSet=('bkv' 'kv' 'raw')
-func
-exit
+#func
 
-ExpName="_p33_motivation_buffer2M"
-bonus="rmw"
-indexSet=(5)
-runModeSet=('bkv')
-func
+cutKDCache="true"
+ops=("20M")
+runModeSet=('bkvkd' 'kvkd' 'kd')
+#func
 
-bonus=""
-func
+cutKDCache="false"
+ops=("20M")
+runModeSet=('bkvkd' 'kvkd' 'kd')
+#func
 
-ops=("40M")
-indexSet=(1 3 5 7 9)
-func
-
-runModeSet=('raw')
-func
-
-bonus="rmw"
+indexSet=(5) # D 
+bonus="workloadd"
+cutKDCache="true"
+runModeSet=('bkv' 'raw' 'kv' 'bkvkd' 'kvkd' 'kd')
 func

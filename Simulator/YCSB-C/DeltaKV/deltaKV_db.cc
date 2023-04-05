@@ -320,7 +320,12 @@ int DeltaKVDB::Scan(const std::string &table, const std::string &key, int len,
                     const std::vector<std::string> *fields,
                     std::vector<std::vector<KVPair>> &result) {
     vector<string> keys, values;
-    // db_.GetByPrefix(key, &keys, &values);
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
+    db_.Scan(key, len, keys, values);
+    DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_SCAN, tv);
+    gettimeofday(&tv_, 0);
     return 1;
 }
 

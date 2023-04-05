@@ -246,13 +246,13 @@ void RocksDBKeyManager::getKeys(char* startingKey, uint32_t n, std::vector<char*
     delete it;
 }
 
-// RocksDBKeyManager::RocksDBKeyIterator *RocksDBKeyManager::getKeyIterator (char *startingKey) {
-//     rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
-//     it->Seek(rocksdb::Slice(startingKey));
-//
-//     RocksDBKeyManager::RocksDBKeyIterator *kit = new RocksDBKeyManager::RocksDBKeyIterator(it);
-//     return kit;
-// }
+RocksDBKeyManager::RocksDBKeyIterator *RocksDBKeyManager::getKeyIterator (char *startingKey) {
+    rocksdb::Iterator *it = _lsm->NewIterator(rocksdb::ReadOptions());
+    it->Seek(rocksdb::Slice(startingKey));
+
+    RocksDBKeyManager::RocksDBKeyIterator *kit = new RocksDBKeyManager::RocksDBKeyIterator(it);
+    return kit;
+}
 
 // bool RocksDBKeyManager::deleteKey (char *keyStr) {
 //     // remove the key from cache

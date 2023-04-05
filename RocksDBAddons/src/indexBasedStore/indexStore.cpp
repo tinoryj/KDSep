@@ -156,18 +156,33 @@ retry_update:
     return ret;
 }
 
-// void KvServer::getValueMt(char *key, len_t keySize, char *&value, len_t &valueSize, ValueLocation valueLoc, uint8_t &ret, std::atomic<size_t> &keysInProcess) {
-//
-//     // get value using the location
-//     ret = (_valueManager->getValueFromBuffer(key, value, valueSize));
-//
-//     // search on disk
-//     if (!ret && !ConfigManager::getInstance().disableKvSeparation() && valueLoc.segmentId != INVALID_SEGMENT) {
-//         ret = _valueManager->getValueFromDisk(key, valueLoc, value, valueSize);
-//     }
-//
-//     keysInProcess--;
-// }
+void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfo, uint8_t &ret, std::atomic<size_t> &keysInProcess) {
+    if (checkKeySize(keySize) == false) {
+        ret = 0;
+        return;
+    }
+
+    struct timeval startTime;
+    gettimeofday(&startTime, 0);
+
+    // get value using the location
+    ret = (_valueManager->getValueFromBuffer(ckey, keySize, value, valueSize));
+
+    ValueLocation readValueLoc;
+    readValueLoc.segmentId = 0;
+    readValueLoc.offset = storageInfo.externalFileOffset_ + ((uint64_t)storageInfo.externalFileID_ << 32);
+    readValueLoc.length = storageInfo.externalContentSize_;
+
+    // search on disk
+//    if (!ret && !ConfigManager::getInstance().disableKvSeparation() && valueLoc.segmentId != INVALID_SEGMENT) 
+    if (!ret && !ConfigManager::getInstance().disableKvSeparation())
+    {
+        ret = _valueManager->getValueFromDisk(ckey, keySize, readValueLoc, value, valueSize);
+    }
+
+    delete[] ckey;
+    keysInProcess--;
+}
 
 bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed)
 {
@@ -242,73 +257,81 @@ bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& val
     return ret;
 }
 
-// void KvServer::getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize) {
-//     struct timeval startTime;
-//     gettimeofday(&startTime, 0);
-//
-//     std::vector<uint8_t> rets;
-//     std::vector<ValueLocation> locs;
-//     keys.clear();
-//     values.resize(numKeys);
-//     valueSize.resize(numKeys);
-//     rets.resize(numKeys);
-//     locs.resize(numKeys);
-//
-//     // Todo: range scan on LSM-tree to get the keys
-//     //_keyManager->getKeys(startingKey, numKeys, keys, locs);
-//
-//     // keep track of the number of keys to process
-//     std::atomic<size_t> keysInProcess;
-//     keysInProcess = 0;
-//
-//     bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
-//     KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
-//     char *key = 0;
-//
-//     for (uint32_t i = 0; i < numKeys && kit->isValid(); i++, kit->next()) {
-//         // get the key
-//         key = new char [KEY_SIZE];
-//         memcpy(key, kit->key().c_str(), KEY_SIZE);
-//         keys.push_back(key);
-//
-//         // lookup the location
-//         locs.at(i).deserialize(kit->value());
-//         if ((locs.at(i).segmentId == LSM_SEGMENT || disableKvSep /* no segment id */) && locs.at(i).length != INVALID_LEN) {
-//             // key-value pairs found entirely in LSM
-//             valueSize.at(i) = locs.at(i).length;
-//             values.at(i) = new char [valueSize.at(i)];
-//             locs.at(i).value.copy(values.at(i), valueSize.at(i));
-//         }
-//
-//         keysInProcess += 1;
-//
-//         if (ConfigManager::getInstance().enabledScanReadAhead() && locs.at(i).segmentId != LSM_SEGMENT && locs.at(i).segmentId != INVALID_SEGMENT) {
-//             _deviceManager->readAhead(locs.at(i).segmentId, locs.at(i).offset, locs.at(i).length + KEY_SIZE + sizeof(len_t));;
-//         }
-//
-//         // search into buffer and disk in parallel
-//         _scanthreads.schedule(
-//                 std::bind(
-//                     &KvServer::getValueMt,
-//                     this,
-//                     keys.at(i),
-//                     KEY_SIZE,
-//                     boost::ref(values.at(i)),
-//                     boost::ref(valueSize.at(i)),
-//                     locs.at(i),
-//                     boost::ref(rets.at(i)),
-//                     boost::ref(keysInProcess)
-//                 )
-//         );
-//     }
-//
-//     kit->release();
-//     delete kit;
-//
-//     while (keysInProcess > 0);
-//
-//     StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
-// }
+void KvServer::getRangeValuesDecoupled(
+        const std::vector<string> &keys, int numKeys, 
+        const std::vector<externalIndexInfo>& locs, 
+        std::vector<string> &values) {
+    struct timeval startTime;
+    gettimeofday(&startTime, 0);
+
+    std::vector<uint8_t> rets;
+    std::vector<char*> valueChars;
+    std::vector<len_t> valueSize;
+
+    values.resize(numKeys);
+    rets.resize(numKeys);
+    valueChars.resize(numKeys);
+
+    // keep track of the number of keys to process
+    std::atomic<size_t> keysInProcess;
+    keysInProcess = 0;
+
+    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
+//    KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
+    char *key = 0;
+
+    for (uint32_t i = 0; i < numKeys; i++) {
+        // get the key
+        key_len_t keySize = keys.at(i).size();
+        char* ckey = new char [KEY_REC_SIZE + 1];
+        memcpy(ckey, &keySize, sizeof(key_len_t)); 
+        memcpy(KEY_OFFSET(ckey), keys.at(i).c_str(), keySize);
+        ckey[sizeof(key_len_t) + keySize] = '\0';
+
+        keysInProcess += 1;
+
+        externalIndexInfo loc = locs[i];
+        ValueLocation readValueLoc;
+        readValueLoc.segmentId = 0;
+        readValueLoc.offset = loc.externalFileOffset_ + ((uint64_t)loc.externalFileID_ << 32);
+        readValueLoc.length = loc.externalContentSize_;
+
+        if (ConfigManager::getInstance().enabledScanReadAhead()) {
+            _deviceManager->readAhead(readValueLoc.segmentId,
+                    readValueLoc.offset, 
+                    readValueLoc.length + KEY_REC_SIZE + sizeof(len_t));
+        }
+
+        // search into buffer and disk in parallel
+        // TODO to multithreading
+        KvServer::getValueMt(ckey, keySize, valueChars.at(i),
+                valueSize.at(i), loc, rets.at(i), keysInProcess);
+//        _scanthreads.schedule(
+//                std::bind(
+//                    &KvServer::getValueMt,
+//                    this,
+//                    keys.at(i),
+//                    KEY_SIZE,
+//                    boost::ref(values.at(i)),
+//                    boost::ref(valueSize.at(i)),
+//                    locs.at(i),
+//                    boost::ref(rets.at(i)),
+//                    boost::ref(keysInProcess)
+//                )
+//        );
+    }
+
+//    kit->release();
+//    delete kit;
+
+    while (keysInProcess > 0);
+
+    for (int i = 0; i < numKeys; i++) {
+        values[i] = string(valueChars.at(i), valueSize.at(i));
+    }
+
+    StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
+}
 
 // bool KvServer::delValue(char *key, len_t keySize) {
 //     int retry = 0;

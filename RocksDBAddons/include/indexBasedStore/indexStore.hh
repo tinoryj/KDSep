@@ -26,7 +26,10 @@ public:
 
     bool putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& storageInfoVec, bool sync = true);
     bool getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed = true);
-    //    void getRangeValues(char *startingKey, uint32_t numKeys, std::vector<char*> &keys, std::vector<char*> &values, std::vector<len_t> &valueSize);
+    void getRangeValuesDecoupled(const std::vector<string> &keys, 
+            int numKeys,
+            const std::vector<externalIndexInfo>& locs, 
+            std::vector<string> &values);
     //    bool delValue (char *key, len_t keySize);
 
     bool restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
@@ -58,7 +61,7 @@ private:
     bool _freeDeviceManager;
     bool checkKeySize(len_t& keySize);
 
-    //    void getValueMt(char *key, len_t keySize, char *&value, len_t &valueSize, ValueLocation valueLoc, uint8_t &ret, std::atomic<size_t> &keysInProcess);
+    void getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfo, uint8_t &ret, std::atomic<size_t> &keysInProcess); 
 };
 
 }

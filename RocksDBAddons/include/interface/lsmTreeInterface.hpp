@@ -34,7 +34,9 @@ public:
     bool Merge(const mempoolHandler_t& memPoolHandler);
     bool Merge(const char* key, uint32_t keySize, const char* value, uint32_t valueSize);
     bool Get(const string& key, string* value);
+    bool Scan(const string& key, int len, vector<string>& keys, vector<string>& values);
     bool MultiWriteWithBatch(const vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch);
+    rocksdb::Iterator* NewIterator();
 
     void GetRocksDBProperty(const string& property, string* str);
 //    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);

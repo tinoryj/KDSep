@@ -24,7 +24,7 @@ public:
     bool Get(const string& key, string* value);
 
     void GetRocksDBProperty(const string& property, string* str);
-//    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
+    bool Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values);
 //    bool SingleDelete(const string& key);
 
 private:
@@ -59,7 +59,7 @@ private:
     bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool getByWriteBackFlag);
 
 //    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
-//    vector<bool> GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
+    bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     bool GetCurrentValueThenWriteBack(const string& key);
 
