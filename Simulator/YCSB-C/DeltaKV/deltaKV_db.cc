@@ -272,6 +272,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     cerr << "level size base " << options_.rocksdbRawOptions_.max_bytes_for_level_base << endl;
     cerr << "max open files " << options_.rocksdbRawOptions_.max_open_files << endl;
 
+    cerr << "compression " << (int)options_.rocksdbRawOptions_.compression << endl;
+//    exit(1);
     if (!compression) {
         options_.rocksdbRawOptions_.compression = rocksdb::kNoCompression;
     }

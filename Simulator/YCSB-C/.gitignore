@@ -58,3 +58,10 @@ temp.ini
 workloada-temp.spec
 
 Exp*
+
+ycsbc_debug
+ycsbc_release
+countSSTInfo
+countSSTInfoLevel
+tmpappend
+tmpappend-prepare

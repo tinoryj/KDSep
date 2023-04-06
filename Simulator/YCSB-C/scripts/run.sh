@@ -138,7 +138,9 @@ usekv="false"
 usekd="false"
 usekvkd="false"
 usebkvkd="false"
+keep="false"
 workloadd="false"
+workloade="false"
 gc="true"
 maxFileNumber="16"
 blockSize=65536
@@ -298,9 +300,15 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^clean$ ]]; then
         cleanFlag="true"
+    elif [[ "$param" == "keep" ]]; then
+        keep="true"
+        run_suffix=${run_suffix}_keep
     elif [[ "$param" == "workloadd" ]]; then
         workloadd="true"
-        run_suffix=${run_suffix}_latest
+        run_suffix=${run_suffix}_workloadd
+    elif [[ "$param" == "workloade" ]]; then
+        workloade="true"
+        run_suffix=${run_suffix}_workloade
     elif [[ "$param" == "cif" ]]; then
         cacheIndexFilter="true"
         run_suffix=${run_suffix}_cif
@@ -541,6 +549,13 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         sed -i "23s/zipfian/latest/g" workload-temp.spec
         sed -i "20s/0/0.05/g" workload-temp.spec
         ReadProportion=0.95
+        UpdateProportion=0
+    fi
+
+    if [[ "$workloade" == "true" ]]; then
+        sed -i "19s/0/0.95/g" workload-temp.spec
+        sed -i "20s/0/0.05/g" workload-temp.spec
+        ReadProportion=0
         UpdateProportion=0
     fi
 

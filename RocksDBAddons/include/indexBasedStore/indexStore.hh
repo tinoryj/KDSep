@@ -9,6 +9,7 @@
 #include "logManager.hh"
 #include "segmentGroupManager.hh"
 #include "valueManager.hh"
+#include "utils/messageQueue.hpp"
 #include <atomic>
 #include <vector>
 
@@ -17,6 +18,18 @@
  */
 
 namespace DELTAKV_NAMESPACE {
+
+struct getValueStruct {
+    char* ckey;
+    len_t keySize;
+    char* value;
+    len_t valueSize;
+    externalIndexInfo storageInfo;
+    std::atomic<size_t>* keysInProcess;
+
+    getValueStruct(char* ckey, len_t keySize, externalIndexInfo loc, std::atomic<size_t>* keysInProcess):
+        ckey(ckey), keySize(keySize), storageInfo(loc), keysInProcess(keysInProcess) {}
+};
 
 class KvServer {
 public:
@@ -51,6 +64,12 @@ private:
     LogManager* _logManager;
     GCManager* _gcManager;
     SegmentGroupManager* _segmentGroupManager;
+
+    messageQueue<getValueStruct*>* notifyScanMQ_ = nullptr;
+    std::mutex scan_mtx_;
+    std::condition_variable scan_cv_;
+    vector<boost::thread*> thList_;
+    void scanWorker(); 
 
     // boost::asio::thread_pool*  _scanthreads;
 

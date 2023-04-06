@@ -40,6 +40,18 @@ KvServer::KvServer(DeviceManager* deviceManager, rocksdb::DB* pointerToRawRocksD
         _cache.lru = new LruList(ConfigManager::getInstance().valueCacheSize());
     }
 
+    // Threads for scans
+    boost::thread::attributes attrs;
+    attrs.set_stack_size(1000 * 1024 * 1024);
+
+    notifyScanMQ_ = new messageQueue<getValueStruct*>;
+    thList_.clear();
+
+    for (int i = 0; i < ConfigManager::getInstance().getNumRangeScanThread(); i++) {
+        boost::thread* th = new boost::thread(attrs, boost::bind(&KvServer::scanWorker, this));
+        thList_.push_back(th);
+    }
+
     //    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
@@ -60,6 +72,48 @@ KvServer::~KvServer()
         delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
+    
+    notifyScanMQ_->done = true;
+    scan_cv_.notify_all();
+    for (auto& thIt : thList_) {
+        thIt->join();
+        delete thIt;
+    }
+    delete notifyScanMQ_;
+}
+
+void KvServer::scanWorker() {
+    struct timeval tve, empty_time;
+    bool empty_started = false;
+    while (true) {
+        gettimeofday(&tve, 0);
+        if (notifyScanMQ_->done == true && notifyScanMQ_->isEmpty() == true) {
+            break;
+        }
+
+        getValueStruct* st;
+
+        if (notifyScanMQ_->pop(st)) {
+            empty_started = false;
+            uint8_t ret;
+
+            getValueMt(st->ckey, st->keySize, st->value, st->valueSize, 
+                    st->storageInfo, ret, (*st->keysInProcess));
+
+        } else {
+            if (empty_started == false) {
+                gettimeofday(&empty_time, 0);
+                empty_started = true;
+            } else {
+                if (tve.tv_sec - empty_time.tv_sec > 3) {
+                    std::unique_lock<std::mutex> lk(scan_mtx_);
+                    scan_cv_.wait(lk);
+                    gettimeofday(&empty_time, 0);
+                }
+            }
+        }
+    }
+
 }
 
 bool KvServer::checkKeySize(len_t& keySize)
@@ -267,14 +321,18 @@ void KvServer::getRangeValuesDecoupled(
     std::vector<uint8_t> rets;
     std::vector<char*> valueChars;
     std::vector<len_t> valueSize;
+    std::vector<getValueStruct*> sts;
 
     values.resize(numKeys);
     rets.resize(numKeys);
     valueChars.resize(numKeys);
+    sts.resize(numKeys);
 
     // keep track of the number of keys to process
     std::atomic<size_t> keysInProcess;
     keysInProcess = 0;
+
+    bool useMultiThreading = false;
 
     bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
 //    KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
@@ -304,8 +362,18 @@ void KvServer::getRangeValuesDecoupled(
 
         // search into buffer and disk in parallel
         // TODO to multithreading
-        KvServer::getValueMt(ckey, keySize, valueChars.at(i),
-                valueSize.at(i), loc, rets.at(i), keysInProcess);
+
+
+        if (useMultiThreading == false) {
+            KvServer::getValueMt(ckey, keySize, valueChars.at(i),
+                    valueSize.at(i), loc, rets.at(i), keysInProcess);
+        } else {
+            getValueStruct* st = new getValueStruct(ckey, keySize, loc, &keysInProcess);
+            sts[i] = st;
+            notifyScanMQ_->push(st);
+            scan_cv_.notify_all();
+        }
+
 //        _scanthreads.schedule(
 //                std::bind(
 //                    &KvServer::getValueMt,
@@ -326,8 +394,15 @@ void KvServer::getRangeValuesDecoupled(
 
     while (keysInProcess > 0);
 
-    for (int i = 0; i < numKeys; i++) {
-        values[i] = string(valueChars.at(i), valueSize.at(i));
+    if (useMultiThreading == false) {
+        for (int i = 0; i < numKeys; i++) {
+            values[i] = string(valueChars.at(i), valueSize.at(i));
+        }
+    } else {
+        for (int i = 0; i < numKeys; i++) {
+            values[i] = string(sts.at(i)->value, sts.at(i)->valueSize);
+            delete sts.at(i);
+        }
     }
 
     StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE, startTime);
