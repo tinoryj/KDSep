@@ -71,6 +71,12 @@ private:
                 __LINE__, __func__, __VA_ARGS__);                                               \
     } while (0)
 
+#define debug_e(fmt)                                                                            \
+    do {                                                                                        \
+            fprintf(stderr, BOLDRED "[%s] %s:%d:%s(): " fmt "\n" RESET, getTime().c_str(), __FILE__, \
+                __LINE__, __func__);                                               \
+    } while (0)
+
 #define debug_info(fmt, ...)                                                                 \
     do {                                                                                     \
         if (DEBUG_LEVEL >= DebugOutPutLevel::INFO)                                           \

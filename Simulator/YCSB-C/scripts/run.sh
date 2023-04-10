@@ -79,7 +79,6 @@ log_db_status() {
 #    fi
 }
 
-pwd
 ulimit -n 204800 
 ulimit -s 102400
 echo $@
@@ -119,6 +118,7 @@ deltaLogSplitGCThreshold=0.45
 batchSize=100000
 cacheIndexFilter="true"
 paretokey="false"
+scanThreads=8
 nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
@@ -142,6 +142,7 @@ keep="false"
 workloadd="false"
 workloade="false"
 gc="true"
+shortprepare="false"
 maxFileNumber="16"
 blockSize=65536
 fake="false"
@@ -149,9 +150,11 @@ nodirect="false"
 nommap="false"
 checkRepeat="false"
 rmw="false"
+flushSize=4092
 sstsz=64
 l1sz=256
 memtable=64
+initBit=20
 
 for param in $*; do
     if [[ $param == "kv" ]]; then
@@ -207,6 +210,12 @@ for param in $*; do
     elif [[ "$param" =~ ^bn[0-9]+$ ]]; then
         bn=`echo $param | sed 's/bn//g'`
         run_suffix=${run_suffix}_${param}
+    elif [[ "$param" =~ ^initBit[0-9]+$ ]]; then
+        tmp=`echo $param | sed 's/initBit//g'`
+        if [[ $tmp -ne $initBit ]]; then
+            initBit=$tmp
+            run_suffix=${run_suffix}_${param}
+        fi
     elif [[ "$param" =~ ^Exp[0-9a-zA-Z_]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
         ResultLogFolder="Exp$ExpID/ResultLogs"
@@ -227,6 +236,12 @@ for param in $*; do
         tmp=$(echo $param | sed 's/gcThres//g')
         if [[ "$tmp" != "$deltaLogGCThreshold" ]]; then
             deltaLogGCThreshold=$(echo $param | sed 's/gcThres//g')
+            run_suffix=${run_suffix}_${param}
+        fi
+    elif [[ "$param" =~ ^scanThreads[0-9.]+$ ]]; then
+        tmp=$(echo $param | sed 's/scanThreads//g')
+        if [[ "$tmp" != "$scanThreads" ]]; then
+            scanThreads=$tmp
             run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^splitThres[0-9.]+$ ]]; then
@@ -273,6 +288,12 @@ for param in $*; do
         if [[ $gcWriteBackSize -ne 1000 ]]; then
             run_suffix=${run_suffix}_gcwbsz${gcWriteBackSize}
         fi
+    elif [[ "$param" =~ ^flushSize[0-9]+$ ]]; then
+        tmp=$(echo $param | sed 's/flushSize//g')
+        if [[ $tmp -ne $flushSize ]]; then
+            run_suffix=${run_suffix}_${param}
+            flushSize=$tmp
+        fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         sstsz=`echo $param | sed 's/sst//g'`
         if [[ $sstsz -ne 64 ]]; then
@@ -309,9 +330,11 @@ for param in $*; do
     elif [[ "$param" == "workloade" ]]; then
         workloade="true"
         run_suffix=${run_suffix}_workloade
-    elif [[ "$param" == "cif" ]]; then
-        cacheIndexFilter="true"
-        run_suffix=${run_suffix}_cif
+    elif [[ "$param" == "shortprepare" ]]; then
+        shortprepare="true"
+    elif [[ "$param" == "nocif" ]]; then
+        cacheIndexFilter="false"
+        run_suffix=${run_suffix}_nocif
     elif [[ "$param" == "fake" ]]; then
         fake="true"
         run_suffix=${run_suffix}_fake
@@ -361,6 +384,8 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
     sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
     sed -i "/deltaStoreGcWriteBackDeltaSizeThreshold/c\\deltaStoreGcWriteBackDeltaSizeThreshold = $gcWriteBackSize" temp.ini
+    sed -i "/deltaLogFileFlushSize/c\\deltaLogFileFlushSize = $flushSize" temp.ini
+    sed -i "/initBitNumber/c\\initBitNumber = $initBit" temp.ini
 fi
 
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
@@ -393,6 +418,8 @@ fi
 
 numMainSegment="$(( $KVPairsNumber * $fieldcount * $fieldlength / 5 * 6 / 1048576))"
 sed -i "/numMainSegment/c\\numMainSegment = $numMainSegment" temp.ini
+sed -i "/numRangeScanThread/c\\numRangeScanThread = $scanThreads" temp.ini
+
 
 size="$(( $KVPairsNumber / 1000000 ))M"
 if [[ $size == "0M" ]]; then
@@ -419,7 +446,7 @@ if [[ $nogc == "true" ]]; then
     sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = false" temp.ini 
 fi
 
-maxKeyValueSize=$(( (${fieldcount} * ${fieldlength} + 4095) / 4096 * 4096))
+maxKeyValueSize=$(( (${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
 sed -i "/maxKeyValueSize/c\\maxKeyValueSize = $maxKeyValueSize" temp.ini 
 sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini 
 sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
@@ -514,7 +541,11 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC 
     sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
-    sed -i "10s/NaN/10000000/g" $SPEC 
+    if [[ "$shortprepare" == "true" ]]; then
+        sed -i "10s/NaN/10000/g" $SPEC 
+    else
+        sed -i "10s/NaN/10000000/g" $SPEC 
+    fi
 #    sed -i "10s/NaN/10000/g" $SPEC 
     sed -i "15s/0/1/g" $SPEC
     sed -i "16s/0/0/g" $SPEC

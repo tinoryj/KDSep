@@ -41,6 +41,7 @@ add_library(DeltaKV STATIC
       utils/mempool.cpp
       utils/bucketIndexBlock.cpp
       utils/bucketKeyFilter.cc
+      utils/headers.cc
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

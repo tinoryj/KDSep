@@ -256,6 +256,8 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
     it->Seek(targetStartKey);
     int cnt = 0;
     bool ret = true;
+    keys.clear();
+    values.clear();
     vector<string> values_lsm;
     for (; it->Valid() && cnt < len; it->Next()) {
         keys.push_back(it->key().ToString());
@@ -265,6 +267,9 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
     delete it;
 
     if (lsmTreeRunningMode_ == kNoValueLog) {
+        for (auto& it : values_lsm) {
+            values.push_back(it);
+        }
         return true;
     }
 
@@ -325,7 +330,7 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
             memcpy(valueBuffer, &header, sizeof(header));
             memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
 
-            string* value;
+            string* value = nullptr;
 
             // replace the external value index with the raw value
             if (remainingDeltas.empty() == false) {

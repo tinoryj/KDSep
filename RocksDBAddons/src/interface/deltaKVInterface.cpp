@@ -630,6 +630,13 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
 {
     // 1. Scan the RocksDB/vLog for keys and values
     lsmTreeInterface_.Scan(startKey, len, keys, values);
+//    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
+//    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
+//            values.size());
+//    for (int i = 0; i < (int)keys.size(); i++) {
+//        fprintf(stderr, "%s %lu\n", keys[i].c_str(), values[i].size());
+//    }
+//    exit(1);
 
     return true;
 }
@@ -657,7 +664,12 @@ bool DeltaKV::Merge(const string& key, const string& value)
 
     mempoolHandler_t mempoolHandler;
     ;
-    STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, mempoolHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+    bool insertStatus = false;
+    STAT_PROCESS(insertStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, false, mempoolHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+    if (insertStatus == false) {
+        debug_error("Insert error, size %lu %lu\n", key.size(), value.size());
+        exit(1);
+    }
     bool shouldDeleteMemPoolHandler = false;
     bool mergeOperationStatus = false;
     switch (deltaKVRunningMode_) {
@@ -823,7 +835,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             batchedOperationsSizes[currentWriteBatchDequeInUse] >=
             maxBatchOperationBeforeCommitSize_) || 
             (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 2000))
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 20000))
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -843,7 +855,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
             batchedOperationsSizes[currentWriteBatchDequeInUse] >=
             maxBatchOperationBeforeCommitSize_) || 
             (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 2000))
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 20000))
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
@@ -1016,7 +1028,12 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
             uint32_t currentSequenceNumber = globalSequenceNumber_++;
             globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, currentSequenceNumber, true, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+            bool insertStatus;
+            STAT_PROCESS(insertStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalValue, currentSequenceNumber, true, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+            if (insertStatus == false) {
+                debug_error("insert error, size %lu %lu\n", newKeyStr.size(), finalValue.size());
+                exit(1);
+            }
             it->second.push_back(make_pair(kPutOp, newHandler));
             validObjectNumber++;
         } else if (it->second.front().first == kMergeOp && it->second.size() >= 2) {
@@ -1042,7 +1059,12 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
             uint32_t currentSequenceNumber = globalSequenceNumber_++;
             globalSequenceNumberGeneratorMtx_.unlock();
             mempoolHandler_t newHandler;
-            STAT_PROCESS(objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], currentSequenceNumber, false, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+            bool insertStatus;
+            STAT_PROCESS(insertStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(newKeyStr, finalOperandList[0], currentSequenceNumber, false, newHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
+            if (insertStatus == false) {
+                debug_error("insert error, size %lu %lu\n", newKeyStr.size(), finalOperandList[0].size());
+                exit(1);
+            }
             it->second.push_back(make_pair(kMergeOp, newHandler));
             validObjectNumber++;
         }

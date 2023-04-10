@@ -3,7 +3,7 @@
 namespace DELTAKV_NAMESPACE {
 
 BucketIndexBlock::BucketIndexBlock() {
-    key_buf_ = new char[BUF_SIZE];
+    key_buf_ = new char[buf_size_];
 }
 
 BucketIndexBlock::~BucketIndexBlock() {
@@ -21,6 +21,17 @@ void BucketIndexBlock::Insert(const string_view& key, size_t kd_size) {
 //    indices[key] = kd_size;
 }
 
+void BucketIndexBlock::EnlargeBuffer(size_t needed_size) {
+    if (needed_size < buf_size_) {
+        return;
+    }
+    buf_size_ *= 2;
+    char* new_buf = new char[buf_size_];
+    memcpy(new_buf, key_buf_, key_buf_size_);
+    delete[] key_buf_;
+    key_buf_ = new_buf;
+}
+
 void BucketIndexBlock::Build() {
     size_t last_addr = 0;
     index_block_size_ = 0;
@@ -28,11 +39,12 @@ void BucketIndexBlock::Build() {
     for (auto& it : indices) {
         if (last_addr == 0 || sorted_part_size_ - last_addr > THRES) {
             // copy the key to the buffer
-            memcpy(key_buf_ + key_buf_size_, it.first.data(), it.first.size());
-            if (key_buf_size_ + it.first.size() > BUF_SIZE) {
-                fprintf(stderr, "ERROR: buf space not enough %lu %lu %u\n",
-                        key_buf_size_, it.first.size(), BUF_SIZE);
+            EnlargeBuffer(key_buf_size_ + it.first.size());  
+            if (key_buf_size_ + it.first.size() > buf_size_) {
+                fprintf(stderr, "ERROR: buf space not enough %lu %lu %lu\n",
+                        key_buf_size_, it.first.size(), buf_size_);
             }
+            memcpy(key_buf_ + key_buf_size_, it.first.data(), it.first.size());
             // insert the key (in the buffer) to the map
 //            mp_[string_view(key_buf_ + key_buf_size_, it.first.size())] =
 //                sorted_part_size_;

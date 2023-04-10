@@ -16,7 +16,6 @@ namespace DELTAKV_NAMESPACE {
 class HashStoreFileManager {
 public:
     HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue);
-    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 

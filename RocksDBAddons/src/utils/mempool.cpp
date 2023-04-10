@@ -34,6 +34,24 @@ bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(const string& keyStr, 
 {
     if (valueStr.size() + keyStr.size() >= mempoolBlockSizeThreshold_) {
         debug_error("[ERROR] current key size = %lu, value size = %lu, may exceed mempool block size = %u\n", keyStr.size(), valueStr.size(), mempoolBlockSizeThreshold_);
+        char buf[64];
+        int ptr = 0;
+        for (int i = 0; i < valueStr.size(); i++) {
+            int c = valueStr[i];
+            if ((c >= '0' && c <= '9') || c == ',' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                buf[ptr] = c;
+                ptr++;
+            } else {
+                buf[ptr] = (c / 16 >= 10) ? (c / 16 - 10 + 'a') : (c / 16 + '0');
+                buf[ptr+1] = (c % 16 >= 10) ? (c % 16 - 10 + 'a') : (c % 16 + '0');
+                ptr+=2;
+            }
+            if (ptr >= 62 || i == valueStr.size() - 1) {
+                buf[ptr]='\0';
+                fprintf(stderr, "%s\n", buf);
+                ptr = 0;
+            }
+        }
         return false;
     }
     std::scoped_lock<std::shared_mutex> wlock(managerMtx_);

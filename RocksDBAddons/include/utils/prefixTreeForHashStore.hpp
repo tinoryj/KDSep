@@ -71,6 +71,9 @@ public:
     {
         init_bit_num_ = initBitNumber;
         fixed_bit_num_ = initBitNumber - 1;
+        if (fixed_bit_num_ > 64) {
+            fixed_bit_num_ = 0;
+        }
         fixed_bit_mask_ = (1ull << fixed_bit_num_) - 1;
         max_file_num_ = maxFileNumber;
         initializeTree();
@@ -79,7 +82,7 @@ public:
     uint64_t getRemainFileNumber()
     {
         std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
-        if (max_file_num_ < current_file_num_) {
+        if (max_file_num_ + 10 < current_file_num_) {
             debug_error("[ERROR] too many files! %lu v.s. %lu\n", 
                     max_file_num_, current_file_num_); 
             exit(1);
@@ -579,6 +582,11 @@ private:
                 if (root->left_child == nullptr) {
                     root->left_child = new prefixTreeNode;
                     // insert at next level
+                    if (root->is_leaf == true) {
+                        root->is_leaf = false;
+                        current_file_num_--;
+                        // TODO any leak?
+                    }
                     root = root->left_child;
                     root->is_leaf = true;
                     root->data = newDataObj;
@@ -612,6 +620,11 @@ private:
                 if (root->right_child == nullptr) {
                     root->right_child = new prefixTreeNode;
                     // insert at next level
+                    if (root->is_leaf == true) {
+                        root->is_leaf = false;
+                        current_file_num_--;
+                        // TODO any leak?
+                    }
                     root = root->right_child;
                     root->is_leaf = true;
                     root->data = newDataObj;
@@ -642,6 +655,11 @@ private:
             if (root->left_child == nullptr) {
                 root->left_child = new prefixTreeNode;
                 // insert at next level
+                if (root->is_leaf == true) {
+                    root->is_leaf = false;
+                    current_file_num_--;
+                    // TODO any leak?
+                }
                 root = root->left_child;
                 root->is_leaf = true;
                 root->data = newDataObj;
@@ -661,6 +679,11 @@ private:
             // go to right if 1
             if (root->right_child == nullptr) {
                 root->right_child = new prefixTreeNode;
+                if (root->is_leaf == true) {
+                    root->is_leaf = false;
+                    current_file_num_--;
+                    // TODO any leak?
+                }
                 // insert at next level
                 root = root->right_child;
                 root->is_leaf = true;

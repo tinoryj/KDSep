@@ -160,8 +160,9 @@ uint64_t HashStoreFileOperator::readUnsortedPart(
     auto sorted_part_size = file_hdl->index_block->GetSortedPartSize(); 
     auto index_block_size = file_hdl->index_block->GetSize(); 
     auto file_size = file_hdl->total_object_bytes;
-    auto unsorted_part_off = sizeof(hashStoreFileHeader) + index_block_size +
-        sorted_part_size;
+    auto unsorted_part_off = file_hdl->unsorted_part_offset;
+        //sizeof(hashStoreFileHeader) + index_block_size +
+        //sorted_part_size + sizeof(hashStoreRecordHeader);
     auto unsorted_part_size = file_size - unsorted_part_off;
 
     *read_buf = new char[unsorted_part_size];
@@ -669,6 +670,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetObjectNumber = op_hdl->batched_write_operation_.size;
     // write content
     bool writeContentStatus;
+//    debug_error("write buffer: %lu\n", targetWriteBufferSize);
     STAT_PROCESS(writeContentStatus = writeContentToFile(op_hdl->file_hdl, writeContentBuffer, targetWriteBufferSize, targetObjectNumber), StatsType::DS_WRITE_FUNCTION);
     if (writeContentStatus == false) {
         debug_error("[ERROR] Could not write content to file, target file ID = %lu, content size = %lu, content bytes number = %lu\n", op_hdl->file_hdl->file_id, targetObjectNumber, targetWriteBufferSize);
@@ -709,7 +711,7 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
                 file_hdl->no_gc_wait_operation_number_ = 0;
                 return true;
             } else {
-                if (file_hdl->no_gc_wait_operation_number_ % 10 == 1) {
+                if (file_hdl->no_gc_wait_operation_number_ % 25 == 1) {
                     debug_error("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", file_hdl->file_id, perFileGCSizeLimit_, file_hdl->total_object_bytes, file_hdl->total_on_disk_bytes + file_hdl->file_op_ptr->getFileBufferedSize(), file_hdl->gc_status, file_hdl->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
                 }
                 debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", file_hdl->file_id, perFileGCSizeLimit_, file_hdl->total_object_bytes, file_hdl->total_on_disk_bytes + file_hdl->file_op_ptr->getFileBufferedSize(), file_hdl->gc_status, file_hdl->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);

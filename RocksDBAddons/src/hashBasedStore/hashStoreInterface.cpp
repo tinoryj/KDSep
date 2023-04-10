@@ -23,7 +23,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     if (options->enable_write_back_optimization_ == true) {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
     } else {
-        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_);
+        hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, nullptr);
     }
     hashStoreFileOperator = new HashStoreFileOperator(options, workingDirStr, hashStoreFileManager);
     if (!hashStoreFileManager) {

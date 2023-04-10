@@ -13,7 +13,8 @@ namespace DELTAKV_NAMESPACE {
 
 enum fileOperationType { kFstream = 0,
     kDirectIO = 1,
-    kAlignLinuxIO = 2 };
+    kAlignLinuxIO = 2, 
+    kPreadWrite = 3};
 
 typedef struct FileOpStatus {
     bool success_;
@@ -51,20 +52,24 @@ public:
     uint64_t getFileSize();
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();
+    void markDirectDataAddress(uint64_t data);
 
 private:
     fileOperationType operationType_;
     fstream fileStream_;
     int fd_;
     uint64_t page_size_ = sysconf(_SC_PAGESIZE);
-    uint64_t data_page_size_ = sysconf(_SC_PAGESIZE) - sizeof(uint32_t);
-    uint64_t direct_io_disk_size_ = 0;
-    uint64_t direct_io_data_size_ = 0;
+    uint64_t page_size_m4_ = sysconf(_SC_PAGESIZE) - sizeof(uint32_t);
+    uint64_t disk_size_ = 0;
+    uint64_t data_size_ = 0;
     uint64_t newlyCreatedFileFlag_ = false;
     uint64_t preAllocateFileSize_ = 0;
     char* globalWriteBuffer_ = nullptr;
     uint64_t buf_used_size_ = 0;
-    uint64_t globalBufferSize_ = 0;
+    uint64_t buf_size_ = 0;
+
+    uint64_t mark_direct_data_ = 0;
+    uint64_t mark_direct_disk_ = 0;
 };
 
 } // namespace DELTAKV_NAMESPACE

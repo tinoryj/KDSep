@@ -219,6 +219,12 @@ void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueS
     struct timeval startTime;
     gettimeofday(&startTime, 0);
 
+//    debug_error("value %p valueSize %lu index %u %u %u\n", 
+//            value, valueSize, 
+//            storageInfo.externalFileOffset_,
+//            storageInfo.externalFileID_,
+//            storageInfo.externalContentSize_);
+
     // get value using the location
     ret = (_valueManager->getValueFromBuffer(ckey, keySize, value, valueSize));
 
@@ -326,17 +332,18 @@ void KvServer::getRangeValuesDecoupled(
     values.resize(numKeys);
     rets.resize(numKeys);
     valueChars.resize(numKeys);
+    valueSize.resize(numKeys);
     sts.resize(numKeys);
 
     // keep track of the number of keys to process
     std::atomic<size_t> keysInProcess;
     keysInProcess = 0;
 
-    bool useMultiThreading = false;
+    bool useMultiThreading = ConfigManager::getInstance().getNumRangeScanThread() > 1;
 
-    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
+//    bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
 //    KeyManager::KeyIterator *kit = _keyManager->getKeyIterator(startingKey);
-    char *key = 0;
+//    char *key = 0;
 
     for (uint32_t i = 0; i < numKeys; i++) {
         // get the key
@@ -397,10 +404,12 @@ void KvServer::getRangeValuesDecoupled(
     if (useMultiThreading == false) {
         for (int i = 0; i < numKeys; i++) {
             values[i] = string(valueChars.at(i), valueSize.at(i));
+            free(valueChars.at(i));
         }
     } else {
         for (int i = 0; i < numKeys; i++) {
             values[i] = string(sts.at(i)->value, sts.at(i)->valueSize);
+            free(sts.at(i)->value);
             delete sts.at(i);
         }
     }

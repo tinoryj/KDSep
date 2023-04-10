@@ -20,6 +20,7 @@ class BucketIndexBlock {
     uint64_t Serialize(char* buf);
     uint64_t GetSize();
     uint64_t GetSortedPartSize();
+    void EnlargeBuffer(size_t needed_size);
     void IndicesClear();
     void Clear();
 
@@ -31,7 +32,7 @@ class BucketIndexBlock {
     map<string, size_t> mp_; 
     char* key_buf_ = nullptr;
     const int THRES = 4088;
-    const int BUF_SIZE = 4096;
+    uint64_t buf_size_ = 4096;
     uint64_t key_buf_size_ = 0;
     uint64_t index_block_size_ = 0;
     uint64_t sorted_part_size_ = 0;
