@@ -20,7 +20,7 @@ public:
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
     // file operations
-    bool getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
+    bool getFileHandlerWithKey(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
     bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
@@ -32,11 +32,13 @@ public:
     bool setJobDone();
 
     void pushToGCQueue(hashStoreFileMetaDataHandler* fileHandlerPtr);
+    uint64_t getTrieAccessNum();
 
     // Consistency
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag);
 //    bool flushAllBuffers();
     bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
+    bool prepareForUpdatingMetadata(vector<hashStoreFileMetaDataHandler*>& file_hdls);
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check

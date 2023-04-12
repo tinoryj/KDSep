@@ -161,7 +161,8 @@ enum hashStoreFileCreateReason { kNewFile = 0,
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
     kMultiPut = 2,
-    kFlush = 3 };
+    kFlush = 3,
+    kFind = 4};
 
 enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
@@ -217,14 +218,26 @@ enum operationStatus {
 };
 
 typedef struct hashStoreOperationHandler {
-    hashStoreFileMetaDataHandler* file_hdl;
-    hashStoreWriteOperationHandler write_operation_;
-    hashStoreReadOperationHandler read_operation_;
-    hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType op_type;
+    hashStoreFileMetaDataHandler* file_hdl;
+
+    // kPut
+    hashStoreWriteOperationHandler write_op;
+
+    // kGet
+    hashStoreReadOperationHandler read_op;
+
+    // kMultiput
+    hashStoreBatchedWriteOperationHandler multiput_op;
+    bool need_flush = false;
+
+    // kFind
+    mempoolHandler_t* object;
     operationStatus job_done = kNotDone;
+
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_hdl)
         : file_hdl(file_hdl) {};
+    hashStoreOperationHandler() : file_hdl(nullptr) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {

@@ -28,8 +28,7 @@ class BucketIndexBlock {
     map<string, size_t> indices;
 
     private:
-//    map<string_view, size_t> mp_; 
-    map<string, size_t> mp_; 
+    map<string_view, size_t> mp_; 
     char* key_buf_ = nullptr;
     const int THRES = 4088;
     uint64_t buf_size_ = 4096;

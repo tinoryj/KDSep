@@ -20,12 +20,13 @@ public:
     ~HashStoreFileOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
-    bool putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler); 
+    bool putIntoJobQueue(hashStoreOperationHandler* op_hdl); 
+
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
     bool directlyMultiWriteOperation(unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
     bool directlyReadOperation(hashStoreFileMetaDataHandler* file_hdl, string key, vector<string>& valueVec);
-    bool waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler);
+    bool waitOperationHandlerDone(hashStoreOperationHandler* op_hdl, bool need_delete = true);
     // threads with job queue support
     void operationWorker(int threadID);
     bool setJobDone();
@@ -45,13 +46,16 @@ private:
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerFlush(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerFind(hashStoreOperationHandler* currentHandlerPtr);
 
     uint64_t readWholeFile(hashStoreFileMetaDataHandler* file_hdl, char** buf);
     uint64_t readUnsortedPart(hashStoreFileMetaDataHandler* file_hdl, char** buf);
     uint64_t readSortedPart(hashStoreFileMetaDataHandler* file_hdl, const string_view& key_view, char** buf, bool& key_exists);
     uint64_t readBothParts(hashStoreFileMetaDataHandler* file_hdl, const string_view& key_view, char** buf);
 
-    bool writeContentToFile(hashStoreFileMetaDataHandler* file_hdl, char* contentBuffer, uint64_t contentSize, uint64_t contentObjectNumber);
+    bool writeContentToFile(hashStoreFileMetaDataHandler* file_hdl, 
+            char* contentBuffer, uint64_t contentSize, 
+            uint64_t contentObjectNumber, bool need_flush = false);
     bool readAndProcessSortedPart(hashStoreFileMetaDataHandler* file_hdl,
             string& key, vector<string_view>& kd_list, char** buf);
     bool readAndProcessWholeFile(hashStoreFileMetaDataHandler* file_hdl,

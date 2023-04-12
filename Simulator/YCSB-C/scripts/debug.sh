@@ -184,6 +184,7 @@ maxBucketNumber=32768
 bonus2="initBit7"
 #bonus3="workloade"
 bonus3="ec"
+bonus3=""
 bonus4="nodirectreads"
 checkrepeat=""
 

@@ -340,7 +340,6 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                 FileOpStatus ret(true, buf_size_, contentSize - buf_used_size_, buf_used_size_);
                 return ret;
             } else {
-                uint64_t req_buf_num = contentSize + buf_used_size_ - buf_size_;
                 // Not complete
                 FileOpStatus ret(false, 0, 0, 0);
                 return ret;
@@ -496,7 +495,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
 
         // page_index: Where the page starts to read from tmp_read_buf to. It
         // is the index within the page.
-        uint64_t page_index;
+        uint64_t page_index = 0;
 
         if (offset >= data_size_) {
             // The whole data in buffer
@@ -688,10 +687,6 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         // req_disk_data_size + req_buf_data_size == read_buf_size
         uint64_t req_disk_data_size;
         uint64_t req_buf_data_size;
-
-        // page_index: Where the page starts to read from tmp_read_buf to. It
-        // is the index within the page.
-        uint64_t page_index;
 
         if (offset >= data_size_) {
             // The whole data in buffer

@@ -59,7 +59,7 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
 {
     hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(file_hdl);
     currentHandler->job_done = kNotDone;
-    currentHandler->write_operation_.mempoolHandler_ptr_ = mempoolHandler;
+    currentHandler->write_op.mempoolHandler_ptr_ = mempoolHandler;
     currentHandler->op_type = kPut;
     operationToWorkerMQ_->push(currentHandler);
     operationNotifyCV_.notify_all();
@@ -79,24 +79,28 @@ bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataH
     }
 }
 
-bool HashStoreFileOperator::putWriteOperationsVectorIntoJobQueue(hashStoreOperationHandler* currentOperationHandler)
+bool HashStoreFileOperator::putIntoJobQueue(hashStoreOperationHandler* op_hdl)
 {
-    bool ret = operationToWorkerMQ_->push(currentOperationHandler);
+    bool ret = operationToWorkerMQ_->push(op_hdl);
     operationNotifyCV_.notify_all();
     return ret;
 }
 
-bool HashStoreFileOperator::waitOperationHandlerDone(hashStoreOperationHandler* currentOperationHandler) {
-    while (currentOperationHandler->job_done == kNotDone) {
+bool HashStoreFileOperator::waitOperationHandlerDone(hashStoreOperationHandler* op_hdl, bool need_delete) {
+    while (op_hdl->job_done == kNotDone) {
         asm volatile("");
     }
-    if (currentOperationHandler->job_done == kDone) {
-        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)currentOperationHandler->op_type, currentOperationHandler->file_hdl->file_id, currentOperationHandler->batched_write_operation_.size);
-        delete currentOperationHandler;
+    if (op_hdl->job_done == kDone) {
+        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->file_hdl->file_id, op_hdl->multiput_op.size);
+        if (need_delete) {
+            delete op_hdl;
+        }
         return true;
     } else {
-        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)currentOperationHandler->op_type, currentOperationHandler->file_hdl->file_id, currentOperationHandler->batched_write_operation_.size);
-        delete currentOperationHandler;
+        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->file_hdl->file_id, op_hdl->multiput_op.size);
+        if (need_delete) {
+            delete op_hdl;
+        }
         return false;
     }
 }
@@ -133,7 +137,7 @@ uint64_t HashStoreFileOperator::readSortedPart(
 
     auto index_block_size = file_hdl->index_block->GetSize();
     pair<uint64_t, uint64_t> offlen = file_hdl->index_block->Search(key_view);
-    if (offlen.first == 0) {
+    if (offlen.second == 0) {
         key_exists = false;
         return 0;
     } else {
@@ -200,7 +204,10 @@ uint64_t HashStoreFileOperator::readBothParts(
 
     auto index_block_size = file_hdl->index_block->GetSize();
     pair<uint64_t, uint64_t> offlen = file_hdl->index_block->Search(key_view);
-    if (offlen.first == 0) {
+
+//    if (offlen.first == 0) 
+    // Wrong. Fix later
+    if (offlen.second == 0) {
         // not exist in the sorted part
         return readUnsortedPart(file_hdl, read_buf);
     }
@@ -329,8 +336,9 @@ bool HashStoreFileOperator::readAndProcessBothParts(
             StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
 
     if (process_delta_num == 0) {
-        debug_error("[ERROR] processed object num = 0, read %lu fs %lu\n", 
-                read_sz, file_hdl->total_object_bytes);
+        debug_error("[ERROR] no object, read %lu fs %lu, id %lu\n", 
+                read_sz, file_hdl->total_object_bytes,
+                file_hdl->file_id);
         exit(1);
     }
 
@@ -504,30 +512,45 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(
 }
 
 bool HashStoreFileOperator::writeContentToFile(
-        hashStoreFileMetaDataHandler* file_hdl, 
-        char* write_buf, uint64_t write_buf_size, uint64_t contentObjectNumber)
+        hashStoreFileMetaDataHandler* file_hdl, char* write_buf, uint64_t
+        write_buf_size, uint64_t contentObjectNumber, bool need_flush)
 {
     debug_trace("Write content to file ID = %lu\n", file_hdl->file_id);
-    FileOpStatus onDiskWriteSizePair;
-    STAT_PROCESS(onDiskWriteSizePair = file_hdl->file_op_ptr->writeFile(write_buf, write_buf_size), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
-    StatsRecorder::getInstance()->DeltaOPBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
-    if (onDiskWriteSizePair.success_ == false) {
-        debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu, logical size = %lu, physical size = %lu\n", file_hdl->file_id, file_hdl->total_object_bytes, file_hdl->total_on_disk_bytes);
+    FileOpStatus status_w, status_f;
+    STAT_PROCESS(status_w = file_hdl->file_op_ptr->writeFile(write_buf,
+                write_buf_size), StatsType::DELTAKV_HASHSTORE_PUT_IO_TRAFFIC);
+    StatsRecorder::getInstance()->DeltaOPBytesWrite(status_w.physicalSize_,
+            status_w.logicalSize_, syncStatistics_);
+    if (status_w.success_ == false) {
+        debug_error("[ERROR] Write bucket error, internal file operation "
+                "fault, could not write content to file ID = %lu, "
+                " logical size = %lu, physical size = %lu\n", 
+                file_hdl->file_id, file_hdl->total_object_bytes,
+                file_hdl->total_on_disk_bytes);
         return false;
     } else {
         // update metadata
         file_hdl->total_object_bytes += write_buf_size;
-        file_hdl->total_on_disk_bytes += onDiskWriteSizePair.physicalSize_;
+        file_hdl->total_on_disk_bytes += status_w.physicalSize_;
         file_hdl->total_object_cnt += contentObjectNumber;
-        debug_trace("Write content to file ID = %lu done, write to disk size = %lu\n", file_hdl->file_id, onDiskWriteSizePair.physicalSize_);
+
+        if (need_flush) {
+            status_f = file_hdl->file_op_ptr->flushFile();
+            if (status_f.success_ == false) {
+                debug_error("[ERROR] flush error, physical size = %lu\n",
+                        file_hdl->total_on_disk_bytes);
+                return false;
+            }
+            file_hdl->total_on_disk_bytes += status_f.physicalSize_;
+        } 
         return true;
     }
 }
 
 bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler* op_hdl)
 {
-    str_t currentKeyStr(op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, op_hdl->write_operation_.mempoolHandler_ptr_->keySize_);
-    if (op_hdl->write_operation_.mempoolHandler_ptr_->isAnchorFlag_ == true) {
+    str_t currentKeyStr(op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, op_hdl->write_op.mempoolHandler_ptr_->keySize_);
+    if (op_hdl->write_op.mempoolHandler_ptr_->isAnchorFlag_ == true) {
         // Only when the key is not in the sorted filter, clean the filter.
         // Otherwise, it will read the deltas in the sorted part but ignore the
         // anchors in the unsorted part 
@@ -543,10 +566,10 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
     }
     // construct record header
     hashStoreRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = op_hdl->write_operation_.mempoolHandler_ptr_->isAnchorFlag_;
-    newRecordHeader.key_size_ = op_hdl->write_operation_.mempoolHandler_ptr_->keySize_;
-    newRecordHeader.sequence_number_ = op_hdl->write_operation_.mempoolHandler_ptr_->sequenceNumber_;
-    newRecordHeader.value_size_ = op_hdl->write_operation_.mempoolHandler_ptr_->valueSize_;
+    newRecordHeader.is_anchor_ = op_hdl->write_op.mempoolHandler_ptr_->isAnchorFlag_;
+    newRecordHeader.key_size_ = op_hdl->write_op.mempoolHandler_ptr_->keySize_;
+    newRecordHeader.sequence_number_ = op_hdl->write_op.mempoolHandler_ptr_->sequenceNumber_;
+    newRecordHeader.value_size_ = op_hdl->write_op.mempoolHandler_ptr_->valueSize_;
     if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
         // since file not created, shoud not flush anchors
         // construct file header
@@ -563,13 +586,13 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_operation_.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_op.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newFileHeader, sizeof(newFileHeader));
             memcpy(writeBuffer + sizeof(newFileHeader), &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newFileHeader) + sizeof(newRecordHeader), op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -588,7 +611,7 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             return false;
         } else {
             // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_operation_.mempoolHandler_ptr_;
+            auto mempoolHandler = op_hdl->write_op.mempoolHandler_ptr_;
             if (keyToValueListCacheStr_ != nullptr) {
                 STAT_PROCESS(putKeyValueToAppendableCacheIfExist(
                             mempoolHandler->keyPtr_, mempoolHandler->keySize_, 
@@ -604,12 +627,12 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         char writeBuffer[writeBufferSize];
         if (newRecordHeader.is_anchor_ == false) {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_operation_.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_op.mempoolHandler_ptr_->valuePtr_, newRecordHeader.value_size_);
             targetWriteSize = writeBufferSize;
         } else {
             memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
+            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, newRecordHeader.key_size_);
             targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
         }
 
@@ -620,7 +643,7 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
             return false;
         } else {
             // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_operation_.mempoolHandler_ptr_;
+            auto mempoolHandler = op_hdl->write_op.mempoolHandler_ptr_;
             if (keyToValueListCacheStr_ != nullptr) {
                 STAT_PROCESS(putKeyValueToAppendableCacheIfExist(
                             mempoolHandler->keyPtr_, mempoolHandler->keySize_, 
@@ -640,10 +663,10 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
         // prepare write buffer, file not open, may load, skip;
         bool onlyAnchorFlag = true;
-        for (auto index = 0; index < op_hdl->batched_write_operation_.size; index++) {
-            str_t currentKeyStr(op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].keyPtr_, 
-                    op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].keySize_);
-            if (op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].isAnchorFlag_ == true) {
+        for (auto index = 0; index < op_hdl->multiput_op.size; index++) {
+            str_t currentKeyStr(op_hdl->multiput_op.mempool_handler_vec_ptr_[index].keyPtr_, 
+                    op_hdl->multiput_op.mempool_handler_vec_ptr_[index].keySize_);
+            if (op_hdl->multiput_op.mempool_handler_vec_ptr_[index].isAnchorFlag_ == true) {
                 if (op_hdl->file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
                     op_hdl->file_hdl->filter->Insert(currentKeyStr);
                     op_hdl->file_hdl->filter->Erase(currentKeyStr); // Add the count
@@ -662,10 +685,10 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             return true;
         }
     } else {
-        for (auto index = 0; index < op_hdl->batched_write_operation_.size; index++) {
-            str_t currentKeyStr(op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].keyPtr_, 
-                    op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].keySize_);
-            if (op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[index].isAnchorFlag_ == true) {
+        for (auto index = 0; index < op_hdl->multiput_op.size; index++) {
+            str_t currentKeyStr(op_hdl->multiput_op.mempool_handler_vec_ptr_[index].keyPtr_, 
+                    op_hdl->multiput_op.mempool_handler_vec_ptr_[index].keySize_);
+            if (op_hdl->multiput_op.mempool_handler_vec_ptr_[index].isAnchorFlag_ == true) {
                 if (op_hdl->file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
                     op_hdl->file_hdl->filter->Insert(currentKeyStr);
                     op_hdl->file_hdl->filter->Erase(currentKeyStr); // Add the count
@@ -701,13 +724,13 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             op_hdl->file_hdl->file_op_ptr->openFile(targetFilePath);
         }
     }
-    for (auto i = 0; i < op_hdl->batched_write_operation_.size; i++) {
+    for (auto i = 0; i < op_hdl->multiput_op.size; i++) {
         targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + 
-                op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].keySize_);
-        if (op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].isAnchorFlag_ == true) {
+                op_hdl->multiput_op.mempool_handler_vec_ptr_[i].keySize_);
+        if (op_hdl->multiput_op.mempool_handler_vec_ptr_[i].isAnchorFlag_ == true) {
             continue;
         } else {
-            targetWriteBufferSize += op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].valueSize_;
+            targetWriteBufferSize += op_hdl->multiput_op.mempool_handler_vec_ptr_[i].valueSize_;
         }
     }
     char writeContentBuffer[targetWriteBufferSize];
@@ -721,30 +744,33 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     gettimeofday(&tv, 0);
 
     hashStoreRecordHeader* newRecordHeaderPtr;
-    for (auto i = 0; i < op_hdl->batched_write_operation_.size; i++) {
+    for (auto i = 0; i < op_hdl->multiput_op.size; i++) {
         newRecordHeaderPtr = (hashStoreRecordHeader*)(writeContentBuffer + currentProcessedBufferIndex);
-        newRecordHeaderPtr->is_anchor_ = op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].isAnchorFlag_;
+        newRecordHeaderPtr->is_anchor_ = op_hdl->multiput_op.mempool_handler_vec_ptr_[i].isAnchorFlag_;
         newRecordHeaderPtr->is_gc_done_ = false;
-        newRecordHeaderPtr->key_size_ = op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].keySize_;
-        newRecordHeaderPtr->value_size_ = op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].valueSize_;
-        newRecordHeaderPtr->sequence_number_ = op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].sequenceNumber_;
+        newRecordHeaderPtr->key_size_ = op_hdl->multiput_op.mempool_handler_vec_ptr_[i].keySize_;
+        newRecordHeaderPtr->value_size_ = op_hdl->multiput_op.mempool_handler_vec_ptr_[i].valueSize_;
+        newRecordHeaderPtr->sequence_number_ = op_hdl->multiput_op.mempool_handler_vec_ptr_[i].sequenceNumber_;
 //        memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeaderPtr, sizeof(hashStoreRecordHeader));
         currentProcessedBufferIndex += sizeof(hashStoreRecordHeader);
-        memcpy(writeContentBuffer + currentProcessedBufferIndex, op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].keyPtr_, newRecordHeaderPtr->key_size_);
+        memcpy(writeContentBuffer + currentProcessedBufferIndex, op_hdl->multiput_op.mempool_handler_vec_ptr_[i].keyPtr_, newRecordHeaderPtr->key_size_);
         currentProcessedBufferIndex += newRecordHeaderPtr->key_size_;
         if (newRecordHeaderPtr->is_anchor_ == true) {
             continue;
         } else {
-            memcpy(writeContentBuffer + currentProcessedBufferIndex, op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i].valuePtr_, newRecordHeaderPtr->value_size_);
+            memcpy(writeContentBuffer + currentProcessedBufferIndex, op_hdl->multiput_op.mempool_handler_vec_ptr_[i].valuePtr_, newRecordHeaderPtr->value_size_);
             currentProcessedBufferIndex += newRecordHeaderPtr->value_size_;
         }
     }
 
     StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PREPARE_FILE_CONTENT, tv);
-    uint64_t targetObjectNumber = op_hdl->batched_write_operation_.size;
+    uint64_t targetObjectNumber = op_hdl->multiput_op.size;
     // write content
     bool writeContentStatus;
-    STAT_PROCESS(writeContentStatus = writeContentToFile(op_hdl->file_hdl, writeContentBuffer, targetWriteBufferSize, targetObjectNumber), StatsType::DS_WRITE_FUNCTION);
+    STAT_PROCESS(writeContentStatus = writeContentToFile(op_hdl->file_hdl,
+                writeContentBuffer, targetWriteBufferSize, targetObjectNumber,
+                op_hdl->need_flush),
+            StatsType::DS_WRITE_FUNCTION);
     if (writeContentStatus == false) {
         debug_error("[ERROR] Could not write content to file, target file ID = %lu, content size = %lu, content bytes number = %lu\n", op_hdl->file_hdl->file_id, targetObjectNumber, targetWriteBufferSize);
         exit(1);
@@ -757,8 +783,8 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             struct timeval tv;
             gettimeofday(&tv, 0);
 
-            for (uint32_t i = 0; i < op_hdl->batched_write_operation_.size; i++) {
-                auto& it = op_hdl->batched_write_operation_.mempool_handler_vec_ptr_[i];
+            for (uint32_t i = 0; i < op_hdl->multiput_op.size; i++) {
+                auto& it = op_hdl->multiput_op.mempool_handler_vec_ptr_[i];
                 putKeyValueToAppendableCacheIfExist(it.keyPtr_, it.keySize_, it.valuePtr_, it.valueSize_, it.isAnchorFlag_);
             }
         }
@@ -772,8 +798,6 @@ bool HashStoreFileOperator::operationWorkerFlush(hashStoreOperationHandler* op_h
     struct timeval tv;
     gettimeofday(&tv, 0);
 
-    debug_error("flush size %p\n", op_hdl);
-
     if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
         // prepare write buffer, file not open, may load, skip;
         return true;
@@ -786,6 +810,20 @@ bool HashStoreFileOperator::operationWorkerFlush(hashStoreOperationHandler* op_h
                 op_hdl->file_hdl->file_id);
         exit(1);
     } 
+    return true;
+}
+
+bool HashStoreFileOperator::operationWorkerFind(hashStoreOperationHandler* op_hdl) {
+    auto obj = op_hdl->object;
+    bool status = hashStoreFileManager_->getFileHandlerWithKey(
+            obj->keyPtr_, obj->keySize_, kMultiPut, op_hdl->file_hdl,
+            obj->isAnchorFlag_);
+
+    if (status == false) {
+        debug_error("[ERROR] Get file handler for key = %s"
+                " error during multiput\n", obj->keyPtr_);
+    }
+
     return true;
 }
 
@@ -1270,58 +1308,64 @@ void HashStoreFileOperator::operationWorker(int threadID)
         hashStoreOperationHandler* op_hdl;
         if (operationToWorkerMQ_->pop(op_hdl)) {
             empty_started = false;
-            bool flag = false;
             bool operationsStatus;
-            std::scoped_lock<std::shared_mutex> w_lock(op_hdl->file_hdl->fileOperationMutex_);
-
+            bool file_hdl_is_input = true;
             auto file_hdl = op_hdl->file_hdl;
+
+            std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
+            if (file_hdl != nullptr) {
+                w_lock = new
+                    std::scoped_lock<std::shared_mutex>(file_hdl->fileOperationMutex_);
+            }
 
             switch (op_hdl->op_type) {
             case kGet:
-                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*op_hdl->read_operation_.key_str_).c_str(), op_hdl->file_hdl->file_id);
+                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*op_hdl->read_op.key_str_).c_str(), file_hdl->file_id);
                 operationsStatus = false;
                 break;
             case kMultiPut:
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", op_hdl->file_hdl->file_id, op_hdl->batched_write_operation_.size);
+                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", file_hdl->file_id, op_hdl->multiput_op.size);
                 STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
-                debug_trace("processed operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", op_hdl->file_hdl->file_id, op_hdl->batched_write_operation_.size);
                 break;
             case kPut:
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, op_hdl->file_hdl->file_id);
+                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.mempoolHandler_ptr_->keyPtr_, file_hdl->file_id);
                 STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
                 break;
             case kFlush:
                 STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
+                break;
+            case kFind:
+                STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
+                file_hdl_is_input = false;
                 break;
             default:
                 debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
                 break;
             }
             if (operationsStatus == false) {
-                op_hdl->file_hdl->file_ownership = 0;
-                debug_trace("Process file ID = %lu error\n", op_hdl->file_hdl->file_id);
+                file_hdl->file_ownership = 0;
+                debug_trace("Process file ID = %lu error\n", file_hdl->file_id);
                 op_hdl->job_done = kError;
-            } else {
-                if (op_hdl->op_type != kGet && enableGCFlag_ == true) {
-                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(op_hdl->file_hdl);
+            } else if (file_hdl_is_input == true) {
+                if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
+                        && enableGCFlag_ == true) {
+                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(file_hdl);
                     if (putIntoGCJobQueueStatus == false) {
-                        op_hdl->file_hdl->file_ownership = 0;
-                        debug_trace("Process file ID = %lu done, file should not GC, skip\n", op_hdl->file_hdl->file_id);
+                        file_hdl->file_ownership = 0;
                         op_hdl->job_done = kDone;
                     } else {
-                        debug_trace("Process file ID = %lu done, file should GC\n", op_hdl->file_hdl->file_id);
                         op_hdl->job_done = kDone;
                     }
                 } else {
                     op_hdl->file_hdl->file_ownership = 0;
-                    debug_trace("Process file ID = %lu done, file should not GC, skip\n", op_hdl->file_hdl->file_id);
                     op_hdl->job_done = kDone;
                 }
+            } else {
+                op_hdl->job_done = kDone;
             }
 
-            if (flag) {
-                debug_error("file %d finished %p\n", 
-                        (int)file_hdl->file_id, file_hdl);
+            if (w_lock) {
+                delete w_lock;
             }
         } else {
             if (empty_started == false) {

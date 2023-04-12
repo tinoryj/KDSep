@@ -15,19 +15,19 @@ class PrefixTreeForHashStore {
 public:
     PrefixTreeForHashStore(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         init(initBitNumber, maxFileNumber);
     }
 
     PrefixTreeForHashStore()
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
 //        root_ = new prefixTreeNode;
     }
 
     ~PrefixTreeForHashStore()
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         for (int i = 0; i < (1 << fixed_bit_num_); i++) {
             stack<prefixTreeNode*> stk;
             prefixTreeNode *p = roots_[i], *pre = nullptr;
@@ -81,7 +81,7 @@ public:
 
     uint64_t getRemainFileNumber()
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         if (max_file_num_ + 10 < current_file_num_) {
             debug_error("[ERROR] too many files! %lu v.s. %lu\n", 
                     max_file_num_, current_file_num_); 
@@ -93,7 +93,9 @@ public:
     uint64_t insert(const uint64_t& prefix_u64, hashStoreFileMetaDataHandler*&
             newData)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
 
         if (current_file_num_ >= max_file_num_) {
             debug_error("[ERROR] Could note insert new node, since there are "
@@ -123,7 +125,15 @@ public:
             hashStoreFileMetaDataHandler*& newData1, const uint64_t& prefix2,
             hashStoreFileMetaDataHandler*& newData2)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix1 & fixed_bit_mask_]);
+
+        if ((prefix1 & fixed_bit_mask_) != (prefix2 & fixed_bit_mask_)) {
+            debug_error("Not inserting the same subtree: %lu %lu\n",
+                    prefix1, prefix2);
+            exit(1);
+        }
 
         if (current_file_num_ >= (max_file_num_ + 1)) {
             debug_error("[ERROR] Could note insert new node, since there are"
@@ -168,7 +178,9 @@ public:
     uint64_t insertWithFixedBitNumber(const uint64_t& prefix_u64, uint64_t
             fixedBitNumber, hashStoreFileMetaDataHandler*& newData)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
 
         debug_info("Current file number = %lu, threshold = %lu\n",
                 current_file_num_, max_file_num_);
@@ -202,7 +214,9 @@ public:
             hashStoreFileMetaDataHandler*& newData, 
             uint64_t prefix_len = 64)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> r_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
 
         if (fixed_bit_num_ > prefix_len) {
             newData = nullptr;
@@ -217,7 +231,9 @@ public:
 
     bool find(const uint64_t& prefix_u64, uint64_t& find_at_level_id)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> r_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
         hashStoreFileMetaDataHandler* newData;
         bool status = findPrefixTreeNode(roots_[prefix_u64 & fixed_bit_mask_],
                 prefix_u64, newData, find_at_level_id);
@@ -227,7 +243,9 @@ public:
     bool remove(const uint64_t& prefix_u64, const uint64_t prefix_len, 
             uint64_t& find_at_level_id)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
         bool status = markPrefixTreeNodeAsNonLeafNode(
                 roots_[prefix_u64 & fixed_bit_mask_], prefix_u64, 
                 prefix_len, find_at_level_id);
@@ -242,7 +260,9 @@ public:
     bool mergeNodesToNewLeafNode(const uint64_t& prefix_u64, const uint64_t
             prefix_len, uint64_t& find_at_level_id)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
         bool status = markPrefixTreeNodeAsNewLeafNodeAndDeleteChildren(
                 roots_[prefix_u64 & fixed_bit_mask_], prefix_u64, prefix_len,
                 find_at_level_id);
@@ -258,7 +278,9 @@ public:
             const uint64_t& prefix_len, uint64_t& find_at_level_id, 
             hashStoreFileMetaDataHandler* newDataObj)
     {
-        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(
+                rootMtx_[prefix_u64 & fixed_bit_mask_]);
         bool status = updateLeafNodeDataObject(
                 roots_[prefix_u64 & fixed_bit_mask_], 
                 prefix_u64, prefix_len, find_at_level_id, newDataObj);
@@ -271,9 +293,12 @@ public:
 
     bool getCurrentValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
+
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             stack<prefixTreeNode*> stk;
             while (!stk.empty() || p != nullptr) {
@@ -298,6 +323,7 @@ public:
                 }
             }
         }
+        access_num_ += validObjectList.size();
 
         if (validObjectList.size() != 0) {
             return true;
@@ -309,9 +335,12 @@ public:
     bool getCurrentValidNodes(vector<pair<uint64_t,
             hashStoreFileMetaDataHandler*>>& validObjectList)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
+
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             stack<prefixTreeNode*> stk;
             while (!stk.empty() || p != nullptr) {
@@ -349,9 +378,11 @@ public:
     bool getCurrentValidNodesNoKey(vector<hashStoreFileMetaDataHandler*>&
             validObjectList)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             stack<prefixTreeNode*> stk;
             while (!stk.empty() || p != nullptr) {
@@ -386,9 +417,12 @@ public:
 
     bool getPossibleValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
     {
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         // post order
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
+
             stack<prefixTreeNode*> stk;
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             while (!stk.empty() || p != nullptr) {
@@ -420,9 +454,12 @@ public:
     bool getInValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& invalidObjectList)
     {
 
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
+
             stack<prefixTreeNode*> stk;
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             while (!stk.empty() || p != nullptr) {
@@ -454,9 +491,11 @@ public:
     bool getInvalidNodesNoKey(vector<hashStoreFileMetaDataHandler*>& invalidObjectList)
     {
 
-        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
         for (int i = 0; i <= fixed_bit_mask_; i++) {
+            std::scoped_lock<std::shared_mutex> r_lock(
+                    rootMtx_[i & fixed_bit_mask_]);
             stack<prefixTreeNode*> stk;
             prefixTreeNode *p = roots_[i], *pre = nullptr;
             while (!stk.empty() || p != nullptr) {
@@ -518,6 +557,10 @@ public:
         return prefix_len > fixed_bit_num_;
     }
 
+    uint64_t getAccessNum() {
+        return access_num_;
+    }
+
 private:
     typedef struct prefixTreeNode {
         uint64_t node_id = 0;
@@ -531,12 +574,14 @@ private:
     } prefixTreeNode;
     vector<hashStoreFileMetaDataHandler*> targetDeleteVec;
     std::shared_mutex nodeOperationMtx_;
+    std::shared_mutex* rootMtx_;
     uint64_t nextNodeID_ = 0;
     uint64_t init_bit_num_ = 0;
     uint64_t fixed_bit_num_ = 0;
     uint64_t fixed_bit_mask_ = 0;
     uint64_t max_file_num_ = 0;
     uint64_t current_file_num_ = 0;
+    uint64_t access_num_ = 0;
 //    prefixTreeNode* root_;
     prefixTreeNode** roots_ = nullptr;
 
@@ -544,6 +589,7 @@ private:
     void initializeTree()
     {
         roots_ = new prefixTreeNode*[1 << fixed_bit_num_];
+        rootMtx_ = new std::shared_mutex[1 << fixed_bit_num_];
         for (int i = 0; i <= fixed_bit_mask_; i++) {
             roots_[i] = new prefixTreeNode;
             createPrefixTree(roots_[i], fixed_bit_num_);
@@ -569,6 +615,7 @@ private:
             hashStoreFileMetaDataHandler* newDataObj, 
             uint64_t& insertAtLevelID)
     {
+        access_num_++;
         uint64_t lvl = fixed_bit_num_;
         char prefixStr[64]; 
         for (int i = 0; i < lvl; i++) {
@@ -802,6 +849,7 @@ private:
             hashStoreFileMetaDataHandler*& currentDataTObj, 
             uint64_t& find_at_level_id, uint64_t prefix_len = 64)
     {
+        access_num_++;
         uint64_t lvl = fixed_bit_num_;
         for (; lvl < prefix_len; lvl++) {
             if ((prefix_u64 & (1 << lvl)) == 0) {

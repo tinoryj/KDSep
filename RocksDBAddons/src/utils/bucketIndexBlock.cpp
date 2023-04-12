@@ -7,7 +7,6 @@ BucketIndexBlock::BucketIndexBlock() {
 }
 
 BucketIndexBlock::~BucketIndexBlock() {
-    indices.clear();
     mp_.clear();
     delete[] key_buf_;
 }
@@ -48,7 +47,7 @@ void BucketIndexBlock::Build() {
             // insert the key (in the buffer) to the map
 //            mp_[string_view(key_buf_ + key_buf_size_, it.first.size())] =
 //                sorted_part_size_;
-            mp_[string(key_buf_ + key_buf_size_, it.first.size())] =
+            mp_[string_view(key_buf_ + key_buf_size_, it.first.size())] =
                 sorted_part_size_;
 
 //            fprintf(stderr, "---- BUILD ---- key %.*s size %lu\n", 
@@ -80,17 +79,34 @@ uint64_t BucketIndexBlock::Serialize(char* buf) {
 // Returns the offset and length of the current index block
 pair<uint64_t, uint64_t> BucketIndexBlock::Search(const string_view& key_view) {
     // TODO: change to binary search. Not necessary
-    string key(key_view.data(), key_view.size());
     auto end = mp_.end();
+//    for (auto i = mp_.begin(); i != end; i++) {
+//        fprintf(stderr, "* %.*s %lu\n",
+//                (int)i->first.size(), i->first.data(), i->second);
+//    }
     for (auto i = mp_.begin(); i != end; i++) {
-        if (i == mp_.begin() && key < i->first) {
+        if (i == mp_.begin() && key_view < i->first) {
             // the key does not in the part.
             break;
         }
         auto next_i = next(i);
-        if (next_i == end || next_i->first < key) {
+//        fprintf(stderr, "-- %.*s %lu %lu\n", 
+//                (int)i->first.size(), i->first.data(), i->second,
+//                (next_i == end) ? sorted_part_size_ : next_i->second); 
+        if (next_i == end || key_view < next_i->first) {
             uint64_t next_addr = 
                 (next_i == end) ? sorted_part_size_ : next_i->second;
+//            fprintf(stderr, "get key %.*s %lu %lu (size %lu part %lu) "
+//                    "reason %d\n",
+//                    (int)key_view.size(), key_view.data(),
+//                    i->second, next_addr - i->second,
+//                    mp_.size(), sorted_part_size_, 
+//                    (next_i == end) ? 1 : 2);
+//            if (next_i != end) {
+//                fprintf(stderr, "next key %.*s %lu\n",
+//                        (int)next_i->first.size(), next_i->first.data(),
+//                        next_i->second);
+//            }
             return make_pair(i->second, next_addr - i->second);
         }
     }

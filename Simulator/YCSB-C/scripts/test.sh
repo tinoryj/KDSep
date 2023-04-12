@@ -245,7 +245,7 @@ runModeSet=('bkvkd' 'kvkd' 'kd')
 
 checkrepeat=""
 maxBucketNumber=32768
-runModeSet=('bkvkd')
+runModeSet=('bkvkd' 'bkv')
 bonus2="flushSize0"
 bonus3="initBit8"
 #func
@@ -257,7 +257,8 @@ bonus3="initBit8"
 #func
 bonus3="initBit8"
 bonus4=""
-bonus5="nodirectreads"
+bonus5=""
+mem="16g"
 func
 bonus4=""
 exit

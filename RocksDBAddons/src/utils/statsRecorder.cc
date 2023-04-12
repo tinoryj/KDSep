@@ -197,6 +197,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
     PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);
     PRINT_FULL("    sync", DELTAKV_HASHSTORE_SYNC, time[DKV_FLUSH]);
+    PRINT_FULL("      sync", DELTAKV_HASHSTORE_WAIT_SYNC, time[DKV_FLUSH]);
     PRINT_FULL("  lsm-interface", DKV_FLUSH_LSM_INTERFACE, time[DKV_FLUSH]);
     PRINT_FULL("    pre-put", LSM_FLUSH_PRE_PUT, time[DKV_FLUSH]);
     PRINT_FULL("    put-merge-vlog", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
@@ -253,8 +254,10 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
     PRINT_FULL("push-to-mempool", DELTAKV_INSERT_MEMPOOL, time[DELTAKV_INSERT_MEMPOOL]);
-    PRINT_FULL("gen-prefix", DSTORE_PREFIX, time[DSTORE_PREFIX]);
-    PRINT_FULL("  shift", DS_GEN_PREFIX_SHIFT, time[DSTORE_PREFIX]);
+    auto ttime = time[DSTORE_MULTIPUT_PREFIX] + time[DSTORE_PREFIX];
+    PRINT_FULL("gen-prefix", DSTORE_PREFIX, ttime);
+    PRINT_FULL("  shift", DS_GEN_PREFIX_SHIFT, ttime);
+    PRINT_FULL("gen-multiput-prefix", DSTORE_MULTIPUT_PREFIX, ttime);
     PRINT_FULL("create-and-get-hdl", DELTAKV_HASHSTORE_CREATE_NEW_BUCKET, time[DELTAKV_HASHSTORE_CREATE_NEW_BUCKET]);
     PRINT_FULL("get-hdl", DSTORE_GET_HANDLER, time[DSTORE_GET_HANDLER]);
 

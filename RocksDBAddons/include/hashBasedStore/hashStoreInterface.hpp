@@ -33,11 +33,12 @@ private:
     bool enable_lsm_tree_delta_meta_ = true;
     bool enable_index_block_ = false;
     bool enable_crash_consistency_ = false;
+    bool enable_parallel_get_hdl_ = true;
     // size information
     uint64_t extractValueSizeThreshold_;
     // get function pointers
-    HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;
-    HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
+    HashStoreFileManager* file_manager_ = nullptr;
+    HashStoreFileOperator* file_operator_ = nullptr;
     // message queues for internal usage
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_ = nullptr;
 };
