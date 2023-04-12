@@ -176,7 +176,13 @@ uint64_t HashStoreFileOperator::readUnsortedPart(
             read_s.physicalSize_, read_s.logicalSize_,
             syncStatistics_);
     if (read_s.success_ == false) {
-        debug_error("[ERROR] Read bucket error, internal file operation fault, could not read content from file ID = %lu\n", file_hdl->file_id);
+        debug_error("[ERROR] internal file operation fault,"
+                " could not read content from file ID = %lu,"
+                " file size %lu unsorted part off %lu,"
+                " index_block %lu sorted %lu\n",
+                file_hdl->file_id,
+                file_size, unsorted_part_off, 
+                index_block_size, sorted_part_size);
         return 0;
     } else {
         return read_s.logicalSize_;
@@ -184,6 +190,37 @@ uint64_t HashStoreFileOperator::readUnsortedPart(
 
 }
 
+uint64_t HashStoreFileOperator::readBothParts(
+        hashStoreFileMetaDataHandler* file_hdl, const string_view& key_view, 
+        char** read_buf) {
+    if (file_hdl->index_block->GetSortedPartSize() == 0) {
+        debug_error("No index block but read the sorted part %s\n", "");
+        exit(1);
+    }
+
+    auto index_block_size = file_hdl->index_block->GetSize();
+    pair<uint64_t, uint64_t> offlen = file_hdl->index_block->Search(key_view);
+    if (offlen.first == 0) {
+        // not exist in the sorted part
+        return readUnsortedPart(file_hdl, read_buf);
+    }
+
+    FileOpStatus read_s;
+
+    uint64_t offset = 
+        sizeof(hashStoreFileHeader) + index_block_size + offlen.first; 
+    uint64_t len = file_hdl->total_object_bytes - offset; 
+
+    *read_buf = new char[len];
+
+    STAT_PROCESS(
+            read_s = file_hdl->file_op_ptr->positionedReadFile(
+                *read_buf, offset, len),
+            StatsType::DELTAKV_HASHSTORE_GET_IO_BOTH);
+    StatsRecorder::getInstance()->DeltaOPBytesRead(
+            read_s.physicalSize_, read_s.logicalSize_, syncStatistics_);
+    return read_s.logicalSize_;
+}
 
 bool HashStoreFileOperator::readAndProcessWholeFile(
         hashStoreFileMetaDataHandler* file_hdl, string& key,
@@ -243,6 +280,43 @@ bool HashStoreFileOperator::readAndProcessSortedPart(
     }
 
     kd_list.clear();
+    if (read_sz == 0) {
+        debug_error("[ERROR] Could not read from file for key = %s\n",
+                key.c_str());
+        return false;
+    }
+
+    uint64_t process_delta_num = 0;
+    STAT_PROCESS(process_delta_num = processReadContentToValueLists(
+                *buf, read_sz, kd_list, key_view),
+            StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+
+    if (process_delta_num == 0) {
+        debug_error("[ERROR] processed object num = 0, read %lu fs %lu\n", 
+                read_sz, file_hdl->total_object_bytes);
+        exit(1);
+    }
+
+    if (kd_list.empty() == false) {
+        if (enableLsmTreeDeltaMeta_ == true) {
+            debug_error("[ERROR] Read bucket done, but could not found values"
+                    " for key = %s\n", key.c_str());
+            exit(1);
+        }
+    }
+    return true;
+}
+
+bool HashStoreFileOperator::readAndProcessBothParts(
+        hashStoreFileMetaDataHandler* file_hdl, string& key,
+        vector<string_view>& kd_list, char** buf)
+{
+    string_view key_view(key);
+
+    kd_list.clear();
+    *buf = nullptr;
+    uint64_t read_sz = readBothParts(file_hdl, key_view, buf);
+
     if (read_sz == 0) {
         debug_error("[ERROR] Could not read from file for key = %s\n",
                 key.c_str());
@@ -670,7 +744,6 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetObjectNumber = op_hdl->batched_write_operation_.size;
     // write content
     bool writeContentStatus;
-//    debug_error("write buffer: %lu\n", targetWriteBufferSize);
     STAT_PROCESS(writeContentStatus = writeContentToFile(op_hdl->file_hdl, writeContentBuffer, targetWriteBufferSize, targetObjectNumber), StatsType::DS_WRITE_FUNCTION);
     if (writeContentStatus == false) {
         debug_error("[ERROR] Could not write content to file, target file ID = %lu, content size = %lu, content bytes number = %lu\n", op_hdl->file_hdl->file_id, targetObjectNumber, targetWriteBufferSize);
@@ -692,6 +765,28 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
         return true;
     }
+}
+
+bool HashStoreFileOperator::operationWorkerFlush(hashStoreOperationHandler* op_hdl)
+{
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
+    debug_error("flush size %p\n", op_hdl);
+
+    if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
+        // prepare write buffer, file not open, may load, skip;
+        return true;
+    }
+
+    // write content
+    FileOpStatus status = op_hdl->file_hdl->file_op_ptr->flushFile();
+    if (status.success_ == false) {
+        debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
+                op_hdl->file_hdl->file_id);
+        exit(1);
+    } 
+    return true;
 }
 
 bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl)
@@ -1032,8 +1127,8 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                         success = readAndProcessSortedPart(file_hdl, key,
                                 kd_list, &buf);
                     } else {
-                        // the whole file
-                        success = readAndProcessWholeFile(file_hdl, key,
+                        // both parts 
+                        success = readAndProcessBothParts(file_hdl, key,
                                 kd_list, &buf);
                     }
                 } else {
@@ -1153,17 +1248,12 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
 
 void HashStoreFileOperator::operationWorker(int threadID)
 {
-    uint64_t mx = 1200;
     struct timeval tvs, tve;
     gettimeofday(&tvs, 0);
     struct timeval empty_time;
     bool empty_started = false;
     while (true) {
         gettimeofday(&tve, 0);
-        if (tve.tv_sec - tvs.tv_sec > mx) {
-            debug_error("worker thread heart beat %lu id %d\n", mx, threadID); 
-            mx += 1200;
-        }
 
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
@@ -1199,6 +1289,9 @@ void HashStoreFileOperator::operationWorker(int threadID)
             case kPut:
                 debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_operation_.mempoolHandler_ptr_->keyPtr_, op_hdl->file_hdl->file_id);
                 STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
+                break;
+            case kFlush:
+                STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
                 break;
             default:
                 debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);

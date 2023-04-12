@@ -191,8 +191,8 @@ uint64_t FileOperation::getFileBufferedSize()
 }
 
 void FileOperation::markDirectDataAddress(uint64_t data) {
-    mark_direct_data_ = data;
-    mark_direct_disk_ = disk_size_;
+    mark_data_ = data;
+    mark_disk_ = disk_size_;
 }
 
 FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
@@ -211,7 +211,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             FileOpStatus ret(true, 0, 0, contentSize);
             return ret;
         } else if (buf_size_ > 0) {
-            uint64_t req_page_num = ceil((double)(contentSize + buf_used_size_) / (double)(page_size_ - sizeof(uint32_t)));
+            uint64_t req_page_num = ceil((double)(contentSize + buf_used_size_) / (double)page_size_m4_);
             uint64_t writeDoneContentSize = 0;
             // align mem
             char* writeBuffer;
@@ -234,8 +234,8 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             int actual_disk_write_size = 0;
             uint32_t currentPageWriteSize = 0;
             while (writeDoneContentSize != targetWriteSize) {
-                if ((targetWriteSize - writeDoneContentSize) >= (page_size_ - sizeof(uint32_t))) {
-                    currentPageWriteSize = page_size_ - sizeof(uint32_t);
+                if ((targetWriteSize - writeDoneContentSize) >= page_size_m4_) {
+                    currentPageWriteSize = page_size_m4_;
                     memcpy(writeBuffer + processedPageNumber * page_size_, &currentPageWriteSize, sizeof(uint32_t));
                     memcpy(writeBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
                     writeDoneContentSize += currentPageWriteSize;
@@ -243,15 +243,13 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                     processedPageNumber++;
                 } else {
                     currentPageWriteSize = targetWriteSize - writeDoneContentSize;
-                    memset(globalWriteBuffer_, 0, buf_size_);
                     memcpy(globalWriteBuffer_, contentBufferWithExistWriteBuffer + writeDoneContentSize, currentPageWriteSize);
                     buf_used_size_ = currentPageWriteSize;
                     writeDoneContentSize += currentPageWriteSize;
                     processedPageNumber++;
                 }
             }
-            if (currentPageWriteSize == (page_size_ - sizeof(uint32_t))) {
-                memset(globalWriteBuffer_, 0, buf_size_);
+            if (currentPageWriteSize == page_size_m4_) {
                 buf_used_size_ = 0;
             }
             struct timeval tv;
@@ -272,7 +270,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                 return ret;
             }
         } else {
-            uint64_t req_page_num = ceil((double)contentSize / (double)(page_size_ - sizeof(uint32_t)));
+            uint64_t req_page_num = ceil((double)contentSize / (double)page_size_m4_);
             uint64_t writeDoneContentSize = 0;
             // align mem
             char* writeBuffer;
@@ -291,7 +289,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             int actual_disk_write_size = 0;
             uint32_t currentPageWriteSize = 0;
             while (writeDoneContentSize != targetWriteSize) {
-                currentPageWriteSize = min(page_size_ - sizeof(uint32_t), targetWriteSize - writeDoneContentSize);
+                currentPageWriteSize = min(page_size_m4_, targetWriteSize - writeDoneContentSize);
                 memcpy(writeBuffer + processedPageNumber * page_size_, &currentPageWriteSize, sizeof(uint32_t));
                 memcpy(writeBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), contentBuffer + writeDoneContentSize, currentPageWriteSize);
                 writeDoneContentSize += currentPageWriteSize;
@@ -508,7 +506,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             return FileOpStatus(true, read_buf_size, read_buf_size, 0);
         } 
 
-        if (offset == mark_direct_data_ && globalWriteBuffer_ == 0) {
+        if (offset == mark_data_ && globalWriteBuffer_ == 0) {
             // Reading the unsorted part. Read from the marked address
             if (offset + read_buf_size != data_size_) {
                 debug_error("[ERROR] Not reading to the end! "
@@ -517,26 +515,49 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
                 exit(1);
             }
             req_buf_data_size = 0;
-            req_disk_data_size = data_size_ - mark_direct_data_;
-            // not mark_direct_data_
-            disk_start_page_id = mark_direct_disk_ / page_size_m4_;  
+            req_disk_data_size = data_size_ - mark_data_;
+            // not mark_data_
+            disk_start_page_id = mark_disk_ / page_size_m4_;  
             // not page_size_m4_ 
             disk_end_page_id = disk_size_  / page_size_;
             page_index = 0;
+        } else if (offset == mark_data_) {
+            // Reading the unsorted part. Read from the marked address, using buffer
+            if (offset + read_buf_size != data_size_ + buf_used_size_) {
+                debug_error("[ERROR] Not reading to the end! "
+                        "%lu + %lu v.s. %lu\n", 
+                        offset, read_buf_size, data_size_);
+                exit(1);
+            }
+            req_buf_data_size = buf_used_size_;
+            req_disk_data_size = data_size_ - offset;
+            disk_start_page_id = mark_disk_ / page_size_m4_;  
+            // not page_size_m4_ 
+            disk_end_page_id = disk_size_  / page_size_;
+            page_index = offset - disk_start_page_id * page_size_m4_;
+//            debug_error("mark_data_ %lu"
+//                    " offset %lu data size %lu start %lu end %lu index %lu\n",
+//                    mark_data_, offset, data_size_, 
+//                    disk_start_page_id, disk_end_page_id, page_index);
         } else if (offset + read_buf_size > data_size_) {
             // Half data on disk, half data in buffer 
             req_buf_data_size = offset + read_buf_size - data_size_;
             req_disk_data_size = read_buf_size - req_buf_data_size;
             disk_start_page_id = offset / page_size_m4_; 
-            disk_end_page_id = data_size_ / page_size_m4_;
+            // Read to the end of the disk part 
+            disk_end_page_id = disk_size_ / page_size_m4_;  
             page_index = offset - disk_start_page_id * page_size_m4_;
         } else {
-            // All data on disk. did nothing
+            // All data on disk
             req_disk_data_size = read_buf_size;
             req_buf_data_size = 0;
             disk_start_page_id = offset / page_size_m4_; 
             disk_end_page_id = (offset + read_buf_size + page_size_m4_ - 1) /
                 page_size_m4_;
+            // Read to the end of the disk part
+            if (offset + read_buf_size == data_size_) {
+                disk_end_page_id = disk_size_ / page_size_m4_;
+            }
             page_index = offset - disk_start_page_id * page_size_m4_;
         }
 
@@ -572,21 +593,30 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         uint64_t left_size = req_disk_data_size; 
         uint64_t read_done_size = 0;
 
+        vector<uint32_t> sizes;
+        vector<uint64_t> read_sizes;
+
         for (auto page_id = 0; page_id < req_page_num; page_id++) {
             uint32_t page_data_size = 0;
 
             memcpy(&page_data_size, 
                     tmp_read_buf + page_id * page_size_, sizeof(uint32_t));
+            sizes.push_back(page_data_size);
 
             // Read size in this page
-            uint64_t read_size = min(page_size_m4_ - page_index, 
-                    min(left_size, (uint64_t)page_data_size)); 
+            uint64_t read_size = min(page_data_size - page_index, left_size); 
+            read_sizes.push_back(read_size);
 
 //            debug_error("read_size %lu page_data_size %u done size %lu"
 //                    " page_index %lu\n", 
 //                    read_size, page_data_size, read_done_size,
 //                    page_index);
-//
+
+            if (read_size == 0) {
+                page_index = 0;
+                continue;
+            } 
+
             memcpy(read_buf + read_done_size, 
                     tmp_read_buf + page_id * page_size_ + sizeof(uint32_t) + page_index, 
                     read_size);
@@ -597,10 +627,27 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         }
 
         if (read_done_size != req_disk_data_size || left_size != 0) {
-            debug_error("[ERROR] Read size mismatch: %lu v.s. %lu %lu\n",
-                    read_done_size, req_disk_data_size, left_size);
-            exit(1);
+            debug_error("[ERROR] Read size mismatch: %lu v.s. %lu %lu"
+                    " req_page_num %lu mark_data_ %lu"
+                    " offset %lu data size %lu\n",
+                    read_done_size, req_disk_data_size, left_size,
+                    req_page_num, mark_data_, 
+                    offset, data_size_);
+            for (auto& it : sizes) {
+                debug_error("sz %u\n", it);
+            }
+            for (auto& it : read_sizes) {
+                debug_error("rsz %lu\n", it);
+            }
+            return FileOpStatus(false, 0, 0, 0);
         }
+
+//        for (auto& it : sizes) {
+//            debug_error("sz %u\n", it);
+//        }
+//        for (auto& it : read_sizes) {
+//            debug_error("rsz %lu\n", it);
+//        }
 
         if (req_buf_data_size != 0) {
             memcpy(read_buf + read_done_size, 
@@ -695,7 +742,8 @@ FileOpStatus FileOperation::flushFile()
         return ret;
     } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (buf_used_size_ != 0) {
-            uint64_t req_page_num = ceil((double)buf_used_size_ / (double)(page_size_ - sizeof(uint32_t)));
+            uint64_t req_page_num = 
+                (buf_used_size_ + page_size_m4_ - 1) / page_size_m4_;
             // align mem
             char* writeBuffer;
             auto writeBufferSize = page_size_ * req_page_num;
@@ -712,19 +760,11 @@ FileOpStatus FileOperation::flushFile()
             uint64_t writeDoneContentSize = 0;
             while (writeDoneContentSize != targetWriteSize) {
                 uint32_t currentPageWriteSize;
-                if ((targetWriteSize - writeDoneContentSize) >= (page_size_ - sizeof(uint32_t))) {
-                    currentPageWriteSize = page_size_ - sizeof(uint32_t);
-                    memcpy(writeBuffer + processedPageNumber * page_size_, &currentPageWriteSize, sizeof(uint32_t));
-                    memcpy(writeBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
-                    writeDoneContentSize += currentPageWriteSize;
-                    processedPageNumber++;
-                } else {
-                    currentPageWriteSize = targetWriteSize - writeDoneContentSize;
-                    memcpy(writeBuffer + processedPageNumber * page_size_, &currentPageWriteSize, sizeof(uint32_t));
-                    memcpy(writeBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
-                    writeDoneContentSize += currentPageWriteSize;
-                    processedPageNumber++;
-                }
+                currentPageWriteSize = min(targetWriteSize - writeDoneContentSize, page_size_m4_);
+                memcpy(writeBuffer + processedPageNumber * page_size_, &currentPageWriteSize, sizeof(uint32_t));
+                memcpy(writeBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), globalWriteBuffer_ + writeDoneContentSize, currentPageWriteSize);
+                writeDoneContentSize += currentPageWriteSize;
+                processedPageNumber++;
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
@@ -809,6 +849,22 @@ uint64_t FileOperation::getFileSize()
         free(readBuffer);
         return fileRealSizeWithoutPadding;
     } else if (operationType_ == kPreadWrite) {
+        return disk_size_;
+    } else {
+        return 0;
+    }
+}
+
+uint64_t FileOperation::getCachedFileSize() {
+    // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
+    if (operationType_ == kFstream) {
+        fileStream_.seekg(0, ios::end);
+        uint64_t fileSize = fileStream_.tellg();
+        fileStream_.seekg(0, ios::beg);
+        return fileSize;
+    } else if (operationType_ == kDirectIO || 
+            operationType_ == kAlignLinuxIO ||
+            operationType_ == kPreadWrite) {
         return disk_size_;
     } else {
         return 0;

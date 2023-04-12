@@ -44,6 +44,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
         debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
     }
     fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
+    enable_crash_consistency_ = options->enable_crash_consistency;
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -109,10 +110,10 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
     }
 }
 
-bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
+bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
 {
     bool allAnchoarsFlag = true;
-    for (auto it : objectPairMemPoolHandlerVec) {
+    for (auto it : objects) {
         allAnchoarsFlag = allAnchoarsFlag && it.isAnchorFlag_;
         if (it.isAnchorFlag_ == false) {
             break;
@@ -127,12 +128,32 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
     struct timeval tv;
     gettimeofday(&tv, 0);
     unordered_map<hashStoreFileMetaDataHandler*, vector<int>> fileHandlerToIndexMap;
-    for (auto i = 0; i < objectPairMemPoolHandlerVec.size(); i++) {
+
+    bool need_flush = false;
+    if (enable_crash_consistency_ == true) {
+        // TODO write to the commit log
+        // write to the commit log
+
+        bool write_commit_log_status = 
+            hashStoreFileManagerPtr_->writeToCommitLog(objects, need_flush);
+        if (write_commit_log_status == false) {
+            debug_error("[ERROR] write to commit log failed: %lu objects\n",
+                    objects.size());
+            exit(1);
+        }
+    }
+
+    gettimeofday(&tv, 0);
+    for (auto i = 0; i < objects.size(); i++) {
         hashStoreFileMetaDataHandler* currentFileHandlerPtr = nullptr;
         bool getFileHandlerStatus;
-        STAT_PROCESS(getFileHandlerStatus = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStrForMultiPut(objectPairMemPoolHandlerVec[i].keyPtr_, objectPairMemPoolHandlerVec[i].keySize_, kPut, currentFileHandlerPtr, objectPairMemPoolHandlerVec[i].isAnchorFlag_), StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
+        STAT_PROCESS(getFileHandlerStatus =
+                hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr(
+                    objects[i].keyPtr_, objects[i].keySize_, kMultiPut,
+                    currentFileHandlerPtr, objects[i].isAnchorFlag_),
+                StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
         if (getFileHandlerStatus != true) {
-            debug_error("[ERROR] Get file handler for key = %s error during multiput\n", objectPairMemPoolHandlerVec[i].keyPtr_);
+            debug_error("[ERROR] Get file handler for key = %s error during multiput\n", objects[i].keyPtr_);
             return false;
         } else {
             if (currentFileHandlerPtr == nullptr) {
@@ -158,7 +179,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
         for (auto mapIt : fileHandlerToIndexMap) {
             vector<mempoolHandler_t> handlerVec;
             for (auto index = 0; index < mapIt.second.size(); index++) {
-                handlerVec.push_back(objectPairMemPoolHandlerVec[mapIt.second[index]]);
+                handlerVec.push_back(objects[mapIt.second[index]]);
             }
             mapIt.first->markedByMultiPut_ = false;
             tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVec));
@@ -166,17 +187,17 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
         debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
         bool putStatus = hashStoreFileOperatorPtr_->directlyMultiWriteOperation(tempFileHandlerMap);
         if (putStatus != true) {
-            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", objectPairMemPoolHandlerVec.size());
+            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", objects.size());
             return false;
         } else {
-            debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", objectPairMemPoolHandlerVec.size());
+            debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", objects.size());
             return true;
         }
     } else {
         uint32_t handlerVecIndex = 0;
         uint32_t handlerStartVecIndex = 0;
         uint32_t opHandlerIndex = 0;
-        mempoolHandler_t handlerVecTemp[objectPairMemPoolHandlerVec.size()];
+        mempoolHandler_t handlerVecTemp[objects.size()];
         vector<hashStoreOperationHandler*> handlers; 
         handlers.resize(fileHandlerToIndexMap.size());
         for (auto mapIt : fileHandlerToIndexMap) {
@@ -184,7 +205,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
             gettimeofday(&tv, 0);
             handlerStartVecIndex = handlerVecIndex;
             for (auto index = 0; index < mapIt.second.size(); index++) {
-                handlerVecTemp[handlerVecIndex++] = objectPairMemPoolHandlerVec[mapIt.second[index]];
+                handlerVecTemp[handlerVecIndex++] = objects[mapIt.second[index]];
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
             mapIt.first->markedByMultiPut_ = false;
@@ -203,8 +224,20 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHand
             hashStoreFileOperatorPtr_->waitOperationHandlerDone(it);
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_WAIT_HANDLERS, tv);
-        return true;
     }
+
+//    need_flush = false;
+    if (need_flush) {
+        // Flush all buffers in the buckets. In the FileManager
+        bool status;
+        STAT_PROCESS(status = hashStoreFileManagerPtr_->UpdateHashStoreFileMetaDataList(),
+                StatsType::DELTAKV_HASHSTORE_SYNC);
+        if (status == false) {
+            debug_error("[ERROR] flush all buffers failed %s\n", "");
+            exit(1);
+        }
+    }
+    return true;
 }
 
 bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
@@ -215,9 +248,15 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     STAT_PROCESS(ret = hashStoreFileManagerPtr_->getHashStoreFileHandlerByInputKeyStr((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
         valueStrVec.clear();
-        return true;
+        return false;
     } else {
         StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
+        // No bucket. Exit
+        if (tempFileHandler == nullptr) {
+            valueStrVec.clear();
+            return true;
+        }
+
         if (enable_lsm_tree_delta_meta_ == true ||
                 tempFileHandler->filter->MayExist(keyStr) ||
                 tempFileHandler->sorted_filter->MayExist(keyStr)) {

@@ -131,6 +131,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     // bool seekCompaction = config.getSeekCompaction();
     bool compression = config.getCompression();
     bool directIO = config.getDirectIO();
+    bool directReads = config.getDirectReads();
     bool useMmap = config.getUseMmap();
     bool fakeDirectIO = config.getFakeDirectIO();  // for testing
     bool keyValueSeparation = config.getKeyValueSeparation();
@@ -145,7 +146,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     rocksdb::BlockBasedTableOptions bbto;
 
     if (directIO == true) {
-        options_.rocksdbRawOptions_.use_direct_reads = true;
+        options_.rocksdbRawOptions_.use_direct_reads = directReads;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
     } else {
@@ -153,7 +154,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     }
-    options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kPreadWrite;
+
+    if (config.getUsePwrite() == true) {
+        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kPreadWrite;
+    }
+
     if (blobDbKeyValueSeparation == true) {
         cerr << "Enabled Blob based KV separation" << endl;
         bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(blockCacheSize);
@@ -227,9 +232,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
 
     if (options_.enable_batched_operations_ == true && options_.batched_operations_number_ > 0) {
-        options_.deltaStore_mem_pool_object_number_ = ceil(options_.batched_operations_number_ * 3);
+        options_.deltaStore_mem_pool_object_number_ = 300000; 
+            //ceil(options_.batched_operations_number_ * 3);
         long pagesize = sysconf(_SC_PAGE_SIZE);
-        options_.deltaStore_mem_pool_object_size_ = ceil(config.getMaxKeyValueSize() / pagesize) * pagesize;
+        options_.deltaStore_mem_pool_object_size_ =
+            (config.getMaxKeyValueSize() + pagesize - 1) / pagesize * pagesize;
     }
 
     if (fakeDirectIO) {
@@ -248,6 +255,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.enable_key_value_cache_ = config.getDeltaKVCacheEnableStatus();
     options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta(); 
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
+    options_.enable_crash_consistency = config.getEnableCrashConsistency();
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);

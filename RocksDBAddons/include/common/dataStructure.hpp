@@ -160,7 +160,8 @@ enum hashStoreFileCreateReason { kNewFile = 0,
 
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
-    kMultiPut = 2 };
+    kMultiPut = 2,
+    kFlush = 3 };
 
 enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold

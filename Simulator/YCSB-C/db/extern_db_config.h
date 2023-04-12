@@ -18,7 +18,9 @@ class ExternDBConfig {
     bool seekCompaction_;
     bool compression_;
     bool directIO_;
+    bool direct_reads_;
     bool useMmap_;
+    bool use_pwrite_;
     bool fakeDirectIO_;
     bool noCompaction_;
     int numThreads_;
@@ -63,6 +65,7 @@ class ExternDBConfig {
     uint64_t maxOpenFiles;
     bool deltaStore_KDLevel_cache_use_str_t_;
     bool parallel_lsm_interface_;
+    bool enable_crash_consistency_;
 
     struct {
         uint64_t level;
@@ -75,7 +78,9 @@ class ExternDBConfig {
         seekCompaction_ = pt_.get<bool>("config.seekCompaction");
         compression_ = pt_.get<bool>("config.compression");
         directIO_ = pt_.get<bool>("config.directIO", true);
+        direct_reads_ = pt_.get<bool>("config.directReads", true);
         useMmap_ = pt_.get<bool>("config.useMmap", true);
+        use_pwrite_ = pt_.get<bool>("config.usepwrite", false);
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
         blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
@@ -121,6 +126,7 @@ class ExternDBConfig {
         enableLsmTreeDeltaMeta_ = pt_.get<bool>("config.enableLsmTreeDeltaMeta", true);
         deltaStore_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.deltaStore_KDLevel_cache_use_str_t", true);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
+        enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
     }
 
     int getBloomBits() {
@@ -135,8 +141,14 @@ class ExternDBConfig {
     bool getDirectIO() {
         return directIO_;
     }
+    bool getDirectReads() {
+        return direct_reads_;
+    }
     bool getUseMmap() {
         return useMmap_;
+    }
+    bool getUsePwrite() {
+        return use_pwrite_;
     }
     bool getFakeDirectIO() {
         return fakeDirectIO_;
@@ -293,6 +305,9 @@ class ExternDBConfig {
     }
     bool getParallelLsmTreeInterface() {
         return parallel_lsm_interface_;
+    }
+    bool getEnableCrashConsistency() {
+        return enable_crash_consistency_;
     }
 };
 }  // namespace ycsbc

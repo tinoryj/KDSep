@@ -75,6 +75,7 @@ private:
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool enableParallelLsmInterface = true;
+    bool enable_crash_consistency = false;
 
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
     int writeBackWhenReadDeltaSizeThreshold_ = 4;

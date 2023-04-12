@@ -28,8 +28,11 @@ DeltaKV::~DeltaKV()
     }
     cerr << "[DeltaKV Interface] Try delete HashStore" << endl;
     if (HashStoreInterfaceObjPtr_ != nullptr) {
+        cerr << "interface" << endl;
         delete HashStoreInterfaceObjPtr_;
+        cerr << "file manager" << endl;
         delete hashStoreFileManagerPtr_;
+        cerr << "file operator" << endl;
         delete hashStoreFileOperatorPtr_;
     }
     delete objectPairMemPool_;
@@ -374,7 +377,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         if (ret != true) {
             debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
             return false;
-        } 
+        }
 
         if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
 //            struct timeval tv1, tv2;
@@ -830,12 +833,12 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     // cerr << "Key size = " << mempoolHandler.keySize_ << endl;
     struct timeval tv;
     gettimeofday(&tv, 0);
-//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if ((deltaKVRunningMode_ == kBatchedWithNoDeltaStore &&
-            batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_) || 
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_ || 
             (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 20000))
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitNumber_))
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -850,12 +853,11 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
-//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if ((deltaKVRunningMode_ == kBatchedWithNoDeltaStore &&
-            batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_) || 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_ || 
             (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= 20000))
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitNumber_))
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
@@ -931,8 +933,11 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     }
     struct timeval tv;
     gettimeofday(&tv, 0);
-//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_)
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_ || 
+            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitNumber_))
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -947,8 +952,11 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
-//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == maxBatchOperationBeforeCommitNumber_) 
-    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitSize_) 
+//    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
+    if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
+            maxBatchOperationBeforeCommitSize_ || 
+            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
+            batchedOperationsCounter[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitNumber_))
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
@@ -1081,15 +1089,7 @@ bool DeltaKV::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pa
 
 void DeltaKV::processBatchedOperationsWorker()
 {
-    uint64_t mx = 1200;
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
     while (true) {
-        gettimeofday(&tve, 0);
-        if (tve.tv_sec - tvs.tv_sec > mx) {
-            debug_error("batched operation thread heart beat %lu\n", mx); 
-            mx += 1200;
-        }
         if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
         }
@@ -1288,15 +1288,7 @@ void DeltaKV::processBatchedOperationsWorker()
 
 void DeltaKV::processWriteBackOperationsWorker()
 {
-    uint64_t mx = 1200;
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
     while (true) {
-        gettimeofday(&tve, 0);
-        if (tve.tv_sec - tvs.tv_sec > mx) {
-            debug_error("write back thread heart beat %lu\n", mx); 
-            mx += 1200;
-        }
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
         }

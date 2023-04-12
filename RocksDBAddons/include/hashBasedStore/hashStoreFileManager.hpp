@@ -21,7 +21,6 @@ public:
 
     // file operations
     bool getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting);
     bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
@@ -33,6 +32,11 @@ public:
     bool setJobDone();
 
     void pushToGCQueue(hashStoreFileMetaDataHandler* fileHandlerPtr);
+
+    // Consistency
+    bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag);
+//    bool flushAllBuffers();
+    bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
 
     // recovery
     bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
@@ -89,7 +93,6 @@ private:
 
     // Manager's metadata management
     bool RetriveHashStoreFileMetaDataList(); // will reopen all existing files
-    bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
     // recovery
@@ -128,6 +131,10 @@ private:
     std::condition_variable metaCommitCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
+
+    FileOperation* commit_log_fop_ = nullptr;
+    uint64_t commit_log_maximum_size_ = 128 * 1024 * 1024;
+    uint64_t commit_log_next_threshold_ = 128 * 1024 * 1024;
 };
 
 } // namespace DELTAKV_NAMESPACE

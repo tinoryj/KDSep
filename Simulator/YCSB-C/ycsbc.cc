@@ -125,21 +125,22 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             } else {
                 output_base = speed / 1000 * 200;
             }
-            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+//            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+            std::cerr << "[Running] " << (float)i / processLabel_base << "% (" << (float)i / tot_duration << " ops)    est ";
             if (est_minutes > 0) {
-                std::cerr << est_minutes << " min";
+                std::cerr << est_minutes << ":";
             }
             if (est_seconds > 0) {
-                std::cerr << est_seconds << " s    ";
+                std::cerr << est_seconds << " ";
             }
 	    if (i % processLabel_base == 0) {
-		std::cout << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)\n";
+		std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " ops)\n";
 	    }
         }
 	// }
     }
     std::cerr << "\r";
-    std::cerr << "[Running Status] Operation process: 100%, " << num_ops << "/" << num_ops;
+    std::cerr << "[Running Status] 100%, " << num_ops << "/" << num_ops;
     std::cerr << std::endl;
 
     bool dump_memory_usage = true;

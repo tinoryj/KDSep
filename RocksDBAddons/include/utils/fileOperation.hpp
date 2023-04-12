@@ -50,6 +50,7 @@ public:
     bool closeFile();
     bool isFileOpen();
     uint64_t getFileSize();
+    uint64_t getCachedFileSize();
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();
     void markDirectDataAddress(uint64_t data);
@@ -68,8 +69,8 @@ private:
     uint64_t buf_used_size_ = 0;
     uint64_t buf_size_ = 0;
 
-    uint64_t mark_direct_data_ = 0;
-    uint64_t mark_direct_disk_ = 0;
+    uint64_t mark_data_ = 0;
+    uint64_t mark_disk_ = 0;
 };
 
 } // namespace DELTAKV_NAMESPACE

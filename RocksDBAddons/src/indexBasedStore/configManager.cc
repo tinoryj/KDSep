@@ -33,7 +33,7 @@ void ConfigManager::setConfigPath(const char* path)
     } else if (_buffer.numPipelinedBuffer < 1) {
         _buffer.numPipelinedBuffer = 1;
     }
-    _buffer.directIO = readBool("config.directIO");
+    _buffer.directIO = readBool("config.directReads"); // TODO
     _buffer.testDirectIO = readBool("config.fakeDirectIO");
     _buffer.testIODelayUs = readULL("valueStore.testIODelayUs");
     _buffer.valueCacheSize = readULL("valueStore.valueCacheSize");

@@ -82,6 +82,11 @@ log_db_status() {
 ulimit -n 204800 
 ulimit -s 102400
 echo $@
+
+PIDC=$$
+echo "PID = $PIDC"
+
+
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
 ReadProportion=0.1
 OverWriteRatio=0.0
@@ -115,7 +120,7 @@ workerThreadNumber=12
 gcThreadNumber=2
 deltaLogGCThreshold=0.9
 deltaLogSplitGCThreshold=0.45
-batchSize=100000
+batchTestNum=2000
 cacheIndexFilter="true"
 paretokey="false"
 scanThreads=8
@@ -123,6 +128,8 @@ nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
 gcWriteBackSize=1000
+enableParallel="false"
+enableCrashConsistency="false"
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -147,6 +154,8 @@ maxFileNumber="16"
 blockSize=65536
 fake="false"
 nodirect="false"
+nodirectreads="false"
+usepwrite="false"
 nommap="false"
 checkRepeat="false"
 rmw="false"
@@ -154,32 +163,38 @@ flushSize=4092
 sstsz=64
 l1sz=256
 memtable=64
+memSize=""
 initBit=20
+
+havekd="false"
 
 for param in $*; do
     if [[ $param == "kv" ]]; then
         suffix=${suffix}_kv
         usekv="true"
-        sed -i "18s/false/true/g" temp.ini
+        sed -i "/keyValueSeparation/c\\keyValueSeparation = true" temp.ini
     elif [[ $param == "kd" ]]; then
         suffix=${suffix}_kd
         usekd="true"
-        sed -i "19s/false/true/g" temp.ini
+        havekd="true"
+        sed -i "/keyDeltaSeparation/c\\keyDeltaSeparation = true" temp.ini
     elif [[ $param == "raw" ]]; then
         suffix=${suffix}_raw
     elif [[ $param == "kvkd" ]]; then
         suffix=${suffix}_kvkd
         usekvkd="true"
-        sed -i "18s/false/true/g" temp.ini
-        sed -i "19s/false/true/g" temp.ini
+        havekd="true"
+        sed -i "/keyValueSeparation/c\\keyValueSeparation = true" temp.ini
+        sed -i "/keyDeltaSeparation/c\\keyDeltaSeparation = true" temp.ini
     elif [[ $param == "bkv" ]]; then
         suffix=${suffix}_bkv
-        sed -i "20s/false/true/g" temp.ini
+        sed -i "/blobDbKeyValueSeparation/c\\blobDbKeyValueSeparation = true" temp.ini
     elif [[ $param == "bkvkd" ]]; then
         suffix=${suffix}_bkvkd
         usebkvkd="true"
-        sed -i "19s/false/true/g" temp.ini
-        sed -i "20s/false/true/g" temp.ini
+        havekd="true"
+        sed -i "/keyDeltaSeparation/c\\keyDeltaSeparation = true" temp.ini
+        sed -i "/blobDbKeyValueSeparation/c\\blobDbKeyValueSeparation = true" temp.ini
     elif [[ $param == "copy" ]]; then
         only_copy="true"
     elif [[ $param == "load" ]]; then
@@ -212,7 +227,7 @@ for param in $*; do
         run_suffix=${run_suffix}_${param}
     elif [[ "$param" =~ ^initBit[0-9]+$ ]]; then
         tmp=`echo $param | sed 's/initBit//g'`
-        if [[ $tmp -ne $initBit ]]; then
+        if [[ $tmp -ne $initBit && "$havekd" == "true" ]]; then
             initBit=$tmp
             run_suffix=${run_suffix}_${param}
         fi
@@ -231,7 +246,11 @@ for param in $*; do
     elif [[ "$param" =~ ^threads[0-9]+$ ]]; then
         RocksDBThreadNumber=$(echo $param | sed 's/threads//g')
     elif [[ "$param" =~ ^gcT[0-9]+$ ]]; then
-        gcThreadNumber=$(echo $param | sed 's/gcT//g')
+        tmp=$(echo $param | sed 's/gcT//g')
+        if [[ "$tmp" != "$gcThreadNumber" && "$havekd" == "true" ]]; then
+            gcThreadNumber=$tmp
+            run_suffix=${run_suffix}_${param}
+        fi
     elif [[ "$param" =~ ^gcThres[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/gcThres//g')
         if [[ "$tmp" != "$deltaLogGCThreshold" ]]; then
@@ -251,13 +270,21 @@ for param in $*; do
             run_suffix=${run_suffix}_sp${tmp}
         fi
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
-        workerThreadNumber=$(echo $param | sed 's/workerT//g')
+        tmp=$(echo $param | sed 's/workerT//g')
+        if [[ "$tmp" != "$workerThreadNumber" && "$havekd" == "true" ]]; then
+            workerThreadNumber=$tmp
+            run_suffix=${run_suffix}_${param}
+        fi
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
         bucketSize=$(echo $param | sed 's/bucketSize//g')
         run_suffix=${run_suffix}_${param}
-    elif [[ "$param" =~ ^batchSize[0-9kK]+$ ]]; then
-        num=$(echo $param | sed 's/batchSize//g' | sed 's/k/000/g' | sed 's/K/000/g')
-        batchSize=$num
+    elif [[ "$param" =~ ^batchTestNum[0-9kK]+$ ]]; then
+        tmpori=$(echo $param | sed 's/batchTestNum//g')
+        tmp=$(echo $param | sed 's/batchTestNum//g' | sed 's/k/000/g' | sed 's/K/000/g')
+        if [[ "$tmp" != "$batchTestNum" && "$havekd" == "true" ]]; then
+            batchTestNum=$tmp
+            run_suffix=${run_suffix}_bs${tmpori}
+        fi
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
         MAXRunTimes=$(echo $param | sed 's/round//g')
     elif [[ "$param" =~ ^maxFileNumber[0-9]+$ ]]; then
@@ -290,9 +317,9 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^flushSize[0-9]+$ ]]; then
         tmp=$(echo $param | sed 's/flushSize//g')
-        if [[ $tmp -ne $flushSize ]]; then
-            run_suffix=${run_suffix}_${param}
+        if [[ $tmp -ne $flushSize && "$havekd" == "true" ]]; then
             flushSize=$tmp
+            run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         sstsz=`echo $param | sed 's/sst//g'`
@@ -309,6 +336,9 @@ for param in $*; do
         if [[ $memtable -ne 64 ]]; then
             suffix=${suffix}_$param
         fi
+    elif [[ "$param" =~ ^mem[0-9gGmM]+$ ]]; then
+        memSize=`echo $param | sed 's/mem//g'`
+        run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^bf[0-9]+$ ]]; then
         bloomBits=`echo $param | sed 's/bf//g'`
         if [[ $bloomBits -ne 10 ]]; then
@@ -338,9 +368,25 @@ for param in $*; do
     elif [[ "$param" == "fake" ]]; then
         fake="true"
         run_suffix=${run_suffix}_fake
+    elif [[ "$param" == "ep" ]]; then
+        if [[ "$havekd" == "true" ]]; then
+            enableParallel="true"
+            run_suffix=${run_suffix}_ep
+        fi
+    elif [[ "$param" == "ec" ]]; then
+        if [[ "$havekd" == "true" ]]; then
+            enableCrashConsistency="true"
+            run_suffix=${run_suffix}_ec
+        fi
     elif [[ "$param" == "nodirect" ]]; then
         nodirect="true"
         run_suffix=${run_suffix}_nodirect
+    elif [[ "$param" == "nodirectreads" ]]; then
+        nodirectreads="true"
+        run_suffix=${run_suffix}_nodirectreads
+    elif [[ "$param" == "usepwrite" ]]; then
+        usepwrite="true"
+        run_suffix=${run_suffix}_usepwrite
     elif [[ "$param" == "nommap" ]]; then
         nommap="true"
         run_suffix=${run_suffix}_nommap
@@ -374,6 +420,7 @@ if [[ $kdcache -ne 0 ]]; then
     sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $kdcache" temp.ini
 fi
 
+
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
     sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
     sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bn" temp.ini
@@ -382,12 +429,12 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/deltaLogGCThreshold/c\\deltaLogGCThreshold = $deltaLogGCThreshold" temp.ini
     sed -i "/deltaLogSplitGCThreshold/c\\deltaLogSplitGCThreshold = $deltaLogSplitGCThreshold" temp.ini
     sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
-    sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchSize" temp.ini
     sed -i "/deltaStoreGcWriteBackDeltaSizeThreshold/c\\deltaStoreGcWriteBackDeltaSizeThreshold = $gcWriteBackSize" temp.ini
     sed -i "/deltaLogFileFlushSize/c\\deltaLogFileFlushSize = $flushSize" temp.ini
     sed -i "/initBitNumber/c\\initBitNumber = $initBit" temp.ini
 fi
 
+sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchTestNum" temp.ini
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
@@ -410,6 +457,18 @@ fi
 
 if [[ "$nodirect" == "true" ]]; then
     sed -i "/directIO/c\\directIO = false" temp.ini
+fi
+
+if [[ "$nodirectreads" == "true" ]]; then
+    sed -i "/directReads/c\\directReads = false" temp.ini
+fi
+
+if [[ "$enableParallel" == "true" ]]; then
+    sed -i "/parallel_lsm_tree_interface/c\\parallel_lsm_tree_interface = true" temp.ini
+fi
+
+if [[ "$enableCrashConsistency" == "true" ]]; then
+    sed -i "/crash_consistency/c\\crash_consistency = true" temp.ini
 fi
 
 if [[ "$nommap" == "true" ]]; then
@@ -480,6 +539,13 @@ fi
 loaded="false"
 workingDB=${DB_Working_Path}/workingDB
 loadedDB=${DB_Loaded_Path}/${DB_Name}
+
+if [[ "$memSize" != "" ]]; then
+    set -x
+    sudo cgset -r memory.max=${memSize} zz2
+    sudo cgclassify -g memory:zz2 --sticky $PIDC
+    set +x
+fi
 
 if [[ "$only_load" != "true" ]]; then
     if [[ "$usekd" == "true" ]]; then
@@ -609,20 +675,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         fileprefix=$ResultLogFolder/Rd-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
     fi
 
-    output_file=$(generate_file_name ${fileprefix}-gcT${gcThreadNumber}-workerT${workerThreadNumber}-fixB2k)
-    if [[ "$usekd" != "true" && "$usekvkd" != "true" && "$usebkvkd" != "true" ]]; then
-        output_file=`generate_file_name ${fileprefix}`
-    else
-        t="${fileprefix}"
-        if [[ "$gcThreadNumber" != "2" ]]; then
-            t="${t}-gcT${gcThreadNumber}" 
-        fi
-        if [[ "$workerThreadNumber" != "8" ]]; then
-            t="${t}-workerT${workerThreadNumber}" 
-        fi
-        t="${t}-fixB2k"
-        output_file=`generate_file_name ${t}`
-    fi
+    output_file=`generate_file_name ${fileprefix}`
 
     echo "output at $output_file"
     if [[ "$checkRepeat" == "true" ]]; then

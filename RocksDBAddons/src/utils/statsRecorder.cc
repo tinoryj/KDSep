@@ -175,8 +175,12 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("Flush (No KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
     PRINT_FULL("Flush (KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
     PRINT_FULL("  hashStore", DKV_FLUSH_MUTIPUT_DSTORE, time[DKV_FLUSH]);
+    PRINT_FULL("    commit-log", DELTAKV_HASHSTORE_PUT_COMMIT_LOG, time[DKV_FLUSH]);
     PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
     PRINT_FULL("      single", DS_MULTIPUT_GET_SINGLE_HANDLER, time[DKV_FLUSH]);
+    PRINT_FULL("        get-hdl", DSTORE_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
+    PRINT_FULL("        loop", DSTORE_GET_HANDLER_LOOP, time[DKV_FLUSH]);
+
     PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[DKV_FLUSH]);
     PRINT_FULL("      process", DS_MULTIPUT_PROCESS_HANDLERS, time[DKV_FLUSH]);
     PRINT_FULL("      single", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[DKV_FLUSH]);
@@ -192,6 +196,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("        insert-cache", DS_MULTIPUT_INSERT_CACHE, time[DKV_FLUSH]);
     PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
     PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);
+    PRINT_FULL("    sync", DELTAKV_HASHSTORE_SYNC, time[DKV_FLUSH]);
     PRINT_FULL("  lsm-interface", DKV_FLUSH_LSM_INTERFACE, time[DKV_FLUSH]);
     PRINT_FULL("    pre-put", LSM_FLUSH_PRE_PUT, time[DKV_FLUSH]);
     PRINT_FULL("    put-merge-vlog", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
@@ -244,6 +249,7 @@ StatsRecorder::~StatsRecorder()
     fprintf(stdout, "-------------- DeltaKV Batch OP Breakdown ------------------------------\n");
     PRINT_FULL("op-read", OP_GET, time[OP_GET]);
     PRINT_FULL("op-put", OP_PUT, time[OP_PUT]);
+    PRINT_FULL("op-flush", OP_FLUSH, time[OP_FLUSH]);
 
     fprintf(stdout, "--------------- DeltaKV HashStore handler --------------------------------------\n");
     PRINT_FULL("push-to-mempool", DELTAKV_INSERT_MEMPOOL, time[DELTAKV_INSERT_MEMPOOL]);
@@ -262,6 +268,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  get-file-io-whole", DELTAKV_HASHSTORE_GET_IO_ALL, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  get-file-io-unsorted", DELTAKV_HASHSTORE_GET_IO_UNSORTED, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  get-file-io-sorted", DELTAKV_HASHSTORE_GET_IO_SORTED, (time[DELTAKV_GET_HASHSTORE]));
+    PRINT_FULL("  get-file-io-both", DELTAKV_HASHSTORE_GET_IO_BOTH, (time[DELTAKV_GET_HASHSTORE]));
     PRINT_FULL("  wait-buffer-lock", DELTAKV_HASHSTORE_WAIT_BUFFER, (time[DELTAKV_GET_HASHSTORE]));
 
     fprintf(stdout, "-------------- DeltaKV HashStore Cache Breakdown ------------------------------\n");

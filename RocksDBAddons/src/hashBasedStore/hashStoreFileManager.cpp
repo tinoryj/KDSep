@@ -71,6 +71,63 @@ void HashStoreFileManager::pushToGCQueue(hashStoreFileMetaDataHandler* file_hdl)
     operationNotifyCV_.notify_one();
 }
 
+bool HashStoreFileManager::writeToCommitLog(vector<mempoolHandler_t> objects,
+        bool& need_flush) {
+    if (objects.size() == 0) {
+        return true;
+    }
+    uint64_t write_buf_sz = 0;
+    for (auto i = 0; i < objects.size(); i++) {
+        write_buf_sz += sizeof(hashStoreRecordHeader) + 
+            objects[i].keySize_ + objects[i].valueSize_;
+    }
+
+    char write_buf[write_buf_sz];
+    uint64_t write_buf_index = 0;
+    hashStoreRecordHeader rec_header;
+    for (auto i = 0; i < objects.size(); i++) {
+        rec_header.is_anchor_ = objects[i].isAnchorFlag_;
+        rec_header.is_gc_done_ = false;
+        rec_header.key_size_ = objects[i].keySize_;
+        rec_header.value_size_ = objects[i].valueSize_;
+        rec_header.sequence_number_ = objects[i].sequenceNumber_;
+        copyInc(write_buf, write_buf_index, &rec_header, sizeof(rec_header));
+        copyInc(write_buf, write_buf_index, objects[i].keyPtr_, objects[i].keySize_);
+        if (rec_header.is_anchor_ == false) {
+            copyInc(write_buf, write_buf_index, objects[i].valuePtr_, objects[i].valueSize_);
+        }
+    }
+
+    if (commit_log_fop_ == nullptr) {
+        commit_log_fop_ = new FileOperation(kDirectIO, commit_log_maximum_size_, 0);
+        commit_log_fop_->createThenOpenFile(workingDir_ + "/commit.log");
+    }
+
+    FileOpStatus status;
+    STAT_PROCESS(status = commit_log_fop_->writeFile(write_buf, write_buf_sz),
+           StatsType::DELTAKV_HASHSTORE_PUT_COMMIT_LOG); 
+
+    if (status.success_ == false) {
+        debug_error("[ERROR] Write to commit log failed: buf size %lu\n", 
+                write_buf_sz);
+    }
+
+    if (commit_log_fop_->getCachedFileSize() > commit_log_next_threshold_) {
+        need_flush = true;
+        commit_log_next_threshold_ += commit_log_maximum_size_;
+    }
+
+    return status.success_;
+}
+
+//bool HashStoreFileManager::flushAllBuffers() {
+////vector<hashStoreFileMetaDataHandler*> HashStoreFileManager::flushAllBuffers() {
+////    vector<pair<uint64_t, hashStoreFileMetaDataHandler*>> validObjectVec;
+////    file_trie_.getCurrentValidNodes(validObjectVec);
+//
+//    return true;
+//}
+
 // Recovery
 /*
 read_buf start after file header
@@ -900,9 +957,12 @@ bool HashStoreFileManager::CreateHashStoreFileMetaDataListIfNotExist()
 // file operations - public
 // A modification: add "getForAnchorWriting". If true, and if the file handler
 // does not exist, do not create the file and directly return.
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType op_type, hashStoreFileMetaDataHandler*& file_hdl, bool getForAnchorWriting)
+bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(
+        char* keyBuffer, uint32_t keySize, hashStoreFileOperationType op_type,
+        hashStoreFileMetaDataHandler*& file_hdl, 
+        bool getForAnchorWriting)
 {
-    if (op_type == kPut) {
+    if (op_type == kPut || op_type == kMultiPut) {
         operationCounterMtx_.lock();
         operationCounterForMetadataCommit_++;
         operationCounterMtx_.unlock();
@@ -917,27 +977,35 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
         return false;
     }
     bool getFileHandlerStatus;
-//    debug_error("get 0 %s\n", keyBuffer);
-    STAT_PROCESS(getFileHandlerStatus =
-            getHashStoreFileHandlerByPrefix(prefix_u64, file_hdl),
-            StatsType::DSTORE_GET_HANDLER);
-//    debug_error("get 1 %s\n", keyBuffer);
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    getFileHandlerStatus =
+            getHashStoreFileHandlerByPrefix(prefix_u64, file_hdl);
+
+    if (op_type == kMultiPut) {
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::DSTORE_MULTIPUT_GET_HANDLER, tv);
+    }
+
     if (getFileHandlerStatus == false && op_type == kGet) {
-        return false;
-    } else if (getFileHandlerStatus == false && op_type == kPut) {
-        // Anchor: handler does not exist, do not create the file and directly return
-        if (getForAnchorWriting) {
-            file_hdl = nullptr;
-            return true;
-        }
+        file_hdl = nullptr;
+        return true;
+    }
+
+    if (getFileHandlerStatus == false && getForAnchorWriting == true) {
+        file_hdl = nullptr;
+        return true;
+    }
+
+    if (getFileHandlerStatus == false) {
+        // not writing anchors, or reading the file. Need to create
         bool createNewFileHandlerStatus;
         STAT_PROCESS(createNewFileHandlerStatus =
                 createAndGetNewHashStoreFileHandlerByPrefixForUser(prefix_u64,
                     file_hdl),
                 StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
-        if (!createNewFileHandlerStatus) {
-            debug_error("[ERROR] create new bucket for put operation error, "
-                    "key = %s\n", keyBuffer);
+        if (!createNewFileHandlerStatus || file_hdl == nullptr) {
+            debug_error("[ERROR] create new bucket, key %s\n", keyBuffer);
             return false;
         } else {
             debug_info("[Insert] Create new file ID = %lu, for key = %s, file"
@@ -946,167 +1014,95 @@ bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStr(char* keyBuffer,
                     file_hdl->gc_status,
                     file_hdl->prefix_bit);
             file_hdl->file_ownership = 1;
+            if (op_type == kMultiPut) {
+                file_hdl->markedByMultiPut_ = true;
+            }
             return true;
         }
-    } else if (getFileHandlerStatus == true) {
-        while (true) {
-            STAT_PROCESS(getFileHandlerStatus =
-                    getHashStoreFileHandlerByPrefix(prefix_u64,
-                        file_hdl), StatsType::DSTORE_GET_HANDLER);
-            if (!getFileHandlerStatus && (op_type == kPut || op_type == kMultiPut)) {
-                bool createNewFileHandlerStatus;
-                STAT_PROCESS(createNewFileHandlerStatus =
-                        createAndGetNewHashStoreFileHandlerByPrefixForUser(prefix_u64,
-                            file_hdl),
-                        StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
-                if (!createNewFileHandlerStatus) {
-                    debug_error("[ERROR] Previous file may deleted during GC,"
-                            " and splited new files not contains current key"
-                            " prefix, create new bucket for put operation"
-                            " error, key = %s\n", keyBuffer);
-                    return false;
-                } else {
-                    debug_warn("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", file_hdl->file_id, keyBuffer, file_hdl->gc_status, file_hdl->prefix_bit);
-                    debug_error("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", file_hdl->file_id, keyBuffer, file_hdl->gc_status, file_hdl->prefix_bit);
-                    file_hdl->file_ownership = 1;
-                    return true;
-                }
-            } else {
-                // avoid get file handler which is in GC;
-                if (file_hdl->file_ownership != 0) {
-//                    debug_error("Wait for file ownership, file ID = %lu, for"
-//                            " key = %s, own %d\n", 
-//                            file_hdl->file_id, keyBuffer,
-//                            (int)file_hdl->file_ownership);
-                    debug_trace("Wait for file ownership, file ID = %lu, for"
-                            " key = %s\n", file_hdl->file_id, keyBuffer);
-                    while (file_hdl->file_ownership != 0) {
-                        asm volatile("");
-                        // wait if file is using in gc
-                    }
-//                    debug_error("Wait for file ownership, file ID = %lu"
-//                            " over\n", file_hdl->file_id);
-                    debug_trace("Wait for file ownership, file ID = %lu, for"
-                            " key = %s over\n", file_hdl->file_id,
-                            keyBuffer);
-                }
-                if (file_hdl->gc_status == kShouldDelete) {
-                    // retry if the file should delete;
-                    debug_warn("Get exist file ID = %lu, for key = %s, "
-                            "this file is marked as kShouldDelete\n",
-                            file_hdl->file_id, keyBuffer);
-                    continue;
-                } else {
-                    debug_trace("Get exist file ID = %lu, for key = %s\n",
-                            file_hdl->file_id, keyBuffer);
-                    file_hdl->file_ownership = 1;
-                    return true;
-                }
+    }
+    
+    // Get the handler
+    struct timeval tv_loop;
+    gettimeofday(&tv_loop, 0);
+    bool first = true;
+    while (true) {
+
+        if (first == false) {
+            gettimeofday(&tv, 0);
+            getFileHandlerStatus =
+                getHashStoreFileHandlerByPrefix(prefix_u64, file_hdl);
+            if (op_type == kMultiPut) {
+                StatsRecorder::getInstance()->timeProcess(
+                        StatsType::DSTORE_MULTIPUT_GET_HANDLER, tv);
             }
         }
-    } else {
-        debug_error("[ERROR] Unknown operation type = %d\n", op_type);
-        return false;
-    }
-}
+        first = false;
 
-bool HashStoreFileManager::getHashStoreFileHandlerByInputKeyStrForMultiPut(
-        char* keyBuffer, uint32_t keySize, hashStoreFileOperationType op_type,
-        hashStoreFileMetaDataHandler*& file_hdl, 
-        bool getForAnchorWriting)
-{
-    if (op_type == kMultiPut) {
-        operationCounterMtx_.lock();
-        operationCounterForMetadataCommit_++;
-        if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
-            metaCommitCV_.notify_one();
-        }
-        operationCounterMtx_.unlock();
-    }
-
-    uint64_t prefixU64;
-    bool genPrefixStatus;
-    STAT_PROCESS(genPrefixStatus = generateHashBasedPrefix(keyBuffer, keySize, prefixU64), StatsType::DSTORE_PREFIX);
-    if (!genPrefixStatus) {
-        debug_error("[ERROR]  generate prefix hash for current key error, key = %s\n", string(keyBuffer, keySize).c_str());
-        return false;
-    }
-    bool getFileHandlerStatus;
-    STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixU64, file_hdl), StatsType::DSTORE_GET_HANDLER);
-
-    if (getFileHandlerStatus == false && getForAnchorWriting == true) {
-        // Anchor: handler does not exist, do not create the file and directly return
-        debug_info("Return nullptr for key = %s, since it's an anchor\n", string(keyBuffer, keySize).c_str());
-        file_hdl = nullptr;
-        return true;
-    } else if (getFileHandlerStatus == false && getForAnchorWriting == false) {
-        // Anchor: handler does not exist, need create the file
-        bool createNewFileHandlerStatus;
-        STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixU64, file_hdl), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
-        if (createNewFileHandlerStatus == false || file_hdl == nullptr) {
-            debug_error("[ERROR] create new bucket for put operation error, key = %s\n", string(keyBuffer, keySize).c_str());
-            return false;
-        } else {
-            debug_info("[Insert] Create new file ID = %lu, for key = %s, prefix bit number used = %lu\n", file_hdl->file_id, string(keyBuffer, keySize).c_str(), file_hdl->prefix_bit);
-            file_hdl->file_ownership = 1;
-            file_hdl->markedByMultiPut_ = true;
-            return true;
-        }
-    } else if (getFileHandlerStatus == true) {
-        while (true) {
-            STAT_PROCESS(getFileHandlerStatus = getHashStoreFileHandlerByPrefix(prefixU64, file_hdl), StatsType::DSTORE_GET_HANDLER);
-            if (!getFileHandlerStatus) {
-                bool createNewFileHandlerStatus;
-                STAT_PROCESS(createNewFileHandlerStatus = createAndGetNewHashStoreFileHandlerByPrefixForUser(prefixU64, file_hdl), StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
-                if (!createNewFileHandlerStatus) {
-                    debug_error("[ERROR] Previous file may deleted during GC, and splited new files not contains current key prefix, create new bucket for put operation error, key = %s\n", string(keyBuffer, keySize).c_str());
-                    return false;
-                } else {
-                    debug_warn("[Insert] Previous file may deleted during GC, and splited new files not contains current key prefix, create new file ID = %lu, for key = %s, file gc status flag = %d, prefix bit number used = %lu\n", file_hdl->file_id, string(keyBuffer, keySize).c_str(), file_hdl->gc_status, file_hdl->prefix_bit);
-                    file_hdl->file_ownership = 1;
-                    file_hdl->markedByMultiPut_ = true;
-                    return true;
-                }
+        if (getFileHandlerStatus == false
+                && (op_type == kPut || op_type == kMultiPut)) {
+            debug_error("come here %d\n", 1);
+            bool createNewFileHandlerStatus;
+            STAT_PROCESS(createNewFileHandlerStatus =
+                    createAndGetNewHashStoreFileHandlerByPrefixForUser(
+                        prefix_u64, file_hdl),
+                    StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
+            if (!createNewFileHandlerStatus) {
+                debug_error("[ERROR] Previous file may deleted during GC,"
+                        " and splited new files not contains current key"
+                        " prefix, create new bucket for put operation"
+                        " error, key = %s\n", keyBuffer);
+                return false;
             } else {
-                // avoid get file handler which is in GC;
-                if (file_hdl->file_ownership == 1 && file_hdl->markedByMultiPut_ == true) {
-                    debug_trace("Get exist file ID = %lu, for key = %s\n", file_hdl->file_id, string(keyBuffer, keySize).c_str());
-                    file_hdl->file_ownership = 1;
+                debug_warn("[Insert] Previous file may deleted during GC, and"
+                        " splited new files not contains current key prefix,"
+                        " create new file ID %lu, for key %s, file gc "
+                        "status flag %d, prefix bit number used %lu\n",
+                        file_hdl->file_id, keyBuffer, file_hdl->gc_status,
+                        file_hdl->prefix_bit);
+                file_hdl->file_ownership = 1;
+                if (op_type == kMultiPut) {
                     file_hdl->markedByMultiPut_ = true;
-                    return true;
                 }
-
-                bool flag = false;
-                if (file_hdl->file_ownership != 0) {
-                    flag = true;
-                    debug_error("Wait for file ownership, exist file ID = %lu,"
-                            " for key = %s\n", file_hdl->file_id,
-                            string(keyBuffer, keySize).c_str());
-                }
+                return true;
+            }
+        } else {
+            if (file_hdl->file_ownership == 1 && 
+                    file_hdl->markedByMultiPut_ == true) {
+                return true;
+            }
+            // avoid get file handler which is in GC;
+            if (file_hdl->file_ownership != 0) {
+                debug_trace("Wait for file ownership, file ID = %lu, for"
+                        " key = %s\n", file_hdl->file_id, keyBuffer);
                 while (file_hdl->file_ownership != 0) {
                     asm volatile("");
                     // wait if file is using in gc
                 }
-                if (flag) {
-                    debug_error("file ownership finished, exist file ID = %lu, for key = %s\n", file_hdl->file_id, string(keyBuffer, keySize).c_str());
-                }
-                debug_trace("Wait for file ownership, file ID = %lu, for key = %s over\n", file_hdl->file_id, string(keyBuffer, keySize).c_str());
-                if (file_hdl->gc_status == kShouldDelete) {
-                    // retry if the file should delete;
-                    debug_warn("Get exist file ID = %lu, for key = %s, this file is marked as kShouldDelete\n", file_hdl->file_id, string(keyBuffer, keySize).c_str());
-                    continue;
-                } else {
-                    debug_trace("Get exist file ID = %lu, for key = %s\n", file_hdl->file_id, string(keyBuffer, keySize).c_str());
-                    file_hdl->file_ownership = 1;
+                debug_trace("Wait for file ownership, file ID = %lu, for"
+                        " key = %s over\n", file_hdl->file_id,
+                        keyBuffer);
+            }
+
+            if (file_hdl->gc_status == kShouldDelete) {
+                // retry if the file should delete;
+                debug_warn("Get exist file ID = %lu, for key = %s, "
+                        "this file is marked as kShouldDelete\n",
+                        file_hdl->file_id, keyBuffer);
+                continue;
+            } else {
+                debug_trace("Get exist file ID = %lu, for key = %s\n",
+                        file_hdl->file_id, keyBuffer);
+                file_hdl->file_ownership = 1;
+                if (op_type == kMultiPut) {
                     file_hdl->markedByMultiPut_ = true;
-                    return true;
                 }
+                StatsRecorder::getInstance()->timeProcess(
+                        StatsType::DSTORE_GET_HANDLER_LOOP, tv_loop);
+                return true;
             }
         }
-    } else {
-        debug_error("[ERROR] Unknown operation for key = %s\n", keyBuffer);
-        return false;
     }
+    return true;
 }
 
 // file operations - private
@@ -2163,15 +2159,7 @@ void HashStoreFileManager::processMergeGCRequestWorker()
 void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 {
     int counter = 0;
-    uint64_t mx = 1200;
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
     while (true) {
-        gettimeofday(&tve, 0);
-        if (tve.tv_sec - tvs.tv_sec > mx) {
-            debug_error("gc thread heart beat %lu id %d\n", mx, threadID); 
-            mx += 1200;
-        }
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
             while (counter == 0 && notifyGCMQ_->done == false && notifyGCMQ_->isEmpty() == true) {
@@ -2448,7 +2436,9 @@ void HashStoreFileManager::scheduleMetadataUpdateWorker()
     while (true) {
         {
             std::unique_lock<std::mutex> lk(metaCommitMtx_);
-            while (metadataUpdateShouldExit_ == false && operationCounterForMetadataCommit_ < operationNumberForMetadataCommitThreshold_) {
+            while (metadataUpdateShouldExit_ == false &&
+                    operationCounterForMetadataCommit_ <
+                    operationNumberForMetadataCommitThreshold_) {
                 metaCommitCV_.wait(lk);
             }
         }

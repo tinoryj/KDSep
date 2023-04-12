@@ -24,3 +24,4 @@ requestdistribution=zipfian
 fieldcount=NaN
 fieldlength=NaN
 field_len_dist=constant
+maxscanlength=100
