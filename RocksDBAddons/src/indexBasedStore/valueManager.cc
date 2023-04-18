@@ -396,6 +396,24 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
         if (valueSize != readValueLoc.length) {
             debug_error("valueSize %lu v.s. readValueLoc.length %lu (offset %lu)\n", valueSize, readValueLoc.length, readValueLoc.offset);
         }
+
+        // check the key and value size in the record
+        uint64_t tmpValueSize;
+        key_len_t tmpKeySize;
+        memcpy(&tmpKeySize, valueStr, sizeof(key_len_t)); 
+        if (tmpKeySize != keySize) {
+            debug_error("read key size error! %d v.s. %d\n",
+                    (int)tmpKeySize, (int)keySize);
+            exit(1);
+        }
+        memcpy(&tmpValueSize, valueStr + sizeof(key_len_t) + keySize,
+                sizeof(len_t)); 
+        if (tmpValueSize != valueSize) {
+            debug_error("read value size error! %lu v.s. %lu\n",
+                    (uint64_t)tmpValueSize, (uint64_t)valueSize);
+            exit(1);
+        }
+    
         assert(valueSize == readValueLoc.length);
         offLen = { sizeof(len_t) + KEY_REC_SIZE, valueSize };
         assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);

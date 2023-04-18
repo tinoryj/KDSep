@@ -139,6 +139,8 @@ size_t GCManager::gcVLog()
                     keySizeOffset, key, keySize, value, valueSize, remains,
                     compactedBytes, pageSize);
 
+            // value may have the sequence number
+
             if (!ret) {
                 break;
             }
@@ -184,16 +186,6 @@ size_t GCManager::gcVLog()
                 keys.push_back((char*)writePool + writeKeyOffset);
                 valueLoc.offset = writeKeyOffset;
                 valueLoc.length = valueSize;
-//                for (int i = 0; i < valueSize; i++) {
-//                    if (writePool[i + writeKeyOffset] == 'u' &&
-//                            i + 1 < valueSize &&
-//                            writePool[i + 1 + writeKeyOffset] == 's') {
-//                        debug_error("error value %d %.*s\n", 
-//                                (int)valueSize,
-//                                (int)valueSize,
-//                                writePool + writeKeyOffset);
-//                    }
-//                }
                 values.push_back(valueLoc);
                 _gcWriteBackBytes += RECORD_SIZE;
             } else {

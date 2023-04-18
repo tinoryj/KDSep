@@ -161,6 +161,7 @@ usepwrite="false"
 nommap="false"
 checkRepeat="false"
 rmw="false"
+
 flushSize=4092
 sstsz=64
 l1sz=256
@@ -411,6 +412,8 @@ for param in $*; do
         checkRepeat="true"
     elif [[ "$param" == "rmw" ]]; then
         rmw="true"
+    elif [[ "$param" == "overwrite" ]]; then
+        rmw="overwrite"
     fi
 done
 
@@ -676,8 +679,10 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     sed -i "15s/0/$ReadProportion/g" workload-temp.spec
     if [[ "$rmw" == "false" ]]; then
         sed -i "16s/0/$UpdateProportion/g" workload-temp.spec
-    else
+    elif [[ "$rmw" == "true" ]]; then
         sed -i "17s/0/$UpdateProportion/g" workload-temp.spec
+    elif [[ "$rmw" == "overwrite" ]]; then
+        sed -i "18s/0/$UpdateProportion/g" workload-temp.spec
     fi
     sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
     sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
@@ -690,6 +695,8 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     fileprefix=$ResultLogFolder/Rd-$ReadProportion-Ud-$UpdateProportion-${run_suffix}
     if [[ "$rmw" == "true" ]]; then
         fileprefix=$ResultLogFolder/Rd-$ReadProportion-RMW-$UpdateProportion-${run_suffix}
+    elif [[ "$rmw" == "overwrite" ]]; then
+        fileprefix=$ResultLogFolder/Rd-$ReadProportion-OW-$UpdateProportion-${run_suffix}
     fi
 
     output_file=`generate_file_name ${fileprefix}`

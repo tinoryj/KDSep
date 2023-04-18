@@ -307,8 +307,8 @@ public:
         // write value or offset
 
         valueType.rawValueSize_ = flength;
-        indexInfo.externalFileID_ = 0;
-        indexInfo.externalFileOffset_ = foffset;
+        indexInfo.externalFileID_ = (uint32_t)(foffset >> 32);
+        indexInfo.externalFileOffset_ = (uint32_t)(foffset % (1ull << 32));
         indexInfo.externalContentSize_ = flength;
 
         memcpy(str, &valueType, sizeof(internalValueType));

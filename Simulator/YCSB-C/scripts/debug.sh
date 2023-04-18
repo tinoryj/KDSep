@@ -161,7 +161,7 @@ l1Sizes=(256)
 kdc=512
 mem="16g"
 
-ExpName="_d2"
+ExpName="_d3"
 flengths=("100" "400")
 reqs=("100M" "25M")
 flengths=("400")
@@ -170,10 +170,10 @@ flengths=("100")
 reqs=("10M")
 cacheSizes=(3072 4096 5120 6144)
 cacheSizes=(4096)
-ops=("5M")
+ops=("10M")
 indexSet=(1)
 runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
-runModeSet=('kvkd')
+runModeSet=('kv')
 if [[ $(diff ycsbc ycsbc_debug | wc -l ) -eq 1 ]]; then
     bonus="noterelease"
 else
@@ -186,6 +186,9 @@ bonus2="initBit7"
 bonus3="ec"
 bonus3="di"
 bonus4="nodirectreads"
+
+bonus2="overwrite"
+bonus4=""
 gcWriteBackSize=200
 checkrepeat=""
 

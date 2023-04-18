@@ -38,18 +38,6 @@ bool IndexStoreInterface::put(mempoolHandler_t objectPairMemPoolHandler, bool sy
     char buffer[sizeof(uint32_t) + objectPairMemPoolHandler.valueSize_];
     memcpy(buffer, &objectPairMemPoolHandler.sequenceNumber_, sizeof(uint32_t));
     memcpy(buffer + sizeof(uint32_t), objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
-//    for (int i = 0; i < objectPairMemPoolHandler.valueSize_; i++) {
-//        if (objectPairMemPoolHandler.valuePtr_[i] == 'u' && 
-//                i + 2 < objectPairMemPoolHandler.valueSize_ &&
-//                objectPairMemPoolHandler.valuePtr_[i+1] == 's' &&
-//                objectPairMemPoolHandler.valuePtr_[i+2] == 'e') {
-//            debug_error("value error: size %d %.*s\n",
-//                    (int)objectPairMemPoolHandler.valueSize_,
-//                    (int)objectPairMemPoolHandler.valueSize_,
-//                    objectPairMemPoolHandler.valuePtr_);
-//            exit(1);
-//        }
-//    }
     STAT_PROCESS(kvServer_->putValue(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_, buffer, objectPairMemPoolHandler.valueSize_ + sizeof(uint32_t), valueLoc, sync), StatsType::UPDATE);
     return true;
 }
@@ -87,16 +75,6 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
     }
 
     valueStrPtr->assign(std::string(value + sizeof(uint32_t), valueSize - sizeof(uint32_t)));
-
-//    for (int i = sizeof(uint32_t); i < valueSize; i++) {
-//        if (value[i] == 'u' && i + 1 < valueSize && value[i+1] == 's') {
-//            debug_error("value error: size %d %.*s\n",
-//                    (unsigned long)valueSize - sizeof(uint32_t),
-//                    (unsigned long)valueSize - sizeof(uint32_t), 
-//                    value + sizeof(uint32_t));
-//            exit(1);
-//        }
-//    }
 
     debug_trace("get key [%.*s] valueSize %d seqnum %u\n", (int)keyStr.length(), keyStr.c_str(), (int)valueSize, (seqNumberPtr) ? *seqNumberPtr : 5678);
     if (value) {
