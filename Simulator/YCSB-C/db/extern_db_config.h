@@ -66,6 +66,7 @@ class ExternDBConfig {
     bool deltaStore_KDLevel_cache_use_str_t_;
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
+    bool enable_index_block_;
 
     struct {
         uint64_t level;
@@ -127,6 +128,7 @@ class ExternDBConfig {
         deltaStore_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.deltaStore_KDLevel_cache_use_str_t", true);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
+        enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
     }
 
     int getBloomBits() {
@@ -308,6 +310,9 @@ class ExternDBConfig {
     }
     bool getEnableCrashConsistency() {
         return enable_crash_consistency_;
+    }
+    bool getEnableIndexBlock() {
+        return enable_index_block_;
     }
 };
 }  // namespace ycsbc

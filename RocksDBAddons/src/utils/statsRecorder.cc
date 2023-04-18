@@ -278,6 +278,9 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("map find", DELTAKV_HASHSTORE_CACHE_FIND, (time[DELTAKV_HASHSTORE_CACHE_FIND]));
     PRINT_FULL("promote", DELTAKV_HASHSTORE_CACHE_PROMOTE, (time[DELTAKV_HASHSTORE_CACHE_PROMOTE]));
 
+    fprintf(stdout, "-------------- DeltaKV HashStore Metadat Breakdown ------------------------------\n");
+    PRINT_FULL("update meta", FM_UPDATE_META, (time[FM_UPDATE_META]));
+
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
     PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_HASHSTORE_WORKER_GC]));
     PRINT_FULL("worker-gc-before-rewrite", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, (time[DELTAKV_HASHSTORE_WORKER_GC]));

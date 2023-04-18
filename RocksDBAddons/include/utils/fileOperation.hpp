@@ -40,6 +40,7 @@ public:
     FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize);
     ~FileOperation();
     FileOpStatus writeFile(char* write_buf, uint64_t size);
+    FileOpStatus writeAndFlushFile(char* write_buf, uint64_t size);
     FileOpStatus readFile(char* read_buf, uint64_t size);
     FileOpStatus positionedReadFile(char* read_buf, uint64_t offset, uint64_t size);
     FileOpStatus flushFile();

@@ -92,7 +92,6 @@ size_t GCManager::gcVLog()
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
-    debug_info("gcVLog, gcBytes %lu, gcSize %lu\n", gcBytes, gcSize);
     // scan until the designated reclaim size is reached
     while (gcBytes < gcSize) {
         // see if there is anything left over in last scan
@@ -125,28 +124,50 @@ size_t GCManager::gcVLog()
             keySizeOffset = gcSize - remains;
 
             // change key, keySize, value, valueSize, remains, compactedBytes
-            bool ret = scanKeyValue((char*)readPool, gcFront, gcSize, keySizeOffset, key, keySize, value, valueSize, remains, compactedBytes, pageSize);
+            // Input
+            //      gcFront:  starting offset in the disk
+            //      gcSize: The size of buffer
+            // Input and Output
+            //      keySizeOffset: Buffer offset where scan starts
+            //      remains: The remaining buffer bytes after scanning
+            // Output:
+            //      key, value: The pointere to the real key and value
+            //      keySize, valueSize
+            //      compactedBytes: The buffer of bytes with empty bytes
+            //          (For direct I/O, zero bytes)
+            bool ret = scanKeyValue((char*)readPool, gcFront, gcSize,
+                    keySizeOffset, key, keySize, value, valueSize, remains,
+                    compactedBytes, pageSize);
 
             if (!ret) {
                 break;
             }
 
             // check if we can read the value. Keep it to the next buffer.
-            STAT_PROCESS(valueLoc = _keyManager->getKey(key), StatsType::GC_KEY_LOOKUP);
-            debug_trace("read LSM: key [%.*s] offset %lu\n", (int)keySize, KEY_OFFSET(key), valueLoc.offset);
-            // check if pair is valid, avoid underflow by adding capacity, and overflow by modulation
-            if (valueLoc.segmentId == (_isSlave ? maxSegment : 0) && valueLoc.offset == (gcFront + keySizeOffset + capacity) % capacity) {
+            STAT_PROCESS(valueLoc = _keyManager->getKey(key),
+                    StatsType::GC_KEY_LOOKUP);
+            debug_trace("read LSM: key [%.*s] offset %lu\n", 
+                    (int)keySize, KEY_OFFSET(key), valueLoc.offset);
+            // check if pair is valid, avoid underflow by adding capacity, and
+            // overflow by modulation
+            if (valueLoc.segmentId == (_isSlave ? maxSegment : 0) &&
+                    valueLoc.offset == (gcFront + keySizeOffset + capacity) %
+                    capacity) {
                 rewrittenKeys++;
                 // buffer full, flush before write
                 if (!Segment::canFit(_gcSegment.write, RECORD_SIZE)) {
                     // Flush to Vlog
-                    STAT_PROCESS(tie(logOffset, len) = _valueManager->flushSegmentToWriteFront(_gcSegment.write, /* isGC = */ true), StatsType::GC_FLUSH);
+                    STAT_PROCESS(tie(logOffset, len) =
+                            _valueManager->flushSegmentToWriteFront(_gcSegment.write,
+                                /* isGC = */ true), StatsType::GC_FLUSH);
                     assert(len > 0);
                     // update metadata
                     for (auto& v : values) {
+                        // buffer (relative) offset to disk (absolute) offset
                         v.offset = (v.offset + logOffset) % capacity;
                     }
-                    STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
+                    STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys,
+                                values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
                     if (!ret) {
                         debug_error("Failed to update %lu keys to LSM\n", keys.size());
                         assert(0);
@@ -163,6 +184,16 @@ size_t GCManager::gcVLog()
                 keys.push_back((char*)writePool + writeKeyOffset);
                 valueLoc.offset = writeKeyOffset;
                 valueLoc.length = valueSize;
+//                for (int i = 0; i < valueSize; i++) {
+//                    if (writePool[i + writeKeyOffset] == 'u' &&
+//                            i + 1 < valueSize &&
+//                            writePool[i + 1 + writeKeyOffset] == 's') {
+//                        debug_error("error value %d %.*s\n", 
+//                                (int)valueSize,
+//                                (int)valueSize,
+//                                writePool + writeKeyOffset);
+//                    }
+//                }
                 values.push_back(valueLoc);
                 _gcWriteBackBytes += RECORD_SIZE;
             } else {

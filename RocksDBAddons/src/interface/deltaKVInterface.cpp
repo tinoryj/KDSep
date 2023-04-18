@@ -317,7 +317,14 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                     debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                     STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
                     if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                        STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
+                        bool ret;
+                        STAT_PROCESS(ret = PutImpl(key, *value),
+                                StatsType::DELTAKV_GET_PUT_WRITE_BACK);
+                        if (ret == false) {
+                            debug_error("Write back failed key %s\n",
+                                    key.c_str());
+                            exit(1);
+                        }
                         //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
                         //                    writeBackOperationsQueue_->push(newPair);
                     }
@@ -432,7 +439,17 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                           writeBackWhenReadDeltaNumerThreshold_ != 0) ||
                         (totalDeltaSizes > writeBackWhenReadDeltaSizeThreshold_
                          && writeBackWhenReadDeltaSizeThreshold_ != 0))) {
-                    STAT_PROCESS(PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
+                    bool ret;
+                    STAT_PROCESS(ret = PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
+                    if (ret == false) {
+                        debug_error("write back failed key %s value %.*s\n", key.c_str(), 
+                                (int)internalRawValueStrT.size_, internalRawValueStrT.data_);
+                        for (auto& it : deltaInStrT) {
+                            debug_error("delta %.*s\n", (int)it.size_,
+                                    it.data_);
+                        }
+                        exit(1);
+                    }
 //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
 //                    writeBackOperationsQueue_->push(newPair);
                 }
@@ -462,7 +479,12 @@ bool DeltaKV::Put(const string& key, const string& value)
         }
     }
 
-    return PutImpl(key, value);
+    bool ret = PutImpl(key, value);
+    if (ret == false) {
+        debug_error("write failed %s\n", key.c_str());
+        exit(1);
+    }
+    return ret;
 }
 
 bool DeltaKV::PutImpl(const string& key, const string& value) {
@@ -474,7 +496,7 @@ bool DeltaKV::PutImpl(const string& key, const string& value) {
     STAT_PROCESS(insertMemPoolStatus = objectPairMemPool_->insertContentToMemPoolAndGetHandler(key, value, currentSequenceNumber, true, mempoolHandler), StatsType::DELTAKV_INSERT_MEMPOOL);
     if (insertMemPoolStatus == false) {
         debug_error("insert to mempool failed, key %s value size %lu\n", key.c_str(), value.size());
-        exit(1);
+        return false;
     }
     bool putOperationStatus = true;
     bool deleteMemPoolHandlerStatus = false;
@@ -807,6 +829,9 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
 
     bool ret;
     STAT_PROCESS(ret = PutImpl(key, newValueStr), StatsType::DELTAKV_WRITE_BACK_PUT);
+    if (ret == false) {
+        debug_error("write back failed, key %s\n", key.c_str());
+    }
 
     return ret;
 }
@@ -835,10 +860,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     gettimeofday(&tv, 0);
 //    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
     if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_ || 
-            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitNumber_))
+            maxBatchOperationBeforeCommitSize_)
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -854,10 +876,7 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t mempoolHandler)
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
     if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_ || 
-            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitNumber_))
+            maxBatchOperationBeforeCommitSize_)
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
@@ -935,9 +954,7 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     gettimeofday(&tv, 0);
 //    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
     if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_ || 
-            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitNumber_))
+            maxBatchOperationBeforeCommitSize_)
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -954,9 +971,7 @@ bool DeltaKV::MergeWithWriteBatch(mempoolHandler_t mempoolHandler)
     debug_info("Current buffer id = %lu, used size = %lu\n", currentWriteBatchDequeInUse, batchedOperationsCounter[currentWriteBatchDequeInUse]);
 //    if (batchedOperationsCounter[currentWriteBatchDequeInUse] == ) 
     if (batchedOperationsSizes[currentWriteBatchDequeInUse] >=
-            maxBatchOperationBeforeCommitSize_ || 
-            (deltaKVRunningMode_ == kBatchedWithDeltaStore &&
-            batchedOperationsCounter[currentWriteBatchDequeInUse] >= maxBatchOperationBeforeCommitNumber_))
+            maxBatchOperationBeforeCommitSize_)
     {
         // flush old one
         notifyWriteBatchMQ_->push(writeBatchMapForSearch_[currentWriteBatchDequeInUse]);
@@ -1300,6 +1315,7 @@ void DeltaKV::processWriteBackOperationsWorker()
             bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
             if (writeBackStatus == false) {
                 debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
+                exit(1);
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }

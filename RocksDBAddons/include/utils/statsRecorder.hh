@@ -112,6 +112,8 @@ enum StatsType {
     DELTAKV_BATCH_READ_MERGE_ALL,
     DELTAKV_BATCH_READ_STORE,
 
+    FM_UPDATE_META,
+
     /* merge requests */
     DKV_MERGE_LOCK_1,
     DKV_MERGE_LOCK_2,

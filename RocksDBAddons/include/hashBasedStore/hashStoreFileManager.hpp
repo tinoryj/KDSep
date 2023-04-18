@@ -38,6 +38,7 @@ public:
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag);
 //    bool flushAllBuffers();
     bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
+    bool RemoveObsoleteFiles();
     bool prepareForUpdatingMetadata(vector<hashStoreFileMetaDataHandler*>& file_hdls);
 
     // recovery
@@ -63,6 +64,7 @@ private:
     bool enableBatchedOperations_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
+    bool enable_crash_consistency_ = false;
     vector<uint64_t> targetDeleteFileHandlerVec_;
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;

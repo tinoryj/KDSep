@@ -12,6 +12,11 @@
 extern double ops_time[6];
 extern long ops_cnt[6];
 
+extern uint64_t read_cnt;
+extern uint64_t read_finish_cnt;
+extern uint64_t update_cnt;
+extern uint64_t update_finish_cnt;
+
 namespace ycsbc {
 
 class Client {
@@ -53,13 +58,17 @@ inline Operation Client::DoTransaction() {
     timer.Start();
     switch (operation_type) {
         case READ:
+            read_cnt++;
             status = TransactionRead();
+            read_finish_cnt++;
             ops_time[READ] += timer.End();
             ops_cnt[READ]++;
             //      fprintf(fr,"%.0f,",timer.End());
             break;
         case UPDATE:
+            update_cnt++;
             status = TransactionUpdate();
+            update_finish_cnt++;
             ops_time[UPDATE] += timer.End();
             ops_cnt[UPDATE]++;
             // fprintf(fw, "%.0f,", timer.End());

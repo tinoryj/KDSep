@@ -148,7 +148,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     if (directIO == true) {
         options_.rocksdbRawOptions_.use_direct_reads = directReads;
         options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
-        options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kDirectIO;
+        options_.fileOperationMethod_ = (directReads) ?
+            DELTAKV_NAMESPACE::kDirectIO : DELTAKV_NAMESPACE::kAlignLinuxIO;
     } else {
         options_.rocksdbRawOptions_.allow_mmap_reads = useMmap;
         options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
@@ -256,6 +257,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta(); 
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
     options_.enable_crash_consistency = config.getEnableCrashConsistency();
+    options_.enable_index_block = config.getEnableIndexBlock();
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);

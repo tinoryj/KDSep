@@ -116,7 +116,7 @@ cacheSize="$((1024 * 1024 * 1024))"
 kvCacheSize=0
 blobCacheSize=0
 kdcache=0
-workerThreadNumber=12
+workerThreadNumber=8
 gcThreadNumber=2
 deltaLogGCThreshold=0.9
 deltaLogSplitGCThreshold=0.45
@@ -129,7 +129,9 @@ bloomBits=10
 maxOpenFiles=1048576
 gcWriteBackSize=1000
 enableParallel="false"
+enableIndexBlock="true"
 enableCrashConsistency="false"
+to=0
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -287,6 +289,12 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
         MAXRunTimes=$(echo $param | sed 's/round//g')
+    elif [[ "$param" =~ ^timeout[0-9]+$ ]]; then
+        tmp=$(echo $param | sed 's/timeout//g')
+        if [[ $tmp -ne $to ]]; then
+            run_suffix=${run_suffix}_to${tmp}
+            to=$tmp
+        fi
     elif [[ "$param" =~ ^maxFileNumber[0-9]+$ ]]; then
         maxFileNumber=$(echo $param | sed 's/maxFileNumber//g')
     elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
@@ -372,6 +380,11 @@ for param in $*; do
         if [[ "$havekd" == "true" ]]; then
             enableParallel="true"
             run_suffix=${run_suffix}_ep
+        fi
+    elif [[ "$param" == "di" ]]; then
+        if [[ "$havekd" == "true" ]]; then
+            enableIndexBlock="false"
+            run_suffix=${run_suffix}_di
         fi
     elif [[ "$param" == "ec" ]]; then
         if [[ "$havekd" == "true" ]]; then
@@ -465,6 +478,10 @@ fi
 
 if [[ "$enableParallel" == "true" ]]; then
     sed -i "/parallel_lsm_tree_interface/c\\parallel_lsm_tree_interface = true" temp.ini
+fi
+
+if [[ "$enableIndexBlock" == "false" ]]; then
+    sed -i "/enable_index_block/c\\enable_index_block = false" temp.ini
 fi
 
 if [[ "$enableCrashConsistency" == "true" ]]; then
@@ -668,7 +685,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
     fi
     echo "<===================== Modified spec file content =====================>"
-    cat workload-temp.spec | head -n 25 | tail -n 17
+#    cat workload-temp.spec | head -n 25 | tail -n 17
 
     fileprefix=$ResultLogFolder/Rd-$ReadProportion-Ud-$UpdateProportion-${run_suffix}
     if [[ "$rmw" == "true" ]]; then
@@ -705,8 +722,16 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
     echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
 
-    ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
-    retvalue=$?
+
+    set -x
+    if [[ $to -ne 0 ]]; then
+        timeout -k ${to}s ${to}s ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file &
+        newpid=$!
+        wait $newpid
+    else
+        ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
+    fi
+    set +x
     loaded="false"
     echo "output at $output_file"
     log_db_status $workingDB $output_file

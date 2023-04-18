@@ -37,6 +37,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
+    enable_crash_consistency_ = options->enable_crash_consistency;
     operationNumberForMetadataCommitThreshold_ = options->deltaStore_operationNumberForMetadataCommitThreshold_;
     singleFileSplitGCTriggerSize_ = options->deltaStore_split_garbage_collection_start_single_file_minimum_occupancy_ * options->deltaStore_single_file_maximum_size;
     file_trie_.init(initialTrieBitNumber_, maxBucketNumber_);
@@ -45,6 +46,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     syncStatistics_ = true;
     singleFileFlushSize_ = options->deltaStore_file_flush_buffer_size_limit_;
     deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
+    enable_index_block_ = options->enable_index_block;
     RetriveHashStoreFileMetaDataList();
 }
 
@@ -108,7 +110,8 @@ bool HashStoreFileManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     FileOpStatus status;
-    STAT_PROCESS(status = commit_log_fop_->writeFile(write_buf, write_buf_sz),
+    STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
+                write_buf_sz),
            StatsType::DELTAKV_HASHSTORE_PUT_COMMIT_LOG); 
 
     if (status.success_ == false) {
@@ -781,10 +784,10 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         for (auto it : validObjectVec) {
             if (it.second->file_op_ptr->isFileOpen() == true) {
                 std::scoped_lock<std::shared_mutex> flush_lock(it.second->fileOperationMutex_);
-                FileOpStatus flushedSizePair = it.second->file_op_ptr->flushFile();
-                StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
+//                FileOpStatus flushedSizePair = it.second->file_op_ptr->flushFile();
+//                StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
                 debug_trace("flushed file ID = %lu, file correspond prefix = %s\n", it.second->file_id, it.first.c_str());
-                it.second->total_on_disk_bytes += flushedSizePair.physicalSize_;
+//                it.second->total_on_disk_bytes += flushedSizePair.physicalSize_;
                 hashStoreFileManifestStream << it.first << endl;
                 hashStoreFileManifestStream << it.second->file_id << endl;
                 hashStoreFileManifestStream << it.second->prefix_bit << endl;
@@ -834,6 +837,30 @@ bool HashStoreFileManager::UpdateHashStoreFileMetaDataList()
         debug_error("[ERROR] Could not open hashStore file metadata list pointer file currentDeltaPointer = %lu\n", currentPointerInt);
         return false;
     }
+}
+
+bool HashStoreFileManager::RemoveObsoleteFiles() {
+    // Update manifest pointer
+    vector<hashStoreFileMetaDataHandler*> invalidObjectVec;
+    file_trie_.getInvalidNodesNoKey(invalidObjectVec);
+    debug_info("Start delete obslate files, current invalid trie size = %lu\n", invalidObjectVec.size());
+    if (invalidObjectVec.size() != 0) {
+        for (auto it : invalidObjectVec) {
+            if (it) {
+                if (it->file_op_ptr->isFileOpen() == true) {
+                    it->file_op_ptr->closeFile();
+                    debug_trace("Closed file ID = %lu\n", it->file_id);
+                }
+            }
+        }
+    }
+    fileDeleteVecMtx_.lock();
+    for (auto it : targetDeleteFileHandlerVec_) {
+        deleteObslateFileWithFileIDAsInput(it);
+    }
+    targetDeleteFileHandlerVec_.clear();
+    fileDeleteVecMtx_.unlock();
+    return true;
 }
 
 bool
@@ -977,6 +1004,10 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
     if (op_type == kPut || op_type == kMultiPut) {
         operationCounterMtx_.lock();
         operationCounterForMetadataCommit_++;
+        if (operationCounterForMetadataCommit_ >=
+                operationNumberForMetadataCommitThreshold_) {
+            metaCommitCV_.notify_one();
+        }
         operationCounterMtx_.unlock();
     }
 
@@ -1098,10 +1129,27 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
             }
             // avoid get file handler which is in GC;
             if (file_hdl->file_ownership != 0) {
+//                debug_error("Wait for file ownership, file ID = %lu, "
+//                        " own = %d, gc status %d\n", file_hdl->file_id, 
+//                        (int)file_hdl->file_ownership,
+//                        (int)file_hdl->gc_status);
                 debug_trace("Wait for file ownership, file ID = %lu, for"
                         " key = %s\n", file_hdl->file_id, keyBuffer);
-                while (file_hdl->file_ownership != 0) {
-                    asm volatile("");
+                struct timeval tv, tv2;
+                gettimeofday(&tv, 0);
+                while (file_hdl->file_ownership == -1 ||
+                        (file_hdl->file_ownership == 1 && 
+                         (op_type != kMultiPut || file_hdl->markedByMultiPut_
+                          == false))) {
+                    gettimeofday(&tv2, 0);
+                    if (tv2.tv_sec - tv.tv_sec > 10) {
+                        debug_error("wait for 5 seconds; own %d, id %d, op %d\n",
+                                (int)file_hdl->file_ownership,
+                                (int)file_hdl->file_id,
+                                (int)op_type);
+                        tv = tv2;
+                    }
+//                    asm volatile("");
                     // wait if file is using in gc
                 }
                 debug_trace("Wait for file ownership, file ID = %lu, for"
@@ -1199,6 +1247,7 @@ bool HashStoreFileManager::createFileHandlerForGC(
         FileOperation(fileOperationMethod_, maxBucketSize_,
                 singleFileFlushSize_);
     file_hdl->prefix_bit = targetPrefixLen;
+    uint64_t old_id = file_hdl->file_id;
     file_hdl->file_id = generateNewFileID();
     file_hdl->file_ownership = -1;
     file_hdl->gc_status = kNew;
@@ -1468,6 +1517,7 @@ bool HashStoreFileManager::singleFileRewrite(
                 file_hdl->sorted_filter->Insert(keyIt->first.data_, keyIt->first.size_);
             }
         }
+        file_hdl->index_block->IndicesClear();
     } else {
         for (auto& keyIt : gcResultMap) {
             for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
@@ -1515,7 +1565,15 @@ bool HashStoreFileManager::singleFileRewrite(
     if (file_hdl->file_op_ptr->isFileOpen() == true) {
         // write content and update current file stream to new one.
         FileOpStatus onDiskWriteSizePair;
-        STAT_PROCESS(onDiskWriteSizePair = file_hdl->file_op_ptr->writeFile(write_buf, targetFileSize), StatsType::DELTAKV_GC_WRITE);
+        if (enable_crash_consistency_) {
+            STAT_PROCESS(onDiskWriteSizePair =
+                    file_hdl->file_op_ptr->writeAndFlushFile(write_buf,
+                        targetFileSize), StatsType::DELTAKV_GC_WRITE);
+        } else {
+            STAT_PROCESS(onDiskWriteSizePair =
+                    file_hdl->file_op_ptr->writeFile(write_buf,
+                        targetFileSize), StatsType::DELTAKV_GC_WRITE);
+        }
         file_hdl->file_op_ptr->markDirectDataAddress(targetFileSize);
         StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
         debug_trace("Rewrite done file size = %lu, file path = %s\n", targetFileSize, filename.c_str());
@@ -1679,6 +1737,7 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler*
                     new_file_hdl->sorted_filter->Insert(keyIt->first.data_, keyIt->first.size_);
                 }
             }
+            new_file_hdl->index_block->IndicesClear();
         } else {
             for (auto keyToSizeIt : prefixIt.second.first) {
                 uint64_t keySize = keyToSizeIt.first.size_;
@@ -1749,7 +1808,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler*
         uint64_t insertAtLevel =
             file_trie_.insert(needUpdateMetaDataHandlers[0].first,
                     needUpdateMetaDataHandlers[0].second);
-//        debug_error("insertAtLevel %d\n", (int)insertAtLevel);
         if (insertAtLevel == 0) {
             debug_error("[ERROR] Error insert to prefix tree, prefix length used = %lu, inserted file ID = %lu\n", needUpdateMetaDataHandlers[0].second->prefix_bit, needUpdateMetaDataHandlers[0].second->file_id);
             needUpdateMetaDataHandlers[0].second->file_op_ptr->closeFile();
@@ -1775,7 +1833,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler*
                         needUpdateMetaDataHandlers[0].second->file_id);
                 needUpdateMetaDataHandlers[0].second->prefix_bit = insertAtLevel;
             }
-//            debug_error("mark as should delete %d\n", (int)file_hdl->file_id);
             file_hdl->gc_status = kShouldDelete;
             needUpdateMetaDataHandlers[0].second->file_ownership = 0;
             fileDeleteVecMtx_.lock();
@@ -1792,11 +1849,6 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler*
                     needUpdateMetaDataHandlers[0].second,
                     needUpdateMetaDataHandlers[1].first,
                     needUpdateMetaDataHandlers[1].second);
-//        debug_error("inserts at %lu file %lu and %lu file %lu\n", 
-//                insertPrefixTreeStatus.first, 
-//                needUpdateMetaDataHandlers[0].second->file_id,
-//                insertPrefixTreeStatus.second,
-//                needUpdateMetaDataHandlers[1].second->file_id);
         if (insertPrefixTreeStatus.first == 0 || insertPrefixTreeStatus.second == 0) {
             debug_error("[ERROR] Error insert to prefix tree: target prefix 1 ="
                     " %lx, insert at level = %lu, file ID = %lu; target prefix 2 ="
@@ -2364,6 +2416,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
             uint64_t targetFileSizeWoIndexBlock = targetValidObjectSize +
                 sizeof(hashStoreFileHeader) + sizeof(hashStoreRecordHeader);
 
+
             // count valid object size to determine GC method;
             if (remainObjectNumberPair.second == 0) {
                 debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", file_hdl->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
@@ -2373,7 +2426,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                            STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -2388,7 +2441,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                            STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -2397,6 +2450,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 
             if (remainObjectNumberPair.first == 0 && gcResultMap.size() == 0) {
                 debug_info("File ID = %lu total disk size %lu have no valid objects\n", file_hdl->file_id, file_hdl->total_on_disk_bytes);
+                uint64_t old_id = file_hdl->file_id;
                 StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
                 STAT_PROCESS(singleFileRewrite(file_hdl, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
                 file_hdl->file_ownership = 0;
@@ -2404,7 +2458,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                            STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -2423,7 +2477,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                    STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -2437,7 +2491,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                    STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -2452,7 +2506,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if (enableWriteBackDuringGCFlag_ == true) {
                         if (writeBackOperationsQueue_->done != true) {
                             for (auto writeBackIt : targetWriteBackVec) {
-                                STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                             }
                         }
                     }
@@ -2470,7 +2524,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 if (enableWriteBackDuringGCFlag_ == true) {
                     if (writeBackOperationsQueue_->done != true) {
                         for (auto writeBackIt : targetWriteBackVec) {
-                            STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                            STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                         }
                     }
                 }
@@ -2480,7 +2534,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                 uint64_t prefix_len = currentUsedPrefixBitNumber + 1;
 
                 uint64_t remainEmptyFileNumber = file_trie_.getRemainFileNumber();
-                if (remainEmptyFileNumber >= singleFileGCWorkerThreadsNumebr_) {
+                if (remainEmptyFileNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
                     // cerr << "Perform split " << endl;
                     debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
                     debug_info("Perform split GC for file ID (without merge) = %lu\n", file_hdl->file_id);
@@ -2494,7 +2548,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                    STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
@@ -2506,12 +2560,13 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         if (enableWriteBackDuringGCFlag_ == true) {
                             if (writeBackOperationsQueue_->done != true) {
                                 for (auto writeBackIt : targetWriteBackVec) {
-                                    STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                    STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                                 }
                             }
                         }
                     }
                 } else {
+                    uint64_t old_id = file_hdl->file_id;
                     if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
                         STAT_PROCESS(singleFileRewrite(file_hdl, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
@@ -2521,7 +2576,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if (enableWriteBackDuringGCFlag_ == true) {
                         if (writeBackOperationsQueue_->done != true) {
                             for (auto writeBackIt : targetWriteBackVec) {
-                                STAT_PROCESS(writeBackOperationsQueue_->push(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
+                                STAT_PROCESS(writeBackOperationsQueue_->tryPush(writeBackIt), StatsType::DELTAKV_GC_WRITE_BACK);
                             }
                         }
                     }
@@ -2546,7 +2601,15 @@ void HashStoreFileManager::scheduleMetadataUpdateWorker()
             }
         }
         if (operationCounterForMetadataCommit_ >= operationNumberForMetadataCommitThreshold_) {
-            if (UpdateHashStoreFileMetaDataList() != true) {
+            bool status; 
+            if (enable_crash_consistency_) {
+                STAT_PROCESS(status = UpdateHashStoreFileMetaDataList(),
+                        StatsType::FM_UPDATE_META);
+            } else {
+                STAT_PROCESS(status = RemoveObsoleteFiles(),
+                        StatsType::FM_UPDATE_META);
+            }
+            if (status != true) {
                 debug_error("[ERROR] commit metadata for %lu operations error\n", operationCounterForMetadataCommit_);
             } else {
                 debug_info("commit metadata for %lu operations success\n", operationCounterForMetadataCommit_);

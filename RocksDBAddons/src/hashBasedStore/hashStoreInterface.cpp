@@ -12,7 +12,6 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
     enable_lsm_tree_delta_meta_ = options->enable_lsm_tree_delta_meta;
-    enable_index_block_ = options->enable_index_block;
     if (options->enable_deltaStore_garbage_collection == true) {
         notifyGCMQ_ = new messageQueue<hashStoreFileMetaDataHandler*>;
     }
@@ -152,29 +151,35 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
     // get all the file handlers 
 
     if (enable_parallel_get_hdl_) { 
-        gettimeofday(&tv, 0);
-        hashStoreOperationHandler hdls[objects.size()];
-        for (auto i = 0; i < objects.size(); i++) {
-            hdls[i].op_type = kFind;
-            hdls[i].object = &objects[i]; 
-            file_operator_->putIntoJobQueue(&hdls[i]);
-        }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
+        while (true) {
+            gettimeofday(&tv, 0);
+            hashStoreOperationHandler hdls[objects.size()];
+            for (auto i = 0; i < objects.size(); i++) {
+                hdls[i].op_type = kFind;
+                hdls[i].object = &objects[i]; 
+                file_operator_->putIntoJobQueue(&hdls[i]);
+            }
+            StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
 
-        for (auto i = 0; i < objects.size(); i++) {
-            file_operator_->waitOperationHandlerDone(&hdls[i], false);
-            auto file_hdl = hdls[i].file_hdl;
-            if (file_hdl == nullptr) {
-                // should skip current key since it is only an anchor
-                continue;
+            for (auto i = 0; i < objects.size(); i++) {
+                file_operator_->waitOperationHandlerDone(&hdls[i], false);
+                auto file_hdl = hdls[i].file_hdl;
+                if (file_hdl == nullptr) {
+                    // should skip current key since it is only an anchor
+                    continue;
+                }
+
+                if (fileHandlerToIndexMap.find(file_hdl) != fileHandlerToIndexMap.end()) {
+                    fileHandlerToIndexMap.at(file_hdl).push_back(i);
+                } else {
+                    vector<int> indexVec;
+                    indexVec.push_back(i);
+                    fileHandlerToIndexMap.insert(make_pair(file_hdl, indexVec));
+                }
             }
 
-            if (fileHandlerToIndexMap.find(file_hdl) != fileHandlerToIndexMap.end()) {
-                fileHandlerToIndexMap.at(file_hdl).push_back(i);
-            } else {
-                vector<int> indexVec;
-                indexVec.push_back(i);
-                fileHandlerToIndexMap.insert(make_pair(file_hdl, indexVec));
+            if (enable_bucket_size_limit_ == false) {
+                break;
             }
         }
     } else {
@@ -282,8 +287,9 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
             if (it != nullptr && 
                     it->file_op_ptr->getFileBufferedSize() > 0) {
                 if (it->file_ownership != 0) {
-                    debug_error("wait file owner ship %lu\n",
-                            it->file_id);
+                    debug_error("wait file owner ship %lu %d\n",
+                            it->file_id,
+                            (int)it->file_ownership);
                 }
                 while (it->file_ownership != 0) {
                     asm volatile("");

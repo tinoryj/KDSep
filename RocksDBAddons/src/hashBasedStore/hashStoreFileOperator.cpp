@@ -20,6 +20,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     }
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
+    enable_index_block_ = options->enable_index_block;
 //    notifyGCToManagerMQ_ = notifyGCToManagerMQ;
     hashStoreFileManager_ = hashStoreFileManager;
     workingDir_ = workingDirStr;
@@ -1342,6 +1343,7 @@ void HashStoreFileOperator::operationWorker(int threadID)
                 debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
                 break;
             }
+
             if (operationsStatus == false) {
                 file_hdl->file_ownership = 0;
                 debug_trace("Process file ID = %lu error\n", file_hdl->file_id);

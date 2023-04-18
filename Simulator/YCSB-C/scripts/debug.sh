@@ -180,12 +180,13 @@ else
     bnous="notedebug"
 fi
 #maxBucketNumber=128
-maxBucketNumber=32768
+maxBucketNumber=4096
 bonus2="initBit7"
 #bonus3="workloade"
 bonus3="ec"
-bonus3=""
+bonus3="di"
 bonus4="nodirectreads"
+gcWriteBackSize=200
 checkrepeat=""
 
 func

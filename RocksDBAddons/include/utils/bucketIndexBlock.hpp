@@ -24,8 +24,8 @@ class BucketIndexBlock {
     void IndicesClear();
     void Clear();
 
-//    map<string_view, size_t> indices;
-    map<string, size_t> indices;
+    map<string_view, size_t> indices;
+//    map<string, size_t> indices;
 
     private:
     map<string_view, size_t> mp_; 

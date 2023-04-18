@@ -3,7 +3,7 @@
 DN=`dirname $0`
 source $DN/common.sh
 
-concatFunc "sst_sz" "blob_sz" "rss" "c_sz" "read_lt" "rmw_lt" "tot_rw" "thpt" "file"
+concatFunc "sst_sz" "blob_sz" "tot_sz" "rss" "read_lt" "rmw_lt" "tot_rw" "thpt" "file"
 
 files=$*
 
@@ -21,6 +21,8 @@ for file in ${files[@]}; do
     blob_sz=`grep "blob, num" $file | awk 'BEGIN {t=0;} {t=$1;} END {print t / 1024.0;}'`
     rss=`grep "resident" $file | awk 'BEGIN {t=0;} {t=$(NF-1);} END {print t;}'`
 
+    tot_sz=`grep "MiB all" $file | awk 'BEGIN {t=0;} {t=$1;} END {print t / 1024;}'`
+
     c_sz=`grep "GetUsage()" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
 
     thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
@@ -37,5 +39,5 @@ for file in ${files[@]}; do
     d_rw=`grep "dStore.*Physical.*bytes" $file | awk 'BEGIN {t=0;} {t+=$7;} END {print t / 1024.0 / 1024.0 / 1024.0;}'`
     tot_rw=`echo $d_rw $v_rw $rock_io | awk '{for (i=1;i<=NF;i++) t+=$i; print t;}'`
 
-    concatFunc "$sst_sz" "$blob_sz" "$rss" "$c_sz" "$readLatency" "$mergeLatency" "$tot_rw" "$thpt" "$file"
+    concatFunc "$sst_sz" "$blob_sz" "$tot_sz" "$rss" "$readLatency" "$mergeLatency" "$tot_rw" "$thpt" "$file"
 done

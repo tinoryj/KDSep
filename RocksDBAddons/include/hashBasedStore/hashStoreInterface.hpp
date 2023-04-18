@@ -31,9 +31,9 @@ private:
     uint64_t fileFlushThreshold_ = 0;
     bool shouldUseDirectOperationsFlag_;
     bool enable_lsm_tree_delta_meta_ = true;
-    bool enable_index_block_ = false;
     bool enable_crash_consistency_ = false;
     bool enable_parallel_get_hdl_ = true;
+    bool enable_bucket_size_limit_ = false;
     // size information
     uint64_t extractValueSizeThreshold_;
     // get function pointers

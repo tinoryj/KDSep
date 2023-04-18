@@ -241,10 +241,12 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         return false;
     }
 
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::LSM_FLUSH_WAL);
-    if (!rocksDBStatus.ok()) {
-        debug_error("[ERROR] Flush WAL, status = %s\n", rocksDBStatus.ToString().c_str());
-        return false;
+    if (lsmTreeRunningMode_ == kNoValueLog) {
+        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::LSM_FLUSH_WAL);
+        if (!rocksDBStatus.ok()) {
+            debug_error("[ERROR] Flush WAL, status = %s\n", rocksDBStatus.ToString().c_str());
+            return false;
+        }
     }
     return true;
 }

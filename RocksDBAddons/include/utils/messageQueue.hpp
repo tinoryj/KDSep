@@ -16,6 +16,7 @@ public:
     messageQueue();
     ~messageQueue() = default;
     boost::atomic<bool> done;
+    bool tryPush(T& data);
     bool push(T& data);
     bool pop(T& data);
     bool isEmpty();
@@ -36,6 +37,12 @@ bool messageQueue<T>::push(T& data)
     while (!lockFreeQueue_.push(data))
         ;
     return true;
+}
+
+template <typename T>
+bool messageQueue<T>::tryPush(T& data)
+{
+    return lockFreeQueue_.push(data);
 }
 
 template <typename T>

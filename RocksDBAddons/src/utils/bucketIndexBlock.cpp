@@ -16,8 +16,8 @@ void BucketIndexBlock::Insert(const str_t& key, size_t kd_size) {
 }
 
 void BucketIndexBlock::Insert(const string_view& key, size_t kd_size) {
-    indices[string(key)] = kd_size;
-//    indices[key] = kd_size;
+//    indices[string(key)] = kd_size;
+    indices[key] = kd_size;
 }
 
 void BucketIndexBlock::EnlargeBuffer(size_t needed_size) {

@@ -190,6 +190,7 @@ cutKDCache="false"
 #checkrepeat=""
 
 mem="16g"
+reqs=("105M")
 
 if [[ 1 -eq 2 ]]; then
     bonus="rmw"
@@ -228,13 +229,14 @@ ops=("20M")
 checkrepeat="checkrepeat"
 bonus=""
 indexSet=(1) 
-ops=("50M")
+ops=("100M")
 ExpName="_p36_exp2_r10"
 runModeSet=('bkv' 'raw' 'kv' 'bkvkd' 'kvkd' 'kd')
 #func
 
 ### Test part
-ExpName="_p36_test"
+ExpName="_p36_test_part2"
+ExpName="_p36_test_part3"
 maxBucketNumber=32768
 runModeSet=('bkvkd' 'kvkd' 'kd')
 #func
@@ -243,42 +245,90 @@ maxBucketNumber=16384
 runModeSet=('bkvkd' 'kvkd' 'kd')
 #func
 
-checkrepeat=""
-maxBucketNumber=32768
-runModeSet=('bkvkd' 'bkv')
-bonus2="flushSize0"
-bonus3="initBit8"
-#func
-bonus2="flushSize0"
-bonus3="initBit20"
-#func
+runModeSet=('bkv' 'kv' 'raw')
+mem=""
 bonus2=""
-bonus3="initBit8"
-#func
-bonus3="initBit8"
-bonus4=""
 bonus5=""
-mem="16g"
-func
-bonus4=""
-exit
-func
+#func
 #exit
-runModeSet=('bkvkd' 'bkv' 'raw' 'kd')
-indexSet=(1) 
-func
-checkrepeat="checkrepeat"
-exit
+
+checkrepeat=""
+maxBucketNumber=16384
+
+rs=('bkvkd' 'kvkd' 'kd')
+runModeSet=('bkvkd' 'kvkd' 'kd')
+
+mem=""
+bonus2=""
+bonus3="initBit10"
+bonus4="ep"
+bonus5="timeout7200"
+splitThres=0.8
+cacheSizes=(3584)
+
+maxBucketNumber=32768
+gcWriteBackSize=600
+############ TODO
+#func
+#exit
+
+#func
+
+#for ((irs=0; irs<${#rs[@]}; irs++)); do
+#    runModeSet=("${rs[$irs]}")
+#    for ((igc=6; igc<=6; igc++)); do
+#        gcWriteBackSize=$(( $igc * 100 ))
+#        for ((ibn=8; ibn<=8; ibn++)); do
+#            maxBucketNumber=$(( $ibn * 4096 ))
+##            func
+#            break
+#        done
+#    done
+#done
+
+mem=""
+bonus2=""
+frs=('kvkd' 'kd')
+
+#for ((irs=0; irs<${#rs[@]}; irs++)); do
+#    runModeSet=("${rs[$irs]}")
+#    for ((igc=6; igc<=6; igc++)); do
+#        gcWriteBackSize=$(( $igc * 100 ))
+#        for ((ibn=6; ibn<=8; ibn++)); do
+#            maxBucketNumber=$(( $ibn * 4096 ))
+##            func
+#        done
+#    done
+#done
+
+runModeSet=('bkv' 'kv' 'raw')
+cacheSizes=(4096)
+#mem="16g"
+#bonus2="nodirectreads"
+#bonus5=""
+#func
+
+#mem="8g"
+#bonus2="nodirectreads"
+#bonus3="nommap"
+#bonus4=""
+#bonus5="nodirect"
+#func
+#exit
+
+#checkrepeat="checkrepeat"
 
 #### 4. value size
 
-ExpName="_p37_exp4_vsize"
-indexSet=(5) 
+ExpName="_p37_exp4_test"
+indexSet=(1) 
 fcs=(10 20 40 80 160 320 640)
 rreqs=("100M" "50M" "25M" "13M" "6M" "4M" "2M")
-fcs=(10 20 40 80)
-rreqs=("100M" "50M" "25M" "13M")
-runModeSet=('bkv' 'raw' 'kv' 'bkvkd' 'kvkd' 'kd') 
+
+fcs=(20 40 80)
+rreqs=("50M" "25M" "13M")
+
+runModeSet=('bkv' 'raw' 'kv')
 maxBucketNumber=32768
 flengths=(100)
 
@@ -286,15 +336,79 @@ for ((ri=0; ri<${#rreqs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     reqs=(${rreqs[$ri]})
     gcWriteBackSize=$((${fcl} * ${flengths[0]} / 2))
-    echo $gcWriteBackSize
-    func
+#    func
 done
 
-indexSet=(1) 
+runModeSet=('bkvkd' 'kvkd' 'kd') 
+cacheSizes=(3584)
+
 for ((ri=0; ri<${#rreqs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     reqs=(${rreqs[$ri]})
     gcWriteBackSize=$((${fcl} * ${flengths[0]} / 2))
-    echo $gcWriteBackSize
-    func
+#    func
 done
+
+########### Delta size!
+
+ExpName="_p37_exp4_test_delta"
+runModeSet=('bkv' 'raw' 'kv')
+cacheSizes=(4096)
+
+fcs=(20)
+fls=(400)
+reqs=("14M")
+
+for ((ri=0; ri<${#fcs[@]}; ri++)); do
+    fcl=${fcs[$ri]}
+    flengths=(${fls[$ri]})
+#    func
+done
+
+runModeSet=('bkvkd' 'kvkd' 'kd') 
+runModeSet=('kvkd') 
+cacheSizes=(3584)
+maxBucketNumber=131072
+
+for ((ri=0; ri<${#fcs[@]}; ri++)); do
+    fcl=${fcs[$ri]}
+    flengths=(${fls[$ri]})
+    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 2))
+#    func
+#    exit
+done
+
+# Test
+maxBucketNumber=262144
+for ((ri=0; ri<${#rreqs[@]}; ri++)); do
+    fcl=${fcs[$ri]}
+    flengths=(${fls[$ri]})
+    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 2))
+#    func
+done
+
+############### 5. Read ratio
+
+ExpName="_p38_exp5_ratio"
+bonus5="timeout"
+
+fcl=10
+fls=(100)
+flengths=(100)
+reqs=("105M")
+indexSet=(1 3 5 7 9) 
+
+runModeSet=('kvkd' 'kd') 
+cacheSizes=(3584)
+maxBucketNumber=32768
+func
+
+runModeSet=('bkv' 'kv' 'raw') 
+cacheSizes=(4096)
+func
+
+indexSet=(9) 
+runModeSet=('bkvkd') 
+cacheSizes=(3584)
+maxBucketNumber=32768
+func

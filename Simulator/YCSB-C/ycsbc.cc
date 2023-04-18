@@ -27,8 +27,15 @@
 
 using namespace std;
 
+uint64_t read_cnt;
+uint64_t read_finish_cnt;
+uint64_t update_cnt;
+uint64_t update_finish_cnt;
+
 void CTRLC(int s) {
     cerr << "Server exit with keyboard interrupt" << endl;
+    cerr << "read: " << read_cnt << " " << read_finish_cnt << endl;
+    cerr << "update: " << update_cnt << " " << update_finish_cnt << endl;
     DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
     exit(1);
 }
@@ -84,6 +91,7 @@ long ops_cnt[6] = {0};
 int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops,
                    bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> &histogram) {
     db->Init();
+    read_cnt = read_finish_cnt = update_cnt = update_finish_cnt = 0;
     ycsbc::Client client(*db, *wl);
     int oks = 0;
     ycsbc::Operation operation_type;
@@ -183,6 +191,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
+    setbuf(stderr, nullptr);
 
     struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;
