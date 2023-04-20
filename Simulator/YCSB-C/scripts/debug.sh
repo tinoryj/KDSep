@@ -39,11 +39,11 @@ func() {
                                     fi
 
                                     if [[ "$runMode" == "raw" ]]; then
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
                                             threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} $checkrepeat # paretokey 
                                     elif [[ "$runMode" == "bkv" ]]; then
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
                                             threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "bkvkd" ]]; then
@@ -56,12 +56,12 @@ func() {
                                             kdcacheSize=$(( ${cacheSize} - 1 ))
                                             blockCacheSize=$(( 1 ))
                                         fi
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs bn$bucketNumber splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
                                             readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} # load no_store #paretokey
                                     elif [[ "$runMode" == "kv" ]]; then
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$cacheSize \
                                             threads$threadNumber readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} $checkrepeat #paretokey
                                     elif [[ "$runMode" == "kvkd" ]]; then
@@ -74,7 +74,7 @@ func() {
                                             kdcacheSize=$(( ${cacheSize} - 1 ))
                                             blockCacheSize=$(( 1 ))
                                         fi
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs  bn$bucketNumber batchTestNum${batchTestNum} splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
                                             readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} #paretokey
@@ -89,7 +89,7 @@ func() {
                                             kdcacheSize=$(( ${cacheSize} - 1 ))
                                             blockCacheSize=$(( 1 ))
                                         fi
-                                        scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+                                        scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
                                             cache$blockCacheSize kdcache${kdcacheSize} \
                                             threads$threadNumber workerT$works gcT$gcs bn$bucketNumber splitThres${splitThres} gcWriteBackSize${gcWriteBackSize} \
                                             readRatio$ratio Exp$ExpName bs${bs} ${bonus6} ${bonus5} mem${mem} ${bonus} ${bonus4} ${bonus2} ${bonus3} #paretokey
@@ -98,7 +98,7 @@ func() {
                             done
                         done
                     done
-#		scripts/run.sh $runMode req${req} op${op} fc10 fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
+#		scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${fl} sst${sst} memtable${memtable} l1sz${l1sz} \
 #		    cache$cacheSize \
 #		    readRatio$ratio Exp$ExpName bs${bs} clean 
                 done
@@ -111,6 +111,7 @@ works=8
 gcs=2
 rounds=1
 bfs=(10)
+fcl=10
 batchTestNum=10k
 indexSet=(1 3 5 7 9 10)
 
@@ -159,7 +160,7 @@ mtSizes=(64)
 l1Sizes=(256)
 
 kdc=512
-mem="16g"
+mem=""
 
 ExpName="_d3"
 flengths=("100" "400")
@@ -170,14 +171,14 @@ flengths=("100")
 reqs=("10M")
 cacheSizes=(3072 4096 5120 6144)
 cacheSizes=(4096)
-ops=("10M")
+ops=("50M")
 indexSet=(1)
 runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
-runModeSet=('kv')
+runModeSet=('kvkd')
 if [[ $(diff ycsbc ycsbc_debug | wc -l ) -eq 1 ]]; then
     bonus="noterelease"
 else
-    bnous="notedebug"
+    bonus="notedebug"
 fi
 #maxBucketNumber=128
 maxBucketNumber=4096
@@ -187,10 +188,17 @@ bonus3="ec"
 bonus3="di"
 bonus4="nodirectreads"
 
-bonus2="overwrite"
-bonus4=""
+bonus2=""
+bonus3="load"
+bonus4="" # "shortprepare"
 gcWriteBackSize=200
 checkrepeat=""
+reqs=("1000M")
+fcl=10
+kdc=0
+
+fcl=1
+bonus2="up2x"
 
 func
 exit

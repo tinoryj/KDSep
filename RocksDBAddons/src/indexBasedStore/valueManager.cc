@@ -402,24 +402,26 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
         key_len_t tmpKeySize;
         memcpy(&tmpKeySize, valueStr, sizeof(key_len_t)); 
         if (tmpKeySize != keySize) {
-            debug_error("read key size error! %d v.s. %d\n",
-                    (int)tmpKeySize, (int)keySize);
-            exit(1);
+            debug_error("read key size error! %d v.s. %d key %.*s off %lu\n",
+                    (int)tmpKeySize, (int)keySize,
+                    (int)keySize, 
+                    keyStr + sizeof(key_len_t),
+                    readValueLoc.offset);
+            ret = false;
+        } else {
+            memcpy(&tmpValueSize, valueStr + sizeof(key_len_t) + keySize,
+                    sizeof(len_t)); 
+            if (tmpValueSize != valueSize) {
+                debug_error("read value size error! %lu v.s. %lu\n",
+                        (uint64_t)tmpValueSize, (uint64_t)valueSize);
+                ret = false;
+            } else {
+                offLen = { sizeof(len_t) + KEY_REC_SIZE, valueSize };
+                memmove(valueStr, valueStr + KEY_REC_SIZE + sizeof(len_t), valueSize);
+                debug_trace("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
+                ret = true;
+            }
         }
-        memcpy(&tmpValueSize, valueStr + sizeof(key_len_t) + keySize,
-                sizeof(len_t)); 
-        if (tmpValueSize != valueSize) {
-            debug_error("read value size error! %lu v.s. %lu\n",
-                    (uint64_t)tmpValueSize, (uint64_t)valueSize);
-            exit(1);
-        }
-    
-        assert(valueSize == readValueLoc.length);
-        offLen = { sizeof(len_t) + KEY_REC_SIZE, valueSize };
-        assert(memcmp(valueStr, keyStr, KEY_REC_SIZE) == 0);
-        memmove(valueStr, valueStr + KEY_REC_SIZE + sizeof(len_t), valueSize);
-        debug_trace("Read disk offset %lu length %lu %x\n", readValueLoc.offset, offLen.second, valueStr[0]);
-        ret = true;
     } else {
         // read data
         valueStr = (char*)buf_malloc(readValueLoc.length + KEY_REC_SIZE);

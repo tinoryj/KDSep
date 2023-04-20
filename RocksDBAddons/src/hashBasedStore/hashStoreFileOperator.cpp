@@ -1149,7 +1149,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
             file_hdl->file_ownership = 0;
             return true;
-        } else if (enable_index_block_) { 
+        } else if (enable_index_block_) {
             // Do not enable index block, directly write 
             // Not exist in cache, find the content in the file
             str_t key_str_t(key.data(), key.size());
@@ -1259,6 +1259,69 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             file_hdl->file_ownership = 0;
             return true;
         }
+    } else if (enable_index_block_) {
+        // Do not enable index block, directly write 
+        // Not exist in cache, find the content in the file
+        str_t key_str_t(key.data(), key.size());
+
+        vector<string_view> kd_list;
+
+        char* buf = nullptr;
+        bool success;
+
+        if (file_hdl->index_block != nullptr) {
+            if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // only in sorted part
+                    success = readAndProcessSortedPart(file_hdl, key,
+                            kd_list, &buf);
+                } else {
+                    // both parts 
+                    success = readAndProcessBothParts(file_hdl, key,
+                            kd_list, &buf);
+                }
+            } else {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // does not exist, or not stored in the memory 
+                    if (enableLsmTreeDeltaMeta_ == true) {
+                        debug_error("[ERROR] Read bucket done, but could not"
+                                " found values for key = %s\n", key.c_str());
+                        exit(1);
+                    }
+                    valueVec.clear();
+                    file_hdl->file_ownership = 0;
+                    return true;
+                } else {
+                    // only in unsorted part
+                    success = readAndProcessUnsortedPart(file_hdl, key,
+                            kd_list, &buf);
+                }
+            }
+        } else {
+            success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+        }
+
+        valueVec.clear();
+        if (success == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+            exit(1);
+        } else if (buf == nullptr) {
+            // Key miss because (partially) sorted part does not have key
+            file_hdl->file_ownership = 0;
+            return true;
+        } 
+
+        if (kd_list.size() > 0) {
+            valueVec.reserve(kd_list.size());
+            for (auto vecIt : kd_list) {
+                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+            }
+        }
+
+        delete[] buf;
+
+        file_hdl->file_ownership = 0;
+        return true;
     } else {
         // no cache, directly read the whole file
         vector<string_view> kd_list;

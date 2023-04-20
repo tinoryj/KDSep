@@ -26,7 +26,6 @@ class ExternDBConfig {
     int numThreads_;
     size_t blockCache_;
     size_t blobCacheSize;
-    size_t gcSize_;
     size_t memtable_;
     bool tiered_;
     double GCRatio_;
@@ -85,7 +84,6 @@ class ExternDBConfig {
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
         blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
-        gcSize_ = pt_.get<size_t>("config.gcSize");
         memtable_ = pt_.get<size_t>("config.memtable");
         noCompaction_ = pt_.get<bool>("config.noCompaction");
         numThreads_ = pt_.get<int>("config.numThreads");
@@ -163,9 +161,6 @@ class ExternDBConfig {
     }
     size_t getBlobCacheSize() {
         return blobCacheSize;
-    }
-    size_t getGcSize() {
-        return gcSize_;
     }
     size_t getMemtable() {
         return memtable_;

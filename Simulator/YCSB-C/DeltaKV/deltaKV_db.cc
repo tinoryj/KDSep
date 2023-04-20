@@ -353,12 +353,27 @@ int DeltaKVDB::Insert(const std::string &table, const std::string &key,
     rocksdb::Status s;
     string fullValue;
     struct timeval tv;
+//    static uint64_t key_size = 0;
+//    static uint64_t key_cnt = 0;
+//    static uint64_t value_size = 0;
+//    static uint64_t value_cnt = 0;
+
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::WORKLOAD_OTHERS, tv_);
     gettimeofday(&tv, nullptr);
     for (long unsigned int i = 0; i < values.size() - 1; i++) {
         fullValue += (values[i].second + ",");
     }
     fullValue += values[values.size() - 1].second;
+//    fprintf(stdout, "insert key %s value %s\n", key.c_str(), fullValue.c_str());
+//    key_size += key.size();
+//    key_cnt ++;
+//    value_size += fullValue.size();
+//    value_cnt ++;
+//
+//    if (value_cnt % 50 == 0) {
+//        fprintf(stderr, "key average %.2lf\n", (double)key_size / key_cnt);
+//        fprintf(stderr, "value average %.2lf\n", (double)value_size / value_cnt);
+//    }
     bool status = db_.Put(key, fullValue);
     DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(DELTAKV_NAMESPACE::StatsType::DELTAKV_PUT, tv);
     gettimeofday(&tv_, 0);

@@ -161,6 +161,7 @@ usepwrite="false"
 nommap="false"
 checkRepeat="false"
 rmw="false"
+up2x="false"
 
 flushSize=4092
 sstsz=64
@@ -410,6 +411,9 @@ for param in $*; do
         nogc="true"
     elif [[ "$param" == "checkrepeat" ]]; then
         checkRepeat="true"
+    elif [[ "$param" == "up2x" ]]; then
+        up2x="true"
+        fieldlength=48
     elif [[ "$param" == "rmw" ]]; then
         rmw="true"
     elif [[ "$param" == "overwrite" ]]; then
@@ -495,7 +499,11 @@ if [[ "$nommap" == "true" ]]; then
     sed -i "/useMmap/c\\useMmap = false" temp.ini
 fi
 
-numMainSegment="$(( $KVPairsNumber * $fieldcount * $fieldlength / 5 * 6 / 1048576))"
+numMainSegment="$(( $KVPairsNumber * $fieldcount * $fieldlength / 10 * 13 / 1048576))"
+if [[ $numMainSegment -le 100 ]]; then
+    echo "test: numMainSegment 100"
+    numMainSegment=100
+fi
 sed -i "/numMainSegment/c\\numMainSegment = $numMainSegment" temp.ini
 sed -i "/numRangeScanThread/c\\numRangeScanThread = $scanThreads" temp.ini
 
@@ -517,6 +525,8 @@ fi
 
 if [[ $paretokey == "true" ]]; then
     suffix=${suffix}_fc${fieldcount}_paretokey_${size}
+elif [[ $up2x == "true" ]]; then
+    suffix=${suffix}_fc${fieldcount}_up2x_${size}
 else
     suffix=${suffix}_fc${fieldcount}_fl${fieldlength}_${size}
 fi
@@ -554,6 +564,8 @@ sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
 sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
 if [[ $paretokey == "true" ]]; then
     sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
+elif [[ $up2x == true ]]; then
+    sed -i "/field_len_dist/c\\field_len_dist=up2x" workload-temp.spec
 fi
 
 loaded="false"

@@ -83,12 +83,16 @@ size_t GCManager::gcVLog()
 
     // For scanKeyValue()
     char *key, *value;
-    len_t compactedBytes;
+    len_t compactedBytes = 0;
 
     // Statistics
     len_t rewrittenKeys = 0, cleanedKeys = 0;
 
     _keyManager->persistMeta();
+
+    gcFront = _segmentGroupManager->getLogGCOffset();
+    debug_error("logTail %lu gcFront %lu minus %lu -minus %lu\n", logTail,
+            gcFront, logTail - gcFront, gcFront - logTail);
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
@@ -103,7 +107,8 @@ size_t GCManager::gcVLog()
         // read and fit up only the available part of buffer
         gcFront = _segmentGroupManager->getLogGCOffset();
 
-        if ((gcFront < logTail && logTail - gcFront < gcSize * 2) || (gcFront > logTail && logTail + capacity - gcFront < gcSize * 2)) {
+        if ((gcFront < logTail && logTail - gcFront < gcSize * 2) 
+                || (gcFront > logTail && logTail + capacity - gcFront < gcSize * 2)) {
             debug_info("GC stop: go through whole log but gcBytes not enough: gcBytes %lu gcSize %lu logHead %lu logTail %lu\n",
                 gcBytes, gcSize, gcFront, logTail);
             break;
@@ -168,6 +173,8 @@ size_t GCManager::gcVLog()
                         // buffer (relative) offset to disk (absolute) offset
                         v.offset = (v.offset + logOffset) % capacity;
                     }
+                    debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
+                            logOffset + len);
                     STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys,
                                 values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
                     if (!ret) {
@@ -227,6 +234,8 @@ size_t GCManager::gcVLog()
         for (auto& v : values) {
             v.offset = (v.offset + logOffset) % capacity;
         }
+        debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
+                logOffset + len);
         // update metadata of flushed data
         STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
         if (!ret) {

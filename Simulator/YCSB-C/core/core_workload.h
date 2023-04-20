@@ -8,6 +8,7 @@
 #include "db.h"
 #include "discrete_generator.h"
 #include "dist_to_key_generator.h"
+#include "up2x_generator.h"
 #include "generator.h"
 #include "properties.h"
 #include "utils.h"
@@ -177,6 +178,8 @@ class CoreWorkload {
             delete field_len_generator_;
         if (field_len_with_key_generator_) 
             delete field_len_with_key_generator_;
+        if (up2x_generator_)
+            delete up2x_generator_;
         if (key_generator_)
             delete key_generator_;
         if (key_chooser_)
@@ -196,7 +199,8 @@ class CoreWorkload {
     bool read_all_fields_;
     bool write_all_fields_;
     Generator<uint64_t>* field_len_generator_;
-    DistToKeyGenerator* field_len_with_key_generator_;
+    DistToKeyGenerator* field_len_with_key_generator_ = nullptr;
+    UP2XGenerator* up2x_generator_ = nullptr;
     bool field_len_follow_key_;
     Generator<uint64_t>* key_generator_;
     DiscreteGenerator<Operation> op_chooser_;
@@ -228,7 +232,16 @@ inline std::string CoreWorkload::BuildKeyName(uint64_t key_num) {
         key_num = utils::Hash(key_num);
     }
 
-    return std::string("user").append(std::to_string(key_num));
+    std::string key = std::string("user").append(std::to_string(key_num));
+    if (up2x_generator_ != nullptr) {
+        uint64_t key_len = up2x_generator_->KeyLength(key);
+        uint64_t key_size = key.size();
+        if (key_len > key_size) {
+            return key;
+        }
+        return key.substr(key_size - key_len);
+    }
+    return key;
 }
 
 inline std::string CoreWorkload::NextFieldName() {

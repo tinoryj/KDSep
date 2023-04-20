@@ -52,6 +52,13 @@ bool RocksDBKeyManager::writeKeyBatch(std::vector<char*> keys, std::vector<Value
         memcpy(&keySize, keys.at(i), sizeof(key_len_t));
 
         batch.Put(rocksdb::Slice(keys.at(i) + sizeof(key_len_t), keySize), rocksdb::Slice(valueLocs.at(i).serializeIndexWrite()));
+
+//        string k(keys.at(i) + sizeof(key_len_t), (int)keySize); 
+//        if (k == "user6840842610087607159") {
+//            debug_error("%s offset %lu length %lu\n",
+//                    k.c_str(), valueLocs[i].offset,
+//                    valueLocs[i].length);
+//        }
     }
 
     rocksdb::WriteOptions wopt;
@@ -82,6 +89,12 @@ bool RocksDBKeyManager::writeKeyBatch(std::vector<std::string>& keys, std::vecto
         key_len_t keySize;
         memcpy(&keySize, keys.at(i).c_str(), sizeof(key_len_t));
         batch.Put(rocksdb::Slice(keys.at(i).c_str() + sizeof(key_len_t), (int)keySize), rocksdb::Slice(valueLocs.at(i).serializeIndexWrite()));
+//        string k = keys.at(i).substr(sizeof(key_len_t), (int)keySize); 
+//        if (k == "user6840842610087607159") {
+//            debug_error("%s offset %lu length %lu\n",
+//                    k.c_str(), valueLocs[i].offset,
+//                    valueLocs[i].length);
+//        }
     }
 
     rocksdb::WriteOptions wopt;
@@ -154,6 +167,11 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<char*> keys, std::vector<Value
         valueString = valueLocs[i].serializeIndexUpdate();
         vslice = rocksdb::Slice(valueString);
         debug_trace("mergeKeyBatch %s offset %lu length %lu\n", kslice.ToString().c_str(), valueLocs[i].offset, valueLocs[i].length);
+//        if (string(KEY_OFFSET(keys.at(i)), (int)keySize) == "user6840842610087607159") {
+//            debug_error("mergeKeyBatch %s offset %lu length %lu\n",
+//                    kslice.ToString().c_str(), valueLocs[i].offset,
+//                    valueLocs[i].length);
+//        }
         STAT_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("mergeKeyBatch failed: %s\n", s.ToString().c_str());
@@ -185,6 +203,11 @@ bool RocksDBKeyManager::mergeKeyBatch(std::vector<std::string>& keys, std::vecto
         assert((int)keySize + sizeof(key_len_t) == keys.at(i).length());
         kslice = rocksdb::Slice(keys.at(i).substr(sizeof(key_len_t), (int)keySize));
         vslice = rocksdb::Slice(valueLocs.at(i).serializeIndexUpdate());
+//        if (keys.at(i).substr(sizeof(key_len_t), (int)keySize) == "user6840842610087607159") {
+//            debug_error("mergeKeyBatch %s offset %lu length %lu\n",
+//                    kslice.ToString().c_str(), valueLocs[i].offset,
+//                    valueLocs[i].length);
+//        }
         STAT_PROCESS(s = _lsm->Merge(wopt, kslice, vslice), StatsType::MERGE_INDEX_UPDATE);
         if (!s.ok()) {
             debug_error("%s\n", s.ToString().c_str());

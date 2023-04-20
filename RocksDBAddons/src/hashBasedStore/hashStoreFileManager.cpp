@@ -15,7 +15,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     }
     k = k - 1;
     if (options->deltaStore_prefix_tree_initial_bit_number_ > k) {
-        initialTrieBitNumber_ = k;
+        initialTrieBitNumber_ = k - 1;
     } else {
         initialTrieBitNumber_ = options->deltaStore_prefix_tree_initial_bit_number_;
     }
@@ -1060,12 +1060,13 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                     file_hdl),
                 StatsType::DELTAKV_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus || file_hdl == nullptr) {
-            debug_error("[ERROR] create new bucket, key %s\n", keyBuffer);
+            debug_error("[ERROR] create new bucket, key %.*s\n", 
+                    (int)keySize, keyBuffer);
             return false;
         } else {
-            debug_info("[Insert] Create new file ID = %lu, for key = %s, file"
+            debug_info("[Insert] Create new file ID = %lu, for key = %.*s, file"
                     " gc status flag = %d, prefix bit number used = %lu\n",
-                    file_hdl->file_id, keyBuffer,
+                    file_hdl->file_id, (int)keySize, keyBuffer,
                     file_hdl->gc_status,
                     file_hdl->prefix_bit);
             if (op_type == kMultiPut) {
@@ -1406,7 +1407,8 @@ inline void HashStoreFileManager::clearMemoryForTemporaryMergedDeltas(unordered_
     }
 }
 
-inline void HashStoreFileManager::putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values) {
+inline void HashStoreFileManager::putKeyValueListToAppendableCache(
+        const str_t& currentKeyStr, vector<str_t>& values) {
     vector<str_t>* cacheVector = new vector<str_t>;
     for (auto& it : values) {
         str_t newValueStr(new char[it.size_], it.size_);
@@ -2405,7 +2407,10 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                     if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
                             (total_kd_size > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
                         fileContainsReWriteKeysFlag = true;
-                        putKeyValueListToAppendableCache(keyIt.first, keyIt.second.first);
+                        if (keyToValueListCacheStr_ != nullptr) {
+                            putKeyValueListToAppendableCache(keyIt.first,
+                                    keyIt.second.first);
+                        }
                         string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
                         writeBackObjectStruct* newWriteBackObject = new writeBackObjectStruct(currentKeyForWriteBack, "", 0);
                         targetWriteBackVec.push_back(newWriteBackObject);

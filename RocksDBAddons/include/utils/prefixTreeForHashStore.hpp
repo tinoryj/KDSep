@@ -69,6 +69,7 @@ public:
 
     void init(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
+        debug_error("init %lu %lu\n", initBitNumber, maxFileNumber);
         init_bit_num_ = initBitNumber;
         fixed_bit_num_ = initBitNumber - 1;
         if (fixed_bit_num_ > 64) {

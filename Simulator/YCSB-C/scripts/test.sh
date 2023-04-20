@@ -49,7 +49,6 @@ func() {
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
                                         if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
                                             blockCacheSize=$(( ${cacheSize} - 1 ))
@@ -67,7 +66,6 @@ func() {
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
                                         if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
                                             blockCacheSize=$(( ${cacheSize} - 1 ))
@@ -82,7 +80,6 @@ func() {
                                         if [[ "$ratio" == "1" ]]; then
                                             bucketNumber=1024 
                                         fi
-                                        kdcacheSize=$(( 512 ))
                                         blockCacheSize=$(( ${cacheSize} - $kdcacheSize ))
                                         if [[ "$bonus" == "rmw" && "$cutKDCache" == "true" ]]; then
                                             blockCacheSize=$(( ${cacheSize} - 1 ))
@@ -396,19 +393,37 @@ fcl=10
 fls=(100)
 flengths=(100)
 reqs=("105M")
+
+
+
+##### Running
 indexSet=(1 3 5 7 9) 
 
-runModeSet=('kvkd' 'kd') 
+runModeSet=('raw') 
+cacheSizes=(4096)
+#func
+
+indexSet=(5 7 9) 
+runModeSet=('kd') 
 cacheSizes=(3584)
 maxBucketNumber=32768
-func
-
-runModeSet=('bkv' 'kv' 'raw') 
-cacheSizes=(4096)
-func
+#func
 
 indexSet=(9) 
 runModeSet=('bkvkd') 
 cacheSizes=(3584)
 maxBucketNumber=32768
-func
+#func
+
+##### Test
+
+kdcs=(32 64 128 256 1024)
+
+for ((kdcsi=0; kdcsi<${#kdcs[@]}; kdcsi++)); do
+    kdcacheSize=${kdcs[$kdcsi]}
+    indexSet=(1) 
+    cacheSizes=(3584)
+    runModeSet=('bkvkd') 
+    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 10 * 6))
+    func
+done

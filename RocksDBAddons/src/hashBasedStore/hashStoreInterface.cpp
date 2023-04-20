@@ -345,6 +345,10 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
             } else {
                 StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_EXIST_FALSE, 1, 1);
             }
+            if (ret == false) {
+                debug_error("failed %s\n", keyStr.c_str());
+                exit(1);
+            }
             return ret;
         } else {
             tempFileHandler->file_ownership = 0;

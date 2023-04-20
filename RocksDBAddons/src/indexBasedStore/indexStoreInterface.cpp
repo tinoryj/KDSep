@@ -32,13 +32,19 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool IndexStoreInterface::put(mempoolHandler_t objectPairMemPoolHandler, bool sync)
+bool IndexStoreInterface::put(mempoolHandler_t pool_obj, bool sync)
 {
     externalIndexInfo valueLoc;
-    char buffer[sizeof(uint32_t) + objectPairMemPoolHandler.valueSize_];
-    memcpy(buffer, &objectPairMemPoolHandler.sequenceNumber_, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint32_t), objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
-    STAT_PROCESS(kvServer_->putValue(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_, buffer, objectPairMemPoolHandler.valueSize_ + sizeof(uint32_t), valueLoc, sync), StatsType::UPDATE);
+//    if (string(pool_obj.keyPtr_, pool_obj.keySize_) ==
+//            "user6840842610087607159") {
+//        debug_error("put key [%.*s]\n",
+//                (int)pool_obj.keySize_, pool_obj.keyPtr_);
+//    }
+
+    char buffer[sizeof(uint32_t) + pool_obj.valueSize_];
+    memcpy(buffer, &pool_obj.sequenceNumber_, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), pool_obj.valuePtr_, pool_obj.valueSize_);
+    STAT_PROCESS(kvServer_->putValue(pool_obj.keyPtr_, pool_obj.keySize_, buffer, pool_obj.valueSize_ + sizeof(uint32_t), valueLoc, sync), StatsType::UPDATE);
     return true;
 }
 
@@ -68,7 +74,24 @@ bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo
         debug_error("addr too large: %lu\n", tmpAddr);
     }
 
-    STAT_PROCESS(kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
+//    if (keyStr == "user6840842610087607159") {
+//        debug_error("get key [%.*s] offset %x%x %lu valueSize %d\n",
+//                (int)keyStr.length(), keyStr.c_str(),
+//                storageInfo.externalFileID_, storageInfo.externalFileOffset_,
+//                tmpAddr,
+//                storageInfo.externalContentSize_);
+//    }
+
+    bool ret;
+    STAT_PROCESS(ret = kvServer_->getValue(key, keyStr.length(), value, valueSize, storageInfo), StatsType::GET);
+
+    if (ret == false) {
+        debug_trace("get key [%.*s] offset %x%x valueSize %d\n",
+                (int)keyStr.length(), keyStr.c_str(),
+                storageInfo.externalFileID_, storageInfo.externalFileOffset_,
+                storageInfo.externalContentSize_);
+        exit(1);
+    }
 
     if (seqNumberPtr != nullptr) {
         memcpy(seqNumberPtr, value, sizeof(uint32_t));
