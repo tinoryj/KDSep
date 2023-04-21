@@ -394,12 +394,13 @@ fls=(100)
 flengths=(100)
 reqs=("105M")
 
+kdcacheSize=512
 
 
 ##### Running
 indexSet=(1 3 5 7 9) 
-
-runModeSet=('raw') 
+indexSet=(9) 
+runModeSet=('raw' 'kv') 
 cacheSizes=(4096)
 #func
 
@@ -407,17 +408,17 @@ indexSet=(5 7 9)
 runModeSet=('kd') 
 cacheSizes=(3584)
 maxBucketNumber=32768
-#func
+func
 
 indexSet=(9) 
 runModeSet=('bkvkd') 
 cacheSizes=(3584)
 maxBucketNumber=32768
-#func
+func
 
 ##### Test
 
-kdcs=(32 64 128 256 1024)
+kdcs=(64 128 256 1024)
 
 for ((kdcsi=0; kdcsi<${#kdcs[@]}; kdcsi++)); do
     kdcacheSize=${kdcs[$kdcsi]}

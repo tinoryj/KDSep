@@ -29,6 +29,46 @@ generate_file_name() {
     echo "$filename.log"
 }
 
+config_workload() {
+    SPEC=$1
+    sed -i "/recordcount/c\\recordcount=$KVPairsNumber" $SPEC
+    sed -i "/operationcount/c\\operationcount=$OperationsNumber" $SPEC
+    sed -i "/fieldcount/c\\fieldcount=$fieldcount" $SPEC
+    sed -i "/fieldlength/c\\fieldlength=$fieldlength" $SPEC
+    if [[ $paretokey == "true" ]]; then
+        sed -i "/field_len_dist/c\\field_len_dist=paretokey" $SPEC
+    elif [[ $up2x == true ]]; then
+        sed -i "/field_len_dist/c\\field_len_dist=up2x" $SPEC
+        ReadProportion=0.0746
+        UpdateProportion=0.9253
+        sed -i "/overwriteproportion/c\\overwriteproportion=0.0001" $SPEC
+    fi
+
+    if [[ "$workloadd" == "true" ]]; then
+        sed -i "/readproportion/c\\readproportion=0.95" $SPEC
+        sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
+        sed -i "/requestdistribution/c\\requestdistribution=latest" $SPEC
+        ReadProportion=0.95
+        UpdateProportion=0
+    fi
+
+    if [[ "$workloade" == "true" ]]; then
+        sed -i "/scanproportion/c\\scanproportion=0.95" $SPEC
+        sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
+        ReadProportion=0
+        UpdateProportion=0
+    fi
+
+    sed -i "/readproportion/c\\readproportion=$ReadProportion" $SPEC
+    if [[ "$rmw" == "false" ]]; then
+        sed -i "/updateproportion/c\\updateproportion=$UpdateProportion" $SPEC
+    elif [[ "$rmw" == "true" ]]; then
+        sed -i "/readmodifywriteproportion/c\\readmodifywriteproportion=$UpdateProportion" $SPEC
+    elif [[ "$rmw" == "overwrite" ]]; then
+        sed -i "/overwriteproportion/c\\overwriteproportion=$UpdateProportion" $SPEC
+    fi
+}
+
 log_db_status() {
     DBPath=$1
     ResultLogFile=$2
@@ -365,9 +405,17 @@ for param in $*; do
         keep="true"
         run_suffix=${run_suffix}_keep
     elif [[ "$param" == "workloadd" ]]; then
+        if [[ $workloadd == "true" || $workloade == "true" ]]; then
+            echo "error: repeated workload D/E"
+            exit
+        fi
         workloadd="true"
         run_suffix=${run_suffix}_workloadd
     elif [[ "$param" == "workloade" ]]; then
+        if [[ $workloadd == "true" || $workloade == "true" ]]; then
+            echo "error: repeated workload D/E"
+            exit
+        fi
         workloade="true"
         run_suffix=${run_suffix}_workloade
     elif [[ "$param" == "shortprepare" ]]; then
@@ -499,7 +547,7 @@ if [[ "$nommap" == "true" ]]; then
     sed -i "/useMmap/c\\useMmap = false" temp.ini
 fi
 
-numMainSegment="$(( $KVPairsNumber * $fieldcount * $fieldlength / 10 * 13 / 1048576))"
+numMainSegment="$(( $KVPairsNumber * (24 + $fieldcount * $fieldlength) / 10 * 13 / 1048576))"
 if [[ $numMainSegment -le 100 ]]; then
     echo "test: numMainSegment 100"
     numMainSegment=100
@@ -551,21 +599,10 @@ if [ ! -d $ResultLogFolder ]; then
     mkdir -p $ResultLogFolder
 fi
 
-if [ -f workload-temp.spec ]; then
-    rm -rf workload-temp.spec
+SPEC="workload-temp.spec"
+if [ -f $SPEC ]; then
+    rm -rf $SPEC 
     echo "Deleted old workload spec"
-fi
-
-echo "Modify spec for load"
-cp workloads/workloadTemplate.spec ./workload-temp.spec
-sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
-sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
-sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
-sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
-if [[ $paretokey == "true" ]]; then
-    sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
-elif [[ $up2x == true ]]; then
-    sed -i "/field_len_dist/c\\field_len_dist=up2x" workload-temp.spec
 fi
 
 loaded="false"
@@ -604,6 +641,11 @@ if [[ "$cleanFlag" == "true" ]]; then
 fi
 
 if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
+    echo "Modify spec for load"
+    SPEC="./workload-temp.spec"
+    cp workloads/workloadTemplate.spec $SPEC 
+    config_workload $SPEC
+
     rm -rf $loadedDB
     if [[ -d $workingDB ]]; then
         rm -rf $workingDB
@@ -638,17 +680,14 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
 
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC 
-    sed -i "9s/NaN/$KVPairsNumber/g" $SPEC 
+    config_workload $SPEC
     if [[ "$shortprepare" == "true" ]]; then
-        sed -i "10s/NaN/10000/g" $SPEC 
+        sed -i "/operationcount/c\\operationcount=10000" $SPEC
     else
-        sed -i "10s/NaN/10000000/g" $SPEC 
+        sed -i "/operationcount/c\\operationcount=10000000" $SPEC
     fi
-#    sed -i "10s/NaN/10000/g" $SPEC 
-    sed -i "15s/0/1/g" $SPEC
-    sed -i "16s/0/0/g" $SPEC
-    sed -i "24s/NaN/$fieldcount/g" $SPEC
-    sed -i "25s/NaN/$fieldlength/g" $SPEC
+    sed -i "/readproportion/c\\readproportion=1" $SPEC
+    sed -i "/updateproportion/c\\updateproportion=0" $SPEC
     echo "<===================== Prepare =====================>"
     ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P ${SPEC} -phase run -configpath $configPath > ${output_file}-prepare
     echo "output at ${output_file}-prepare"
@@ -670,37 +709,9 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     fi
     UpdateProportion=$(echo "" | awk '{print 1.0-'"$ReadProportion"';}')
     echo "Modify spec, Read/Update ratio = $ReadProportion:$UpdateProportion"
-    cp workloads/workloadTemplate.spec ./workload-temp.spec
-    sed -i "9s/NaN/$KVPairsNumber/g" workload-temp.spec
-    sed -i "10s/NaN/$OperationsNumber/g" workload-temp.spec
-
-    if [[ "$workloadd" == "true" ]]; then
-        sed -i "23s/zipfian/latest/g" workload-temp.spec
-        sed -i "20s/0/0.05/g" workload-temp.spec
-        ReadProportion=0.95
-        UpdateProportion=0
-    fi
-
-    if [[ "$workloade" == "true" ]]; then
-        sed -i "19s/0/0.95/g" workload-temp.spec
-        sed -i "20s/0/0.05/g" workload-temp.spec
-        ReadProportion=0
-        UpdateProportion=0
-    fi
-
-    sed -i "15s/0/$ReadProportion/g" workload-temp.spec
-    if [[ "$rmw" == "false" ]]; then
-        sed -i "16s/0/$UpdateProportion/g" workload-temp.spec
-    elif [[ "$rmw" == "true" ]]; then
-        sed -i "17s/0/$UpdateProportion/g" workload-temp.spec
-    elif [[ "$rmw" == "overwrite" ]]; then
-        sed -i "18s/0/$UpdateProportion/g" workload-temp.spec
-    fi
-    sed -i "24s/NaN/$fieldcount/g" workload-temp.spec
-    sed -i "25s/NaN/$fieldlength/g" workload-temp.spec
-    if [[ $paretokey == "true" ]]; then
-        sed -i "/field_len_dist/c\\field_len_dist=paretokey" workload-temp.spec
-    fi
+    SPEC="./workload-temp.spec"
+    cp workloads/workloadTemplate.spec $SPEC 
+    config_workload $SPEC
     echo "<===================== Modified spec file content =====================>"
 #    cat workload-temp.spec | head -n 25 | tail -n 17
 
@@ -741,7 +752,6 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
     echo "<===================== Benchmark the database (Round $roundIndex) start =====================>"
 
-
     set -x
     if [[ $to -ne 0 ]]; then
         timeout -k ${to}s ${to}s ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file &
@@ -756,8 +766,8 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     log_db_status $workingDB $output_file
     echo "<===================== Benchmark the database (Round $roundIndex) done =====================>"
     # Cleanup
-    if [ -f workload-temp.spec ]; then
-        rm -rf workload-temp.spec
+    if [ -f $SPEC ]; then
+        rm -rf $SPEC 
         echo "Deleted old workload spec"
     fi
     if [[ $roundIndex -eq $MAXRunTimes ]]; then

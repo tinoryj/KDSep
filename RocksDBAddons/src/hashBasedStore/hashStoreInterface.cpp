@@ -136,9 +136,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
 
     bool need_flush = false;
     if (enable_crash_consistency_ == true) {
-        // TODO write to the commit log
         // write to the commit log
-
         bool write_commit_log_status = 
             file_manager_->writeToCommitLog(objects, need_flush);
         if (write_commit_log_status == false) {

@@ -215,7 +215,6 @@ inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
         // extract the oprand
         if (header_ptr->mergeFlag_ == true) {
             // index update
-            // TODO fix a bug: If the value is not separated, but there is an index update.
             assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= operand.size_);
             new_value_index = str_t(operand.data_ + delta_off + header_size, value_index_size);
             delta_off += header_size + value_index_size;
@@ -268,20 +267,16 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     const int header_size = sizeof(internalValueType);
     const int value_index_size = sizeof(externalIndexInfo);
 
-    internalValueType* value_header_ptr; 
-    internalValueType output_header;
+    internalValueType value_header; 
 
-    value_header_ptr = (internalValueType*)const_cast<char*>(existing_value->data());
+    memcpy(&value_header, existing_value->data(), header_size);
 
     vector<str_t> leadingRawDeltas;
     vector<str_t> deltas;
     str_t operand;
 
-    bool value_separated = value_header_ptr->valueSeparatedFlag_;
+    bool value_separated = value_header.valueSeparatedFlag_;
     int leading_index = 0;
-
-    // TODO There may be deltas in the existing value (e.g., for kv, or
-    // selective KD separation). Do partial merge for them.
 
     // Output format:
     // If value is separated:    
@@ -292,8 +287,8 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     // Step 1. Scan the deltas in the value 
     {
         uint64_t delta_off = 0;
-        if (value_header_ptr->valueSeparatedFlag_ == false) {
-            delta_off = header_size + value_header_ptr->rawValueSize_;
+        if (value_header.valueSeparatedFlag_ == false) {
+            delta_off = header_size + value_header.rawValueSize_;
         } else {
             delta_off = header_size + sizeof(externalIndexInfo);
         }
@@ -319,21 +314,19 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 //            deltas.size(), leading_index);
 
     // Step 3. Do full merge on the value
-    // TODO fix if the value size has changed
     str_t merged_raw_value(nullptr, 0);
     bool need_free = false;
-    str_t raw_value(const_cast<char*>(existing_value->data()) + header_size, value_header_ptr->rawValueSize_);
+    str_t raw_value(const_cast<char*>(existing_value->data()) + header_size, value_header.rawValueSize_);
     if (leading_index > 0) {
         vector<str_t> raw_deltas;
         for (int i = 0; i < leading_index; i++) {
             raw_deltas.push_back(str_t(deltas[i].data_ + header_size, deltas[i].size_ - header_size));
         }
         FullMergeFieldUpdates(raw_value, raw_deltas, &merged_raw_value);
+        // need to free the space for full merge later
         need_free = true;
 
-        if (merged_raw_value.size_ != value_header_ptr->rawValueSize_) {
-            debug_error("[ERROR] value size differs after merging: %u v.s. %u\n", merged_raw_value.size_, value_header_ptr->rawValueSize_);
-        }
+        value_header.rawValueSize_ = merged_raw_value.size_;
     } else if (value_separated) {
         if (new_value_index.data_ != nullptr) {
             merged_raw_value = new_value_index;
@@ -348,9 +341,14 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     str_t partial_merged_delta(nullptr, 0);
     bool need_free_partial = false;
     if (deltas.size() - leading_index > 0) {
+        // There are deltas to merge 
         if (deltas.size() - leading_index == 1) {
+            // Only one delta. Directly append
             partial_merged_delta = deltas[leading_index]; 
         } else {
+            // TODO manage the sequence numbers
+            // copy the headers and the contents to the vector; then perform
+            // partial merge
             vector<pair<internalValueType*, str_t>> operand_type_vec;
             operand_type_vec.resize(deltas.size() - leading_index);
             uint64_t total_delta_size = 0;
@@ -362,6 +360,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
                 total_delta_size += deltas[i].size_;
             }
 
+            // partial merged delta include the header
             PartialMergeFieldUpdates(operand_type_vec, 
                     partial_merged_delta);
 
@@ -369,19 +368,21 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
                     "merged delta size %u\n",
                     operand_type_vec.size(), total_delta_size, 
                     partial_merged_delta.size_);
+
+            // need to free the partial merged delta later
             need_free_partial = true;
         }
     }
 
     // Step 5. Update header
-    output_header = *value_header_ptr;
+    // Reuse value_header as an output
     if (partial_merged_delta.size_ > 0) {
-        output_header.mergeFlag_ = true;
+        value_header.mergeFlag_ = true;
     }
 
     new_value->resize(header_size + merged_raw_value.size_ + partial_merged_delta.size_);
     char* buffer = new_value->data();
-    memcpy(buffer, &output_header, header_size);
+    memcpy(buffer, &value_header, header_size);
     if (merged_raw_value.size_ > 0) {
         memcpy(buffer + header_size, merged_raw_value.data_, merged_raw_value.size_);
         if (need_free) {

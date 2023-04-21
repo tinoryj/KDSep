@@ -174,14 +174,14 @@ cacheSizes=(4096)
 ops=("50M")
 indexSet=(1)
 runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
-runModeSet=('kvkd')
+runModeSet=('kv' 'kvkd')
 if [[ $(diff ycsbc ycsbc_debug | wc -l ) -eq 1 ]]; then
     bonus="noterelease"
 else
     bonus="notedebug"
 fi
 #maxBucketNumber=128
-maxBucketNumber=4096
+maxBucketNumber=32768
 bonus2="initBit7"
 #bonus3="workloade"
 bonus3="ec"
@@ -189,14 +189,16 @@ bonus3="di"
 bonus4="nodirectreads"
 
 bonus2=""
-bonus3="load"
+bonus3=""
 bonus4="" # "shortprepare"
 gcWriteBackSize=200
 checkrepeat=""
 reqs=("1000M")
 fcl=10
-kdc=0
+kdc=512
 
+cacheSizes=(3584)
+ops=("100M")
 fcl=1
 bonus2="up2x"
 
