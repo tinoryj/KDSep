@@ -1295,8 +1295,10 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                             it.size()));
             }
 
-            str_t merged_delta;
-            deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+            }
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
 //                    key.size(), deltas);
@@ -1337,7 +1339,6 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             }
 
             str_t merged_delta(nullptr, 0);
-
             if (deltas.size() > 0) {
                 deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
             }
