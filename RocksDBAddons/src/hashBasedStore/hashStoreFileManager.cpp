@@ -1369,7 +1369,7 @@ uint64_t HashStoreFileManager::partialMergeGcResultMap(
     uint64_t reducedObjectsNumber = 0;
 
     for (auto& keyIt : gcResultMap) {
-        if (keyIt.second.first.size() >= 3) {
+        if (keyIt.second.first.size() >= 2) {
             reducedObjectsNumber += keyIt.second.first.size() - 1;
             shouldDelete.insert(keyIt.first);
 //            for (auto i = 0; i < keyIt.second.first.size(); i++) {
