@@ -13,15 +13,15 @@ typedef std::list<key_type> list_type;
 typedef std::unordered_map<key_type, std::pair<value_type, list_type::iterator>, 
         mapHashKeyForStr_t, mapEqualKeForStr_t> map_type;
 
-class lru_cache_str_t {
+class lru_cache_str_vector {
 public:
 
-    lru_cache_str_t(size_t capacity)
+    lru_cache_str_vector(size_t capacity)
         : m_capacity(capacity), data_size(0)
     {
     }
 
-    ~lru_cache_str_t()
+    ~lru_cache_str_vector()
     {
 //        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
         clear();
@@ -224,6 +224,7 @@ public:
     }
 
     // value_element is external
+    // allocate value space in the function.
     void appendIfExist(key_type& key, str_t& value_element) {
         struct timeval tv;
         gettimeofday(&tv, 0);
@@ -348,19 +349,19 @@ private:
 //    unsigned int evicted = 0;
 };
 
-class AppendAbleLRUCacheStrTShard {
+class AppendAbleLRUCacheStrVectorShard {
 private:
-    lru_cache_str_t* Cache_;
+    lru_cache_str_vector* Cache_;
     uint64_t cacheSize_ = 0;
     std::shared_mutex cacheMtx_;
 
 public:
-    AppendAbleLRUCacheStrTShard(uint64_t cacheSize) {
+    AppendAbleLRUCacheStrVectorShard(uint64_t cacheSize) {
         cacheSize_ = cacheSize;
-        Cache_ = new lru_cache_str_t(cacheSize_);
+        Cache_ = new lru_cache_str_vector(cacheSize_);
     }
 
-    ~AppendAbleLRUCacheStrTShard() {
+    ~AppendAbleLRUCacheStrVectorShard() {
         delete Cache_;
     }
 
@@ -413,9 +414,9 @@ public:
     }
 };
 
-class AppendAbleLRUCacheStrT {
+class AppendAbleLRUCacheStrVector {
 private:
-    AppendAbleLRUCacheStrTShard** shards_ = nullptr;
+    AppendAbleLRUCacheStrVectorShard** shards_ = nullptr;
     uint32_t shard_num_ = 64;
     const uint32_t SHARD_MASK = 63;
     uint64_t cacheSize_ = 0;
@@ -425,15 +426,15 @@ private:
     }
 
 public:
-    AppendAbleLRUCacheStrT(uint64_t cacheSize) {
+    AppendAbleLRUCacheStrVector(uint64_t cacheSize) {
         cacheSize_ = cacheSize;
-        shards_ = new AppendAbleLRUCacheStrTShard*[shard_num_];
+        shards_ = new AppendAbleLRUCacheStrVectorShard*[shard_num_];
         for (int i = 0; i < shard_num_; i++) {
-            shards_[i] = new AppendAbleLRUCacheStrTShard(cacheSize / shard_num_);
+            shards_[i] = new AppendAbleLRUCacheStrVectorShard(cacheSize / shard_num_);
         }
     }
 
-    ~AppendAbleLRUCacheStrT() {
+    ~AppendAbleLRUCacheStrVector() {
         for (int i = 0; i < shard_num_; i++) {
             delete shards_[i];
         }

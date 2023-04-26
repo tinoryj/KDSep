@@ -71,7 +71,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         enableWriteBackOperationsFlag_ = true;
         writeBackWhenReadDeltaNumerThreshold_ = options.deltaStore_write_back_during_reads_threshold;
         writeBackWhenReadDeltaSizeThreshold_ = options.deltaStore_write_back_during_reads_size_threshold;
-        writeBackOperationsQueue_ = new messageQueue<writeBackObjectStruct*>;
+        writeBackOperationsQueue_ = new messageQueue<writeBackObject*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processWriteBackOperationsWorker, this));
         thList_.push_back(th);
     }
@@ -282,7 +282,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 // should read external delta store
                 vector<string> deltasFromDeltaStoreVec;
                 bool ret;
-                STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
+                STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DS_GET);
                 if (ret != true) {
                     debug_error("[ERROR] Read external deltaStore fault, key = %s\n", key.c_str());
                     return false;
@@ -321,7 +321,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                                     key.c_str());
                             exit(1);
                         }
-                        //                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+                        //                    writeBackObject* newPair = new writeBackObject(key, "", 0);
                         //                    writeBackOperationsQueue_->push(newPair);
                     }
                     return true;
@@ -335,7 +335,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
                 STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
                 if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
-                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+                    writeBackObject* newPair = new writeBackObject(key, "", 0);
                     writeBackOperationsQueue_->push(newPair);
                 }
                 return true;
@@ -376,7 +376,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         // get deltas from delta store
         vector<string> deltasFromDeltaStoreVec;
         ret = false;
-        STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DELTAKV_GET_HASHSTORE);
+        STAT_PROCESS(ret = HashStoreInterfaceObjPtr_->get(key, deltasFromDeltaStoreVec), StatsType::DS_GET);
         if (ret != true) {
             debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
             return false;
@@ -446,7 +446,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                         }
                         exit(1);
                     }
-//                    writeBackObjectStruct* newPair = new writeBackObjectStruct(key, "", 0);
+//                    writeBackObject* newPair = new writeBackObject(key, "", 0);
 //                    writeBackOperationsQueue_->push(newPair);
                 }
                 return true;
@@ -1303,7 +1303,7 @@ void DeltaKV::processWriteBackOperationsWorker()
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
         }
-        writeBackObjectStruct* currentProcessPair;
+        writeBackObject* currentProcessPair;
         while (writeBackOperationsQueue_->pop(currentProcessPair)) {
             struct timeval tv;
             gettimeofday(&tv, 0);

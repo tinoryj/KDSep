@@ -4,7 +4,7 @@
 
 namespace DELTAKV_NAMESPACE {
 
-HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager, HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue)
+HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager, HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObject*>* writeBackOperationsQueue)
 {
     if (options->hashStore_max_file_number_ == 0) {
         options->hashStore_max_file_number_ = 1;
@@ -17,7 +17,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     }
 
     if (options->enable_deltaStore_KDLevel_cache == true) {
-        options->keyToValueListCacheStr_ = new AppendAbleLRUCacheStrT(options->deltaStore_KDLevel_cache_item_number);
+        options->kd_cache = new KDLRUCache(options->deltaStore_KDLevel_cache_item_number);
     }
     if (options->enable_write_back_optimization_ == true) {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
@@ -275,6 +275,11 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         bool status;
         vector<hashStoreFileMetaDataHandler*> file_hdls; 
         status = file_manager_->prepareForUpdatingMetadata(file_hdls); 
+
+        if (status == false) {
+            debug_error("Error for updating meta: %d\n", (int)status);
+            exit(1);
+        }
 
         vector<hashStoreOperationHandler*> handlers; 
 

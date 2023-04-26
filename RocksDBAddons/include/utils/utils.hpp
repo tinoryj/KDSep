@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bits/stdc++.h>
+#include "malloc.h"
 
 using namespace std;
 
@@ -35,5 +36,7 @@ inline static void copyInc(char* buf, uint64_t& index,
 unsigned long long inline timevalToMicros(struct timeval& res) {
     return res.tv_sec * 1000000ull + res.tv_usec;
 }
+
+size_t getRss(); 
 
 }

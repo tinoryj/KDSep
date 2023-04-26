@@ -2,8 +2,6 @@
 
 #include "common/dataStructure.hpp"
 #include "interface/deltaKVOptions.hpp"
-#include "utils/appendAbleLRUCache.hpp"
-#include "utils/appendAbleLRUCacheStr.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
 #include <bits/stdc++.h>
@@ -70,11 +68,14 @@ private:
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, vector<string_view>& kd_list, const string_view& currentKey);
     void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
+    void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);
+    void updateKDCache(char* keyPtr, size_t keySize, str_t delta); 
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl);
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     HashStoreFileManager* hashStoreFileManager_ = nullptr;
-    AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
+    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
+    KDLRUCache* kd_cache_ = nullptr;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;

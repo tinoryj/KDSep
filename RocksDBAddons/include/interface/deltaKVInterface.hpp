@@ -88,7 +88,7 @@ private:
 
     std::shared_mutex batchedBufferOperationMtx_;
 
-    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_ = nullptr;
+    messageQueue<writeBackObject*>* writeBackOperationsQueue_ = nullptr;
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
     bool enableWriteBackOperationsFlag_ = false;
     std::shared_mutex writeBackOperationsMtx_;

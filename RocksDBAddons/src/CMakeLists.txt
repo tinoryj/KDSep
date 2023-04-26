@@ -33,15 +33,17 @@ else()
 endif ()
 
 add_library(DeltaKV STATIC 
+      utils/bucketIndexBlock.cpp
+      utils/bucketKeyFilter.cc
+      utils/debug.cpp
+      utils/headers.cc
+      utils/fileOperation.cpp
+      utils/mempool.cpp
       utils/murmurHash.cpp
       utils/statsRecorder.cc
       utils/timer.cpp
-      utils/debug.cpp
-      utils/fileOperation.cpp
-      utils/mempool.cpp
-      utils/bucketIndexBlock.cpp
-      utils/bucketKeyFilter.cc
-      utils/headers.cc
+      utils/utils.cc
+      utils/KDLRUCache.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

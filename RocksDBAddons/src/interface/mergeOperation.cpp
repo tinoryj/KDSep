@@ -178,6 +178,7 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operands
         }
     }
 
+    // TODO may allocate a 1-byte buffer if the operands are empty
     result.data_ = new char[result.size_];
     first = true;
     int resultIndex = 0;

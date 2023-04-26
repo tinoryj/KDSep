@@ -172,9 +172,28 @@ cacheSizes=(3584)
 runModeSet=('bkvkd' 'kd' 'kvkd')
 #func
 
+#### 3. UP2X
+
+splitThres=0.8
+cacheSizes=(4096)
+runModeSet=('kv' 'raw' 'bkv')
+reqs=("1000M")
+ops=("100M")
+fcl=1
+bonus2="up2x"
+ExpName="_p39_up2x"
+#func
+
+bonus3="initBit10"
+bonus4="wbread0"
+cacheSizes=(3584)
+runModeSet=('kvkd' 'kd' 'bkvkd')
+#func
+
 #### 4. value size
 
 ExpName="_p37_exp4_test"
+reqs=("100M")
 checkrepeat=""
 indexSet=(1) 
 fcs=(10 20 40 80 160 320 640)
@@ -349,9 +368,9 @@ for ((bssi=0; bssi<${#bss[@]}; bssi++)); do
     cacheSizes=(3584)
     runModeSet=('bkvkd' 'kvkd')
     batchSize=${bss[$bssi]}
-    if [[ $bssi -ge 1 ]]; then
+#    if [[ $bssi -ge 1 ]]; then
 #        func
-    fi
+#    fi
     cacheSizes=(4096)
     runModeSet=('bkv' 'kv')
 #    func
@@ -365,7 +384,7 @@ cacheSizes=(3584)
 runModeSet=('bkvkd' 'kvkd')
 
 for ((buci=0; buci<${#bucsizes[@]}; buci++)); do
-    bonus4=${bucsizes[$buci]}
+    bonus4="bucketSize$(( ${bucsizes[$buci]} * 1024 ))"
     maxBucketNumber=${bucnums[$buci]}
     func
 done

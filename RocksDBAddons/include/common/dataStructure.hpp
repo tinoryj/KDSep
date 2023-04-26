@@ -262,18 +262,18 @@ typedef struct hashStoreRecordHeader {
     bool is_gc_done_ = false; // to mark gc job done
 } hashStoreRecordHeader;
 
-typedef struct writeBackObjectStruct {
+typedef struct writeBackObject {
     string key;
     string value;
     uint32_t sequenceNumber;
-    writeBackObjectStruct(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+    writeBackObject(string keyIn, string valueIn, uint32_t sequenceNumberIn)
     {
         key = keyIn;
         value = valueIn;
         sequenceNumber = sequenceNumberIn;
     };
-    writeBackObjectStruct() {};
-} writeBackObjectStruct; // key to value pair fpr write back
+    writeBackObject() {};
+} writeBackObject; // key to value pair fpr write back
 
 struct lsmInterfaceOperationStruct {
     string key;

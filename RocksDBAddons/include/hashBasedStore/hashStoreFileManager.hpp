@@ -15,7 +15,7 @@ namespace DELTAKV_NAMESPACE {
 
 class HashStoreFileManager {
 public:
-    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue);
+    HashStoreFileManager(DeltaKVOptions* options, std::string workingDirStr, messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ, messageQueue<writeBackObject*>* writeBackOperationsQueue);
     ~HashStoreFileManager();
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
@@ -112,6 +112,7 @@ private:
             previousFileID2, hashStoreFileHeader& newFileHeader);
 
     void putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values); 
+    void putKDToCache(const str_t& currentKeyStr, vector<str_t>& values); 
     bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr,
             unordered_map<str_t, pair<vector<str_t>,
             vector<hashStoreRecordHeader>>, mapHashKeyForStr_t,
@@ -125,10 +126,12 @@ private:
             hashStoreFileMetaDataHandler*& currentHandlerPtr1,
             hashStoreFileMetaDataHandler*& currentHandlerPtr2, 
             uint64_t& target_prefix, uint64_t& prefix_len);
+    bool pushObjectsToWriteBackQueue(vector<writeBackObject*>& targetWriteBackVec);
     // message management
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_;
-    messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue_;
-    AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
+    messageQueue<writeBackObject*>* write_back_queue_;
+    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
+    KDLRUCache* kd_cache_ = nullptr;
     std::mutex operationNotifyMtx_;
     std::mutex metaCommitMtx_;
     std::condition_variable operationNotifyCV_;

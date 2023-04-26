@@ -3,7 +3,9 @@
 #include "common/dataStructure.hpp"
 #include "interface/mergeOperation.hpp"
 #include "rocksdb/options.h"
-#include "utils/appendAbleLRUCacheStr.hpp"
+#include "utils/KDLRUCache.hpp"
+#include "utils/appendAbleLRUCache.hpp"
+#include "utils/appendAbleLRUCacheStrVector.hpp"
 #include "utils/debug.hpp"
 #include "utils/fileOperation.hpp"
 #include <bits/stdc++.h>
@@ -101,7 +103,8 @@ public:
 
     bool enable_index_block = true;
 
-    AppendAbleLRUCacheStrT* keyToValueListCacheStr_ = nullptr;
+    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
+    KDLRUCache* kd_cache = nullptr;
 
     // dump options
     bool dumpOptions(string dumpPath);

@@ -193,41 +193,25 @@ bonus3=""
 bonus4="" # "shortprepare"
 gcWriteBackSize=200
 checkrepeat=""
-reqs=("1000M")
 fcl=10
 kdc=512
 
-splitThres=0.8
-cacheSizes=(4096)
-runModeSet=('kv' 'raw' 'bkv')
-ops=("100M")
-fcl=1
-bonus2="up2x"
-ExpName="_p39_up2x"
-#func
-
-bonus3="initBit10"
-bonus4="wbread0"
-cacheSizes=(3584)
-runModeSet=('kvkd' 'kd' 'bkvkd')
-func
-exit
-
 ##################### Part 2
 flengths=(100)
-reqs=("100M")
-ops=("50M")
+reqs=("10M")
+ops=("10M")
 
 checkrepeat=""
 maxBucketNumber=32768
 runModeSet=('bkvkd')
-bonus2="note_batch20k"
+bonus2=""
 bonus3="initBit8"
-bonus4=""
+bonus4="shortprepare"
+bonus5=""
 bonus5="nodirectreads"
-bonus6="ec"
+bonus6=""
 indexSet=(1) 
 func
 
-bonus6=""
-func
+#bonus6=""
+#func

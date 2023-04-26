@@ -65,6 +65,7 @@ public:
         }
 
         delete[] roots_;
+        delete[] rootMtx_;
     }
 
     void init(uint64_t initBitNumber, uint64_t maxFileNumber)

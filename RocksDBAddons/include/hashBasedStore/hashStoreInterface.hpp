@@ -13,7 +13,7 @@ namespace DELTAKV_NAMESPACE {
 class HashStoreInterface {
 public:
     HashStoreInterface(DeltaKVOptions* options, const string& workingDirStr, HashStoreFileManager*& hashStoreFileManager,
-        HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObjectStruct*>* writeBackOperationsQueue);
+        HashStoreFileOperator*& hashStoreFileOperator, messageQueue<writeBackObject*>* writeBackOperationsQueue);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();

@@ -15,8 +15,8 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
         operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
-    if (options->keyToValueListCacheStr_ != nullptr) {
-        keyToValueListCacheStr_ = options->keyToValueListCacheStr_;
+    if (options->kd_cache != nullptr) {
+        kd_cache_ = options->kd_cache;
     }
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
@@ -38,8 +38,8 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
 
 HashStoreFileOperator::~HashStoreFileOperator()
 {
-    if (keyToValueListCacheStr_ != nullptr) {
-        delete keyToValueListCacheStr_;
+    if (kd_cache_ != nullptr) {
+        delete kd_cache_;
     }
     if (operationToWorkerMQ_ != nullptr) {
         delete operationToWorkerMQ_;
@@ -616,10 +616,11 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         } else {
             // insert to cache if current key exist in cache && cache is enabled
             auto mempoolHandler = op_hdl->write_op.mempoolHandler_ptr_;
-            if (keyToValueListCacheStr_ != nullptr) {
-                STAT_PROCESS(putKeyValueToAppendableCacheIfExist(
-                            mempoolHandler->keyPtr_, mempoolHandler->keySize_, 
-                            mempoolHandler->valuePtr_, mempoolHandler->valueSize_, newRecordHeader.is_anchor_),
+            if (kd_cache_ != nullptr) {
+                STAT_PROCESS(updateKDCacheIfExist(
+                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
+                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
+                            newRecordHeader.is_anchor_),
                         StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE);
             }
             return true;
@@ -648,10 +649,11 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
         } else {
             // insert to cache if current key exist in cache && cache is enabled
             auto mempoolHandler = op_hdl->write_op.mempoolHandler_ptr_;
-            if (keyToValueListCacheStr_ != nullptr) {
-                STAT_PROCESS(putKeyValueToAppendableCacheIfExist(
-                            mempoolHandler->keyPtr_, mempoolHandler->keySize_, 
-                            mempoolHandler->valuePtr_, mempoolHandler->valueSize_, newRecordHeader.is_anchor_),
+            if (kd_cache_ != nullptr) {
+                STAT_PROCESS(updateKDCacheIfExist(
+                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
+                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
+                            newRecordHeader.is_anchor_),
                         StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE);
             }
             return true;
@@ -783,13 +785,15 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         // insert to cache if need
         struct timeval tv;
         gettimeofday(&tv, 0);
-        if (keyToValueListCacheStr_ != nullptr) {
+        if (kd_cache_ != nullptr) {
             struct timeval tv;
             gettimeofday(&tv, 0);
 
             for (uint32_t i = 0; i < op_hdl->multiput_op.size; i++) {
                 auto& it = op_hdl->multiput_op.mempool_handler_vec_ptr_[i];
-                putKeyValueToAppendableCacheIfExist(it.keyPtr_, it.keySize_, it.valuePtr_, it.valueSize_, it.isAnchorFlag_);
+                updateKDCacheIfExist(str_t(it.keyPtr_, it.keySize_),
+                        str_t(it.valuePtr_, it.valueSize_),
+                        it.isAnchorFlag_);
             }
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
@@ -871,7 +875,9 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
 }
 
 // for put
-inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor)
+inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(
+        char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, 
+        bool isAnchor)
 {
     str_t key(keyPtr, keySize);
         
@@ -901,13 +907,13 @@ inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* key
             merged_deltas->push_back(merged_delta);
 
             keyToValueListCacheStr_->updateCache(key, merged_deltas);
-//            keyToValueListCacheStr_->appendToCacheIfExist(key, valueStr);
         }
     }
 }
 
 // for get
-inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values) {
+inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(
+        char* keyPtr, size_t keySize, vector<str_t>& values) {
     str_t currentKeyStr(keyPtr, keySize);
 
     if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == false) {
@@ -922,7 +928,45 @@ inline void HashStoreFileOperator::putKeyValueVectorToAppendableCacheIfNotExist(
         }
 
         keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsertPtr);
-    } 
+    }
+}
+
+// for put
+inline void HashStoreFileOperator::updateKDCacheIfExist(
+        str_t key, str_t delta, bool isAnchor)
+{
+    // insert into cache only if the key has been read
+    if (isAnchor == true) {
+        kd_cache_->cleanCacheIfExist(key);
+    } else {
+        str_t old_delta = kd_cache_->getFromCache(key);
+
+        // TODO a bug here. vec may be evicted and deleted before the
+        // update
+        if (old_delta.data_ != nullptr && old_delta.size_ > 0) {
+            // if there is a delta. Merge and then update 
+            vector<str_t> temp_vec;
+            str_t merged_delta;
+            temp_vec.push_back(old_delta);
+            temp_vec.push_back(delta);
+
+            // allocated by partial merge
+            deltaKVMergeOperatorPtr_->PartialMerge(temp_vec, merged_delta);
+            kd_cache_->updateCache(key, merged_delta);
+        } else if (old_delta.data_ == nullptr && old_delta.size_ == 0) {
+            // if there is an anchor. directly update
+            str_t inserted_delta(new char[delta.size_], delta.size_);
+            memcpy(inserted_delta.data_, delta.data_, delta.size_);
+            kd_cache_->updateCache(key, inserted_delta);
+        }
+    }
+}
+
+// for get
+inline void HashStoreFileOperator::updateKDCache(
+        char* keyPtr, size_t keySize, str_t delta) {
+    str_t key(keyPtr, keySize);
+    kd_cache_->updateCache(key, delta);
 }
 
 bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* mempoolHandler)
@@ -992,7 +1036,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
                 file_hdl->file_ownership = 0;
             }
             // insert to cache if current key exist in cache && cache is enabled
-            if (keyToValueListCacheStr_ != nullptr) {
+            if (kd_cache_ != nullptr) {
                 // do not implement
             }
             return true;
@@ -1028,7 +1072,7 @@ bool HashStoreFileOperator::directlyWriteOperation(hashStoreFileMetaDataHandler*
                 file_hdl->file_ownership = 0;
             }
             // insert to cache if current key exist in cache && cache is enabled
-            if (keyToValueListCacheStr_ != nullptr) {
+            if (kd_cache_ != nullptr) {
                 // do not implement
             }
             return true;
@@ -1118,10 +1162,12 @@ bool HashStoreFileOperator::directlyMultiWriteOperation(unordered_map<hashStoreF
             jobeDoneStatus.push_back(false);
         } else {
             // insert to cache if need
-            if (keyToValueListCacheStr_ != nullptr) {
+            if (kd_cache_ != nullptr) {
                 for (auto i = 0; i < batchIt.second.size(); i++) {
                     auto& it = batchIt.second[i];
-                    putKeyValueToAppendableCacheIfExist(it.keyPtr_, it.keySize_, it.valuePtr_, it.valueSize_, it.isAnchorFlag_);
+                    updateKDCacheIfExist(str_t(it.keyPtr_, it.keySize_),
+                            str_t(it.valuePtr_, it.valueSize_),
+                            it.isAnchorFlag_);
                 }
             }
             if (enableGCFlag_ == true) {
@@ -1160,18 +1206,26 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     std::scoped_lock<std::shared_mutex> r_lock(file_hdl->fileOperationMutex_);
     // check if not flushed anchors exit, return directly.
     // try extract from cache first
-    if (keyToValueListCacheStr_ != nullptr) {
+    if (kd_cache_ != nullptr) {
         str_t currentKey(key.data(), key.size());
-        vector<str_t>* tempResultVec = keyToValueListCacheStr_->getFromCache(currentKey);
-        if (tempResultVec != nullptr) {
+        str_t delta = kd_cache_->getFromCache(currentKey);
+        if (delta.data_ != nullptr && delta.size_ > 0) {
+            // get a delta from the cache 
             struct timeval tv;
             gettimeofday(&tv, 0);
-            debug_trace("Read operations from cache, cache hit, key %s, hit vec size = %lu\n", key.c_str(), tempResultVec->size());
             valueVec.clear();
-            for (auto& it : *tempResultVec) {
-                valueVec.push_back(string(it.data_, it.size_));
-            }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_CACHE, tv);
+            valueVec.push_back(string(delta.data_, delta.size_));
+            StatsRecorder::getInstance()->timeProcess(
+                    StatsType::DS_GET_CACHE_HIT_DELTA, tv);
+            file_hdl->file_ownership = 0;
+            return true;
+        } else if (delta.data_ == nullptr && delta.size_ == 0) {
+            // get an anchor from the cache
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            valueVec.clear();
+            StatsRecorder::getInstance()->timeProcess(
+                    StatsType::DS_GET_CACHE_HIT_ANCHOR, tv);
             file_hdl->file_ownership = 0;
             return true;
         } else if (enable_index_block_) {
@@ -1242,15 +1296,11 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             }
 
             str_t merged_delta;
-            vector<str_t> merged_deltas;
             deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-            merged_deltas.push_back(merged_delta);
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
 //                    key.size(), deltas);
-            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-                    key.size(), merged_deltas);
-            delete[] merged_delta.data_;
+            updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1286,16 +1336,15 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 deltas.push_back(str_t(const_cast<char*>(it.data()), it.size()));
             }
 
-            str_t merged_delta;
-            vector<str_t> merged_deltas;
-            deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-            merged_deltas.push_back(merged_delta);
+            str_t merged_delta(nullptr, 0);
+
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+            }
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
 //                    key.size(), deltas);
-            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-                    key.size(), merged_deltas);
-            delete[] merged_delta.data_;
+            updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
 
             delete[] buf;
