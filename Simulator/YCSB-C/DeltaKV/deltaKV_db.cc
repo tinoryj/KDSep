@@ -172,7 +172,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
         options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
         options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
-        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = 1.0;                     // Default 1.0
+        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = config.getBlobGCForce(); // Default 1.0
         options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                  // Default 0
         options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
         options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
@@ -195,10 +195,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         cerr << "Enabled DeltaLog based KD separation" << endl;
         // deltaKV settings
         options_.enable_deltaStore = true;
-        uint64_t deltaLogCacheObjectNumber = config.getDeltaLogCacheObjectNumber();
-        if (deltaLogCacheObjectNumber != 0) {
+        uint64_t ds_kdcache_size = config.getDSKDCacheSize();
+        if (ds_kdcache_size != 0) {
             options_.enable_deltaStore_KDLevel_cache = true;
-            options_.deltaStore_KDLevel_cache_item_number = deltaLogCacheObjectNumber;
+            options_.deltaStore_KDLevel_cache_item_number = ds_kdcache_size;
         }
         options_.deltaStore_prefix_tree_initial_bit_number_ = config.getPrefixTreeBitNumber();
         options_.deltaStore_operationNumberForMetadataCommitThreshold_ = config.getDelteLogMetadataCommitLatency();
@@ -229,12 +229,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
     options_.deltaStore_KDLevel_cache_use_str_t = config.getDeltaStoreKDLevelCacheUseStrT();
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
-    options_.internalRocksDBBatchedOperation_ = config.getEnableRoaRocksDBBatch();
-    options_.batched_operations_number_ = config.getDeltaKVWriteBatchSize();
+    options_.write_buffer_size = config.getDeltaKVWriteBufferSize();
 
-    if (options_.enable_batched_operations_ == true && options_.batched_operations_number_ > 0) {
+    if (options_.enable_batched_operations_ == true && options_.write_buffer_size > 0) {
         options_.deltaStore_mem_pool_object_number_ = 300000; 
-            //ceil(options_.batched_operations_number_ * 3);
+            //ceil(options_.write_buffer_size * 3);
         long pagesize = sysconf(_SC_PAGE_SIZE);
         options_.deltaStore_mem_pool_object_size_ =
             (config.getMaxKeyValueSize() + pagesize - 1) / pagesize * pagesize;
@@ -272,8 +271,8 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.rocksdbRawOptions_.max_background_jobs = config.getNumThreads();
     options_.rocksdbRawOptions_.disable_auto_compactions = config.getNoCompaction();
     options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
-    options_.rocksdbRawOptions_.target_file_size_base = config.getTargetFileSizeBase() * 1024;
-    options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getMaxBytesForLevelBase() * 1024;
+    options_.rocksdbRawOptions_.target_file_size_base = config.getSSTSize();
+    options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getL1Size();
     options_.rocksdbRawOptions_.max_open_files = config.getMaxOpenFiles();
 //    options_.rocksdbRawOptions_.max_write_buffer_number = 
 //        options_.rocksdbRawOptions_.max_bytes_for_level_base /

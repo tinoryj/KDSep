@@ -44,15 +44,26 @@ config_workload() {
         sed -i "/overwriteproportion/c\\overwriteproportion=0.0001" $SPEC
     fi
 
-    if [[ "$workloadd" == "true" ]]; then
+    if [[ "$workloada" == "true" || "$workloadf" == "true" ]]; then
+        ReadProportion=0.5
+        UpdateProportion=0.5
+        rmw="true"
+    elif [[ "$workloadb" == "true" ]]; then
+        ReadProportion=0.95
+        UpdateProportion=0.05
+        rmw="true"
+    elif [[ "$workloadc" == "true" ]]; then
+        ReadProportion=1
+        UpdateProportion=0
+        rmw="true"
+    elif [[ "$workloadd" == "true" ]]; then
         sed -i "/readproportion/c\\readproportion=0.95" $SPEC
         sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
         sed -i "/requestdistribution/c\\requestdistribution=latest" $SPEC
         ReadProportion=0.95
         UpdateProportion=0
-    fi
-
-    if [[ "$workloade" == "true" ]]; then
+        rmw="true"
+    elif [[ "$workloade" == "true" ]]; then
         sed -i "/scanproportion/c\\scanproportion=0.95" $SPEC
         sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
         ReadProportion=0
@@ -158,9 +169,9 @@ blobCacheSize=0
 kdcache=0
 workerThreadNumber=8
 gcThreadNumber=2
-deltaLogGCThreshold=0.9
-deltaLogSplitGCThreshold=0.45
-batchTestNum=2000
+ds_gc_thres=0.9
+ds_split_thres=0.45
+batchSize=2  # In MiB
 cacheIndexFilter="true"
 paretokey="false"
 scanThreads=8
@@ -172,6 +183,8 @@ enableParallel="false"
 enableIndexBlock="true"
 enableCrashConsistency="false"
 to=0
+wbread=10
+blobgcforce=1.0
 # usage
 
 cp $rawConfigPath ./temp.ini
@@ -186,13 +199,18 @@ cleanFlag="false"
 usekv="false"
 usekd="false"
 usekvkd="false"
+usebkv="false"
 usebkvkd="false"
 keep="false"
+fix_workload="false"
+workloada="false"
+workloadb="false"
+workloadc="false"
 workloadd="false"
 workloade="false"
+workloadf="false"
 gc="true"
 shortprepare="false"
-maxFileNumber="16"
 blockSize=65536
 fake="false"
 nodirect="false"
@@ -232,6 +250,7 @@ for param in $*; do
         sed -i "/keyDeltaSeparation/c\\keyDeltaSeparation = true" temp.ini
     elif [[ $param == "bkv" ]]; then
         suffix=${suffix}_bkv
+        usebkv="true"
         sed -i "/blobDbKeyValueSeparation/c\\blobDbKeyValueSeparation = true" temp.ini
     elif [[ $param == "bkvkd" ]]; then
         suffix=${suffix}_bkvkd
@@ -297,8 +316,8 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^gcThres[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/gcThres//g')
-        if [[ "$tmp" != "$deltaLogGCThreshold" ]]; then
-            deltaLogGCThreshold=$(echo $param | sed 's/gcThres//g')
+        if [[ "$tmp" != "$ds_gc_thres" ]]; then
+            ds_gc_thres=$(echo $param | sed 's/gcThres//g')
             run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^scanThreads[0-9.]+$ ]]; then
@@ -309,8 +328,8 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^splitThres[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/splitThres//g')
-        if [[ "$tmp" != "$deltaLogSplitGCThreshold" ]]; then
-            deltaLogSplitGCThreshold=$(echo $param | sed 's/splitThres//g')
+        if [[ "$tmp" != "$ds_split_thres" ]]; then
+            ds_split_thres=$(echo $param | sed 's/splitThres//g')
             run_suffix=${run_suffix}_sp${tmp}
         fi
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
@@ -322,12 +341,11 @@ for param in $*; do
     elif [[ "$param" =~ ^bucketSize[0-9]+$ ]]; then
         bucketSize=$(echo $param | sed 's/bucketSize//g')
         run_suffix=${run_suffix}_${param}
-    elif [[ "$param" =~ ^batchTestNum[0-9kK]+$ ]]; then
-        tmpori=$(echo $param | sed 's/batchTestNum//g')
-        tmp=$(echo $param | sed 's/batchTestNum//g' | sed 's/k/000/g' | sed 's/K/000/g')
-        if [[ "$tmp" != "$batchTestNum" && "$havekd" == "true" ]]; then
-            batchTestNum=$tmp
-            run_suffix=${run_suffix}_bs${tmpori}
+    elif [[ "$param" =~ ^batchSize[0-9]+$ ]]; then
+        tmp=$(echo $param | sed 's/batchSize//g')
+        if [[ "$tmp" != "$batchSize" ]]; then
+            batchSize=$tmp
+            run_suffix=${run_suffix}_bs${tmp}M
         fi
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
         MAXRunTimes=$(echo $param | sed 's/round//g')
@@ -337,8 +355,6 @@ for param in $*; do
             run_suffix=${run_suffix}_to${tmp}
             to=$tmp
         fi
-    elif [[ "$param" =~ ^maxFileNumber[0-9]+$ ]]; then
-        maxFileNumber=$(echo $param | sed 's/maxFileNumber//g')
     elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/cache//g')
         cacheSize=$(($num * 1024 * 1024))
@@ -351,6 +367,18 @@ for param in $*; do
         num=$(echo $param | sed 's/blobcache//g')
         blobCacheSize=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_blc${num}
+    elif [[ "$param" =~ ^wbread[0-9]+$ ]]; then
+        num=$(echo $param | sed 's/wbread//g')
+        if [[ $wbread -ne $num && $havekd == "true" ]]; then
+            wbread=$num
+            run_suffix=${run_suffix}_wbread${num}
+        fi
+    elif [[ "$param" =~ ^blobgcforce[0-9.]+$ ]]; then
+        num=$(echo $param | sed 's/blobgcforce//g')
+        if [[ $num != "1.0" && ("$usebkv" == "true" || "$usebkvkd" == "true") ]]; then
+            run_suffix=${run_suffix}_${param}
+            blobgcforce=$num
+        fi
     elif [[ "$param" =~ ^kdcache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/kdcache//g')
         kdcache=$(($num * 1024 * 1024))
@@ -404,20 +432,26 @@ for param in $*; do
     elif [[ "$param" == "keep" ]]; then
         keep="true"
         run_suffix=${run_suffix}_keep
-    elif [[ "$param" == "workloadd" ]]; then
-        if [[ $workloadd == "true" || $workloade == "true" ]]; then
-            echo "error: repeated workload D/E"
+    elif [[ "$param" =~ ^workload[a-f]$ ]]; then
+        if [[ $fix_workload == "true" ]]; then
+            echo "error: repeated workload"
             exit
         fi
-        workloadd="true"
-        run_suffix=${run_suffix}_workloadd
-    elif [[ "$param" == "workloade" ]]; then
-        if [[ $workloadd == "true" || $workloade == "true" ]]; then
-            echo "error: repeated workload D/E"
-            exit
+        fix_workload="true"
+        if [[ "$param" == "workloada" ]]; then
+            workloada="true"
+        elif [[ "$param" == "workloadb" ]]; then
+            workloadb="true"
+        elif [[ "$param" == "workloadc" ]]; then
+            workloadc="true"
+        elif [[ "$param" == "workloadd" ]]; then
+            workloadd="true"
+        elif [[ "$param" == "workloade" ]]; then
+            workloade="true"
+        elif [[ "$param" == "workloadf" ]]; then
+            workloadf="true"
         fi
-        workloade="true"
-        run_suffix=${run_suffix}_workloade
+        run_suffix=${run_suffix}_$param
     elif [[ "$param" == "shortprepare" ]]; then
         shortprepare="true"
     elif [[ "$param" == "nocif" ]]; then
@@ -482,38 +516,37 @@ else
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
 fi
 
-# KD cache (append only)
-
-if [[ $kdcache -ne 0 ]]; then
-    sed -i "/deltaLogCacheObjectNumber/c\\deltaLogCacheObjectNumber = $kdcache" temp.ini
-fi
 
 
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
-    sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
-    sed -i "/deltaLogMaxFileNumber/c\\deltaLogMaxFileNumber = $bn" temp.ini
-    sed -i "/deltaStore_worker_thread_number_limit_/c\\deltaStore_worker_thread_number_limit_ = $workerThreadNumber" temp.ini
-    sed -i "/deltaStore_gc_thread_number_limit_/c\\deltaStore_gc_thread_number_limit_ = $gcThreadNumber" temp.ini
-    sed -i "/deltaLogGCThreshold/c\\deltaLogGCThreshold = $deltaLogGCThreshold" temp.ini
-    sed -i "/deltaLogSplitGCThreshold/c\\deltaLogSplitGCThreshold = $deltaLogSplitGCThreshold" temp.ini
-    sed -i "/deltaLogFileSize/c\\deltaLogFileSize = $bucketSize" temp.ini
-    sed -i "/deltaStoreGcWriteBackDeltaSizeThreshold/c\\deltaStoreGcWriteBackDeltaSizeThreshold = $gcWriteBackSize" temp.ini
-    sed -i "/deltaLogFileFlushSize/c\\deltaLogFileFlushSize = $flushSize" temp.ini
-    sed -i "/initBitNumber/c\\initBitNumber = $initBit" temp.ini
+    sed -i "/ds_init_bit/c\\ds_init_bit = $initBit" temp.ini
+    sed -i "/ds_bucket_buffer_size/c\\ds_bucket_buffer_size = $flushSize" temp.ini
+    sed -i "/ds_bucket_num/c\\ds_bucket_num = $bn" temp.ini
+    if [[ $kdcache -ne 0 ]]; then
+        sed -i "/ds_kdcache_size/c\\ds_kdcache_size = $kdcache" temp.ini
+    fi
+
+    sed -i "/ds_worker_thread_number_limit/c\\ds_worker_thread_number_limit = $workerThreadNumber" temp.ini
+    sed -i "/ds_gc_thread_number_limit/c\\ds_gc_thread_number_limit = $gcThreadNumber" temp.ini
+
+    sed -i "/ds_gc_thres/c\\ds_gc_thres = $ds_gc_thres" temp.ini
+    sed -i "/ds_split_thres/c\\ds_split_thres = $ds_split_thres" temp.ini
+    sed -i "/ds_bucket_size/c\\ds_bucket_size = $bucketSize" temp.ini
+    sed -i "/ds_gc_write_back_size/c\\ds_gc_write_back_size = $gcWriteBackSize" temp.ini
+    if [[ $wbread -ne 10 ]]; then
+        sed -i "/ds_read_write_back_num/c\\ds_read_write_back_num = $wbread" temp.ini
+        sed -i "/ds_read_write_back_size/c\\ds_read_write_back_size = $wbread" temp.ini
+    fi
 fi
 
-sed -i "/deltaKVWriteBatchSize/c\\deltaKVWriteBatchSize = $batchTestNum" temp.ini
+sed -i "/write_buffer_size/c\\write_buffer_size = $(( $batchSize * 1024 * 1024 ))" temp.ini
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
 sed -i "/blockSize/c\\blockSize = ${blockSize}" temp.ini
-
+sed -i "/blobgcforce/c\\blobgcforce = ${blobgcforce}" temp.ini
 totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024));
 run_suffix=${run_suffix}_tc${totCacheSize}
-
-if [[ "$maxFileNumber" -ne 16 ]]; then
-    run_suffix=${run_suffix}_maxBucketNumber${maxFileNumber}
-fi
 
 if [[ "$cacheIndexFilter" == "true" ]]; then
     sed -i "/cacheIndexAndFilterBlocks/c\\cacheIndexAndFilterBlocks = true" temp.ini
@@ -583,11 +616,11 @@ if [[ $nogc == "true" ]]; then
     sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = false" temp.ini 
 fi
 
-maxKeyValueSize=$(( (${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
-sed -i "/maxKeyValueSize/c\\maxKeyValueSize = $maxKeyValueSize" temp.ini 
+max_kv_size=$(( (${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
+sed -i "/max_kv_size/c\\max_kv_size = $max_kv_size" temp.ini 
 sed -i "/memtable/c\\memtable = $(( $memtable * 1024 * 1024 ))" temp.ini 
-sed -i "/targetFileSizeBase/c\\targetFileSizeBase = $(( $sstsz * 1024 ))" temp.ini 
-sed -i "/maxBytesForLevelBase/c\\maxBytesForLevelBase = $(( $l1sz * 1024 ))" temp.ini 
+sed -i "/sst_size/c\\sst_size = $(( $sstsz * 1024 * 1024 ))" temp.ini 
+sed -i "/l1_size/c\\l1_size = $(( $l1sz * 1024 * 1024 ))" temp.ini 
 sed -i "/bloomBits/c\\bloomBits = $bloomBits" temp.ini 
 sed -i "/maxOpenFiles/c\\maxOpenFiles = $maxOpenFiles" temp.ini 
 

@@ -174,7 +174,7 @@ cacheSizes=(4096)
 ops=("50M")
 indexSet=(1)
 runModeSet=('kv' 'bkv' 'raw' 'kvkd' 'bkvkd' 'kd')
-runModeSet=('kv' 'kvkd')
+runModeSet=('kvkd')
 if [[ $(diff ycsbc ycsbc_debug | wc -l ) -eq 1 ]]; then
     bonus="noterelease"
 else
@@ -197,11 +197,19 @@ reqs=("1000M")
 fcl=10
 kdc=512
 
-cacheSizes=(3584)
+splitThres=0.8
+cacheSizes=(4096)
+runModeSet=('kv' 'raw' 'bkv')
 ops=("100M")
 fcl=1
 bonus2="up2x"
+ExpName="_p39_up2x"
+#func
 
+bonus3="initBit10"
+bonus4="wbread0"
+cacheSizes=(3584)
+runModeSet=('kvkd' 'kd' 'bkvkd')
 func
 exit
 

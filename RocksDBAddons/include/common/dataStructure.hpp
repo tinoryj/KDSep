@@ -123,6 +123,7 @@ struct mapHashKeyForMemPoolHandler_t {
 //    true, false: delta in dStore, value in LSM-tree
 //    false, true: delta in LSM-tree, value in vLog
 //    false, false: delta in LSM-tree
+// header size: 12 bytes
 struct internalValueType {
     bool mergeFlag_ = false; // true if the value request merge.
     bool valueSeparatedFlag_ = false; // true if the value is stored outside LSM-tree
@@ -132,6 +133,7 @@ struct internalValueType {
     internalValueType(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber, uint32_t rawValueSize) : mergeFlag_(mergeFlag), valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber), rawValueSize_(rawValueSize) {} 
 };
 
+// index size: 12 bytes
 struct externalIndexInfo {
     uint32_t externalFileID_;
     uint32_t externalFileOffset_;
@@ -240,6 +242,7 @@ typedef struct hashStoreOperationHandler {
     hashStoreOperationHandler() : file_hdl(nullptr) {};
 } hashStoreOperationHandler;
 
+// header size: 24 bytes 
 typedef struct hashStoreFileHeader {
     uint64_t file_id;
     uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
@@ -250,6 +253,7 @@ typedef struct hashStoreFileHeader {
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
 
+// header size: 16 bytes
 typedef struct hashStoreRecordHeader {
     uint32_t key_size_;
     uint32_t value_size_;

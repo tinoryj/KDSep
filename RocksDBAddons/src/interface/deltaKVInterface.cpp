@@ -63,12 +63,8 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processBatchedOperationsWorker, this));
         thList_.push_back(th);
         isBatchedOperationsWithBufferInUse_ = true;
-        maxBatchOperationBeforeCommitNumber_ = options.batched_operations_number_;
-        if (options.internalRocksDBBatchedOperation_ == true) {
-            useInternalRocksDBBatchOperationsFlag_ = true;
-        } else {
-            useInternalRocksDBBatchOperationsFlag_ = false;
-        }
+        maxBatchOperationBeforeCommitNumber_ = options.write_buffer_num;
+        maxBatchOperationBeforeCommitSize_ = options.write_buffer_size;
     }
 
     if (options.enable_write_back_optimization_ == true) {

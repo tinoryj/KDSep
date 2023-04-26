@@ -31,6 +31,9 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
         workingThreadExitFlagVec_ = 0;
     }
     deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
+    fprintf(stdout, "read use partial merged delta in the KD cache!\n");
+    fprintf(stdout, "put use partial merged delta in the KD cache!\n");
+//    fprintf(stdout, "use all deltas in the KD cache!\n");
 }
 
 HashStoreFileOperator::~HashStoreFileOperator()
@@ -833,7 +836,7 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
     // insert into GC job queue if exceed the threshold
     if (file_hdl->filter->ShouldRebuild() ||
             file_hdl->DiskAndBufferSizeExceeds(perFileGCSizeLimit_) || 
-            file_hdl->total_object_bytes - file_hdl->unsorted_part_offset >= 1024 * 1024) {
+            file_hdl->total_object_bytes - file_hdl->unsorted_part_offset >= 1024 * 1024 * 1024) {
         if (file_hdl->gc_status == kNoGC) {
             file_hdl->no_gc_wait_operation_number_++;
             if (file_hdl->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
@@ -870,14 +873,36 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
 // for put
 inline void HashStoreFileOperator::putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor)
 {
-    str_t currentKeyStr(keyPtr, keySize);
-
+    str_t key(keyPtr, keySize);
+        
     // insert into cache only if the key has been read
     if (isAnchor == true) {
-        keyToValueListCacheStr_->cleanCacheIfExist(currentKeyStr);
+        keyToValueListCacheStr_->cleanCacheIfExist(key);
     } else {
-        str_t valueStr(valuePtr, valueSize);
-        keyToValueListCacheStr_->appendToCacheIfExist(currentKeyStr, valueStr);
+        vector<str_t>* vec =
+            keyToValueListCacheStr_->getFromCache(key);
+
+        // TODO a bug here. vec may be evicted and deleted before the
+        // update
+        if (vec != nullptr) {
+            str_t valueStr(valuePtr, valueSize);
+            vector<str_t> temp_vec;
+            for (auto& it : *vec) {
+                temp_vec.push_back(it);
+            }
+            temp_vec.push_back(valueStr);
+
+            str_t merged_delta;
+
+            // allocate merged_delta. The deletion is now managed by cache
+            deltaKVMergeOperatorPtr_->PartialMerge(temp_vec, merged_delta);
+
+            vector<str_t>* merged_deltas = new vector<str_t>;
+            merged_deltas->push_back(merged_delta);
+
+            keyToValueListCacheStr_->updateCache(key, merged_deltas);
+//            keyToValueListCacheStr_->appendToCacheIfExist(key, valueStr);
+        }
     }
 }
 
@@ -1215,8 +1240,17 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 deltas.push_back(str_t(const_cast<char*>(it.data()),
                             it.size()));
             }
+
+            str_t merged_delta;
+            vector<str_t> merged_deltas;
+            deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+            merged_deltas.push_back(merged_delta);
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
             putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-                    key.size(), deltas);
+                    key.size(), merged_deltas);
+            delete[] merged_delta.data_;
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1251,7 +1285,17 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             for (auto& it : kd_list) {
                 deltas.push_back(str_t(const_cast<char*>(it.data()), it.size()));
             }
-            putKeyValueVectorToAppendableCacheIfNotExist(key.data(), key.size(), deltas);
+
+            str_t merged_delta;
+            vector<str_t> merged_deltas;
+            deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+            merged_deltas.push_back(merged_delta);
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
+            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+                    key.size(), merged_deltas);
+            delete[] merged_delta.data_;
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
 
             delete[] buf;

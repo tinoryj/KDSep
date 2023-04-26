@@ -32,40 +32,40 @@ class ExternDBConfig {
     bool key_value_separation_;
     bool key_delta_separation_;
     bool blob_db_key_value_separation_;
-    uint64_t target_file_size_base_;
-    uint64_t max_bytes_for_level_base_;
+    uint64_t sst_size;
+    uint64_t l1_size;
     uint64_t blob_file_size_;
-    uint64_t deltaLog_file_size_;
-    uint64_t deltaLog_file_flush_size_;
-    double deltaLog_gc_threshold_;
-    double deltaLog_split_gc_threshold_;
-    uint64_t deltaLog_cache_object_number_;
-    uint64_t deltaLog_file_number_;
-    uint64_t deltaStore_operationNumberForMetadataCommitThreshold_;
-    uint64_t deltaStore_operationNumberForForcedGCThreshold_;
-    uint64_t deltaStore_worker_thread_number_limit;
-    uint64_t deltaStore_gc_thread_number_limit;
-    bool deltaStore_enable_gc;
+    uint64_t ds_file_size_;
+    uint64_t ds_file_flush_size_;
+    double ds_gc_threshold_;
+    double ds_split_gc_threshold_;
+    uint64_t ds_kdcache_size_;
+    uint64_t ds_file_number_;
+    uint64_t ds_operationNumberForMetadataCommitThreshold_;
+    uint64_t ds_operationNumberForForcedGCThreshold_;
+    uint64_t ds_worker_thread_number_limit;
+    uint64_t ds_gc_thread_number_limit;
+    bool ds_enable_gc;
     bool deltaKV_enable_batch;
-    uint64_t deltaStore_write_back_during_reads_threshold_ = 5;
-    uint64_t deltaStore_write_back_during_reads_size_threshold_ = 5;
-    uint64_t deltaStore_gc_write_back_delta_num_ = 5;
-    uint64_t deltaStore_gc_write_back_delta_size_ = 2000;
-    uint64_t deltaKVWriteBatchSize_ = 5;
+    uint64_t ds_write_back_during_reads_threshold_ = 5;
+    uint64_t ds_write_back_during_reads_size_threshold_ = 5;
+    uint64_t ds_gc_write_back_delta_num_ = 5;
+    uint64_t ds_gc_write_back_delta_size_ = 2000;
+    uint64_t write_buffer_size_ = 2 * 1024 * 1024;
     uint64_t deltaKVCacheObjectNumber_;
     uint64_t prefixTreeBitNumber_;
     bool enableDeltaKVCache_ = false;
-    bool enableRawRocksDBBatch_;
     bool enableLsmTreeDeltaMeta_;
     uint64_t blockSize;
     uint64_t minBlobSize;
     bool cacheIndexAndFilterBlocks_;
-    uint64_t maxKeyValueSize;
+    uint64_t max_kv_size;
     uint64_t maxOpenFiles;
-    bool deltaStore_KDLevel_cache_use_str_t_;
+    bool ds_KDLevel_cache_use_str_t_;
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
     bool enable_index_block_;
+    double blobgcforce_;
 
     struct {
         uint64_t level;
@@ -84,6 +84,7 @@ class ExternDBConfig {
         fakeDirectIO_ = pt_.get<bool>("config.fakeDirectIO");
         blockCache_ = pt_.get<size_t>("config.blockCache");
         blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
+        blobgcforce_ = pt_.get<double>("config.blobgcforce", 1.0);
         memtable_ = pt_.get<size_t>("config.memtable");
         noCompaction_ = pt_.get<bool>("config.noCompaction");
         numThreads_ = pt_.get<int>("config.numThreads");
@@ -92,38 +93,37 @@ class ExternDBConfig {
         key_value_separation_ = pt_.get<bool>("config.keyValueSeparation");
         key_delta_separation_ = pt_.get<bool>("config.keyDeltaSeparation");
         blob_db_key_value_separation_ = pt_.get<bool>("config.blobDbKeyValueSeparation");
-        target_file_size_base_ = pt_.get<uint64_t>("config.targetFileSizeBase", 65536);
-        max_bytes_for_level_base_ = pt_.get<uint64_t>("config.maxBytesForLevelBase", 262144);
+        sst_size = pt_.get<uint64_t>("config.sst_size", 65536 * 1024);
+        l1_size = pt_.get<uint64_t>("config.l1_size", 262144 * 1024);
         blob_file_size_ = pt_.get<uint64_t>("config.blobFileSize");
-        deltaLog_file_size_ = pt_.get<uint64_t>("deltaStore.deltaLogFileSize");
-        deltaLog_file_flush_size_ = pt_.get<uint64_t>("deltaStore.deltaLogFileFlushSize");
-        deltaLog_gc_threshold_ = pt_.get<double>("deltaStore.deltaLogGCThreshold");
-        deltaLog_split_gc_threshold_ = pt_.get<double>("deltaStore.deltaLogSplitGCThreshold");
-        deltaLog_cache_object_number_ = pt_.get<uint64_t>("deltaStore.deltaLogCacheObjectNumber");
-        deltaLog_file_number_ = pt_.get<uint64_t>("deltaStore.deltaLogMaxFileNumber");
-        deltaStore_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("deltaStore.deltaStore_operationNumberForMetadataCommitThreshold_");
-        deltaStore_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("deltaStore.deltaStore_operationNumberForForcedGCThreshold_");
-        deltaStore_worker_thread_number_limit = pt_.get<uint64_t>("deltaStore.deltaStore_worker_thread_number_limit_");
-        deltaStore_gc_thread_number_limit = pt_.get<uint64_t>("deltaStore.deltaStore_gc_thread_number_limit_");
+        ds_file_size_ = pt_.get<uint64_t>("deltaStore.ds_bucket_size");
+        ds_file_flush_size_ = pt_.get<uint64_t>("deltaStore.ds_bucket_buffer_size");
+        ds_gc_threshold_ = pt_.get<double>("deltaStore.ds_gc_thres");
+        ds_split_gc_threshold_ = pt_.get<double>("deltaStore.ds_split_thres");
+        ds_kdcache_size_ = pt_.get<uint64_t>("deltaStore.ds_kdcache_size");
+        ds_file_number_ = pt_.get<uint64_t>("deltaStore.ds_bucket_num");
+        ds_operationNumberForMetadataCommitThreshold_ = pt_.get<uint64_t>("deltaStore.ds_operationNumberForMetadataCommitThreshold");
+        ds_operationNumberForForcedGCThreshold_ = pt_.get<uint64_t>("deltaStore.ds_operationNumberForForcedGCThreshold");
+        ds_worker_thread_number_limit = pt_.get<uint64_t>("deltaStore.ds_worker_thread_number_limit");
+        ds_gc_thread_number_limit = pt_.get<uint64_t>("deltaStore.ds_gc_thread_number_limit");
         debug_.level = pt_.get<uint64_t>("debug.level");
-        deltaStore_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC");
+        ds_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC");
         deltaKV_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
-        deltaStore_write_back_during_reads_threshold_ = pt_.get<uint64_t>("deltaStore.deltaStoreWriteBackDuringReadsThreshold");
-        deltaStore_write_back_during_reads_size_threshold_ = pt_.get<uint64_t>("deltaStore.deltaStoreWriteBackDuringReadsSizeThreshold", 1000);
-        deltaStore_gc_write_back_delta_num_ = pt_.get<uint64_t>("deltaStore.deltaStoreGcWriteBackDeltaNumThreshold", 0);
-        deltaStore_gc_write_back_delta_size_ = pt_.get<uint64_t>("deltaStore.deltaStoreGcWriteBackDeltaSizeThreshold", 1000);
-        deltaKVWriteBatchSize_ = pt_.get<uint64_t>("config.deltaKVWriteBatchSize");
+        ds_write_back_during_reads_threshold_ = pt_.get<uint64_t>("deltaStore.ds_read_write_back_num");
+        ds_write_back_during_reads_size_threshold_ = pt_.get<uint64_t>("deltaStore.ds_read_write_back_size", 1000);
+        ds_gc_write_back_delta_num_ = pt_.get<uint64_t>("deltaStore.deltaStoreGcWriteBackDeltaNumThreshold", 0);
+        ds_gc_write_back_delta_size_ = pt_.get<uint64_t>("deltaStore.ds_gc_write_back_size", 1000);
+        write_buffer_size_ = pt_.get<uint64_t>("config.write_buffer_size", 2 * 1024 * 1024);
         enableDeltaKVCache_ = pt_.get<bool>("config.enableDeltaKVCache");
         deltaKVCacheObjectNumber_ = pt_.get<uint64_t>("config.deltaKVCacheObjectNumber");
-        prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.initBitNumber");
-        enableRawRocksDBBatch_ = pt_.get<bool>("config.enableRawRocksDBBatch");
-        maxKeyValueSize = pt_.get<uint64_t>("config.maxKeyValueSize", 4096);
+        prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.ds_init_bit");
+        max_kv_size = pt_.get<uint64_t>("config.max_kv_size", 4096);
         maxOpenFiles = pt_.get<uint64_t>("config.maxOpenFiles", 1048576);
         minBlobSize = pt_.get<uint64_t>("rocksdb.minBlobSize", 800);
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 4096);
         cacheIndexAndFilterBlocks_ = pt_.get<bool>("rocksdb.cacheIndexAndFilterBlocks", false);
         enableLsmTreeDeltaMeta_ = pt_.get<bool>("config.enableLsmTreeDeltaMeta", true);
-        deltaStore_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.deltaStore_KDLevel_cache_use_str_t", true);
+        ds_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.ds_KDLevel_cache_use_str_t", true);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
@@ -183,53 +183,53 @@ class ExternDBConfig {
     bool getBlobDbKeyValueSeparation() {
         return blob_db_key_value_separation_;
     }
-    uint64_t getTargetFileSizeBase() {
-        return target_file_size_base_;
+    uint64_t getSSTSize() {
+        return sst_size;
     }
-    uint64_t getMaxBytesForLevelBase() {
-        return max_bytes_for_level_base_;
+    uint64_t getL1Size() {
+        return l1_size;
     }
     uint64_t getBlobFileSize() {
         return blob_file_size_;
     }
     uint64_t getDeltaLogFileSize() {
-        return deltaLog_file_size_;
+        return ds_file_size_;
     }
 
     uint64_t getDeltaLogFileFlushSize() {
-        return deltaLog_file_flush_size_;
+        return ds_file_flush_size_;
     }
 
     double getDeltaLogGCThreshold() {
-        return deltaLog_gc_threshold_;
+        return ds_gc_threshold_;
     }
 
     double getDeltaLogSplitGCThreshold() {
-        return deltaLog_split_gc_threshold_;
+        return ds_split_gc_threshold_;
     }
 
-    uint64_t getDeltaLogCacheObjectNumber() {
-        return deltaLog_cache_object_number_;
+    uint64_t getDSKDCacheSize() {
+        return ds_kdcache_size_;
     }
 
     uint64_t getDeltaLogMaxFileNumber() {
-        return deltaLog_file_number_;
+        return ds_file_number_;
     }
 
     uint64_t getDelteLogMetadataCommitLatency() {
-        return deltaStore_operationNumberForMetadataCommitThreshold_;
+        return ds_operationNumberForMetadataCommitThreshold_;
     }
 
     uint64_t getDelteLogForcedGCLatency() {
-        return deltaStore_operationNumberForForcedGCThreshold_;
+        return ds_operationNumberForForcedGCThreshold_;
     }
 
     uint64_t getDeltaLogOpWorkerThreadNumber() {
-        return deltaStore_worker_thread_number_limit;
+        return ds_worker_thread_number_limit;
     }
 
     uint64_t getDeltaLogGCWorkerThreadNumber() {
-        return deltaStore_gc_thread_number_limit;
+        return ds_gc_thread_number_limit;
     }
 
     uint64_t getDebugLevel() {
@@ -237,7 +237,7 @@ class ExternDBConfig {
     }
 
     bool getDeltaStoreGCEnableStatus() {
-        return deltaStore_enable_gc;
+        return ds_enable_gc;
     }
 
     bool getDeltaStoreBatchEnableStatus() {
@@ -245,23 +245,23 @@ class ExternDBConfig {
     }
 
     uint64_t getDeltaStoreWriteBackDuringReadsThreshold() {
-        return deltaStore_write_back_during_reads_threshold_;
+        return ds_write_back_during_reads_threshold_;
     }
 
     uint64_t getDeltaStoreWriteBackDuringReadsSizeThreshold() {
-        return deltaStore_write_back_during_reads_size_threshold_;
+        return ds_write_back_during_reads_size_threshold_;
     }
 
     uint64_t getDeltaStoreGcWriteBackDeltaNumThreshold() {
-        return deltaStore_gc_write_back_delta_num_;
+        return ds_gc_write_back_delta_num_;
     }
 
     uint64_t getDeltaStoreGcWriteBackDeltaSizeThreshold() {
-        return deltaStore_gc_write_back_delta_size_;
+        return ds_gc_write_back_delta_size_;
     }
 
-    uint64_t getDeltaKVWriteBatchSize() {
-        return deltaKVWriteBatchSize_;
+    uint64_t getDeltaKVWriteBufferSize() {
+        return write_buffer_size_;
     }
 
     bool getDeltaKVCacheEnableStatus() {
@@ -276,14 +276,11 @@ class ExternDBConfig {
         return prefixTreeBitNumber_;
     }
 
-    bool getEnableRoaRocksDBBatch() {
-        return enableRawRocksDBBatch_;
-    }
     uint64_t getBlockSize() {
         return blockSize;
     }
     uint64_t getMaxKeyValueSize() {
-        return maxKeyValueSize;
+        return max_kv_size;
     }
     uint64_t getMaxOpenFiles() {
         return maxOpenFiles;
@@ -298,7 +295,7 @@ class ExternDBConfig {
         return enableLsmTreeDeltaMeta_;
     }
     bool getDeltaStoreKDLevelCacheUseStrT() {
-        return deltaStore_KDLevel_cache_use_str_t_;
+        return ds_KDLevel_cache_use_str_t_;
     }
     bool getParallelLsmTreeInterface() {
         return parallel_lsm_interface_;
@@ -308,6 +305,9 @@ class ExternDBConfig {
     }
     bool getEnableIndexBlock() {
         return enable_index_block_;
+    }
+    double getBlobGCForce() {
+        return blobgcforce_;
     }
 };
 }  // namespace ycsbc
