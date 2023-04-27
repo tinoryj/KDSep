@@ -157,7 +157,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 }
 
 void simpleTest() {
-    DELTAKV_NAMESPACE::internalValueType header, header2;
+    DELTAKV_NAMESPACE::KvHeader header, header2;
     header.mergeFlag_ = true;
     header.valueSeparatedFlag_ = false;
     header.rawValueSize_ = 511;

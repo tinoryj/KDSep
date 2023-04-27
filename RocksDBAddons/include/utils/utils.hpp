@@ -29,8 +29,13 @@ inline static uint64_t prefixLenExtract(uint64_t k) {
 
 inline static void copyInc(char* buf, uint64_t& index, 
         const void* read_buf, size_t size) {
-    memcpy(buf + index, (char*)read_buf, size);
+    memcpy(buf + index, (const char*)read_buf, size);
     index += size;
+}
+
+inline static void copyIncBuf(char*& buf, const void* read_buf, size_t size) {
+    memcpy(buf, (const char*)read_buf, size);
+    buf += size;
 }
 
 unsigned long long inline timevalToMicros(struct timeval& res) {

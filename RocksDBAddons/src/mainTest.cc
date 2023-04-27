@@ -369,33 +369,33 @@ int main(int argc, char* argv[])
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
     if (directIO == true) {
-        options_.rocksdbRawOptions_.use_direct_reads = true;
-        options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
+        options_.rocks_opt.use_direct_reads = true;
+        options_.rocks_opt.use_direct_io_for_flush_and_compaction = true;
     } else {
-        options_.rocksdbRawOptions_.allow_mmap_reads = true;
-        options_.rocksdbRawOptions_.allow_mmap_writes = true;
+        options_.rocks_opt.allow_mmap_reads = true;
+        options_.rocks_opt.allow_mmap_writes = true;
     }
-    options_.rocksdbRawOptions_.create_if_missing = true;
-    options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
-    options_.rocksdbRawOptions_.max_background_jobs = 8;
-    options_.rocksdbRawOptions_.disable_auto_compactions = false;
-    options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
-    options_.rocksdbRawOptions_.target_file_size_base = 65536 * 1024;
-    options_.rocksdbRawOptions_.compression = rocksdb::kNoCompression;
+    options_.rocks_opt.create_if_missing = true;
+    options_.rocks_opt.write_buffer_size = memtableSize;
+    options_.rocks_opt.max_background_jobs = 8;
+    options_.rocks_opt.disable_auto_compactions = false;
+    options_.rocks_opt.level_compaction_dynamic_level_bytes = true;
+    options_.rocks_opt.target_file_size_base = 65536 * 1024;
+    options_.rocks_opt.compression = rocksdb::kNoCompression;
     if (bloomBits > 0) {
         bbto.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloomBits));
     }
     bbto.block_cache = rocksdb::NewLRUCache(blockCacheSize);
-    options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
+    options_.rocks_opt.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
-    options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
+    options_.rocks_opt.statistics = rocksdb::CreateDBStatistics();
 
     // deltaKV settings
     options_.enable_deltaStore = true;
     options_.enable_valueStore = true;
     options_.enable_deltaStore_KDLevel_cache = true;
     if (options_.enable_deltaStore == false) {
-        options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
+        options_.rocks_opt.merge_operator.reset(new FieldUpdateMergeOperatorInternal);
     }
     options_.deltaKV_merge_operation_ptr.reset(new DeltaKVFieldUpdateMergeOperator);
     options_.enable_batched_operations_ = false;

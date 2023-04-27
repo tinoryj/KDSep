@@ -203,12 +203,12 @@ ops=("10M")
 
 checkrepeat=""
 maxBucketNumber=32768
-runModeSet=('bkvkd')
+runModeSet=('raw')
 bonus2=""
 bonus3="initBit8"
 bonus4="shortprepare"
 bonus5=""
-bonus5="nodirectreads"
+bonus6="notevarindex"
 bonus6=""
 indexSet=(1) 
 func

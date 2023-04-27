@@ -5,12 +5,15 @@ namespace DELTAKV_NAMESPACE {
 bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
     mergeOperator_ = new RocksDBInternalMergeOperator;
 //    if (options.enable_deltaStore == true || options.enable_valueStore == true) {
-        options.rocksdbRawOptions_.merge_operator.reset(mergeOperator_); // reset
+        options.rocks_opt.merge_operator.reset(mergeOperator_); // reset
 //    }
 
-    rocksdb::Status rocksDBStatus = rocksdb::DB::Open(options.rocksdbRawOptions_, name, &pointerToRawRocksDB_);
+    rocksdb::Status rocksDBStatus =
+        rocksdb::DB::Open(options.rocks_opt, name,
+                &rocksdb_);
     if (!rocksDBStatus.ok()) {
-        debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
+        debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n",
+                rocksDBStatus.ToString().c_str());
         return false;
     }
 
@@ -26,10 +29,11 @@ bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
     }
 
     // Create objects
-    if (options.enable_valueStore == true && IndexStoreInterfaceObjPtr_ == nullptr) {
+    if (options.enable_valueStore == true && vlog_ == nullptr) {
         isValueStoreInUseFlag_ = true;
-        IndexStoreInterfaceObjPtr_ = new IndexStoreInterface(&options, name, pointerToRawRocksDB_);
-        valueExtractSize_ = IndexStoreInterfaceObjPtr_->getExtractSizeThreshold();
+        vlog_ = new IndexStoreInterface(&options, name,
+                rocksdb_);
+        valueExtractSize_ = vlog_->getExtractSizeThreshold();
     }
 
     if (options.enable_valueStore) {
@@ -50,37 +54,47 @@ LsmTreeInterface::~LsmTreeInterface() {
 }
 
 bool LsmTreeInterface::Close() {
-    if (IndexStoreInterfaceObjPtr_ != nullptr) {
-        delete IndexStoreInterfaceObjPtr_;
+    if (vlog_ != nullptr) {
+        delete vlog_;
     }
-    if (pointerToRawRocksDB_ != nullptr) {
-        delete pointerToRawRocksDB_;
+    if (rocksdb_ != nullptr) {
+        delete rocksdb_;
     }
     return true;
 }
 
-bool LsmTreeInterface::Put(const mempoolHandler_t& memPoolHandler)
+bool LsmTreeInterface::Put(const mempoolHandler_t& obj)
 {
-    if (lsmTreeRunningMode_ == kNoValueLog || memPoolHandler.valueSize_ < valueExtractSize_) {
+    if (lsmTreeRunningMode_ == kNoValueLog || obj.valueSize_ < valueExtractSize_) {
          // no value log
-        char valueBuffer[memPoolHandler.valueSize_ + sizeof(internalValueType)];
-        internalValueType header(false, false, memPoolHandler.sequenceNumber_, memPoolHandler.valueSize_);
-        memcpy(valueBuffer, &header, sizeof(header));
-        memcpy(valueBuffer + sizeof(header), memPoolHandler.valuePtr_, memPoolHandler.valueSize_);
+        char valueBuffer[obj.valueSize_ + sizeof(KvHeader)];
+        KvHeader header(false, false, obj.sequenceNumber_, obj.valueSize_);
+        size_t header_sz = sizeof(KvHeader);
+
+        // Put header
+        if (use_varint_kv_header == false) {
+            memcpy(valueBuffer, &header, header_sz);
+        } else {
+            header_sz = PutKVHeaderVarint(valueBuffer, header); 
+        }
+        // Put raw value
+        memcpy(valueBuffer + header_sz, obj.valuePtr_, obj.valueSize_);
 
         rocksdb::Status rocksDBStatus;
-        rocksdb::Slice newKey(memPoolHandler.keyPtr_, memPoolHandler.keySize_);
-        rocksdb::Slice newValue(valueBuffer, memPoolHandler.valueSize_ + sizeof(internalValueType));
-        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Put(internalWriteOption_, newKey, newValue), StatsType::DELTAKV_PUT_ROCKSDB);
+        rocksdb::Slice newKey(obj.keyPtr_, obj.keySize_);
+        rocksdb::Slice newValue(valueBuffer, obj.valueSize_ + header_sz);
+        STAT_PROCESS(
+                rocksDBStatus = rocksdb_->Put(internalWriteOption_,
+                    newKey, newValue), StatsType::DELTAKV_PUT_ROCKSDB);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Write underlying rocksdb with raw value fault, key = %s, value = %s, status = %s\n", newKey.ToString().c_str(), newValue.ToString().c_str(), rocksDBStatus.ToString().c_str());
         }
         return rocksDBStatus.ok();
     } else {  // use value log. Let value log determine whether to separate key and values!
         bool status;
-        STAT_PROCESS(status = IndexStoreInterfaceObjPtr_->put(memPoolHandler, true), StatsType::DELTAKV_PUT_INDEXSTORE);
+        STAT_PROCESS(status = vlog_->put(obj, true), StatsType::DELTAKV_PUT_INDEXSTORE);
         if (status == false) {
-            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", memPoolHandler.keyPtr_, memPoolHandler.valuePtr_);
+            debug_error("[ERROR] Write value to external storage fault, key = %s, value = %s\n", obj.keyPtr_, obj.valuePtr_);
         }
         return status;
     }
@@ -93,7 +107,7 @@ bool LsmTreeInterface::Merge(const char* key, uint32_t keySize, const char* valu
     rocksdb::Status rocksDBStatus;
     rocksdb::Slice newKey(key, keySize);
     rocksdb::Slice newValue(value, valueSize);
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+    STAT_PROCESS(rocksDBStatus = rocksdb_->Merge(internalMergeOption_, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Write underlying rocksdb with merge value fault, key = %s, value = %s, status = %s\n", newKey.ToString().c_str(), newValue.ToString().c_str(), rocksDBStatus.ToString().c_str());
         return false;
@@ -103,21 +117,32 @@ bool LsmTreeInterface::Merge(const char* key, uint32_t keySize, const char* valu
 }
 
 // Merge for no separation. 
-bool LsmTreeInterface::Merge(const mempoolHandler_t& memPoolHandler)
+bool LsmTreeInterface::Merge(const mempoolHandler_t& obj)
 {
-    internalValueType header(false, false, memPoolHandler.sequenceNumber_, memPoolHandler.valueSize_);
-    char valueBuffer[memPoolHandler.valueSize_ + sizeof(header)];
-    memcpy(valueBuffer, &header, sizeof(header));
-    memcpy(valueBuffer + sizeof(header), memPoolHandler.valuePtr_, memPoolHandler.valueSize_);
-//    return Merge(memPoolHandler.keyPtr_, memPoolHandler.keySize_, valueBuffer, memPoolHandler.valueSize_ + sizeof(header));
+    KvHeader header(false, false, obj.sequenceNumber_, obj.valueSize_);
+    size_t value_sz = obj.valueSize_ + sizeof(KvHeader);
+    char valueBuffer[value_sz];
+    size_t header_sz = sizeof(KvHeader);
+    if (use_varint_kv_header == false) {
+        memcpy(valueBuffer, &header, header_sz);
+    } else {
+        header_sz = PutKVHeaderVarint(valueBuffer, header);
+    }
+    memcpy(valueBuffer + header_sz, obj.valuePtr_, obj.valueSize_);
+    value_sz = header_sz + obj.valueSize_;
+
+//    return Merge(obj.keyPtr_, obj.keySize_, valueBuffer, obj.valueSize_ + sizeof(header));
 
     rocksdb::Status rocksDBStatus;
-    rocksdb::Slice newKey(memPoolHandler.keyPtr_, memPoolHandler.keySize_);
-    rocksdb::Slice newValue(valueBuffer, memPoolHandler.valueSize_ + sizeof(header));
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Merge(internalMergeOption_, newKey, newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
+    rocksdb::Slice newKey(obj.keyPtr_, obj.keySize_);
+    rocksdb::Slice newValue(valueBuffer, value_sz);
+    STAT_PROCESS(rocksDBStatus = rocksdb_->Merge(internalMergeOption_, newKey,
+                newValue), StatsType::DELTAKV_MERGE_ROCKSDB);
     
     if (!rocksDBStatus.ok()) {
-        debug_error("[ERROR] Merge underlying rocksdb with raw value fault, key = %s, status = %s\n", newKey.ToString().c_str(), rocksDBStatus.ToString().c_str());
+        debug_error("[ERROR] Merge underlying rocksdb with raw value fault," 
+                " key = %s, status = %s\n", newKey.ToString().c_str(),
+                rocksDBStatus.ToString().c_str());
         return false;
     }
     return true;
@@ -130,7 +155,10 @@ bool LsmTreeInterface::Get(const string& key, string* value)
 {
     if (lsmTreeRunningMode_ == kNoValueLog) {
         rocksdb::Status rocksDBStatus;
-        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, value), StatsType::DELTAKV_GET_ROCKSDB);
+        STAT_PROCESS(
+                rocksDBStatus =
+                rocksdb_->Get(rocksdb::ReadOptions(), key, value),
+                StatsType::DELTAKV_GET_ROCKSDB);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Read underlying rocksdb with raw value fault, key = %s, status = %s\n", key.c_str(), rocksDBStatus.ToString().c_str());
             return false;
@@ -139,57 +167,76 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         return true;
     } else {
         rocksdb::Status rocksDBStatus;
-        string internalValueStr;
-        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Get(rocksdb::ReadOptions(), key, &internalValueStr), StatsType::DELTAKV_GET_ROCKSDB);
+        string lsm_value;
+        STAT_PROCESS(
+                rocksDBStatus = rocksdb_->Get(rocksdb::ReadOptions(), key, &lsm_value), StatsType::DELTAKV_GET_ROCKSDB);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Read underlying rocksdb with raw value fault, key = %s, status = %s\n", key.c_str(), rocksDBStatus.ToString().c_str());
             return false;
         }
 
         // check value status
-        internalValueType header;
-        memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+        KvHeader header;
+        size_t header_sz = sizeof(KvHeader);
+
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str(), header_sz);
+        } else {
+            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz); 
+        }
 
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
             externalIndexInfo vLogIndex;
-            size_t offset = 0;
+            size_t index_sz = sizeof(externalIndexInfo);
             if (use_varint_index == false) {
-                memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header),
+                memcpy(&vLogIndex, lsm_value.c_str() + header_sz,
                         sizeof(vLogIndex));
-                offset = sizeof(vLogIndex);
             } else {
-                vLogIndex = GetVlogIndexVarint(internalValueStr.data() +
-                        sizeof(header), offset);
+                vLogIndex = GetVlogIndexVarint(lsm_value.data() +
+                    header_sz, index_sz);
             }
-            STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, vLogIndex, &vLogValue), StatsType::DELTAKV_GET_INDEXSTORE);
+            STAT_PROCESS(vlog_->get(key, vLogIndex, &vLogValue), StatsType::DELTAKV_GET_INDEXSTORE);
 
-            string remainingDeltas = internalValueStr.substr(sizeof(header) + offset);  // remaining deltas
+            // remaining deltas
+            string remainingDeltas = lsm_value.substr(header_sz + index_sz);  
 
+            // The header will be larger. Use sizeof() function here
             int valueBufferSize = sizeof(header) + vLogValue.size();
             char valueBuffer[valueBufferSize];
 
+            // Prepare for merges
             // TODO extracted the sequence number
             header.rawValueSize_ = vLogValue.size();
             header.valueSeparatedFlag_ = false;
-            memcpy(valueBuffer, &header, sizeof(header));
-            memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
 
-            // replace the external value index with the raw value
-            if (remainingDeltas.empty() == false) {
+            // Put header to buffer
+            if (use_varint_kv_header == false) {
+                memcpy(valueBuffer, &header, header_sz);
+            } else {
+                header_sz = PutKVHeaderVarint(valueBuffer, header);
+            }
+            // Put raw value to buffer
+            memcpy(valueBuffer + header_sz, vLogValue.c_str(), vLogValue.size());
+            valueBufferSize = header_sz + vLogValue.size();
+
+            // 1. replace the external value index with the raw value
+            // 2. merge with the existing deltas, if any
+            if (remainingDeltas.size() > 0) {
                 Slice key("lsmInterface", 12);
                 Slice existingValue(valueBuffer, valueBufferSize);
                 deque<string> operandList;
                 operandList.push_back(remainingDeltas);
                 
-                mergeOperator_->FullMerge(key, &existingValue, operandList, value, nullptr);
+                mergeOperator_->FullMerge(key, &existingValue, operandList,
+                        value, nullptr);
             } else {
                 value->assign(valueBuffer, valueBufferSize);
             }
 
             return true;
         } else {
-            value->assign(internalValueStr);
+            value->assign(lsm_value);
             return true;
         }
     } 
@@ -202,36 +249,53 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
 
     struct timeval tv;
     gettimeofday(&tv, 0);
+    size_t header_sz = sizeof(KvHeader);
+    size_t value_sz;
     if (lsmTreeRunningMode_ == kNoValueLog) {
         for (auto& it : memPoolHandlersPut) {
-            internalValueType header(false, false, it.sequenceNumber_, it.valueSize_);
+            KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+            // Reserve enough space. Use sizeof() here
             char valueBuffer[it.valueSize_ + sizeof(header)];
-            memcpy(valueBuffer, &header, sizeof(header));
-            memcpy(valueBuffer + sizeof(header), it.valuePtr_, it.valueSize_);
+
+            if (use_varint_kv_header == false) {
+                memcpy(valueBuffer, &header, header_sz);
+            } else {
+                header_sz = PutKVHeaderVarint(valueBuffer, header);
+            }
+            memcpy(valueBuffer + header_sz, it.valuePtr_, it.valueSize_);
+            value_sz = header_sz + it.valueSize_;
 
             rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-            rocksdb::Slice newValue(valueBuffer, it.valueSize_ + sizeof(header));
+            rocksdb::Slice newValue(valueBuffer, value_sz);
             mergeBatch->Put(newKey, newValue);
         }
     } else {
-        vector<mempoolHandler_t> memPoolHandlerForPutVlog;
+        vector<mempoolHandler_t> objects_for_vlog_put;
         for (auto& it : memPoolHandlersPut) {
             if (it.valueSize_ < valueExtractSize_) {
-                internalValueType header(false, false, it.sequenceNumber_, it.valueSize_);
+                KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+                // Reserve enough space. Use sizeof() here
                 char valueBuffer[it.valueSize_ + sizeof(header)];
-                memcpy(valueBuffer, &header, sizeof(header));
-                memcpy(valueBuffer + sizeof(header), it.valuePtr_, it.valueSize_);
+
+                if (use_varint_kv_header == false) {
+                    memcpy(valueBuffer, &header, header_sz);
+                } else {
+                    header_sz = PutKVHeaderVarint(valueBuffer, header);
+                }
+                memcpy(valueBuffer + header_sz, it.valuePtr_, it.valueSize_);
+                value_sz = header_sz + it.valueSize_;
 
                 rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-                rocksdb::Slice newValue(valueBuffer, it.valueSize_ + sizeof(header));
+                rocksdb::Slice newValue(valueBuffer, value_sz);
                 mergeBatch->Put(newKey, newValue);
             } else {
-                memPoolHandlerForPutVlog.push_back(it);
+                objects_for_vlog_put.push_back(it);
             }
         }
 
-        if (!memPoolHandlerForPutVlog.empty()) {
-            STAT_PROCESS(IndexStoreInterfaceObjPtr_->multiPut(memPoolHandlersPut), StatsType::LSM_FLUSH_VLOG);
+        if (!objects_for_vlog_put.empty()) {
+            STAT_PROCESS(vlog_->multiPut(memPoolHandlersPut),
+                    StatsType::LSM_FLUSH_VLOG);
         }
     }
 
@@ -242,7 +306,8 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     StatsRecorder::getInstance()->timeProcess(StatsType::LSM_FLUSH_PRE_PUT, tv);
 
     rocksdb::Status rocksDBStatus;
-    STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->Write(batchedWriteOperation, mergeBatch), StatsType::LSM_FLUSH_ROCKSDB);
+    STAT_PROCESS(rocksDBStatus = rocksdb_->Write(batchedWriteOperation,
+                mergeBatch), StatsType::LSM_FLUSH_ROCKSDB);
 
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Write with batch on underlying rocksdb, status = %s\n", rocksDBStatus.ToString().c_str());
@@ -250,7 +315,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     }
 
     if (lsmTreeRunningMode_ == kNoValueLog) {
-        STAT_PROCESS(rocksDBStatus = pointerToRawRocksDB_->FlushWAL(true), StatsType::LSM_FLUSH_WAL);
+        STAT_PROCESS(rocksDBStatus = rocksdb_->FlushWAL(true), StatsType::LSM_FLUSH_WAL);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Flush WAL, status = %s\n", rocksDBStatus.ToString().c_str());
             return false;
@@ -262,7 +327,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
 bool LsmTreeInterface::Scan(const string& targetStartKey, 
         int len,
         vector<string>& keys, vector<string>& values) {
-    rocksdb::Iterator* it = pointerToRawRocksDB_->NewIterator(rocksdb::ReadOptions());
+    rocksdb::Iterator* it = rocksdb_->NewIterator(rocksdb::ReadOptions());
     it->Seek(targetStartKey);
     int cnt = 0;
     bool ret = true;
@@ -297,68 +362,92 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
 
     vector<string> vLogValues;
     int separated_cnt = 0;
+    size_t header_sz = sizeof(KvHeader);
 
     for (uint64_t i = 0; i < len; i++) {
-        string& internalValueStr = values_lsm.at(i);
-        internalValueType header;
-        memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+        string& lsm_value = values_lsm.at(i);
+        KvHeader header;
+
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str(), header_sz);
+        } else {
+            // change header_sz
+            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
+        }
 
         if (header.valueSeparatedFlag_ == true) {
             isSeparated[i] = true;
 
             string vLogValue; 
             externalIndexInfo vLogIndex;
-            size_t index_size = 0;
+            size_t index_sz = 0;
             if (use_varint_index == false) {
-                memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header),
+                memcpy(&vLogIndex, lsm_value.c_str() + header_sz,
                         sizeof(vLogIndex));
-                index_size = sizeof(vLogIndex);
+                index_sz = sizeof(vLogIndex);
             } else {
-                vLogIndex = GetVlogIndexVarint(internalValueStr.data() +
-                        sizeof(header), index_size);
+                vLogIndex = GetVlogIndexVarint(lsm_value.data() +
+                        header_sz, index_sz);
             }
 
             separated_keys[separated_cnt] = keys.at(i);
             vLogIndices[separated_cnt] = vLogIndex;
-            remainingDeltasVec[separated_cnt] = internalValueStr.substr(sizeof(header) + index_size);  
+            remainingDeltasVec[separated_cnt] =
+                lsm_value.substr(header_sz + index_sz);  
             separated_cnt++;
         } else {
             isSeparated.at(i) = false;
         }
     }
 
-    IndexStoreInterfaceObjPtr_->multiGet(separated_keys, len, vLogIndices, vLogValues);
+    vlog_->multiGet(separated_keys, len, vLogIndices, vLogValues);
 
     separated_cnt = 0;
     values.clear();
     for (uint64_t i = 0; i < len; i++) {
-        string& internalValueStr = values_lsm.at(i);
-        internalValueType header;
-        memcpy(&header, internalValueStr.c_str(), sizeof(internalValueType));
+        string& lsm_value = values_lsm.at(i);
+        KvHeader header;
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str(), header_sz);
+        } else {
+            // change header_sz
+            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
+        }
 
         if (isSeparated[i] == true) {
-            string& remainingDeltas = remainingDeltasVec.at(separated_cnt);  // remaining deltas
+            // remaining deltas
+            string& remainingDeltas = remainingDeltasVec.at(separated_cnt);  
             string& vLogValue = vLogValues.at(separated_cnt);
 
+            // Reserve enough space, use sizeof()
             int valueBufferSize = sizeof(header) + vLogValue.size();
             char valueBuffer[valueBufferSize];
 
+            // Prepare for merges
             // extracted the sequence number
             header.rawValueSize_ = vLogValue.size();
             header.valueSeparatedFlag_ = false;
-            memcpy(valueBuffer, &header, sizeof(header));
-            memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
+
+            // Put header to buffer
+            if (use_varint_kv_header == false) {
+                memcpy(valueBuffer, &header, header_sz);
+            } else {
+                header_sz = PutKVHeaderVarint(valueBuffer, header);
+            }
+            memcpy(valueBuffer + header_sz, vLogValue.c_str(), vLogValue.size());
+            valueBufferSize = header_sz + vLogValue.size();
 
             string* value = nullptr;
 
             // replace the external value index with the raw value
-            if (remainingDeltas.empty() == false) {
+            if (remainingDeltas.size() > 0) {
                 Slice key("lsmInterface", 12);
                 Slice existingValue(valueBuffer, valueBufferSize);
                 deque<string> operandList;
                 operandList.push_back(remainingDeltas);
                 
-                mergeOperator_->FullMerge(key, &existingValue, operandList, value, nullptr);
+                mergeOperator_->FullMerge(key, &existingValue, operandList,
+                        value, nullptr);
                 values.push_back(*value);
                 delete value;
             } else {
@@ -367,7 +456,7 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
 
             separated_cnt++;
         } else {
-            values.push_back(internalValueStr);
+            values.push_back(lsm_value);
         }
     }
 
@@ -376,7 +465,7 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
 
 
 void LsmTreeInterface::GetRocksDBProperty(const string& property, string* str) {
-    pointerToRawRocksDB_->GetProperty(property.c_str(), str);
+    rocksdb_->GetProperty(property.c_str(), str);
 }
 
 }

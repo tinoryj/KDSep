@@ -19,7 +19,7 @@ public:
     DeltaKVOptions() = default;
     ~DeltaKVOptions() = default;
 
-    rocksdb::Options rocksdbRawOptions_;
+    rocksdb::Options rocks_opt;
 
     enum class contentStoreMode {
         kAppendOnlyLogWithIndex = 0,

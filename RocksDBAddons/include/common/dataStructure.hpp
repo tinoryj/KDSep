@@ -124,13 +124,16 @@ struct mapHashKeyForMemPoolHandler_t {
 //    false, true: delta in LSM-tree, value in vLog
 //    false, false: delta in LSM-tree
 // header size: 12 bytes
-struct internalValueType {
+struct KvHeader {
     bool mergeFlag_ = false; // true if the value request merge.
     bool valueSeparatedFlag_ = false; // true if the value is stored outside LSM-tree
     uint32_t sequenceNumber_ = 0; // global sequence number
     uint32_t rawValueSize_ = 0; // store the raw value size, in case some delta are not separated.
-    internalValueType() {} 
-    internalValueType(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber, uint32_t rawValueSize) : mergeFlag_(mergeFlag), valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber), rawValueSize_(rawValueSize) {} 
+    KvHeader() {} 
+    KvHeader(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber,
+            uint32_t rawValueSize) : mergeFlag_(mergeFlag),
+    valueSeparatedFlag_(valueSeparatedFlag), sequenceNumber_(sequenceNumber),
+    rawValueSize_(rawValueSize) {} 
 };
 
 // index size: 12 bytes

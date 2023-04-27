@@ -205,8 +205,8 @@ rreqs=("50M" "25M" "13M")
 maxBucketNumber=32768
 flengths=(100)
 cacheSizes=(4096)
-bonus2="blobgcforce0.8"
 bonus2=""
+bonus4=""
 bonus5="wbread0"
 runModeSet=('bkv' 'raw' 'kv')
 runModeSet=('bkv')
@@ -234,10 +234,11 @@ done
 
 ExpName="_p37_exp4_test_delta"
 runModeSet=('bkv' 'raw' 'kv')
-cacheSizes=(4096)
+runModeSet=('raw')
+cacheSizes=(2048)
 
-fcs=(20)
-fls=(400)
+fcs=(40 20 10)
+fls=(200 400 800)
 reqs=("14M")
 
 for ((ri=0; ri<${#fcs[@]}; ri++)); do
@@ -247,14 +248,15 @@ for ((ri=0; ri<${#fcs[@]}; ri++)); do
 done
 
 runModeSet=('bkvkd' 'kvkd' 'kd') 
-runModeSet=('kvkd') 
 cacheSizes=(3584)
-maxBucketNumber=131072
+cacheSizes=(1536)
+bns=(65536 131072 262144)
 
 for ((ri=0; ri<${#fcs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     flengths=(${fls[$ri]})
-    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 2))
+    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 10 * 6))
+    maxBucketNumber=${bns[$ri]}
 #    func
 done
 
@@ -377,14 +379,36 @@ for ((bssi=0; bssi<${#bss[@]}; bssi++)); do
 done
 
 ExpName="Exp_p45_exp8_bucsize"
-bucsizes=(128 512 1024)
-bucnums=(65536 16384 8192)
+bucsizes=(512 1024)
+bucnums=(16384 8192)
 indexSet=(1)
 cacheSizes=(3584)
 runModeSet=('bkvkd' 'kvkd')
+batchSize=2
 
 for ((buci=0; buci<${#bucsizes[@]}; buci++)); do
     bonus4="bucketSize$(( ${bucsizes[$buci]} * 1024 ))"
     maxBucketNumber=${bucnums[$buci]}
+#    func
+done
+
+ExpName="Exp_p46_exp10_wbread"
+wbreads=(200 400 600 800 1000)
+indexSet=(1)
+cacheSizes=(4096)
+runModeSet=('kv')
+batchSize=2
+bonus="ep"
+bonus2=""
+bonus3="initBit10"
+bonus4="wbread0"
+func
+
+bonus4=""
+runModeSet=('bkvkd' 'kvkd')
+maxBucketNumber=32768
+
+for ((wbi=0; wbi<${#wbreads[@]}; wbi++)); do
+    bonus5="wbread${wbreads[$wbi]}"
     func
 done

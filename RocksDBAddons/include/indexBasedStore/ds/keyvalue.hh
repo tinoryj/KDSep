@@ -281,10 +281,10 @@ public:
         len_t mainSegmentSize = ConfigManager::getInstance().getMainSegmentSize();
         len_t logSegmentSize = ConfigManager::getInstance().getLogSegmentSize();
         segment_id_t numMainSegment = ConfigManager::getInstance().getNumMainSegment();
-        char str[sizeof(internalValueType) + sizeof(externalIndexInfo) + 1];
-        internalValueType valueType;
-        externalIndexInfo indexInfo;
-        valueType.mergeFlag_ = valueType.valueSeparatedFlag_ = true;
+        char buf[sizeof(KvHeader) + sizeof(externalIndexInfo) + 1];
+        KvHeader header;
+        externalIndexInfo index;
+        header.mergeFlag_ = header.valueSeparatedFlag_ = true;
 
         // write length
         len_t flength = this->length;
@@ -307,52 +307,65 @@ public:
         }
         // write value or offset
 
-        indexInfo.externalFileID_ = (uint32_t)(foffset >> 32);
-        indexInfo.externalFileOffset_ = (uint32_t)(foffset % (1ull << 32));
-        indexInfo.externalContentSize_ = flength;
+        index.externalFileID_ = (uint32_t)(foffset >> 32);
+        index.externalFileOffset_ = (uint32_t)(foffset % (1ull << 32));
+        index.externalContentSize_ = flength;
 
-        memcpy(str, &valueType, sizeof(internalValueType));
-        size_t index_size = 0;
-        if (use_varint_index == false) {
-            memcpy(str + sizeof(internalValueType), &indexInfo,
-                    sizeof(externalIndexInfo));
-            index_size = sizeof(externalIndexInfo);
+        size_t header_sz = sizeof(KvHeader);
+        size_t index_sz = sizeof(externalIndexInfo);
+
+        // encode header
+        if (use_varint_kv_header == false) {
+            memcpy(buf, &header, header_sz);
         } else {
-            index_size = PutVlogIndexVarint(str + sizeof(internalValueType),
-                    indexInfo);
+            header_sz = PutKVHeaderVarint(buf, header);
         }
 
-        return std::string(str, sizeof(internalValueType) + index_size);
+        // encode index
+        if (use_varint_index == false) {
+            memcpy(buf + header_sz, &index, index_sz);
+        } else {
+            index_sz = PutVlogIndexVarint(buf + header_sz, index);
+        }
+
+        return std::string(buf, header_sz + index_sz);
     }
 
     std::string serializeIndexWrite() {
-        char buffer[sizeof(internalValueType) + sizeof(externalIndexInfo)];
-        internalValueType valueType;
-        externalIndexInfo indexInfo;
+        char buf[sizeof(KvHeader) + sizeof(externalIndexInfo)];
+        KvHeader header;
+        externalIndexInfo index;
 
         // put header
-        valueType.mergeFlag_ = false;
-        valueType.valueSeparatedFlag_ = true;
-        memcpy(buffer, &valueType, sizeof(internalValueType));
+        header.mergeFlag_ = false;
+        header.valueSeparatedFlag_ = true;
 
         // put index
-        indexInfo.externalFileID_ = (uint32_t)(this->offset >> 32);
-        indexInfo.externalFileOffset_ = (uint32_t)(this->offset % (1ull << 32));
-        indexInfo.externalContentSize_ = this->length;
+        index.externalFileID_ = (uint32_t)(this->offset >> 32);
+        index.externalFileOffset_ = (uint32_t)(this->offset % (1ull << 32));
+        index.externalContentSize_ = this->length;
 
-        size_t index_size = 0;
-        if (use_varint_index == false) {
-            memcpy(buffer + sizeof(internalValueType), &indexInfo,
-                    sizeof(externalIndexInfo));
-            index_size = sizeof(externalIndexInfo);
+        size_t header_sz = sizeof(KvHeader);
+        size_t index_sz = sizeof(externalIndexInfo);
+
+        // encode header
+        if (use_varint_kv_header == false) {
+            memcpy(buf, &header, header_sz);
         } else {
-            index_size = PutVlogIndexVarint(buffer + sizeof(internalValueType),
-                    indexInfo);
+            header_sz = PutKVHeaderVarint(buf, header);
         }
 
-        return std::string(buffer, sizeof(internalValueType) + index_size);
+        // encode index
+        if (use_varint_index == false) {
+            memcpy(buf + header_sz, &index, index_sz);
+        } else {
+            index_sz = PutVlogIndexVarint(buf + header_sz, index);
+        }
+
+        return std::string(buf, header_sz + index_sz);
     }
 
+    // Not used in this system now
     bool deserialize(std::string str)
     {
         bool disableKvSep = ConfigManager::getInstance().disableKvSeparation();
@@ -364,20 +377,24 @@ public:
 
         const char* cstr = str.c_str();
         size_t offset = 0;
+        size_t header_sz = sizeof(KvHeader);
 
-        externalIndexInfo indexInfo;
+        if (use_varint_kv_header == true) {
+            header_sz = GetKVHeaderVarintSize(cstr);
+        }
+
+        externalIndexInfo index;
         if (use_varint_index == false) {
-            memcpy(&indexInfo, cstr + sizeof(internalValueType),
-                    sizeof(externalIndexInfo));
+            memcpy(&index, cstr + header_sz, sizeof(externalIndexInfo));
         } else {
-            indexInfo = GetVlogIndexVarint(cstr + sizeof(internalValueType));
+            index = GetVlogIndexVarint(cstr + header_sz);
         }
 
         // read length
         //        memcpy(&this->length, cstr + offset, sizeof(this->length));
-        this->length = indexInfo.externalContentSize_;
-        this->offset = (uint64_t)indexInfo.externalFileOffset_ +
-            ((uint64_t)(indexInfo.externalFileID_) << 32);
+        this->length = index.externalContentSize_;
+        this->offset = (uint64_t)index.externalFileOffset_ +
+            ((uint64_t)(index.externalFileID_) << 32);
 
         offset += sizeof(this->length);
         if (this->length & LSM_MASK) {

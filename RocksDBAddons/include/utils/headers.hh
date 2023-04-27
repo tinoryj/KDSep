@@ -5,6 +5,7 @@
 namespace DELTAKV_NAMESPACE {
 
 const bool use_varint_index = true;
+const bool use_varint_kv_header = false;
 
 inline char* EncodeVarint32(char* dst, uint32_t v) {
     // Operate on characters as unsigneds
@@ -150,7 +151,7 @@ inline size_t GetVlogIndexVarintSize(char* buf) {
 }
 
 inline externalIndexInfo GetVlogIndexVarint(const char* buf, size_t& offset) {
-    const char* ptr = buf + offset;
+    const char* ptr = buf;
     externalIndexInfo index;
     size_t sz1 = GetVarint32(ptr, &index.externalFileID_);
     size_t sz2 = GetVarint32(ptr + sz1, &index.externalFileOffset_);
@@ -160,7 +161,7 @@ inline externalIndexInfo GetVlogIndexVarint(const char* buf, size_t& offset) {
                 sz1, sz2, sz3);
         exit(1);
     }
-    offset += sz1 + sz2 + sz3;
+    offset = sz1 + sz2 + sz3;
 
     return index;
 }
@@ -182,8 +183,8 @@ inline externalIndexInfo GetVlogIndexVarint(const char* buf) {
 
 
 //// encoding and decoding of header
-//extern internalValueType GetKVHeaderVarint(char* buf, size_t& offset); 
-//extern size_t PutKVHeaderVarint(char* buf, internalValueType header, 
+//extern KvHeader GetKVHeaderVarint(char* buf, size_t& offset); 
+//extern size_t PutKVHeaderVarint(char* buf, KvHeader header, 
 //        bool use_header, bool use_no_delta_meta);
 
 // first byte: [8][4][2][1].
@@ -192,8 +193,8 @@ inline externalIndexInfo GetVlogIndexVarint(const char* buf) {
 // [4]: The value separated flag is true
 // [8]: There is a raw value size starting from the next byte
 // second byte: raw value size
-inline size_t PutKVHeaderVarint(char* buf, internalValueType header, 
-        bool use_header, bool use_value_size) {
+inline size_t PutKVHeaderVarint(char* buf, KvHeader header, 
+        bool use_header = true, bool use_value_size = true) {
     if (use_header == false) {
         buf[0] = 0;
         return 1;
@@ -209,7 +210,7 @@ inline size_t PutKVHeaderVarint(char* buf, internalValueType header,
         // 1. Whole value, or whole vLog index (is_delta == false)
         // 2. Metadata of deltas in the LSM-tree (is_delta == true &&
         // valueSeparatedFlag_ == true)
-    if (use_value_size == false) {
+    if (use_value_size == false || header.rawValueSize_ == 0) {
         // Giving up...
         buf[0] = c;
         return 1;
@@ -219,12 +220,12 @@ inline size_t PutKVHeaderVarint(char* buf, internalValueType header,
     return sz0 + 1;
 }
 
-inline internalValueType GetKVHeaderVarint(const char* buf, size_t& offset) {
-    internalValueType header;
-    const char* ptr = buf + offset;
+inline KvHeader GetKVHeaderVarint(const char* buf, size_t& offset) {
+    KvHeader header;
+    const char* ptr = buf;
     uint8_t c = ptr[0];
     if (c == 0) {
-        offset += 1;
+        offset = 1;
         return header; // empty header
     }
     header.mergeFlag_ = ((c & 2) > 0);
@@ -233,8 +234,34 @@ inline internalValueType GetKVHeaderVarint(const char* buf, size_t& offset) {
     if ((c & 8) > 0) {
         sz0 = GetVarint32(ptr + 1, &header.rawValueSize_);
     }
-    offset += 1 + sz0;
+    offset = 1 + sz0;
     return header;
 }
+
+inline size_t GetKVHeaderVarintSize(const char* buf) {
+    const char* ptr = buf;
+    uint8_t c = ptr[0];
+    uint32_t num;
+    if (c == 0) {
+        return 1;
+    }
+    size_t sz0 = 0;
+    if ((c & 8) > 0) {
+        sz0 = GetVarint32(ptr + 1, &num);
+    }
+    return 1 + sz0;
+}
+
+// encode the header and get size
+inline size_t GetKVHeaderVarintSize(KvHeader header) {
+    char buf[5];
+    if (header.rawValueSize_ == 0) {
+        return 1;
+    }
+    size_t sz0 = PutVarint32(buf, header.rawValueSize_);
+    return sz0 + 1;
+}
+
+
 
 }

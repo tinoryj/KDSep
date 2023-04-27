@@ -146,13 +146,13 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     rocksdb::BlockBasedTableOptions bbto;
 
     if (directIO == true) {
-        options_.rocksdbRawOptions_.use_direct_reads = directReads;
-        options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = true;
+        options_.rocks_opt.use_direct_reads = directReads;
+        options_.rocks_opt.use_direct_io_for_flush_and_compaction = true;
         options_.fileOperationMethod_ = (directReads) ?
             DELTAKV_NAMESPACE::kDirectIO : DELTAKV_NAMESPACE::kAlignLinuxIO;
     } else {
-        options_.rocksdbRawOptions_.allow_mmap_reads = useMmap;
-        options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
+        options_.rocks_opt.allow_mmap_reads = useMmap;
+        options_.rocks_opt.allow_mmap_writes = useMmap;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
     }
 
@@ -166,17 +166,17 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         if (blockCacheSize == 0) {
             bbto.no_block_cache = true;
         }
-        options_.rocksdbRawOptions_.enable_blob_files = true;
-        options_.rocksdbRawOptions_.min_blob_size = config.getMinBlobSize();                           // Default 1024
-        options_.rocksdbRawOptions_.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
-        options_.rocksdbRawOptions_.blob_compression_type = kNoCompression;                            // Default kNoCompression
-        options_.rocksdbRawOptions_.enable_blob_garbage_collection = true;                             // Default false
-        options_.rocksdbRawOptions_.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
-        options_.rocksdbRawOptions_.blob_garbage_collection_force_threshold = config.getBlobGCForce(); // Default 1.0
-        options_.rocksdbRawOptions_.blob_compaction_readahead_size = 0;                  // Default 0
-        options_.rocksdbRawOptions_.blob_file_starting_level = 0;                                      // Default 0
-        options_.rocksdbRawOptions_.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
-        options_.rocksdbRawOptions_.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
+        options_.rocks_opt.enable_blob_files = true;
+        options_.rocks_opt.min_blob_size = config.getMinBlobSize();                           // Default 1024
+        options_.rocks_opt.blob_file_size = config.getBlobFileSize() * 1024;                  // Default 256*1024*1024
+        options_.rocks_opt.blob_compression_type = kNoCompression;                            // Default kNoCompression
+        options_.rocks_opt.enable_blob_garbage_collection = true;                             // Default false
+        options_.rocks_opt.blob_garbage_collection_age_cutoff = 0.25;                         // Default 0.25
+        options_.rocks_opt.blob_garbage_collection_force_threshold = config.getBlobGCForce(); // Default 1.0
+        options_.rocks_opt.blob_compaction_readahead_size = 0;                  // Default 0
+        options_.rocks_opt.blob_file_starting_level = 0;                                      // Default 0
+        options_.rocks_opt.blob_cache = (blobCacheSize > 0) ? rocksdb::NewLRUCache(blobCacheSize) : nullptr; //rocksdb::NewLRUCache(blockCacheSize / 8 * 7);         // Default nullptr, bbto.block_cache
+        options_.rocks_opt.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;  // Default kDisable
         assert(!keyValueSeparation);
     } else {
         bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(blockCacheSize);
@@ -241,10 +241,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
 
     if (fakeDirectIO) {
         cerr << "Enabled fake I/O, do not sync" << endl;
-        options_.rocksdbRawOptions_.use_direct_reads = false;
-        options_.rocksdbRawOptions_.use_direct_io_for_flush_and_compaction = false;
-        options_.rocksdbRawOptions_.allow_mmap_reads = useMmap;
-        options_.rocksdbRawOptions_.allow_mmap_writes = useMmap;
+        options_.rocks_opt.use_direct_reads = false;
+        options_.rocks_opt.use_direct_io_for_flush_and_compaction = false;
+        options_.rocks_opt.allow_mmap_reads = useMmap;
+        options_.rocks_opt.allow_mmap_writes = useMmap;
         options_.fileOperationMethod_ = DELTAKV_NAMESPACE::kAlignLinuxIO;
         options_.rocksdb_sync_put = false;
         options_.rocksdb_sync_merge = false;
@@ -260,46 +260,46 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 
     options_.deltaKV_merge_operation_ptr.reset(new DELTAKV_NAMESPACE::DeltaKVFieldUpdateMergeOperator);
-    options_.rocksdbRawOptions_.merge_operator.reset(new FieldUpdateMergeOperator);
+    options_.rocks_opt.merge_operator.reset(new FieldUpdateMergeOperator);
 
-    options_.rocksdbRawOptions_.create_if_missing = true;
-    options_.rocksdbRawOptions_.write_buffer_size = memtableSize;
-    // options_.rocksdbRawOptions_.compaction_pri = rocksdb::kMinOverlappingRatio;
+    options_.rocks_opt.create_if_missing = true;
+    options_.rocks_opt.write_buffer_size = memtableSize;
+    // options_.rocks_opt.compaction_pri = rocksdb::kMinOverlappingRatio;
     if (config.getTiered()) {
-        options_.rocksdbRawOptions_.compaction_style = rocksdb::kCompactionStyleUniversal;
+        options_.rocks_opt.compaction_style = rocksdb::kCompactionStyleUniversal;
     }
-    options_.rocksdbRawOptions_.max_background_jobs = config.getNumThreads();
-    options_.rocksdbRawOptions_.disable_auto_compactions = config.getNoCompaction();
-    options_.rocksdbRawOptions_.level_compaction_dynamic_level_bytes = true;
-    options_.rocksdbRawOptions_.target_file_size_base = config.getSSTSize();
-    options_.rocksdbRawOptions_.max_bytes_for_level_base = config.getL1Size();
-    options_.rocksdbRawOptions_.max_open_files = config.getMaxOpenFiles();
-//    options_.rocksdbRawOptions_.max_write_buffer_number = 
-//        options_.rocksdbRawOptions_.max_bytes_for_level_base /
-//        options_.rocksdbRawOptions_.write_buffer_size; 
+    options_.rocks_opt.max_background_jobs = config.getNumThreads();
+    options_.rocks_opt.disable_auto_compactions = config.getNoCompaction();
+    options_.rocks_opt.level_compaction_dynamic_level_bytes = true;
+    options_.rocks_opt.target_file_size_base = config.getSSTSize();
+    options_.rocks_opt.max_bytes_for_level_base = config.getL1Size();
+    options_.rocks_opt.max_open_files = config.getMaxOpenFiles();
+//    options_.rocks_opt.max_write_buffer_number = 
+//        options_.rocks_opt.max_bytes_for_level_base /
+//        options_.rocks_opt.write_buffer_size; 
 //    // Make L0 size similar to L1 size
 
     cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
-    cerr << "write buffer size " << options_.rocksdbRawOptions_.write_buffer_size << endl;
-    cerr << "write buffer number " << options_.rocksdbRawOptions_.max_write_buffer_number << endl;
+    cerr << "write buffer size " << options_.rocks_opt.write_buffer_size << endl;
+    cerr << "write buffer number " << options_.rocks_opt.max_write_buffer_number << endl;
     cerr << "num compaction trigger "
-         << options_.rocksdbRawOptions_.level0_file_num_compaction_trigger << endl;
-    cerr << "targe file size base " << options_.rocksdbRawOptions_.target_file_size_base << endl;
-    cerr << "level size base " << options_.rocksdbRawOptions_.max_bytes_for_level_base << endl;
-    cerr << "max open files " << options_.rocksdbRawOptions_.max_open_files << endl;
+         << options_.rocks_opt.level0_file_num_compaction_trigger << endl;
+    cerr << "targe file size base " << options_.rocks_opt.target_file_size_base << endl;
+    cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
+    cerr << "max open files " << options_.rocks_opt.max_open_files << endl;
 
-    cerr << "compression " << (int)options_.rocksdbRawOptions_.compression << endl;
+    cerr << "compression " << (int)options_.rocks_opt.compression << endl;
 //    exit(1);
     if (!compression) {
-        options_.rocksdbRawOptions_.compression = rocksdb::kNoCompression;
+        options_.rocks_opt.compression = rocksdb::kNoCompression;
     }
     if (bloomBits > 0) {
         bbto.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloomBits));
     }
-    options_.rocksdbRawOptions_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
+    options_.rocks_opt.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
-    options_.rocksdbRawOptions_.statistics = rocksdb::CreateDBStatistics();
-    options_.rocksdbRawOptions_.report_bg_io_stats = true;
+    options_.rocks_opt.statistics = rocksdb::CreateDBStatistics();
+    options_.rocks_opt.report_bg_io_stats = true;
 
     cerr << "--- Start create DeltaKVDB instance" << endl;
 
@@ -440,7 +440,7 @@ void DeltaKVDB::printStats() {
     cout << "Get RocksDB Build-in I/O Stats Context: " << endl;
     cout << rocksdb::get_iostats_context()->ToString() << endl;
     cout << "Get RocksDB Build-in Total Stats Context: " << endl;
-    cout << options_.rocksdbRawOptions_.statistics->ToString() << endl;
+    cout << options_.rocks_opt.statistics->ToString() << endl;
 }
 
 DeltaKVDB::~DeltaKVDB() {

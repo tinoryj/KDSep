@@ -44,7 +44,7 @@ public:
 //    bool SingleDelete(const string& key);
 
 private:
-    rocksdb::DB* pointerToRawRocksDB_;
+    rocksdb::DB* rocksdb_;
     // batched write
 
     enum LsmTreeRunningMode { kValueLog = 0, kNoValueLog = 1};
@@ -55,7 +55,7 @@ private:
     rocksdb::WriteOptions internalWriteOption_;
     rocksdb::WriteOptions internalMergeOption_;
     // Storage component for value store
-    IndexStoreInterface* IndexStoreInterfaceObjPtr_ = nullptr;
+    IndexStoreInterface* vlog_ = nullptr;
     MergeOperator* mergeOperator_ = nullptr; 
     uint64_t valueExtractSize_ = 0;
     bool isValueStoreInUseFlag_ = false;

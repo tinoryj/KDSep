@@ -70,6 +70,13 @@ config_workload() {
         UpdateProportion=0
     fi
 
+    if [[ "$ReadProportion" == "" ]]; then
+        ReadProportion=0
+    fi
+    if [[ "$UpdateProportion" == "" ]]; then
+        UpdateProportion=0
+    fi
+
     sed -i "/readproportion/c\\readproportion=$ReadProportion" $SPEC
     if [[ "$rmw" == "false" ]]; then
         sed -i "/updateproportion/c\\updateproportion=$UpdateProportion" $SPEC
@@ -580,7 +587,7 @@ if [[ "$nommap" == "true" ]]; then
     sed -i "/useMmap/c\\useMmap = false" temp.ini
 fi
 
-numMainSegment="$(( $KVPairsNumber * (24 + $fieldcount * $fieldlength) / 10 * 13 / 1048576))"
+numMainSegment="$(( $KVPairsNumber * (24 + $fieldcount * $fieldlength) / 10 * 15 / 1048576))"
 if [[ $numMainSegment -le 100 ]]; then
     echo "test: numMainSegment 100"
     numMainSegment=100
@@ -792,6 +799,8 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         wait $newpid
     else
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
+#        echo "./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file"
+#        exit
     fi
     set +x
     loaded="false"

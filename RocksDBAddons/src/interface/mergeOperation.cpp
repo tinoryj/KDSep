@@ -71,21 +71,23 @@ int IntToStringSize(int num) {
     return result;
 }
 
-bool DeltaKVFieldUpdateMergeOperator::Merge(const string& raw_value, const vector<string>& operands, string* result)
-{
+// Do not consider the headers
+bool DeltaKVFieldUpdateMergeOperator::Merge(
+        const string& raw_value, const vector<string>& operands, 
+        string* result) {
     str_t rawValueStrT(const_cast<char*>(raw_value.data()), raw_value.size());
-    vector<str_t> operandListStrT;
+    vector<str_t> operands_str;
     for (auto& it : operands) {
-        operandListStrT.push_back(str_t(const_cast<char*>(it.data()), it.size()));
+        operands_str.push_back(str_t(const_cast<char*>(it.data()), it.size()));
     }
-    return Merge(rawValueStrT, operandListStrT, result);
+    return Merge(rawValueStrT, operands_str, result);
 }
 
-bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& raw_value, const vector<str_t>& operands, string* result) {
+bool DeltaKVFieldUpdateMergeOperator::Merge(
+        const str_t& raw_value, const vector<str_t>& operands, string* result)
+{
     unordered_map<int, str_t> operandMap;
     vector<str_t> rawOperandListVec;
-//    struct timeval tv;
-//    gettimeofday(&tv, 0);
     for (auto& it : operands) {
         StringSplit(it, ',', rawOperandListVec);
     }
@@ -95,12 +97,8 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& raw_value, const vector
     }
     vector<str_t> raw_value_fields = StringSplit(raw_value, ',');
     for (auto q : operandMap) {
-        // debug_trace("merge operand = %s, current index =  %d, content = %s, raw_value at indx = %s\n", q.c_str(), index, updateContentStr.c_str(), raw_value_fields[index].c_str());
         raw_value_fields[q.first] = q.second;
     }
-
-//    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_SPLIT, &tv);
-//    gettimeofday(&tv, 0);
 
     int resultSize = -1;
     int index = 0;
@@ -207,54 +205,63 @@ string DeltaKVFieldUpdateMergeOperator::kClassName()
 
 inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
         str_t& operand, uint64_t& delta_off, vector<str_t>& deltas, str_t&
-        new_value_index, int& leading_index) const {
-    const int header_size = sizeof(internalValueType);
-    const int value_index_size = sizeof(externalIndexInfo);
+        raw_index, int& leading_index) const {
     str_t operand_delta;
+    size_t header_sz = sizeof(KvHeader);
+    int index_sz = sizeof(externalIndexInfo);
 
+    // slighltly similar to PartialMerge()
+    // difference: the value index does not include the header (no need) 
     while (delta_off < operand.size_) {
-        internalValueType* header_ptr = (internalValueType*)(operand.data_ + delta_off);
+        KvHeader header;
+       
+        // increase delta_off
+        if (use_varint_kv_header == false) {
+            memcpy(&header, operand.data_ + delta_off, header_sz);
+        } else {
+            header = GetKVHeaderVarint(operand.data_ + delta_off, header_sz);
+        }
 
         // extract the oprand
-        if (header_ptr->mergeFlag_ == true) {
+        if (header.mergeFlag_ == true) {
             // index update
             if (use_varint_index == false) {
-                assert(header_ptr->valueSeparatedFlag_ == true && delta_off +
-                        header_size + value_index_size <= operand.size_);
-                new_value_index = str_t(operand.data_ + delta_off + header_size, value_index_size);
-                delta_off += header_size + value_index_size;
+                assert(header.valueSeparatedFlag_ == true && delta_off + 
+                        header_sz + index_sz <= operand.size_);
+                raw_index = str_t(operand.data_ + delta_off +
+                        header_sz, index_sz);
+                delta_off += header_sz + index_sz;
             } else {
-                assert(header_ptr->valueSeparatedFlag_ == true &&
-                        delta_off + header_size <= operand.size_);
-                char* buf = operand.data_ + delta_off + header_size;
-                int index_size = GetVlogIndexVarintSize(buf);
-                debug_error("extract, index_size %d\n", index_size);
-                new_value_index = str_t(buf, index_size);
-                delta_off += header_size + index_size; 
+                assert(header.valueSeparatedFlag_ == true &&
+                        delta_off + header_sz <= operand.size_);
+                char* buf = operand.data_ + delta_off + header_sz;
+                index_sz = GetVlogIndexVarintSize(buf);
+                raw_index = str_t(buf, index_sz);
+                delta_off += header_sz + index_sz; 
             }
         } else {
-            // Check whether we need to collect the raw deltas for immediate merging.
+            // Check whether we need to collect raw deltas for merging.
             // 1. The value should be not separated (i.e., should be raw value)
             // 2. The previous deltas (if exists) should also be raw deltas
             // 3. The current deltas should be a raw delta
 
-            if (header_ptr->valueSeparatedFlag_ == false) {
+            if (header.valueSeparatedFlag_ == false) {
                 // raw delta
-                auto& delta_sz = header_ptr->rawValueSize_;
-                assert(delta_off + header_size + delta_sz <= operand.size_);
+                auto& delta_sz = header.rawValueSize_;
+                assert(delta_off + header_sz + delta_sz <= operand.size_);
                 deltas.push_back(str_t(operand.data_ + delta_off, 
-                            header_size + delta_sz));
-                delta_off += header_size + delta_sz;
+                            header_sz + delta_sz));
+                delta_off += header_sz + delta_sz;
 
-                if (value_separated == false && (int)deltas.size() == leading_index + 1) {
+                if (!value_separated && (int)deltas.size() == leading_index + 1) {
                     // Extract the raw delta, prepare for field updates
                     leading_index++;
                 }
             } else {
                 // separated delta
-                assert(delta_off + header_size <= operand.size_);
-                deltas.push_back(str_t(operand.data_ + delta_off, header_size));
-                delta_off += header_size;
+                assert(delta_off + header_sz <= operand.size_);
+                deltas.push_back(str_t(operand.data_ + delta_off, header_sz));
+                delta_off += header_sz;
             }
 
         }
@@ -270,45 +277,53 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     gettimeofday(&tv, 0);
 
     // request meRGE Operation when the value is found
-    debug_info("Full merge for key = %s, value size = %lu\n",
-            key.ToString().c_str(), existing_value->size());
-    str_t new_value_index(nullptr, 0);
-    const int header_size = sizeof(internalValueType);
-    const int value_index_size = sizeof(externalIndexInfo);
+//    debug_error("Full merge for key = %s, value size = %lu\n",
+//            key.ToString().c_str(), existing_value->size());
+//    for (auto& str : operand_list) {
+//        debug_error("delta size %lu\n", str.size());
+//    }
+    str_t raw_index(nullptr, 0);
+    size_t vheader_sz = sizeof(KvHeader);
+    size_t dheader_sz = sizeof(KvHeader);
+    int index_sz = sizeof(externalIndexInfo);
 
-    internalValueType value_header; 
+    KvHeader vheader; 
 
-    memcpy(&value_header, existing_value->data(), header_size);
+    if (use_varint_kv_header == false) {
+        memcpy(&vheader, existing_value->data(), vheader_sz);
+    } else {
+        vheader = GetKVHeaderVarint(existing_value->data(), vheader_sz);
+    }
 
     vector<str_t> leadingRawDeltas;
     vector<str_t> deltas;
     str_t operand;
 
-    bool value_separated = value_header.valueSeparatedFlag_;
+    bool value_separated = vheader.valueSeparatedFlag_;
     int leading_index = 0;
 
     // Output format:
     // If value is separated:    
-    //      [internalValueType] [externalIndexInfo] [appended deltas if any]
+    //      [KvHeader] [externalIndexInfo] [appended deltas if any]
     // If value is not separated:
-    //      [internalValueType] [   raw   value   ] [appended deltas if any]
+    //      [KvHeader] [   raw   value   ] [appended deltas if any]
 
     // Step 1. Scan the deltas in the value 
     {
         uint64_t delta_off = 0;
-        if (value_header.valueSeparatedFlag_ == false) {
-            delta_off = header_size + value_header.rawValueSize_;
+        if (vheader.valueSeparatedFlag_ == false) {
+            delta_off = vheader_sz + vheader.rawValueSize_;
         } else if (use_varint_index == false) {
-            delta_off = header_size + value_index_size;
+            delta_off = vheader_sz + index_sz;
         } else {
-            delta_off = header_size + GetVlogIndexVarintSize(
-                    const_cast<char*>(existing_value->data()) + header_size);
+            delta_off = vheader_sz + GetVlogIndexVarintSize(
+                    const_cast<char*>(existing_value->data()) + vheader_sz);
         }
         str_t operand_it(const_cast<char*>(existing_value->data()),
                 existing_value->size());
 
         ExtractDeltas(value_separated, operand_it,
-                delta_off, deltas, new_value_index, leading_index);
+                delta_off, deltas, raw_index, leading_index);
     }
 
     // Step 2. Scan the deltas in the operand list
@@ -317,32 +332,37 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         str_t operand_it(const_cast<char*>(operand_list_it.data()),
                 operand_list_it.size());
         ExtractDeltas(value_separated, operand_it,
-                delta_off, deltas, new_value_index, leading_index);
+                delta_off, deltas, raw_index, leading_index);
     }
 
     // Step 3. Do full merge on the value
     str_t merged_raw_value(nullptr, 0);
     bool need_free = false;
-    str_t raw_value(const_cast<char*>(existing_value->data()) + header_size, value_header.rawValueSize_);
+    str_t raw_value(const_cast<char*>(existing_value->data()) + vheader_sz,
+            vheader.rawValueSize_);
     if (leading_index > 0) {
         vector<str_t> raw_deltas;
         for (int i = 0; i < leading_index; i++) {
-            raw_deltas.push_back(str_t(deltas[i].data_ + header_size, deltas[i].size_ - header_size));
+            if (use_varint_kv_header == true) {
+                dheader_sz = GetKVHeaderVarintSize(deltas[i].data_);
+            }
+            raw_deltas.push_back(str_t(deltas[i].data_ + dheader_sz,
+                        deltas[i].size_ - dheader_sz));
         }
         FullMergeFieldUpdates(raw_value, raw_deltas, &merged_raw_value);
         // need to free the space for full merge later
         need_free = true;
 
-        value_header.rawValueSize_ = merged_raw_value.size_;
+        vheader.rawValueSize_ = merged_raw_value.size_;
     } else if (value_separated) {
-        if (new_value_index.data_ != nullptr) {
-            merged_raw_value = new_value_index;
+        if (raw_index.data_ != nullptr) {
+            merged_raw_value = raw_index;
         } else {
             if (use_varint_index) {
                 merged_raw_value = str_t(raw_value.data_,
                         GetVlogIndexVarintSize(raw_value.data_));
             } else {
-                merged_raw_value = str_t(raw_value.data_, value_index_size); 
+                merged_raw_value = str_t(raw_value.data_, index_sz); 
             }
         }
     } else {
@@ -361,19 +381,24 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
             // TODO manage the sequence numbers
             // copy the headers and the contents to the vector; then perform
             // partial merge
-            vector<pair<internalValueType*, str_t>> operand_type_vec;
+            vector<pair<KvHeader, str_t>> operand_type_vec;
             operand_type_vec.resize(deltas.size() - leading_index);
             uint64_t total_delta_size = 0;
             for (int i = leading_index; i < (int)deltas.size(); i++) {
+                KvHeader dheader;
+                if (use_varint_kv_header == false) {
+                    memcpy(&dheader, deltas[i].data_, dheader_sz);
+                } else {
+                    dheader = GetKVHeaderVarint(deltas[i].data_, dheader_sz);
+                }
                 operand_type_vec[i - leading_index] = 
-                    make_pair((internalValueType*)deltas[i].data_, 
-                            str_t(deltas[i].data_ + header_size, 
-                                deltas[i].size_ - header_size)); 
+                    make_pair(dheader, str_t(deltas[i].data_ + dheader_sz,
+                                deltas[i].size_ - dheader_sz)); 
                 total_delta_size += deltas[i].size_;
             }
 
             // partial merged delta include the header
-            PartialMergeFieldUpdates(operand_type_vec, 
+            PartialMergeFieldUpdatesWithHeader(operand_type_vec, 
                     partial_merged_delta);
 
             debug_info("After partial merge: num deltas %lu, tot sz %lu, "
@@ -387,24 +412,38 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     }
 
     // Step 5. Update header
-    // Reuse value_header as an output
+    // Reuse vheader as an output
     if (partial_merged_delta.size_ > 0) {
-        value_header.mergeFlag_ = true;
+        vheader.mergeFlag_ = true;
     }
 
-    new_value->resize(header_size + merged_raw_value.size_ + partial_merged_delta.size_);
+    char header_buf[16];
+    if (use_varint_kv_header == true) {
+        vheader_sz = PutKVHeaderVarint(header_buf, vheader);
+    }
+
+    // Prepare space for header, value, and deltas
+    new_value->resize(vheader_sz + merged_raw_value.size_ +
+            partial_merged_delta.size_);
     char* buffer = new_value->data();
-    memcpy(buffer, &value_header, header_size);
+    // write the header. Buffer pointer moved by copyIncBuf()
+    if (use_varint_kv_header == true) {
+        copyIncBuf(buffer, &header_buf, vheader_sz);
+    } else {
+        copyIncBuf(buffer, &vheader, vheader_sz);
+    }
+
+    // write the value
     if (merged_raw_value.size_ > 0) {
-        memcpy(buffer + header_size, merged_raw_value.data_, merged_raw_value.size_);
+        copyIncBuf(buffer, merged_raw_value.data_, merged_raw_value.size_);
         if (need_free) {
             delete[] merged_raw_value.data_;
         }
     }
+
+    // write the delta
     if (partial_merged_delta.size_ > 0) {
-        memcpy(buffer + header_size + merged_raw_value.size_, 
-                partial_merged_delta.data_, 
-                partial_merged_delta.size_);
+        memcpy(buffer, partial_merged_delta.data_, partial_merged_delta.size_);
         if (need_free_partial) {
             delete[] partial_merged_delta.data_;
         }
@@ -418,73 +457,87 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     return true;
 }
 
-bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& left_operand,
-    const Slice& right_operand, std::string* new_value,
-    Logger* logger) const
+bool RocksDBInternalMergeOperator::PartialMerge(
+        const Slice& key, const Slice& left_operand, const Slice&
+        right_operand, std::string* new_value, Logger* logger) const
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
-    const int header_size = sizeof(internalValueType);
-    const int value_index_size = sizeof(externalIndexInfo);
+    size_t header_sz = sizeof(KvHeader);
+    int index_sz = sizeof(externalIndexInfo);
     vector<str_t> operandStrs;
     operandStrs.push_back(str_t(const_cast<char*>(left_operand.data()), left_operand.size()));
     operandStrs.push_back(str_t(const_cast<char*>(right_operand.data()), right_operand.size()));
-    str_t new_value_index(nullptr, 0);
-    vector<pair<internalValueType*, str_t>> operand_type_vec;
+    str_t index(nullptr, 0);
+    vector<pair<KvHeader, str_t>> headers_deltas;
 
-    // An simplified version of ExtractDeltas()
+    // A slightly different version of ExtractDeltas()
+    // difference: the new value index includes the header here.
     for (auto& it : operandStrs) {
         uint64_t delta_off = 0;
         while (delta_off < it.size_) {
-            internalValueType* header_ptr = (internalValueType*)(it.data_ + delta_off);
-            // extract the oprand
-            if (header_ptr->mergeFlag_ == true) {
+            KvHeader header;
+
+            // increase delta_off. Extract the header
+            if (use_varint_kv_header == false) {
+                memcpy(&header, it.data_ + delta_off, header_sz);
+            } else {
+                header = GetKVHeaderVarint(it.data_ + delta_off, header_sz);
+            }
+                
+            // extract the operand
+            if (header.mergeFlag_ == true) {
                 // index update
                 if (use_varint_index == false) {
-                    assert(header_ptr->valueSeparatedFlag_ == true && 
-                            delta_off + header_size + value_index_size <=
+                    assert(header.valueSeparatedFlag_ == true && 
+                            delta_off + header_sz + index_sz <=
                             it.size_);
-                    new_value_index = str_t(it.data_ + delta_off, header_size +
-                            value_index_size);
-                    delta_off += header_size + value_index_size;
+                    // includes the header
+                    index = str_t(it.data_ + delta_off, header_sz +
+                            index_sz);
+                    delta_off += header_sz + index_sz;
                 } else {
-                    assert(header_ptr->valueSeparatedFlag_ == true && 
-                            delta_off + header_size < it.size_);
-                    int index_size = GetVlogIndexVarintSize(it.data_ + delta_off);
-                    new_value_index = str_t(it.data_ + delta_off, header_size +
-                            index_size);
-                    delta_off += header_size + index_size; 
+                    assert(header.valueSeparatedFlag_ == true && 
+                            delta_off + header_sz < it.size_);
+                    char* buf = it.data_ + delta_off;
+                    index_sz = GetVlogIndexVarintSize(buf);
+                    // includes the header
+                    index = str_t(buf, header_sz + index_sz);
+                    delta_off += header_sz + index_sz; 
                 }
             } else {
-                if (header_ptr->valueSeparatedFlag_ == false) {
+                if (header.valueSeparatedFlag_ == false) {
                     // raw delta
-                    auto& delta_sz = header_ptr->rawValueSize_;
-                    assert(delta_off + header_size + delta_sz <= it.size_);
-                    operand_type_vec.push_back(make_pair(header_ptr, 
-                                str_t(it.data_ + delta_off + header_size, delta_sz)));
-                    delta_off += header_size + delta_sz;
+                    auto& delta_sz = header.rawValueSize_;
+                    assert(delta_off + header_sz + delta_sz <= it.size_);
+                    // separate the header
+                    headers_deltas.push_back(make_pair(header, 
+                                str_t(it.data_ + delta_off + header_sz,
+                                    delta_sz)));
+                    delta_off += header_sz + delta_sz;
                 } else {
                     // separated delta
-                    assert(delta_off + header_size <= it.size_);
-                    operand_type_vec.push_back(make_pair(header_ptr, 
+                    assert(delta_off + header_sz <= it.size_);
+                    headers_deltas.push_back(make_pair(header, 
                                 str_t(it.data_ + delta_off, 0)));
-                    delta_off += header_size;
+                    delta_off += header_sz;
                 }
             }
         }
     }
 
-    str_t finalDeltaListStrT;
-    PartialMergeFieldUpdates(operand_type_vec, finalDeltaListStrT);
-    if (new_value_index.size_ > 0) {
-        new_value->resize(new_value_index.size_ + finalDeltaListStrT.size_);
+    str_t final_deltas;
+    // merge with headers. The output has header
+    PartialMergeFieldUpdatesWithHeader(headers_deltas, final_deltas);
+    if (index.size_ > 0) {
+        new_value->resize(index.size_ + final_deltas.size_);
         char* buffer = new_value->data();
-        memcpy(buffer, new_value_index.data_, new_value_index.size_);
-        memcpy(buffer + new_value_index.size_, finalDeltaListStrT.data_, finalDeltaListStrT.size_);
+        copyIncBuf(buffer, index.data_, index.size_);
+        memcpy(buffer, final_deltas.data_, final_deltas.size_);
     } else {
-        new_value->assign(finalDeltaListStrT.data_, finalDeltaListStrT.size_);
+        new_value->assign(final_deltas.data_, final_deltas.size_);
     }
-    delete[] finalDeltaListStrT.data_;
+    delete[] final_deltas.data_;
     StatsRecorder::getInstance()->timeProcess(StatsType::LSM_FLUSH_ROCKSDB_PARTIALMERGE, tv);
     return true;
 }
@@ -494,33 +547,41 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
 // Otherwise, do the partial merge only when the raw values are continuous.
 // Example: [separated] [1,A] [2,B] [1,C] [separated] -> [separated] [2,B] [1,C] [separated]
 // The original implementation is incorrect; it keeps only the earliest one, and the sequence is all reversed
-inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& operand_type_vec, str_t& final_result) const
-{
-    vector<internalValueType*> separated_headers;
+inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdatesWithHeader(
+        vector<pair<KvHeader, str_t>>& operand_type_vec, str_t& final_result)
+    const {
+    vector<KvHeader> separated_headers;
     unordered_map<int, str_t> raw_fields;
 
     // empty - separated deltas; not empty, raw deltas
     vector<unordered_map<int, str_t>> raw_fields_result; 
+    vector<int> raw_delta_sizes;
 
-    int final_result_size = 0;
-    const int header_size = sizeof(internalValueType);
+    int final_size = 0;
+    size_t header_sz = sizeof(KvHeader);
+    KvHeader header; // tmp header
 
     // Extract the raw fields 
     for (auto i = 0; i < operand_type_vec.size(); i++) {
-        if (operand_type_vec[i].first->valueSeparatedFlag_ == false) {
+        if (operand_type_vec[i].first.valueSeparatedFlag_ == false) {
+            // not delta separated
             vector<str_t> operand_list;
             StringSplit(operand_type_vec[i].second, ',', operand_list);
 
+            // map the raw fields to their indices
             for (auto j = 0; j < operand_list.size(); j += 2) {
                 int index = str_t_stoi(operand_list[j]);
                 raw_fields[index] = operand_list[j+1];
             }
         } else {
+            // delta separated
             if (!raw_fields.empty()) {
+                // the delta metadata
                 raw_fields_result.push_back(raw_fields);
                 raw_fields.clear();
             }
             raw_fields_result.push_back({});
+            // only the delta metadata needs header information
             separated_headers.push_back(operand_type_vec[i].first);
         }
     }
@@ -530,35 +591,53 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<i
         raw_fields.clear();
     }
 
+    raw_delta_sizes.resize(raw_fields_result.size());
+    int i = 0;
+
     // Calculate the final delta size
     for (auto& it : raw_fields_result) {
-        final_result_size += header_size;
+        int raw_delta_size = 0;
         if (it.empty() == false) {
             for (auto& it0 : it) {
-                final_result_size += IntToStringSize(it0.first) + it0.second.size_ + 2;
+                // index, two commas, and the field content
+                raw_delta_size += IntToStringSize(it0.first) + it0.second.size_ + 2;
             }
-            final_result_size--;
+            // delete the last comma
+            raw_delta_size--;
+        }
+        // record the raw delta size in the vector
+        header.rawValueSize_ = raw_delta_size; 
+        if (use_varint_kv_header == true) {
+            final_size += GetKVHeaderVarintSize(header) + raw_delta_size;
+        } else {
+            raw_delta_sizes[i++] = raw_delta_size;
+            final_size += header_sz + raw_delta_size;
         }
     }
 
     debug_info("PartialMerge raw delta number %lu, "
             "separated deltas %lu, final result size %d\n", 
             operand_type_vec.size(), separated_headers.size(),
-            final_result_size);
+            final_size);
 
-    char* result = new char[final_result_size + 1];
+    char* result = new char[final_size + 1];
     int result_i = 0;
 
     // Build the final delta
     // the index of separated deltas
-    int i = 0;
+    // The header variable already has double falses
+    i = 0;
+    int j = 0;
 
     for (auto& it : raw_fields_result) {
-        internalValueType header;
         if (it.empty() == false) {
             bool first = true;
             int tmp_i = result_i;
-            result_i += header_size;
+            if (use_varint_kv_header == true) {
+                header.rawValueSize_ = raw_delta_sizes[j++];
+                header_sz = PutKVHeaderVarint(result + result_i, header);
+            }
+            result_i += header_sz;
             for (auto& it0 : it) {
                 if (first) {
                     sprintf(result + result_i, "%d,%.*s", it0.first,
@@ -572,24 +651,37 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdates(vector<pair<i
                 while (result[result_i]) 
                     result_i++;
             }
-            header.rawValueSize_ = result_i - tmp_i - header_size;
-            memcpy(result + tmp_i, &header, header_size);
+            if (use_varint_kv_header == false) {
+                header.rawValueSize_ = result_i - tmp_i - header_sz;
+                memcpy(result + tmp_i, &header, header_sz);
+            } else {
+                if (header.rawValueSize_ != result_i - tmp_i - header_sz) {
+                    debug_error("Header size error: %d %d\n", 
+                            header.rawValueSize_,
+                            (int)(result_i - tmp_i - header_sz));
+                    exit(1);
+                }
+            }
         } else {
-            memcpy(result + result_i, separated_headers[i],
-                    header_size);
-            result_i += header_size;
+            if (use_varint_kv_header == false) {
+                memcpy(result + result_i, &(separated_headers[i]),
+                        header_sz);
+            } else {
+                header_sz = PutKVHeaderVarint(result + result_i,
+                        separated_headers[i]);
+            }
+            result_i += header_sz;
             i++;
         }
     }
 
-    debug_info("result_i %d final_result_size %d header %d\n", 
-            result_i, final_result_size, header_size);
-
-    final_result = str_t(result, final_result_size);
+    final_result = str_t(result, final_size);
     return true;
 }
 
-inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(str_t& raw_value, vector<str_t>& operands, str_t* result) const
+// Do not include the headers
+inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(
+        str_t& raw_value, vector<str_t>& operands, str_t* result) const
 {
     int buffer_size = -1;
 
@@ -604,6 +696,10 @@ inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(str_t& raw_value
 
     for (auto it = 0; it < rawOperandsVec.size(); it += 2) {
         int index = str_t_stoi(rawOperandsVec[it]);
+        if (index > 10) {
+            debug_error("index = %d\n", index);
+            exit(1);
+        }
         raw_value_fields[index] = rawOperandsVec[it+1];
     }
 

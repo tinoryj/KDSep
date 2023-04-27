@@ -69,7 +69,7 @@ bool DeltaKVOptions::dumpDataStructureInfo(string dumpPath)
         return false;
     }
     // write content
-    dumpStructureSizeOutStream << "Size of internalValueType = " << sizeof(internalValueType) << endl;
+    dumpStructureSizeOutStream << "Size of KvHeader = " << sizeof(KvHeader) << endl;
     dumpStructureSizeOutStream << "Size of externalIndexInfo = " << sizeof(externalIndexInfo) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreFileMetaDataHandler = " << sizeof(hashStoreFileMetaDataHandler) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreWriteOperationHandler = " << sizeof(hashStoreWriteOperationHandler) << endl;

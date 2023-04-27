@@ -13,19 +13,27 @@ namespace DELTAKV_NAMESPACE {
 
 class DeltaKVMergeOperator {
 public:
-    virtual bool Merge(const string& rawValue, const vector<string>& operandList, string* finalValue) = 0;
-    virtual bool Merge(const str_t& rawValue, const vector<str_t>& operandList, string* finalValue) = 0;
-    virtual bool PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList) = 0;
-    virtual bool PartialMerge(const vector<str_t>& operandList, str_t& finalOperand) = 0;
+    virtual bool Merge(const string& rawValue, 
+            const vector<string>& operandList, string* finalValue) = 0;
+    virtual bool Merge(const str_t& rawValue, 
+            const vector<str_t>& operandList, string* finalValue) = 0;
+    virtual bool PartialMerge(const vector<string>& operandList, 
+            vector<string>& finalOperandList) = 0;
+    virtual bool PartialMerge(const vector<str_t>& operandList, 
+            str_t& finalOperand) = 0;
     virtual string kClassName() = 0;
 };
 
 class DeltaKVFieldUpdateMergeOperator : public DeltaKVMergeOperator {
 public:
-    bool Merge(const string& rawValue, const vector<string>& operandList, string* finalValue);
-    bool Merge(const str_t& rawValue, const vector<str_t>& operandList, string* finalValue);
-    bool PartialMerge(const vector<string>& operandList, vector<string>& finalOperandList);
-    bool PartialMerge(const vector<str_t>& operandList, str_t& finalOperandList);
+    // All functions do not consider the headers
+    bool Merge(const string& rawValue, const vector<string>& operandList,
+            string* finalValue);
+    bool Merge(const str_t& rawValue, const vector<str_t>& operandList, 
+            string* finalValue);
+    bool PartialMerge(const vector<string>& operands, 
+            vector<string>& finalOperandList);
+    bool PartialMerge(const vector<str_t>& operands, str_t& finalOperandList);
     string kClassName();
 };
 
@@ -43,9 +51,17 @@ public:
     const char* Name() const override { return kClassName(); }
 
 private:
-    bool ExtractDeltas(bool value_separated, str_t& operand, uint64_t& delta_off, vector<str_t>& deltas, str_t& new_value_index, int& leading_index) const; 
-    bool FullMergeFieldUpdates(str_t& rawValue, vector<str_t>& operandList, str_t* finalValue) const;
-    bool PartialMergeFieldUpdates(vector<pair<internalValueType*, str_t>>& batchedOperandVec, str_t& finalDeltaListStr) const;
+    // Extract deltas, but the value index does not extract headers
+    bool ExtractDeltas(bool value_separated, str_t& operand, 
+            uint64_t& delta_off, vector<str_t>& deltas, str_t& new_value_index,
+            int& leading_index) const; 
+    // Do not include the headers
+    bool FullMergeFieldUpdates(str_t& rawValue, vector<str_t>& operandList,
+            str_t* finalValue) const;
+    // Include the headers
+    bool PartialMergeFieldUpdatesWithHeader(
+            vector<pair<KvHeader, str_t>>& batchedOperandVec, 
+            str_t& finalDeltaListStr) const;
 };
 
 } // namespace DELTAKV_NAMESPACE

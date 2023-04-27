@@ -100,7 +100,7 @@ private:
     bool deleteExistingThreads();
     // for separated operations
     bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, uint32_t& maxSequenceNumber);
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<internalValueType>& mergeOperatorsRecordVec, uint32_t& maxSequenceNumber);
+    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<KvHeader>& mergeOperatorsRecordVec, uint32_t& maxSequenceNumber);
     // Storage component for delta store
 
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;

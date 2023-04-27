@@ -1280,12 +1280,12 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 return true;
             } 
 
-            if (kd_list.size() > 0) {
-                valueVec.reserve(kd_list.size());
-                for (auto vecIt : kd_list) {
-                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
-                }
-            }
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
 
             struct timeval tv;
             gettimeofday(&tv, 0);
@@ -1298,6 +1298,7 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             str_t merged_delta(nullptr, 0);
             if (deltas.size() > 0) {
                 deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
             }
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
@@ -1324,12 +1325,12 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
                 return false;
             }
 
-            if (kd_list.size() > 0) {
-                valueVec.reserve(kd_list.size());
-                for (auto vecIt : kd_list) {
-                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
-                }
-            }
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
 
             struct timeval tv;
             gettimeofday(&tv, 0);
@@ -1341,6 +1342,8 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
             str_t merged_delta(nullptr, 0);
             if (deltas.size() > 0) {
                 deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_,
+                            merged_delta.size_));
             }
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
