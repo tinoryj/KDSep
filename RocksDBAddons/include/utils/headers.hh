@@ -4,6 +4,8 @@
 
 namespace DELTAKV_NAMESPACE {
 
+const bool use_varint_index = true;
+
 inline char* EncodeVarint32(char* dst, uint32_t v) {
     // Operate on characters as unsigneds
     unsigned char* ptr = reinterpret_cast<unsigned char*>(dst);
@@ -138,8 +140,17 @@ inline size_t PutVlogIndexVarint(char* buf, externalIndexInfo index) {
             index.externalContentSize_);
 }
 
-inline externalIndexInfo GetVlogIndexVarint(char* buf, size_t& offset) {
-    char* ptr = buf + offset;
+inline size_t GetVlogIndexVarintSize(char* buf) {
+    char* ptr = buf;
+    uint32_t num;
+    size_t sz1 = GetVarint32(ptr, &num);
+    size_t sz2 = GetVarint32(ptr + sz1, &num);
+    size_t sz3 = GetVarint32(ptr + sz1 + sz2, &num);
+    return sz1 + sz2 + sz3;
+}
+
+inline externalIndexInfo GetVlogIndexVarint(const char* buf, size_t& offset) {
+    const char* ptr = buf + offset;
     externalIndexInfo index;
     size_t sz1 = GetVarint32(ptr, &index.externalFileID_);
     size_t sz2 = GetVarint32(ptr + sz1, &index.externalFileOffset_);
@@ -151,6 +162,21 @@ inline externalIndexInfo GetVlogIndexVarint(char* buf, size_t& offset) {
     }
     offset += sz1 + sz2 + sz3;
 
+    return index;
+}
+
+// do not care about the offset
+inline externalIndexInfo GetVlogIndexVarint(const char* buf) {
+    const char* ptr = buf;
+    externalIndexInfo index;
+    size_t sz1 = GetVarint32(ptr, &index.externalFileID_);
+    size_t sz2 = GetVarint32(ptr + sz1, &index.externalFileOffset_);
+    size_t sz3 = GetVarint32(ptr + sz1 + sz2, &index.externalContentSize_);
+    if (sz1 == 0 || sz2 == 0 || sz3 == 0) {
+        fprintf(stderr, "ERROR: GetVarint32 fault. %lu %lu %lu\n",
+                sz1, sz2, sz3);
+        exit(1);
+    }
     return index;
 }
 
@@ -193,9 +219,9 @@ inline size_t PutKVHeaderVarint(char* buf, internalValueType header,
     return sz0 + 1;
 }
 
-inline internalValueType GetKVHeaderVarint(char* buf, size_t& offset) {
+inline internalValueType GetKVHeaderVarint(const char* buf, size_t& offset) {
     internalValueType header;
-    char* ptr = buf + offset;
+    const char* ptr = buf + offset;
     uint8_t c = ptr[0];
     if (c == 0) {
         offset += 1;

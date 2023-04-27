@@ -153,16 +153,24 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
             externalIndexInfo vLogIndex;
-            memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header), sizeof(vLogIndex));
+            size_t offset = 0;
+            if (use_varint_index == false) {
+                memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header),
+                        sizeof(vLogIndex));
+                offset = sizeof(vLogIndex);
+            } else {
+                vLogIndex = GetVlogIndexVarint(internalValueStr.data() +
+                        sizeof(header), offset);
+            }
             STAT_PROCESS(IndexStoreInterfaceObjPtr_->get(key, vLogIndex, &vLogValue), StatsType::DELTAKV_GET_INDEXSTORE);
 
-            string remainingDeltas = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  // remaining deltas
-
+            string remainingDeltas = internalValueStr.substr(sizeof(header) + offset);  // remaining deltas
 
             int valueBufferSize = sizeof(header) + vLogValue.size();
             char valueBuffer[valueBufferSize];
 
-            header.rawValueSize_ -= 4;
+            // TODO extracted the sequence number
+            header.rawValueSize_ = vLogValue.size();
             header.valueSeparatedFlag_ = false;
             memcpy(valueBuffer, &header, sizeof(header));
             memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());
@@ -300,11 +308,19 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
 
             string vLogValue; 
             externalIndexInfo vLogIndex;
-            memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header), sizeof(vLogIndex));
+            size_t index_size = 0;
+            if (use_varint_index == false) {
+                memcpy(&vLogIndex, internalValueStr.c_str() + sizeof(header),
+                        sizeof(vLogIndex));
+                index_size = sizeof(vLogIndex);
+            } else {
+                vLogIndex = GetVlogIndexVarint(internalValueStr.data() +
+                        sizeof(header), index_size);
+            }
 
             separated_keys[separated_cnt] = keys.at(i);
             vLogIndices[separated_cnt] = vLogIndex;
-            remainingDeltasVec[separated_cnt] = internalValueStr.substr(sizeof(header) + sizeof(vLogIndex));  
+            remainingDeltasVec[separated_cnt] = internalValueStr.substr(sizeof(header) + index_size);  
             separated_cnt++;
         } else {
             isSeparated.at(i) = false;
@@ -327,7 +343,8 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
             int valueBufferSize = sizeof(header) + vLogValue.size();
             char valueBuffer[valueBufferSize];
 
-            header.rawValueSize_ -= 4;
+            // extracted the sequence number
+            header.rawValueSize_ = vLogValue.size();
             header.valueSeparatedFlag_ = false;
             memcpy(valueBuffer, &header, sizeof(header));
             memcpy(valueBuffer + sizeof(header), vLogValue.c_str(), vLogValue.size());

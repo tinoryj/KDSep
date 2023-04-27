@@ -5,6 +5,7 @@
 #include "common/indexStorePreDefines.hpp"
 #include "indexBasedStore/configManager.hh"
 #include "utils/debug.hpp"
+#include "utils/headers.hh"
 #include "utils/hash.hpp"
 #include <stdlib.h>
 #define LSM_MASK (0x80000000)
@@ -311,9 +312,17 @@ public:
         indexInfo.externalContentSize_ = flength;
 
         memcpy(str, &valueType, sizeof(internalValueType));
-        memcpy(str + sizeof(internalValueType), &indexInfo, sizeof(externalIndexInfo));
+        size_t index_size = 0;
+        if (use_varint_index == false) {
+            memcpy(str + sizeof(internalValueType), &indexInfo,
+                    sizeof(externalIndexInfo));
+            index_size = sizeof(externalIndexInfo);
+        } else {
+            index_size = PutVlogIndexVarint(str + sizeof(internalValueType),
+                    indexInfo);
+        }
 
-        return std::string(str, sizeof(internalValueType) + sizeof(externalIndexInfo));
+        return std::string(str, sizeof(internalValueType) + index_size);
     }
 
     std::string serializeIndexWrite() {
@@ -321,16 +330,27 @@ public:
         internalValueType valueType;
         externalIndexInfo indexInfo;
 
+        // put header
         valueType.mergeFlag_ = false;
         valueType.valueSeparatedFlag_ = true;
+        memcpy(buffer, &valueType, sizeof(internalValueType));
+
+        // put index
         indexInfo.externalFileID_ = (uint32_t)(this->offset >> 32);
         indexInfo.externalFileOffset_ = (uint32_t)(this->offset % (1ull << 32));
         indexInfo.externalContentSize_ = this->length;
 
-        memcpy(buffer, &valueType, sizeof(internalValueType));
-        memcpy(buffer + sizeof(internalValueType), &indexInfo, sizeof(externalIndexInfo));
+        size_t index_size = 0;
+        if (use_varint_index == false) {
+            memcpy(buffer + sizeof(internalValueType), &indexInfo,
+                    sizeof(externalIndexInfo));
+            index_size = sizeof(externalIndexInfo);
+        } else {
+            index_size = PutVlogIndexVarint(buffer + sizeof(internalValueType),
+                    indexInfo);
+        }
 
-        return std::string(buffer, sizeof(internalValueType) + sizeof(externalIndexInfo));
+        return std::string(buffer, sizeof(internalValueType) + index_size);
     }
 
     bool deserialize(std::string str)
@@ -346,15 +366,18 @@ public:
         size_t offset = 0;
 
         externalIndexInfo indexInfo;
-        if (str.length() < sizeof(internalValueType) + sizeof(externalIndexInfo)) {
-            return false;
+        if (use_varint_index == false) {
+            memcpy(&indexInfo, cstr + sizeof(internalValueType),
+                    sizeof(externalIndexInfo));
+        } else {
+            indexInfo = GetVlogIndexVarint(cstr + sizeof(internalValueType));
         }
-        memcpy(&indexInfo, cstr + sizeof(internalValueType), sizeof(externalIndexInfo));
 
         // read length
         //        memcpy(&this->length, cstr + offset, sizeof(this->length));
         this->length = indexInfo.externalContentSize_;
-        this->offset = indexInfo.externalFileOffset_;
+        this->offset = (uint64_t)indexInfo.externalFileOffset_ +
+            ((uint64_t)(indexInfo.externalFileID_) << 32);
 
         offset += sizeof(this->length);
         if (this->length & LSM_MASK) {

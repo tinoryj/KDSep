@@ -125,6 +125,7 @@ bool DeltaKVFieldUpdateMergeOperator::Merge(const str_t& raw_value, const vector
     return true;
 }
 
+// All the operands are raw deltas (without headers)
 bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operands, vector<string>& finalOperandList)
 {
     unordered_map<int, string> operandMap;
@@ -151,6 +152,7 @@ bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<string>& operand
     return true;
 }
 
+// All the operands are raw deltas (without headers)
 bool DeltaKVFieldUpdateMergeOperator::PartialMerge(const vector<str_t>& operands, str_t& result)
 {
     unordered_map<int, str_t> operandMap;
@@ -216,9 +218,20 @@ inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
         // extract the oprand
         if (header_ptr->mergeFlag_ == true) {
             // index update
-            assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= operand.size_);
-            new_value_index = str_t(operand.data_ + delta_off + header_size, value_index_size);
-            delta_off += header_size + value_index_size;
+            if (use_varint_index == false) {
+                assert(header_ptr->valueSeparatedFlag_ == true && delta_off +
+                        header_size + value_index_size <= operand.size_);
+                new_value_index = str_t(operand.data_ + delta_off + header_size, value_index_size);
+                delta_off += header_size + value_index_size;
+            } else {
+                assert(header_ptr->valueSeparatedFlag_ == true &&
+                        delta_off + header_size <= operand.size_);
+                char* buf = operand.data_ + delta_off + header_size;
+                int index_size = GetVlogIndexVarintSize(buf);
+                debug_error("extract, index_size %d\n", index_size);
+                new_value_index = str_t(buf, index_size);
+                delta_off += header_size + index_size; 
+            }
         } else {
             // Check whether we need to collect the raw deltas for immediate merging.
             // 1. The value should be not separated (i.e., should be raw value)
@@ -257,13 +270,8 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     gettimeofday(&tv, 0);
 
     // request meRGE Operation when the value is found
-    debug_info("Full merge for key = %s, value size = %lu, content = %s\n",
-            key.ToString().c_str(), existing_value->size(),
-            existing_value->ToString().c_str());
-//    for (auto& it : operand_list) {
-//        debug_error("operand size %lu\n", it.size());
-//    }
-//    debug_error("Full merge for key = %s, value size = %lu\n", key.ToString().c_str(), existing_value->size());
+    debug_info("Full merge for key = %s, value size = %lu\n",
+            key.ToString().c_str(), existing_value->size());
     str_t new_value_index(nullptr, 0);
     const int header_size = sizeof(internalValueType);
     const int value_index_size = sizeof(externalIndexInfo);
@@ -290,18 +298,18 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         uint64_t delta_off = 0;
         if (value_header.valueSeparatedFlag_ == false) {
             delta_off = header_size + value_header.rawValueSize_;
+        } else if (use_varint_index == false) {
+            delta_off = header_size + value_index_size;
         } else {
-            delta_off = header_size + sizeof(externalIndexInfo);
+            delta_off = header_size + GetVlogIndexVarintSize(
+                    const_cast<char*>(existing_value->data()) + header_size);
         }
-
         str_t operand_it(const_cast<char*>(existing_value->data()),
                 existing_value->size());
 
         ExtractDeltas(value_separated, operand_it,
                 delta_off, deltas, new_value_index, leading_index);
     }
-//    debug_error("In value: num deltas %lu, leading %d\n", 
-//            deltas.size(), leading_index);
 
     // Step 2. Scan the deltas in the operand list
     for (auto& operand_list_it : operand_list) {
@@ -311,8 +319,6 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         ExtractDeltas(value_separated, operand_it,
                 delta_off, deltas, new_value_index, leading_index);
     }
-//    debug_error("After deltas: num deltas %lu, leading %d\n", 
-//            deltas.size(), leading_index);
 
     // Step 3. Do full merge on the value
     str_t merged_raw_value(nullptr, 0);
@@ -332,7 +338,12 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
         if (new_value_index.data_ != nullptr) {
             merged_raw_value = new_value_index;
         } else {
-            merged_raw_value = str_t(raw_value.data_, value_index_size); 
+            if (use_varint_index) {
+                merged_raw_value = str_t(raw_value.data_,
+                        GetVlogIndexVarintSize(raw_value.data_));
+            } else {
+                merged_raw_value = str_t(raw_value.data_, value_index_size); 
+            }
         }
     } else {
         merged_raw_value = raw_value; 
@@ -429,9 +440,21 @@ bool RocksDBInternalMergeOperator::PartialMerge(const Slice& key, const Slice& l
             // extract the oprand
             if (header_ptr->mergeFlag_ == true) {
                 // index update
-                assert(header_ptr->valueSeparatedFlag_ == true && delta_off + header_size + value_index_size <= it.size_);
-                new_value_index = str_t(it.data_ + delta_off, header_size + value_index_size);
-                delta_off += header_size + value_index_size;
+                if (use_varint_index == false) {
+                    assert(header_ptr->valueSeparatedFlag_ == true && 
+                            delta_off + header_size + value_index_size <=
+                            it.size_);
+                    new_value_index = str_t(it.data_ + delta_off, header_size +
+                            value_index_size);
+                    delta_off += header_size + value_index_size;
+                } else {
+                    assert(header_ptr->valueSeparatedFlag_ == true && 
+                            delta_off + header_size < it.size_);
+                    int index_size = GetVlogIndexVarintSize(it.data_ + delta_off);
+                    new_value_index = str_t(it.data_ + delta_off, header_size +
+                            index_size);
+                    delta_off += header_size + index_size; 
+                }
             } else {
                 if (header_ptr->valueSeparatedFlag_ == false) {
                     // raw delta

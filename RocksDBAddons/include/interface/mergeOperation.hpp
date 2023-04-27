@@ -4,6 +4,7 @@
 #include "common/rocksdbHeaders.hpp"
 #include "utils/statsRecorder.hh"
 #include "utils/debug.hpp"
+#include "utils/headers.hh"
 #include <bits/stdc++.h>
 using namespace std;
 using namespace rocksdb;

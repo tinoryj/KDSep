@@ -123,7 +123,7 @@ bool KvServer::checkKeySize(len_t& keySize)
     return (keySize != 0);
 }
 
-bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& indexInfo, bool sync)
+bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, bool sync)
 {
     // static int putCount = 0;
     // putCount++;
@@ -195,9 +195,6 @@ retry_update:
     } else {
         ret = (curValueLoc.length == valueSize + (curValueLoc.segmentId == LSM_SEGMENT ? 0 : sizeof(len_t)));
     }
-    indexInfo.externalFileID_ = (uint32_t)(curValueLoc.offset / (1ull << 32));
-    indexInfo.externalFileOffset_ = (uint32_t)(curValueLoc.offset % (1ull << 32));
-    indexInfo.externalContentSize_ = curValueLoc.length - sizeof(len_t);
     debug_trace("putValue curValueLoc offset %lu curValueLoc length %lu\n", curValueLoc.offset, curValueLoc.length);
     delete[] ckey;
     delete[] cvalue;
@@ -210,7 +207,9 @@ retry_update:
     return ret;
 }
 
-void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueSize, externalIndexInfo storageInfo, uint8_t &ret, std::atomic<size_t> &keysInProcess) {
+void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t
+        &valueSize, externalIndexInfo storageInfo, uint8_t &ret,
+        std::atomic<size_t> &keysInProcess) {
     if (checkKeySize(keySize) == false) {
         ret = 0;
         return;
@@ -230,7 +229,8 @@ void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueS
 
     ValueLocation readValueLoc;
     readValueLoc.segmentId = 0;
-    readValueLoc.offset = storageInfo.externalFileOffset_ + ((uint64_t)storageInfo.externalFileID_ << 32);
+    readValueLoc.offset = storageInfo.externalFileOffset_ +
+        ((uint64_t)storageInfo.externalFileID_ << 32);
     readValueLoc.length = storageInfo.externalContentSize_;
 
     // search on disk
@@ -244,7 +244,8 @@ void KvServer::getValueMt(char *ckey, len_t keySize, char *&value, len_t &valueS
     keysInProcess--;
 }
 
-bool KvServer::getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed)
+bool KvServer::getValue(const char* key, len_t keySize, char*& value, 
+        len_t& valueSize, externalIndexInfo storageInfoVec, bool timed)
 {
     bool ret = false;
     char* ckey = new char[KEY_REC_SIZE + 1];

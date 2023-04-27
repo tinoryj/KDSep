@@ -34,7 +34,6 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
 
 bool IndexStoreInterface::put(mempoolHandler_t pool_obj, bool sync)
 {
-    externalIndexInfo valueLoc;
 //    if (string(pool_obj.keyPtr_, pool_obj.keySize_) ==
 //            "user6840842610087607159") {
 //        debug_error("put key [%.*s]\n",
@@ -44,7 +43,9 @@ bool IndexStoreInterface::put(mempoolHandler_t pool_obj, bool sync)
     char buffer[sizeof(uint32_t) + pool_obj.valueSize_];
     memcpy(buffer, &pool_obj.sequenceNumber_, sizeof(uint32_t));
     memcpy(buffer + sizeof(uint32_t), pool_obj.valuePtr_, pool_obj.valueSize_);
-    STAT_PROCESS(kvServer_->putValue(pool_obj.keyPtr_, pool_obj.keySize_, buffer, pool_obj.valueSize_ + sizeof(uint32_t), valueLoc, sync), StatsType::UPDATE);
+    STAT_PROCESS(kvServer_->putValue(pool_obj.keyPtr_, pool_obj.keySize_,
+                buffer, pool_obj.valueSize_ + sizeof(uint32_t), sync),
+            StatsType::UPDATE);
     return true;
 }
 

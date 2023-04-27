@@ -37,7 +37,7 @@ public:
     KvServer(DeviceManager* deviceManager, rocksdb::DB* lsm);
     ~KvServer();
 
-    bool putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& storageInfoVec, bool sync = true);
+    bool putValue(const char* key, len_t keySize, const char* value, len_t valueSize, bool sync = true);
     bool getValue(const char* key, len_t keySize, char*& value, len_t& valueSize, externalIndexInfo storageInfoVec, bool timed = true);
     void getRangeValuesDecoupled(const std::vector<string> &keys, 
             int numKeys,
