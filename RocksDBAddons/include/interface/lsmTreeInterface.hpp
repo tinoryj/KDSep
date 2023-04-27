@@ -7,6 +7,7 @@
 #include "interface/deltaKVOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"
+#include "utils/headers.hh"
 #include "utils/messageQueue.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>

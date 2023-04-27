@@ -41,6 +41,13 @@ DeltaKV::~DeltaKV()
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 {
+//    internalValueType header;
+//    char buf[15];
+//    header.rawValueSize_ = 1024;
+//    printHeader();
+//    PutKVHeaderVarint(buf, header, true, true);
+    fprintf(stderr, "Open DeltaKV\n");
+
     boost::thread::attributes attrs;
     attrs.set_stack_size(1000 * 1024 * 1024);
     // object mem pool

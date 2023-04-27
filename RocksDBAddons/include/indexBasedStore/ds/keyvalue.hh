@@ -306,7 +306,6 @@ public:
         }
         // write value or offset
 
-        valueType.rawValueSize_ = flength;
         indexInfo.externalFileID_ = (uint32_t)(foffset >> 32);
         indexInfo.externalFileOffset_ = (uint32_t)(foffset % (1ull << 32));
         indexInfo.externalContentSize_ = flength;
@@ -323,7 +322,6 @@ public:
         externalIndexInfo indexInfo;
 
         valueType.mergeFlag_ = false;
-        valueType.rawValueSize_ = this->length;
         valueType.valueSeparatedFlag_ = true;
         indexInfo.externalFileID_ = (uint32_t)(this->offset >> 32);
         indexInfo.externalFileOffset_ = (uint32_t)(this->offset % (1ull << 32));

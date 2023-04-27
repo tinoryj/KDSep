@@ -156,9 +156,55 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     return oks;
 }
 
+void simpleTest() {
+    DELTAKV_NAMESPACE::internalValueType header, header2;
+    header.mergeFlag_ = true;
+    header.valueSeparatedFlag_ = false;
+    header.rawValueSize_ = 511;
+
+    char buf[15];
+    size_t sz = DELTAKV_NAMESPACE::PutKVHeaderVarint(buf, header, true, true);
+    for (int i = 0; i < sz; i++) {
+        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
+    }
+    fprintf(stderr, "\n");
+    size_t offset = 0;
+    header2 = DELTAKV_NAMESPACE::GetKVHeaderVarint(buf, offset); 
+    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
+            (int)header2.valueSeparatedFlag_,
+           header2.rawValueSize_, offset); 
+    sz = DELTAKV_NAMESPACE::PutKVHeaderVarint(buf, header, true, false);
+    for (int i = 0; i < sz; i++) {
+        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
+    }
+    fprintf(stderr, "\n");
+    offset = 0;
+    header2 = DELTAKV_NAMESPACE::GetKVHeaderVarint(buf, offset); 
+    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
+            (int)header2.valueSeparatedFlag_,
+           header2.rawValueSize_, offset); 
+
+    DELTAKV_NAMESPACE::externalIndexInfo index, index2;
+    index.externalFileID_ = 1;
+    index.externalFileOffset_ = 2;
+    index.externalContentSize_ = 3; 
+    offset = 0;
+    sz = DELTAKV_NAMESPACE::PutVlogIndexVarint(buf, index);
+    for (int i = 0; i < sz; i++) {
+        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
+    }
+    fprintf(stderr, "\n");
+    index2 = DELTAKV_NAMESPACE::GetVlogIndexVarint(buf, offset);
+    fprintf(stderr, "index2: %d %d %d\n", 
+            index2.externalFileID_, index2.externalFileOffset_, 
+            index2.externalContentSize_);
+}
+
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
     setbuf(stderr, nullptr);
+
+//    simpleTest();
 
     struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;

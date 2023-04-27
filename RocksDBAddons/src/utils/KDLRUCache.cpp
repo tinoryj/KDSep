@@ -1,5 +1,3 @@
-#pragma once
-
 #include "utils/KDLRUCache.hpp"
 
 using namespace std;
