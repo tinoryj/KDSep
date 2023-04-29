@@ -117,7 +117,7 @@ private:
     static const ULL _clearmask[];         /** < the bitmap mask array for setting 0s*/
 
     
-    std::mutex* _bitmapMutex;                   /** < internal lock for bitmap operations */
+//    std::mutex* _bitmapMutex;                   /** < internal lock for bitmap operations */
 
     void clearBitInternal(offset_t addr);
 };

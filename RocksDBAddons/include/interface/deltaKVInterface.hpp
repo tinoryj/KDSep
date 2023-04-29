@@ -56,9 +56,9 @@ private:
     bool PutImpl(const string& key, const string& value);
     bool SinglePutInternal(const mempoolHandler_t& mempoolHandler); 
     bool SingleMergeInternal(const mempoolHandler_t& mempoolHandler);
-    bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool getByWriteBackFlag);
+    bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool writing_back);
 
-//    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag);
+//    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool writing_back);
     bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     bool GetCurrentValueThenWriteBack(const string& key);
@@ -90,7 +90,7 @@ private:
 
     messageQueue<writeBackObject*>* writeBackOperationsQueue_ = nullptr;
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
-    bool enableWriteBackOperationsFlag_ = false;
+    bool enable_write_back_ = false;
     std::shared_mutex writeBackOperationsMtx_;
     bool enableKeyValueCache_ = false;
     AppendAbleLRUCache<string, string>* keyToValueListCache_ = nullptr;
@@ -99,8 +99,13 @@ private:
     vector<boost::thread*> thList_;
     bool deleteExistingThreads();
     // for separated operations
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, uint32_t& maxSequenceNumber);
-    bool processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, vector<KvHeader>& mergeOperatorsRecordVec, uint32_t& maxSequenceNumber);
+    bool extractDeltas(string internalValue, uint64_t skipSize,
+            vector<pair<bool, string>>& mergeOperatorsVec, 
+            uint32_t& maxSequenceNumber);
+    bool extractDeltas(string internalValue, uint64_t skipSize,
+            vector<pair<bool, string>>& mergeOperatorsVec, 
+            vector<KvHeader>& mergeOperatorsRecordVec, 
+            uint32_t& maxSequenceNumber);
     // Storage component for delta store
 
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;

@@ -2,6 +2,7 @@
 
 #include "common/dataStructure.hpp"
 #include "utils/debug.hpp"
+#include "utils/utils.hpp"
 #include "utils/statsRecorder.hh"
 #include <bits/stdc++.h>
 #include <shared_mutex>
@@ -25,48 +26,7 @@ public:
 //        root_ = new prefixTreeNode;
     }
 
-    ~PrefixTreeForHashStore()
-    {
-//        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-        for (int i = 0; i < (1 << fixed_bit_num_); i++) {
-            stack<prefixTreeNode*> stk;
-            prefixTreeNode *p = roots_[i], *pre = nullptr;
-
-            // almost a template for post order traversal ...
-            while (p != nullptr || !stk.empty()) {
-                while (p != nullptr) {
-                    stk.push(p);
-                    p = p->left_child; // go down one level
-                }
-
-                if (!stk.empty()) {
-                    p = stk.top(); // its left children are deleted
-                    stk.pop();
-                    if (p->right_child == nullptr || pre == p->right_child) {
-                        debug_trace("delete p %s\n", p->current_prefix.c_str());
-                        delete p;
-                        pre = p;
-                        p = nullptr;
-                    } else {
-                        stk.push(p);
-                        p = p->right_child;
-                    }
-                }
-            }
-        }
-
-        for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
-            if (targetDeleteVec[i] != nullptr) {
-                if (targetDeleteVec[i]->file_op_ptr != nullptr) {
-                    delete targetDeleteVec[i]->file_op_ptr;
-                }
-                delete targetDeleteVec[i];
-            }
-        }
-
-        delete[] roots_;
-        delete[] rootMtx_;
-    }
+    ~PrefixTreeForHashStore();
 
     void init(uint64_t initBitNumber, uint64_t maxFileNumber)
     {
@@ -314,7 +274,16 @@ public:
                     stk.pop();
                     if (p->right_child == nullptr || pre == p->right_child) {
                         if (p->is_leaf == true) {
-                            validObjectList.push_back(make_pair(p->current_prefix, p->data));
+                            // TODO verify 
+                            char buf[p->prefix_len];
+                            for (int i = 0; i < p->prefix_len; i++) {
+                                buf[i] = '0' + 
+                                    (p->prefix_u64 & (1 << (uint64_t)i)) ? 1 : 0; 
+                            } 
+
+                            validObjectList.push_back(
+                                    make_pair(string(buf, p->prefix_len),
+                                        p->data));
                         }
                         pre = p;
                         p = nullptr;
@@ -437,8 +406,16 @@ public:
                     p = stk.top();
                     stk.pop();
                     if (p->right_child == nullptr || pre == p->right_child) {
-                        if (p->current_prefix.size() != 0) {
-                            validObjectList.push_back(make_pair(p->current_prefix, p->data));
+                        if (p->prefix_len > 0) {
+                            char buf[p->prefix_len];
+                            for (int i = 0; i < p->prefix_len; i++) {
+                                buf[i] = '0' + 
+                                    (p->prefix_u64 & (1 << (uint64_t)i)) ? 1 :
+                                    0; 
+                            }
+                            validObjectList.push_back(
+                                    make_pair(string(buf, p->prefix_len),
+                                        p->data));
                         }
                         pre = p;
                         p = nullptr;
@@ -474,8 +451,14 @@ public:
                     p = stk.top();
                     stk.pop();
                     if (p->right_child == nullptr || pre == p->right_child) {
-                        if (p->current_prefix.size() != 0 && p->is_leaf == false) {
-                            invalidObjectList.push_back(make_pair(p->current_prefix, p->data));
+                        if (p->prefix_len != 0 && p->is_leaf == false) {
+                            char buf[p->prefix_len];
+                            for (int i = 0; i < p->prefix_len; i++) {
+                                buf[i] = '0' + 
+                                    (p->prefix_u64 & (1 << (uint64_t)i)) ? 1 : 0; 
+                            } 
+                            invalidObjectList.push_back(
+                                    make_pair(string(buf, p->prefix_len), p->data));
                         }
                         pre = p;
                         p = nullptr;
@@ -510,7 +493,7 @@ public:
                     p = stk.top();
                     stk.pop();
                     if (p->right_child == nullptr || pre == p->right_child) {
-                        if (p->current_prefix.size() != 0 && p->is_leaf == false) {
+                        if (p->prefix_len != 0 && p->is_leaf == false) {
                             invalidObjectList.push_back(p->data);
                         }
                         pre = p;
@@ -541,8 +524,8 @@ public:
                     p = stk.top();
                     stk.pop();
                     if (p->right_child == nullptr || pre == p->right_child) {
-                        if (p->current_prefix.size() != 0) {
-                            debug_trace("Find node, is leaf node flag = %d, prefix length = %lu, linked prefix = %s\n", p->is_leaf, p->current_prefix.size(), p->current_prefix.c_str());
+                        if (p->prefix_len != 0) {
+                            debug_trace("Find node, is leaf node flag = %d, prefix length = %lu\n", p->is_leaf, p->prefix_len);
                         }
                         pre = p;
                         p = nullptr;
@@ -565,13 +548,11 @@ public:
 
 private:
     typedef struct prefixTreeNode {
-        uint64_t node_id = 0;
         prefixTreeNode* left_child = nullptr; // 0
         prefixTreeNode* right_child = nullptr; // 1
         bool is_leaf = false;
-        string current_prefix;
-        uint64_t prefix_u64;
-        uint64_t prefix_len;
+        uint64_t prefix_u64 = 0;
+        uint64_t prefix_len = 0;
         hashStoreFileMetaDataHandler* data = nullptr; //
     } prefixTreeNode;
     vector<hashStoreFileMetaDataHandler*> targetDeleteVec;
@@ -601,7 +582,6 @@ private:
     void createPrefixTree(prefixTreeNode* root, int lvl) {
         lvl++;
         root->is_leaf = false;
-        root->node_id = nextNodeID_;
         nextNodeID_++;
         if (lvl != init_bit_num_) {
             root->left_child = new prefixTreeNode;
@@ -639,10 +619,8 @@ private:
                     root = root->left_child;
                     root->is_leaf = true;
                     root->data = newDataObj;
-                    root->current_prefix = string(prefixStr, lvl + 1);
                     root->prefix_u64 = prefix_u64; 
                     root->prefix_len = lvl + 1;
-                    root->node_id = nextNodeID_;
                     nextNodeID_++;
                     insertAtLevelID = lvl + 1;
                     return true;
@@ -653,10 +631,9 @@ private:
                         current_file_num_--;
                         debug_info("Meet old leaf node (left) during add,"
                                 " should mark as not leaf node, current level ="
-                                " %lu, node prefix length = %lu, prefix = %s,"
+                                " %lu, node prefix length = %lu,"
                                 " currentFilnumber = %lu\n", lvl,
-                                root->current_prefix.size(),
-                                root->current_prefix.c_str(),
+                                root->prefix_len,
                                 current_file_num_);
                         break;
                     } else {
@@ -677,10 +654,8 @@ private:
                     root = root->right_child;
                     root->is_leaf = true;
                     root->data = newDataObj;
-                    root->current_prefix = string(prefixStr, lvl + 1);
                     root->prefix_u64 = prefix_u64;
                     root->prefix_len = lvl + 1;
-                    root->node_id = nextNodeID_;
                     nextNodeID_++;
                     insertAtLevelID = lvl + 1;
                     return true;
@@ -689,7 +664,8 @@ private:
                     if (root->is_leaf == true) {
                         root->is_leaf = false;
                         current_file_num_--;
-                        debug_info("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s, currentFilnumber = %lu\n", lvl, root->current_prefix.size(), root->current_prefix.c_str(), current_file_num_);
+                        debug_info("Meet old leaf node (right) during add, should mark as not leaf node, current level = %lu, node prefix length = %lu, currentFilnumber = %lu\n", 
+                                lvl, root->prefix_len, current_file_num_);
                         break;
                     } else {
                         continue;
@@ -712,15 +688,14 @@ private:
                 root = root->left_child;
                 root->is_leaf = true;
                 root->data = newDataObj;
-                root->current_prefix = string(prefixStr, lvl + 1);
                 root->prefix_u64 = prefix_u64;
                 root->prefix_len = lvl + 1;
-                root->node_id = nextNodeID_;
                 nextNodeID_++;
                 insertAtLevelID = lvl + 1;
                 return true;
             } else {
-                debug_error("[ERROR] Find left node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Find left node after leaf node mark, error, current level = %lu, node prefix length = %lu\n", 
+                        lvl, root->prefix_len);
                 return false;
             }
         } else {
@@ -737,15 +712,14 @@ private:
                 root = root->right_child;
                 root->is_leaf = true;
                 root->data = newDataObj;
-                root->current_prefix = string(prefixStr, lvl + 1);
                 root->prefix_u64 = prefix_u64;
                 root->prefix_len = lvl + 1;
-                root->node_id = nextNodeID_;
                 nextNodeID_++;
                 insertAtLevelID = lvl + 1;
                 return true;
             } else {
-                debug_error("[ERROR] Find right node after leaf node mark, error, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Find right node after leaf node mark, error, current level = %lu, node prefix length = %lu\n", 
+                        lvl, root->prefix_len);
                 return false;
             }
         }
@@ -771,13 +745,13 @@ private:
                     root->left_child = new prefixTreeNode;
                     root = root->left_child;
                     root->is_leaf = false;
-                    root->node_id = nextNodeID_;
                     nextNodeID_++;
                 } else {
                     root = root->left_child;
                     if (root->is_leaf == true) {
                         root->is_leaf = false;
-                        debug_info("Meet old leaf node (left) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                        debug_info("Meet old leaf node (left) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu\n", 
+                                lvl, root->prefix_len);
                         continue;
                     } else {
                         continue;
@@ -790,13 +764,13 @@ private:
                     root->right_child = new prefixTreeNode;
                     root = root->right_child;
                     root->is_leaf = false;
-                    root->node_id = nextNodeID_;
                     nextNodeID_++;
                 } else {
                     root = root->right_child;
                     if (root->is_leaf == true) {
                         root->is_leaf = false;
-                        debug_info("Meet old leaf node (right) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                        debug_info("Meet old leaf node (right) during fixed bit number add, should mark as not leaf node, current level = %lu, node prefix length = %lu\n", 
+                                lvl, root->prefix_len);
                         continue;
                     } else {
                         continue;
@@ -813,15 +787,13 @@ private:
                 root = root->left_child;
                 root->is_leaf = true;
                 root->data = newDataObj;
-                root->current_prefix = string(prefixStr, lvl);
                 root->prefix_u64 = prefix_u64;
                 root->prefix_len = lvl + 1;
-                root->node_id = nextNodeID_;
                 nextNodeID_++;
                 insertAtLevelID = lvl;
                 return true;
             } else {
-                debug_error("[ERROR] Find left node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Find left node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu\n", lvl, root->prefix_len);
                 return false;
             }
         } else {
@@ -832,15 +804,13 @@ private:
                 root = root->right_child;
                 root->is_leaf = true;
                 root->data = newDataObj;
-                root->current_prefix = string(prefixStr, lvl);
                 root->prefix_u64 = prefix_u64;
                 root->prefix_len = lvl + 1;
-                root->node_id = nextNodeID_;
                 nextNodeID_++;
                 insertAtLevelID = lvl;
                 return true;
             } else {
-                debug_error("[ERROR] Find right node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Find right node after leaf node mark, error during fixed bit number add, could not add new node, current level = %lu, node prefix length = %lu\n", lvl, root->prefix_len);
                 return false;
             }
         }
@@ -864,9 +834,8 @@ private:
                     if (root->left_child == nullptr) {
                         debug_info("No left node, but this node is not leaf"
                                 " node, not exist. current level = %lu, node"
-                                " prefix length = %lu, prefix = %s\n", lvl,
-                                root->current_prefix.size(),
-                                root->current_prefix.c_str());
+                                " prefix length = %lu\n", lvl,
+                                root->prefix_len);
                         return false;
                     } else {
                         root = root->left_child;
@@ -882,9 +851,8 @@ private:
                     if (root->right_child == nullptr) {
                         debug_info("No right node, but this node is not leaf"
                                 " node, not exist. current level = %lu, node"
-                                " prefix length = %lu, prefix = %s\n", lvl,
-                                root->current_prefix.size(),
-                                root->current_prefix.c_str());
+                                " prefix length = %lu\n", lvl,
+                                root->prefix_len);
                         return false;
                     } else {
                         root = root->right_child;
@@ -893,7 +861,7 @@ private:
             }
         }
         if (root == nullptr) {
-            debug_info("This node not exist, may be deleted. current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+            debug_info("This node not exist, may be deleted. current level = %lu, node prefix length = %lu\n", lvl, root->prefix_len);
             return false;
         } else {
             if (root->is_leaf == true) {
@@ -901,7 +869,7 @@ private:
                 find_at_level_id = lvl;
                 return true;
             } else {
-                debug_info("This node is not leaf node. current level = %lu, node prefix length = %lu, prefix = %s\n", lvl, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_info("This node is not leaf node. current level = %lu, node prefix length = %lu\n", lvl, root->prefix_len);
                 return false;
             }
         }
@@ -923,12 +891,13 @@ private:
             find_at_level_id++;
         }
         if (root != nullptr && root->is_leaf == true) {
-            debug_trace("Find leaf node ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->node_id, root->current_prefix.size(), root->current_prefix.c_str());
+            debug_trace("Find leaf node prefix length = %lu remove it now\n", root->prefix_len);
             root->is_leaf = false;
             return true;
         } else {
             if (root != nullptr) {
-                debug_error("[ERROR] Could not delete target node (not leaf) ID = %lu, node prefix length = %lu, prefix = %s remove it now\n", root->node_id, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Could not delete target node (not leaf) node prefix length = %lu remove it now\n", 
+                        root->prefix_len);
             } else {
                 debug_error("[ERROR] Could not delete target node (not exist) pointer = %p\n", (void*)root);
             }
@@ -960,11 +929,10 @@ private:
             find_at_level_id++;
         }
         if (root != nullptr && root->is_leaf == false) {
-            debug_trace("Find non leaf node ID = %lu, node prefix length = "
-                    "%lu, prefix = %s mark it as leaf now\n", root->node_id,
-                    root->current_prefix.size(), root->current_prefix.c_str());
+            debug_trace("Find non leaf node refix length = "
+                    "%lu mark it as leaf now\n", 
+                    root->prefix_len);
             root->is_leaf = true;
-            root->current_prefix = string(prefix_str, prefix_len);
             root->prefix_u64 = prefix_u64;
             root->prefix_len = prefix_len;
 
@@ -982,10 +950,9 @@ private:
         } else {
             if (root != nullptr) {
                 debug_error("[ERROR] Could not delete target node (not leaf)" 
-                        " ID = %lu, node prefix length = %lu, prefix = %s "
+                        " node prefix length = %lu "
                         " remove it now. pre_root %p root %p\n", 
-                        root->node_id, prefix_len,
-                        root->current_prefix.c_str(),
+                        prefix_len,
                         pre_root, root);
             } else {
                 debug_error("[ERROR] Could not delete target node (not exist) pointer = %p\n", (void*)root);
@@ -1011,12 +978,14 @@ private:
             find_at_level_id++;
         }
         if (root != nullptr && root->is_leaf == true) {
-            debug_trace("Find target leaf node ID = %lu, node prefix length = %lu, prefix = %s update data object now\n", root->node_id, root->current_prefix.size(), root->current_prefix.c_str());
+            debug_trace("Find target leaf node prefix length = %lu update data object now\n", 
+                    root->prefix_len);
             root->data = newDataObj;
             return true;
         } else {
             if (root != nullptr) {
-                debug_error("[ERROR] Could not reach target node (not leaf) ID = %lu, node prefix length = %lu, prefix = %s\n", root->node_id, root->current_prefix.size(), root->current_prefix.c_str());
+                debug_error("[ERROR] Could not reach target node (not leaf) node prefix length = %lu\n", 
+                        root->prefix_len);
             } else {
                 debug_error("[ERROR] Could not reach target node (not exist) pointer = %p\n", (void*)root);
             }

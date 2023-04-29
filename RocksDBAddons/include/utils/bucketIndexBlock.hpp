@@ -31,7 +31,7 @@ class BucketIndexBlock {
     map<string_view, size_t> mp_; 
     char* key_buf_ = nullptr;
     const int THRES = 4088;
-    uint64_t buf_size_ = 4096;
+    uint64_t buf_size_ = 1024;
     uint64_t key_buf_size_ = 0;
     uint64_t index_block_size_ = 0;
     uint64_t sorted_part_size_ = 0;

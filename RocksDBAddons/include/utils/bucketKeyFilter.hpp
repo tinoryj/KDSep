@@ -26,7 +26,7 @@ class BucketKeyFilter {
     BitMap* bm = nullptr;
 
     const int KEYS_THRESHOLD = 10;
-    const int BITMAP_SIZE = 65536; 
+    const int BITMAP_SIZE = 16384; //65536; 
     const int REBUILD_THRESHOLD = 20; 
 
     uint32_t erase_times = 0;

@@ -44,6 +44,7 @@ add_library(DeltaKV STATIC
       utils/timer.cpp
       utils/utils.cc
       utils/KDLRUCache.cpp
+      utils/prefixTreeForHashStore.cpp
       hashBasedStore/hashStoreInterface.cpp
       hashBasedStore/hashStoreFileManager.cpp
       hashBasedStore/hashStoreFileOperator.cpp

@@ -140,7 +140,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     size_t memtableSize = config.getMemtable();
     uint64_t debugLevel = config.getDebugLevel();
     DebugManager::getInstance().setDebugLevel(debugLevel);
-    cerr << "debug level set to " << debugLevel << endl;
 
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -161,7 +160,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     }
 
     if (blobDbKeyValueSeparation == true) {
-        cerr << "Enabled Blob based KV separation" << endl;
         bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(blockCacheSize);
         if (blockCacheSize == 0) {
             bbto.no_block_cache = true;
@@ -188,11 +186,9 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks();
 
     if (keyValueSeparation == true) {
-        cerr << "Enabled vLog based KV separation" << endl;
         options_.enable_valueStore = true;
     }
     if (keyDeltaSeparation == true) {
-        cerr << "Enabled DeltaLog based KD separation" << endl;
         // deltaKV settings
         options_.enable_deltaStore = true;
         uint64_t ds_kdcache_size = config.getDSKDCacheSize();
@@ -279,17 +275,13 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
 //        options_.rocks_opt.write_buffer_size; 
 //    // Make L0 size similar to L1 size
 
-    cerr << "Sync status = " << options_.rocksdb_sync_put << " " << options_.rocksdb_sync_merge << endl;
     cerr << "write buffer size " << options_.rocks_opt.write_buffer_size << endl;
     cerr << "write buffer number " << options_.rocks_opt.max_write_buffer_number << endl;
     cerr << "num compaction trigger "
          << options_.rocks_opt.level0_file_num_compaction_trigger << endl;
     cerr << "targe file size base " << options_.rocks_opt.target_file_size_base << endl;
     cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
-    cerr << "max open files " << options_.rocks_opt.max_open_files << endl;
 
-    cerr << "compression " << (int)options_.rocks_opt.compression << endl;
-//    exit(1);
     if (!compression) {
         options_.rocks_opt.compression = rocksdb::kNoCompression;
     }
@@ -300,8 +292,6 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
 
     options_.rocks_opt.statistics = rocksdb::CreateDBStatistics();
     options_.rocks_opt.report_bg_io_stats = true;
-
-    cerr << "--- Start create DeltaKVDB instance" << endl;
 
     DELTAKV_NAMESPACE::ConfigManager::getInstance().setConfigPath(config_file_path.c_str());
 

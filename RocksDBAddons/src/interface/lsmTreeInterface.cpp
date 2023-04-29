@@ -38,10 +38,8 @@ bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
 
     if (options.enable_valueStore) {
         lsmTreeRunningMode_ = kValueLog;
-        cerr << "lsmTreeRunningMode_ = kValueLog" << endl;
     } else {
         lsmTreeRunningMode_ = kNoValueLog;
-        cerr << "lsmTreeRunningMode_ = kNoValueLog" << endl;
     }
 
     return true;
@@ -202,8 +200,8 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             string remainingDeltas = lsm_value.substr(header_sz + index_sz);  
 
             // The header will be larger. Use sizeof() function here
-            int valueBufferSize = sizeof(header) + vLogValue.size();
-            char valueBuffer[valueBufferSize];
+            int value_sz = sizeof(header) + vLogValue.size();
+            char buf[value_sz];
 
             // Prepare for merges
             // TODO extracted the sequence number
@@ -212,26 +210,26 @@ bool LsmTreeInterface::Get(const string& key, string* value)
 
             // Put header to buffer
             if (use_varint_kv_header == false) {
-                memcpy(valueBuffer, &header, header_sz);
+                memcpy(buf, &header, header_sz);
             } else {
-                header_sz = PutKVHeaderVarint(valueBuffer, header);
+                header_sz = PutKVHeaderVarint(buf, header);
             }
             // Put raw value to buffer
-            memcpy(valueBuffer + header_sz, vLogValue.c_str(), vLogValue.size());
-            valueBufferSize = header_sz + vLogValue.size();
+            memcpy(buf + header_sz, vLogValue.c_str(), vLogValue.size());
+            value_sz = header_sz + vLogValue.size();
 
             // 1. replace the external value index with the raw value
             // 2. merge with the existing deltas, if any
             if (remainingDeltas.size() > 0) {
                 Slice key("lsmInterface", 12);
-                Slice existingValue(valueBuffer, valueBufferSize);
+                Slice existingValue(buf, value_sz);
                 deque<string> operandList;
                 operandList.push_back(remainingDeltas);
                 
                 mergeOperator_->FullMerge(key, &existingValue, operandList,
                         value, nullptr);
             } else {
-                value->assign(valueBuffer, valueBufferSize);
+                value->assign(buf, value_sz);
             }
 
             return true;
@@ -255,18 +253,19 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         for (auto& it : memPoolHandlersPut) {
             KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
             // Reserve enough space. Use sizeof() here
-            char valueBuffer[it.valueSize_ + sizeof(header)];
+            char buf[it.valueSize_ + sizeof(header)];
 
+            // encode header
             if (use_varint_kv_header == false) {
-                memcpy(valueBuffer, &header, header_sz);
+                memcpy(buf, &header, header_sz);
             } else {
-                header_sz = PutKVHeaderVarint(valueBuffer, header);
+                header_sz = PutKVHeaderVarint(buf, header);
             }
-            memcpy(valueBuffer + header_sz, it.valuePtr_, it.valueSize_);
+            memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
             value_sz = header_sz + it.valueSize_;
 
             rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-            rocksdb::Slice newValue(valueBuffer, value_sz);
+            rocksdb::Slice newValue(buf, value_sz);
             mergeBatch->Put(newKey, newValue);
         }
     } else {
@@ -275,18 +274,18 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
             if (it.valueSize_ < valueExtractSize_) {
                 KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
                 // Reserve enough space. Use sizeof() here
-                char valueBuffer[it.valueSize_ + sizeof(header)];
+                char buf[it.valueSize_ + sizeof(header)];
 
                 if (use_varint_kv_header == false) {
-                    memcpy(valueBuffer, &header, header_sz);
+                    memcpy(buf, &header, header_sz);
                 } else {
-                    header_sz = PutKVHeaderVarint(valueBuffer, header);
+                    header_sz = PutKVHeaderVarint(buf, header);
                 }
-                memcpy(valueBuffer + header_sz, it.valuePtr_, it.valueSize_);
+                memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
                 value_sz = header_sz + it.valueSize_;
 
                 rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-                rocksdb::Slice newValue(valueBuffer, value_sz);
+                rocksdb::Slice newValue(buf, value_sz);
                 mergeBatch->Put(newKey, newValue);
             } else {
                 objects_for_vlog_put.push_back(it);

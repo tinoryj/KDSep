@@ -5,7 +5,7 @@
 namespace DELTAKV_NAMESPACE {
 
 const bool use_varint_index = true;
-const bool use_varint_kv_header = false;
+const bool use_varint_kv_header = true;
 
 inline char* EncodeVarint32(char* dst, uint32_t v) {
     // Operate on characters as unsigneds

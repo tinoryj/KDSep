@@ -1,0 +1,52 @@
+#include "utils/prefixTreeForHashStore.hpp"
+
+namespace DELTAKV_NAMESPACE {
+
+PrefixTreeForHashStore::~PrefixTreeForHashStore() {
+    size_t rss_before = getRss();
+    size_t rss_after;
+    //        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+    for (int i = 0; i < (1 << fixed_bit_num_); i++) {
+        stack<prefixTreeNode*> stk;
+        prefixTreeNode *p = roots_[i], *pre = nullptr;
+
+        // almost a template for post order traversal ...
+        while (p != nullptr || !stk.empty()) {
+            while (p != nullptr) {
+                stk.push(p);
+                p = p->left_child; // go down one level
+            }
+
+            if (!stk.empty()) {
+                p = stk.top(); // its left children are deleted
+                stk.pop();
+                if (p->right_child == nullptr || pre == p->right_child) {
+                    delete p;
+                    pre = p;
+                    p = nullptr;
+                } else {
+                    stk.push(p);
+                    p = p->right_child;
+                }
+            }
+        }
+    }
+
+    for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
+        if (targetDeleteVec[i] != nullptr) {
+            if (targetDeleteVec[i]->file_op_ptr != nullptr) {
+                delete targetDeleteVec[i]->file_op_ptr;
+            }
+            delete targetDeleteVec[i];
+        }
+    }
+
+    delete[] roots_;
+    delete[] rootMtx_;
+    rss_after = getRss();
+    debug_error("rss from %lu to %lu (diff: %.4lf)\n", 
+           rss_before, rss_after, 
+           (rss_before - rss_after) / 1024.0 / 1024.0); 
+}
+
+} // DELTAKV_NAMESPACE

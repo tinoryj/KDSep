@@ -608,9 +608,9 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdatesWithHeader(
         // record the raw delta size in the vector
         header.rawValueSize_ = raw_delta_size; 
         if (use_varint_kv_header == true) {
+            raw_delta_sizes[i++] = raw_delta_size;
             final_size += GetKVHeaderVarintSize(header) + raw_delta_size;
         } else {
-            raw_delta_sizes[i++] = raw_delta_size;
             final_size += header_sz + raw_delta_size;
         }
     }
@@ -696,10 +696,6 @@ inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(
 
     for (auto it = 0; it < rawOperandsVec.size(); it += 2) {
         int index = str_t_stoi(rawOperandsVec[it]);
-        if (index > 10) {
-            debug_error("index = %d\n", index);
-            exit(1);
-        }
         raw_value_fields[index] = rawOperandsVec[it+1];
     }
 

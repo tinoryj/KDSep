@@ -8,35 +8,45 @@ DeltaKV::DeltaKV()
 
 DeltaKV::~DeltaKV()
 {
-    cerr << "[DeltaKV Interface] Try delete write batch" << endl;
+    size_t rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete write batch: " << rss << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         delete notifyWriteBatchMQ_;
         delete writeBatchMapForSearch_[0];
         delete writeBatchMapForSearch_[1];
     }
-    cerr << "[DeltaKV Interface] Try delete write back" << endl;
-    if (enableWriteBackOperationsFlag_ == true) {
+    rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete write back " << rss << endl;
+    if (enable_write_back_ == true) {
         delete writeBackOperationsQueue_;
     }
-    cerr << "[DeltaKV Interface] Try delete lsm interface" << endl;
+    rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete lsm interface " << rss << endl;
     if (enableParallelLsmInterface == true) {
         delete lsmInterfaceOperationsQueue_;
     }
-    cerr << "[DeltaKV Interface] Try delete Read Cache" << endl;
+    rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete Read Cache " << rss << endl;
     if (enableKeyValueCache_ == true) {
         delete keyToValueListCache_;
     }
-    cerr << "[DeltaKV Interface] Try delete HashStore" << endl;
+    cerr << "[DeltaKV Interface] Try delete HashStore " << rss << endl;
     if (HashStoreInterfaceObjPtr_ != nullptr) {
-        cerr << "interface" << endl;
+        rss = getRss();
+        cerr << "interface " << rss << endl;
         delete HashStoreInterfaceObjPtr_;
-        cerr << "file manager" << endl;
+        rss = getRss();
+        cerr << "file manager " << rss << endl;
         delete hashStoreFileManagerPtr_;
-        cerr << "file operator" << endl;
+        rss = getRss();
+        cerr << "file operator " << rss << endl;
         delete hashStoreFileOperatorPtr_;
     }
+    rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete mempool " << rss << endl;
     delete objectPairMemPool_;
-    cerr << "[DeltaKV Interface] Try delete RocksDB" << endl;
+    rss = getRss();
+    cerr << "[DeltaKV Interface] Try delete RocksDB " << rss << endl;
 }
 
 bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
@@ -46,8 +56,6 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 //    header.rawValueSize_ = 1024;
 //    printHeader();
 //    PutKVHeaderVarint(buf, header, true, true);
-    fprintf(stderr, "Open DeltaKV\n");
-
     boost::thread::attributes attrs;
     attrs.set_stack_size(1000 * 1024 * 1024);
     // object mem pool
@@ -75,7 +83,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     }
 
     if (options.enable_write_back_optimization_ == true) {
-        enableWriteBackOperationsFlag_ = true;
+        enable_write_back_ = true;
         writeBackWhenReadDeltaNumerThreshold_ = options.deltaStore_write_back_during_reads_threshold;
         writeBackWhenReadDeltaSizeThreshold_ = options.deltaStore_write_back_during_reads_size_threshold;
         writeBackOperationsQueue_ = new messageQueue<writeBackObject*>;
@@ -126,7 +134,6 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     } else {
         deltaKVRunningMode_ = options.enable_batched_operations_ ? kBatchedWithNoDeltaStore : kWithNoDeltaStore;
     }
-    cerr << "deltaKVRunningMode_ = " << deltaKVRunningMode_ << endl;
 
     return true;
 }
@@ -141,7 +148,7 @@ bool DeltaKV::Close()
         }
     }
     cerr << "[DeltaKV Close DB] Wait write back" << endl;
-    if (enableWriteBackOperationsFlag_ == true) {
+    if (enable_write_back_ == true) {
         writeBackOperationsQueue_->done = true;
         while (writeBackOperationsQueue_->isEmpty() == false) {
             asm volatile("");
@@ -244,8 +251,8 @@ bool DeltaKV::SingleMergeInternal(const mempoolHandler_t& obj)
     }
 }
 
-bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool getByWriteBackFlag)
-{
+bool DeltaKV::GetInternal(const string& key, string* value, 
+        uint32_t maxSequenceNumber, bool writing_back) {
     // Do not use deltaStore
     if (deltaKVRunningMode_ == kWithNoDeltaStore || deltaKVRunningMode_ == kBatchedWithNoDeltaStore) {
         string lsm_value;
@@ -259,6 +266,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         if (use_varint_kv_header == true) {
             header_sz = GetKVHeaderVarintSize(lsm_value.c_str());
         }
+        // simply remove the header and return
         value->assign(lsm_value.substr(header_sz));
         return true;
     }
@@ -267,7 +275,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         // Use deltaStore
         string lsm_value;
         bool ret;
-        // maxSequenceNumber, getByWriteBackFlag);
+        // maxSequenceNumber, writing_back);
         STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); 
 
         if (ret == false) {
@@ -283,7 +291,7 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
         } else {
             header = GetKVHeaderVarint(lsm_value.c_str(), header_sz); 
         }
-        string rawValueStr;
+        string raw_value;
 
         if (header.valueSeparatedFlag_ == true) {
             debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
@@ -296,22 +304,22 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 exit(1);
             }
 
-            // get deltas from delta store
+            // get deltas from the LSM-tree value 
             vector<pair<bool, string>> deltaInfoVec;
-            STAT_PROCESS(processValueWithMergeRequestToValueAndMergeOperations(
-                        lsm_value, header_sz + header.rawValueSize_,
-                        deltaInfoVec, maxSequenceNumber),
+            STAT_PROCESS(extractDeltas(lsm_value, 
+                        header_sz + header.rawValueSize_, deltaInfoVec,
+                        maxSequenceNumber),
                     StatsType::DELTAKV_GET_PROCESS_BUFFER);
 
-            char raw_value[header.rawValueSize_];
-            memcpy(raw_value, lsm_value.c_str() + header_sz, header.rawValueSize_);
-            string internalRawValueStr(raw_value, header.rawValueSize_);
-            rawValueStr.assign(internalRawValueStr);
+            // get value from the LSM-tree value
+            raw_value.assign(lsm_value.c_str() + header_sz,
+                    header.rawValueSize_);
 
             bool isAnyDeltasAreExtratedFlag = false;
             for (auto& it : deltaInfoVec) {
                 if (it.first == true) {
                     isAnyDeltasAreExtratedFlag = true;
+                    break;
                 }
             }
 
@@ -347,9 +355,19 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                         return false;
                     } 
 
-                    debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                    STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
-                    if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                    debug_trace("Start DeltaKV merge operation, raw_value = "
+                            "%s, finalDeltaOperatorsVec.size = %lu\n",
+                            raw_value.c_str(), finalDeltaOperatorsVec.size());
+
+                    // merge the raw value with raw deltas
+                    STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(raw_value,
+                                finalDeltaOperatorsVec, value),
+                            StatsType::DELTAKV_GET_FULL_MERGE);
+                    if (enable_write_back_ == true &&
+                            deltaInfoVec.size() >
+                            writeBackWhenReadDeltaNumerThreshold_ &&
+                            writeBackWhenReadDeltaNumerThreshold_ != 0 &&
+                            !writing_back) {
                         bool ret;
                         STAT_PROCESS(ret = PutImpl(key, *value),
                                 StatsType::DELTAKV_GET_PUT_WRITE_BACK);
@@ -358,8 +376,8 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                                     key.c_str());
                             exit(1);
                         }
-                        //                    writeBackObject* newPair = new writeBackObject(key, "", 0);
-                        //                    writeBackOperationsQueue_->push(newPair);
+                        //writeBackObject* newPair = new writeBackObject(key, "", 0);
+                        //writeBackOperationsQueue_->push(newPair);
                     }
                     return true;
                 }
@@ -369,9 +387,16 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 for (auto i = 0; i < deltaInfoVec.size(); i++) {
                     finalDeltaOperatorsVec.push_back(deltaInfoVec[i].second);
                 }
-                debug_trace("Start DeltaKV merge operation, rawValueStr = %s, finalDeltaOperatorsVec.size = %lu\n", rawValueStr.c_str(), finalDeltaOperatorsVec.size());
-                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(rawValueStr, finalDeltaOperatorsVec, value), StatsType::DELTAKV_GET_FULL_MERGE);
-                if (enableWriteBackOperationsFlag_ == true && deltaInfoVec.size() > writeBackWhenReadDeltaNumerThreshold_ && writeBackWhenReadDeltaNumerThreshold_ != 0 && !getByWriteBackFlag) {
+                debug_trace("Start DeltaKV merge operation, raw_value = "
+                        "%s, finalDeltaOperatorsVec.size = %lu\n",
+                        raw_value.c_str(), finalDeltaOperatorsVec.size());
+                STAT_PROCESS(deltaKVMergeOperatorPtr_->Merge(
+                            raw_value, finalDeltaOperatorsVec, value),
+                        StatsType::DELTAKV_GET_FULL_MERGE);
+                if (enable_write_back_ == true && !writing_back &&
+                        deltaInfoVec.size() >
+                        writeBackWhenReadDeltaNumerThreshold_ &&
+                        writeBackWhenReadDeltaNumerThreshold_ != 0) {
                     writeBackObject* newPair = new writeBackObject(key, "", 0);
                     writeBackOperationsQueue_->push(newPair);
                 }
@@ -383,12 +408,12 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
                 debug_error("string size %lu raw value size %u\n", lsm_value.size(), header.rawValueSize_); 
                 exit(1);
             }
-            value->assign(string(lsm_value.c_str() + header_sz, header.rawValueSize_));
+            value->assign(string(lsm_value.c_str() + header_sz,
+                        header.rawValueSize_));
             return true;
         }
     } else {
         // do not have metadata
-
         // Use deltaStore
         string lsm_value;
         bool ret;
@@ -403,7 +428,8 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             lsmInterfaceOperationsQueue_->push(lsmInterfaceOpPtr);
             lsm_interface_cv.notify_one();
         } else {
-            STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
+            // (, maxSequenceNumber, writing_back);
+            STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); 
             if (ret == false) {
                 debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
                 return false;
@@ -444,57 +470,62 @@ bool DeltaKV::GetInternal(const string& key, string* value, uint32_t maxSequence
             delete lsmInterfaceOpPtr;
         }
 
-        KvHeader tempInternalValueHeader;
-        memcpy(&tempInternalValueHeader, lsm_value.c_str(), sizeof(KvHeader));
-        string rawValueStr;
+        KvHeader header;
+        size_t header_sz = sizeof(KvHeader);
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str(), header_sz);
+        } else {
+            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
+        }
 
-        if (tempInternalValueHeader.valueSeparatedFlag_ == true) {
+        if (header.valueSeparatedFlag_ == true) {
             debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
             assert(0);
         }
 
-        str_t internalRawValueStrT(lsm_value.data() + sizeof(KvHeader), tempInternalValueHeader.rawValueSize_);
-        maxSequenceNumber = tempInternalValueHeader.sequenceNumber_;
+        str_t raw_value(lsm_value.data() + header_sz, header.rawValueSize_);
+        maxSequenceNumber = header.sequenceNumber_;
         
-        if (deltasFromDeltaStoreVec.empty() == false) {
-            bool mergeOperationStatus;
-            vector<str_t> deltaInStrT;
-            int totalDeltaSizes = 0;
-            for (auto& it : deltasFromDeltaStoreVec) {
-                deltaInStrT.push_back(str_t(it.data(), it.size()));
-                totalDeltaSizes += it.size();
-            }
-            STAT_PROCESS(mergeOperationStatus = deltaKVMergeOperatorPtr_->Merge(internalRawValueStrT, deltaInStrT /*deltasFromDeltaStoreVec*/, value), StatsType::DELTAKV_GET_FULL_MERGE);
-            if (mergeOperationStatus == true) {
-                if (enableWriteBackOperationsFlag_ == true && !getByWriteBackFlag &&  
-                        ((deltasFromDeltaStoreVec.size() >
-                          writeBackWhenReadDeltaNumerThreshold_ &&
-                          writeBackWhenReadDeltaNumerThreshold_ != 0) ||
-                        (totalDeltaSizes > writeBackWhenReadDeltaSizeThreshold_
-                         && writeBackWhenReadDeltaSizeThreshold_ != 0))) {
-                    bool ret;
-                    STAT_PROCESS(ret = PutImpl(key, *value), StatsType::DELTAKV_GET_PUT_WRITE_BACK);
-                    if (ret == false) {
-                        debug_error("write back failed key %s value %.*s\n", key.c_str(), 
-                                (int)internalRawValueStrT.size_, internalRawValueStrT.data_);
-                        for (auto& it : deltaInStrT) {
-                            debug_error("delta %.*s\n", (int)it.size_,
-                                    it.data_);
-                        }
-                        exit(1);
-                    }
-//                    writeBackObject* newPair = new writeBackObject(key, "", 0);
-//                    writeBackOperationsQueue_->push(newPair);
-                }
-                return true;
-            } else {
-                debug_error("[ERROR] Perform merge operation fail, key = %s\n", key.c_str());
-                return false;
-            }
-        } else {
-            value->assign(internalRawValueStrT.data_, internalRawValueStrT.size_);
+        if (deltasFromDeltaStoreVec.empty() == false) { 
+            value->assign(raw_value.data_, raw_value.size_);
             return true;
         }
+
+        bool mergeOperationStatus;
+        vector<str_t> deltaInStrT;
+        int total_d_sz = 0;
+        for (auto& it : deltasFromDeltaStoreVec) {
+            deltaInStrT.push_back(str_t(it.data(), it.size()));
+            total_d_sz += it.size();
+        }
+        STAT_PROCESS(mergeOperationStatus =
+                deltaKVMergeOperatorPtr_->Merge(raw_value, deltaInStrT
+                    /*deltasFromDeltaStoreVec*/, value),
+                StatsType::DELTAKV_GET_FULL_MERGE);
+        if (mergeOperationStatus == false) { 
+            debug_error("[ERROR] Perform merge operation fail, key = %s\n",
+                    key.c_str());
+            return false;
+        }
+        if (enable_write_back_ == true && !writing_back &&  
+                ((deltasFromDeltaStoreVec.size() >
+                  writeBackWhenReadDeltaNumerThreshold_ &&
+                  writeBackWhenReadDeltaNumerThreshold_ != 0) ||
+                (total_d_sz > writeBackWhenReadDeltaSizeThreshold_
+                 && writeBackWhenReadDeltaSizeThreshold_ != 0))) {
+            bool ret;
+            STAT_PROCESS(ret = PutImpl(key, *value),
+                    StatsType::DELTAKV_GET_PUT_WRITE_BACK);
+            if (ret == false) {
+                debug_error("write back failed key %s value %.*s\n", key.c_str(), 
+                        (int)raw_value.size_, raw_value.data_);
+                for (auto& it : deltaInStrT) {
+                    debug_error("delta %.*s\n", (int)it.size_, it.data_);
+                }
+                exit(1);
+            }
+        }
+        return true;
     }
 }
 
@@ -757,13 +788,13 @@ bool DeltaKV::Merge(const string& key, const string& value)
 }
 
 /*
-bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool getByWriteBackFlag)
+bool DeltaKV::GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool writing_back)
 {
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
     switch (deltaKVRunningMode_) {
     case kBatchedWithDeltaStore:
     case kWithDeltaStore:
-        if (GetWithDeltaStore(key, value, maxSequenceNumber, getByWriteBackFlag) == false) {
+        if (GetWithDeltaStore(key, value, maxSequenceNumber, writing_back) == false) {
             return false;
         } else {
             return true;
@@ -1182,14 +1213,20 @@ void DeltaKV::processBatchedOperationsWorker()
                 for (auto index = 0; index < handlerToDeltaStoreVec.size(); index++) {
                     if (handlerToDeltaStoreVec[index].isAnchorFlag_ == false) {
                         auto& it = handlerToDeltaStoreVec[index];
-                        KvHeader currentInternalValueType(false, false, it.sequenceNumber_, it.valueSize_);
-                        char buffer[it.valueSize_ + sizeof(KvHeader)];
+                        KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+                        // reserve space
+                        char buf[it.valueSize_ + sizeof(KvHeader)];
+                        size_t header_sz = sizeof(KvHeader);
 
-                        memcpy(buffer, &currentInternalValueType, sizeof(KvHeader));
-                        memcpy(buffer + sizeof(KvHeader), it.valuePtr_, it.valueSize_);
+                        if (use_varint_kv_header == false) {
+                            memcpy(buf, &header, header_sz);
+                        } else {
+                            header_sz = PutKVHeaderVarint(buf, header);
+                        }
+                        memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
 
                         rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
-                        rocksdb::Slice newValue(buffer, it.valueSize_ + sizeof(KvHeader));
+                        rocksdb::Slice newValue(buf, it.valueSize_ + header_sz);
                         mergeBatch.Merge(newKey, newValue);
                     }
                 }
@@ -1227,37 +1264,71 @@ void DeltaKV::processBatchedOperationsWorker()
                     for (auto separatedDeltaFlagIndex = 0; separatedDeltaFlagIndex < separateFlagVec.size(); separatedDeltaFlagIndex++) {
                         if (separateFlagVec[separatedDeltaFlagIndex] == false) {
                             if (notSeparatedDeltasVec[notSeparatedID].isAnchorFlag_ == false) {
+                                // write delta to rocksdb
                                 char lsm_buffer[sizeof(KvHeader) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
-                                KvHeader currentInternalValueType(false, false, notSeparatedDeltasVec[notSeparatedID].sequenceNumber_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                memcpy(lsm_buffer, &currentInternalValueType, sizeof(KvHeader));
-                                memcpy(lsm_buffer + sizeof(KvHeader), notSeparatedDeltasVec[notSeparatedID].valuePtr_, notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                rocksdb::Slice newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
-                                rocksdb::Slice newValue(lsm_buffer, sizeof(KvHeader) + notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                KvHeader header(false, false,
+                                        notSeparatedDeltasVec[notSeparatedID].sequenceNumber_,
+                                        notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                size_t header_sz = sizeof(KvHeader);
+
+                                // encode header
+                                if (use_varint_kv_header == false) {
+                                    memcpy(lsm_buffer, &header, header_sz);
+                                } else {
+                                    header_sz = PutKVHeaderVarint(lsm_buffer, header);
+                                }
+                                memcpy(lsm_buffer + header_sz,
+                                        notSeparatedDeltasVec[notSeparatedID].valuePtr_,
+                                        notSeparatedDeltasVec[notSeparatedID].valueSize_);
+                                rocksdb::Slice newKey(
+                                        notSeparatedDeltasVec[notSeparatedID].keyPtr_,
+                                        notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                rocksdb::Slice newValue(
+                                        lsm_buffer, header_sz +
+                                        notSeparatedDeltasVec[notSeparatedID].valueSize_);
                                 debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
-                                string newKey(notSeparatedDeltasVec[notSeparatedID].keyPtr_, notSeparatedDeltasVec[notSeparatedID].keySize_);
+                                // skip anchor
+                                string newKey(
+                                        notSeparatedDeltasVec[notSeparatedID].keyPtr_,
+                                        notSeparatedDeltasVec[notSeparatedID].keySize_);
                                 debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
                             }
                             notSeparatedID++;
                         } else {
                             if (handlerToDeltaStoreVec[separatedID].isAnchorFlag_ == false) {
+                                // write delta meta to rocksdb
                                 char lsm_buffer[sizeof(KvHeader)];
-                                KvHeader currentInternalValueType(false, true, handlerToDeltaStoreVec[separatedID].sequenceNumber_, handlerToDeltaStoreVec[separatedID].valueSize_);
-                                memcpy(lsm_buffer, &currentInternalValueType, sizeof(KvHeader));
-                                rocksdb::Slice newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
-                                rocksdb::Slice newValue(lsm_buffer, sizeof(KvHeader));
+                                KvHeader header(false, true,
+                                        handlerToDeltaStoreVec[separatedID].sequenceNumber_,
+                                        handlerToDeltaStoreVec[separatedID].valueSize_);
+                                size_t header_sz = sizeof(KvHeader);
+
+                                // encode header
+                                if (use_varint_kv_header == false) {
+                                    memcpy(lsm_buffer, &header, header_sz);
+                                } else {
+                                    header_sz = PutKVHeaderVarint(lsm_buffer, header);
+                                }
+                                rocksdb::Slice newKey(
+                                        handlerToDeltaStoreVec[separatedID].keyPtr_,
+                                        handlerToDeltaStoreVec[separatedID].keySize_);
+                                rocksdb::Slice newValue(lsm_buffer, header_sz);
                                 debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
-                                string newKey(handlerToDeltaStoreVec[separatedID].keyPtr_, handlerToDeltaStoreVec[separatedID].keySize_);
+                                // skip anchor for rocksdb
+                                string newKey(
+                                        handlerToDeltaStoreVec[separatedID].keyPtr_,
+                                        handlerToDeltaStoreVec[separatedID].keySize_);
                                 debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
                             }
                             separatedID++;
                         }
                     } 
                 } else {
-                    // don't do anything
+                    // don't do anything if we do not use metadata
                 }
 
                 // LSM interface
@@ -1362,15 +1433,15 @@ void DeltaKV::processWriteBackOperationsWorker()
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
     int counter = 0;
-    uint64_t mx = 1200;
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
+//    uint64_t mx = 1200;
+//    struct timeval tvs, tve;
+//    gettimeofday(&tvs, 0);
     while (true) {
-        gettimeofday(&tve, 0);
-        if (tve.tv_sec - tvs.tv_sec > mx) {
-            debug_error("lsm thread heart beat %lu\n", mx); 
-            mx += 1200;
-        }
+//        gettimeofday(&tve, 0);
+//        if (tve.tv_sec - tvs.tv_sec > mx) {
+//            debug_error("lsm thread heart beat %lu\n", mx); 
+//            mx += 1200;
+//        }
         if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;
         }
@@ -1406,7 +1477,7 @@ void DeltaKV::processLsmInterfaceOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (op->is_write == false) {
-                STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); // (, maxSequenceNumber, getByWriteBackFlag);
+                STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); // (, maxSequenceNumber, writing_back);
             } else {
                 STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(*(op->handlerToValueStoreVecPtr), op->mergeBatch), 
                             StatsType::DKV_FLUSH_LSM_INTERFACE);
@@ -1437,27 +1508,34 @@ bool DeltaKV::deleteExistingThreads()
     return true;
 }
 
-bool DeltaKV::processValueWithMergeRequestToValueAndMergeOperations(string internalValue, uint64_t skipSize, vector<pair<bool, string>>& mergeOperatorsVec, uint32_t& maxSequenceNumber)
-{
-    uint64_t internalValueSize = internalValue.size();
-    debug_trace("internalValueSize = %lu, skipSize = %lu\n", internalValueSize, skipSize);
-    uint64_t currentProcessLocationIndex = skipSize;
-    while (currentProcessLocationIndex != internalValueSize) {
-        KvHeader currentInternalValueTypeHeader;
-        memcpy(&currentInternalValueTypeHeader, internalValue.c_str() + currentProcessLocationIndex, sizeof(KvHeader));
-        currentProcessLocationIndex += sizeof(KvHeader);
-        if (maxSequenceNumber < currentInternalValueTypeHeader.sequenceNumber_) {
-            maxSequenceNumber = currentInternalValueTypeHeader.sequenceNumber_;
+bool DeltaKV::extractDeltas(string lsm_value, uint64_t skipSize, 
+        vector<pair<bool, string>>& mergeOperatorsVec, 
+        uint32_t& maxSequenceNumber) {
+    uint64_t internalValueSize = lsm_value.size();
+    uint64_t value_i = skipSize;
+    size_t header_sz = sizeof(KvHeader);
+    while (value_i != internalValueSize) {
+        KvHeader header;
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str() + value_i, sizeof(KvHeader));
+        } else {
+            header = GetKVHeaderVarint(lsm_value.c_str() + value_i, header_sz);
         }
-        if (currentInternalValueTypeHeader.mergeFlag_ == true) {
-            debug_error("[ERROR] Find new value index in merge operand list, this index refer to raw value size = %u\n", currentInternalValueTypeHeader.rawValueSize_);
+        value_i += header_sz;
+        if (maxSequenceNumber < header.sequenceNumber_) {
+            maxSequenceNumber = header.sequenceNumber_;
+        }
+        if (header.mergeFlag_ == true) {
+            debug_error("[ERROR] Find new value index in merge operand list,"
+                    " this index refer to raw value size = %u\n",
+                    header.rawValueSize_);
             assert(0);
         }
-        if (currentInternalValueTypeHeader.valueSeparatedFlag_ != true) {
-            assert(currentProcessLocationIndex + currentInternalValueTypeHeader.rawValueSize_ <= internalValue.size());
-            string currentValue(internalValue.c_str() + currentProcessLocationIndex, currentInternalValueTypeHeader.rawValueSize_);
-            currentProcessLocationIndex += currentInternalValueTypeHeader.rawValueSize_;
-            mergeOperatorsVec.push_back(make_pair(false, currentValue));
+        if (header.valueSeparatedFlag_ != true) {
+            assert(value_i + header.rawValueSize_ <= lsm_value.size());
+            string value(lsm_value.c_str() + value_i, header.rawValueSize_);
+            value_i += header.rawValueSize_;
+            mergeOperatorsVec.push_back(make_pair(false, value));
         } else {
             mergeOperatorsVec.push_back(make_pair(true, ""));
         }

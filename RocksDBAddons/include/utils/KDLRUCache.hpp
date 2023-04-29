@@ -22,11 +22,7 @@ public:
     {
     }
 
-    ~lru_cache_str_t()
-    {
-//        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
-        clear();
-    }
+    ~lru_cache_str_t();
 
     static inline size_t size_of_key(ktype key) {
         size_t result = sizeof(str_t) + key.size_;
@@ -40,6 +36,10 @@ public:
 //        }
         size_t result = sizeof(str_t) + value.size_;
         return result;
+    }
+
+    static inline size_t size_of_meta() {
+        return 24; 
     }
 
     inline void delete_value(vtype old_value) {
@@ -92,7 +92,7 @@ public:
     {
         mtype::iterator i = m_map.find(key);
         if (i == m_map.end()) {
-            size_t insert_size = size_of_value(value) + key.size_ + sizeof(ktype); 
+            size_t insert_size = size_of_value(value) + size_of_key(key); 
             // insert item into the cache, but first check if it is full
             while (size() + insert_size >= m_capacity) {
                 // cache is full, evict the least recently used item
@@ -110,7 +110,7 @@ public:
     void update(ktype& key, vtype value) {
         mtype::iterator i = m_map.find(key);
         if (i == m_map.end()) {
-            size_t insert_size = size_of_value(value) + key.size_ + sizeof(ktype); 
+            size_t insert_size = size_of_value(value) + size_of_key(key); 
             data_size += insert_size;
                 
             // insert item into the cache, but first check if it is full
@@ -195,21 +195,14 @@ public:
         return value;
     }
 
-    void clear()
-    {
-        m_list.clear();
-        for (auto& it : m_map) {
-            if (it.second.first.size_ > 0) {
-                delete[] it.second.first.data_; // delete value
-            }
-            delete[] it.first.data_; // delete key
-        }
-        m_map.clear();
-        data_size = 0;
-    }
+    void clear();
 
     size_t getDataSize() {
         return data_size;
+    } 
+
+    size_t getNumberOfItems() {
+        return m_map.size();
     } 
 
 private:
@@ -319,6 +312,10 @@ public:
     size_t getDataSize() {
         return Cache_->getDataSize();
     }
+
+    size_t getNumberOfItems() {
+        return Cache_->getNumberOfItems();
+    }
 };
 
 class KDLRUCache {
@@ -326,10 +323,10 @@ private:
     AppendAbleLRUCacheStrTShard** shards_ = nullptr;
     uint32_t shard_num_ = 64;
     const uint32_t SHARD_MASK = 63;
-    uint64_t cacheSize_ = 0;
+    uint64_t cacheSize_ = 2 * 1024 * 1024;
 
     inline unsigned int hash(str_t& cache_key) {
-        return charBasedHashFunc(cache_key.data_, cache_key.size_) & SHARD_MASK;
+        return SHARD_MASK & charBasedHashFunc(cache_key.data_, cache_key.size_);
     }
 
 public:

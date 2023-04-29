@@ -72,13 +72,13 @@ BitMap::BitMap(offset_t size)
     _size = size;
     memset(_bv, 0, sizeof(ULL) * num);
 
-    _bitmapMutex = new mutex();
+//    _bitmapMutex = new mutex();
 }
 
 BitMap::~BitMap()
 {
     free(_bv);
-    delete _bitmapMutex;
+//    delete _bitmapMutex;
 }
 
 bool BitMap::getBit(offset_t addr)
@@ -103,7 +103,7 @@ void BitMap::setBitRange(offset_t addr, offset_t n)
 
 void BitMap::clearBit(offset_t addr)
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     clearBitInternal(addr);
 }
 
@@ -115,7 +115,7 @@ void BitMap::clearBitInternal(offset_t addr)
 
 void BitMap::setAllOne()
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     for (offset_t i = 0; i < _num; i++)
         _bv[i] = ~_bv[i];
     if (_size % _unit) {
@@ -125,7 +125,7 @@ void BitMap::setAllOne()
 
 offset_t BitMap::getFirstZeroAndFlip(offset_t writeFront)
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     offset_t ret = getFirstZeroSince(writeFront);
     if (ret != INVALID_OFFSET)
         setBit(ret);
@@ -134,7 +134,7 @@ offset_t BitMap::getFirstZeroAndFlip(offset_t writeFront)
 
 offset_t BitMap::getFirstZerosAndFlip(offset_t writeFront, offset_t len)
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     offset_t head = INVALID_OFFSET;
     bool reachEnd = false;
     for (offset_t i = 0; i < len; i++) {
@@ -212,7 +212,7 @@ offset_t BitMap::getFirstZeroSince(offset_t addr)
 
 void BitMap::clearBitRange(offset_t addr_st, int n)
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     assert(n > 0);
 
     offset_t addr_ed = std::min(addr_st + n, _size) - 1;
@@ -249,7 +249,7 @@ void BitMap::clearBitRange(offset_t addr_st, int n)
 
 vector<off_len_t> BitMap::getAllOne()
 {
-    lock_guard<mutex> lk(*_bitmapMutex);
+//    lock_guard<mutex> lk(*_bitmapMutex);
     vector<off_len_t> retv;
     offset_t off = 0;
     offset_t bit;

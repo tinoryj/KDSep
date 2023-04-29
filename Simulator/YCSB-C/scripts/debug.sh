@@ -147,7 +147,7 @@ ops=("30M")
 bonus=""
 indexSet=(1)
 works=8
-splitThres=0.3
+splitThres=0.8
 gcWriteBackSize=500
 
 
@@ -162,7 +162,7 @@ l1Sizes=(256)
 kdc=512
 mem=""
 
-ExpName="_d3"
+ExpName="_d4"
 flengths=("100" "400")
 reqs=("100M" "25M")
 flengths=("400")
@@ -191,10 +191,10 @@ bonus4="nodirectreads"
 bonus2=""
 bonus3=""
 bonus4="" # "shortprepare"
-gcWriteBackSize=200
+gcWriteBackSize=600
 checkrepeat=""
 fcl=10
-kdc=512
+kdc=64
 
 ##################### Part 2
 flengths=(100)
@@ -203,12 +203,11 @@ ops=("10M")
 
 checkrepeat=""
 maxBucketNumber=32768
-runModeSet=('raw')
+runModeSet=('raw' 'bkv')
 bonus2=""
 bonus3="initBit8"
 bonus4="shortprepare"
 bonus5=""
-bonus6="notevarindex"
 bonus6=""
 indexSet=(1) 
 func
