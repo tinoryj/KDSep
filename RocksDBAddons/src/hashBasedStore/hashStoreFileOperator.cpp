@@ -838,9 +838,7 @@ bool HashStoreFileOperator::operationWorkerFind(hashStoreOperationHandler* op_hd
 bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl)
 {
     // insert into GC job queue if exceed the threshold
-    if (file_hdl->filter->ShouldRebuild() ||
-            file_hdl->DiskAndBufferSizeExceeds(perFileGCSizeLimit_) || 
-            file_hdl->total_object_bytes - file_hdl->unsorted_part_offset >= 1024 * 1024 * 1024) {
+    if ( file_hdl->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
         if (file_hdl->gc_status == kNoGC) {
             file_hdl->no_gc_wait_operation_number_++;
             if (file_hdl->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {

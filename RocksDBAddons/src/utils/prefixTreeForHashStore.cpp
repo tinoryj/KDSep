@@ -32,6 +32,17 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
         }
     }
 
+    rss_after = getRss();
+    debug_error("before targetDeleteVec rss from %lu to %lu "
+            "(diff: %.4lf)\n", 
+           rss_before, rss_after, 
+           (rss_before - rss_after) / 1024.0 / 1024.0); 
+    printf("before targetDeleteVec rss from %lu to %lu "
+            "(diff: %.4lf)\n", 
+           rss_before, rss_after, 
+           (rss_before - rss_after) / 1024.0 / 1024.0); 
+    rss_before = rss_after;
+
     for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
         if (targetDeleteVec[i] != nullptr) {
             if (targetDeleteVec[i]->file_op_ptr != nullptr) {
@@ -45,6 +56,9 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
     delete[] rootMtx_;
     rss_after = getRss();
     debug_error("rss from %lu to %lu (diff: %.4lf)\n", 
+           rss_before, rss_after, 
+           (rss_before - rss_after) / 1024.0 / 1024.0); 
+    fprintf(stdout, "rss from %lu to %lu (diff: %.4lf)\n", 
            rss_before, rss_after, 
            (rss_before - rss_after) / 1024.0 / 1024.0); 
 }

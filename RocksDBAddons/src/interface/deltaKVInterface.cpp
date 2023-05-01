@@ -486,7 +486,7 @@ bool DeltaKV::GetInternal(const string& key, string* value,
         str_t raw_value(lsm_value.data() + header_sz, header.rawValueSize_);
         maxSequenceNumber = header.sequenceNumber_;
         
-        if (deltasFromDeltaStoreVec.empty() == false) { 
+        if (deltasFromDeltaStoreVec.empty() == true) { 
             value->assign(raw_value.data_, raw_value.size_);
             return true;
         }
