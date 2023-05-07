@@ -28,6 +28,7 @@ func() {
                                     if [[ $bucketNumber -gt $maxBucketNumber ]]; then
                                         bucketNumber=$maxBucketNumber
                                     fi
+                                    bucketNumber=$maxBucketNumber
                                     ratio="0.$index"
                                     if [[ $index -eq 10 ]]; then
                                         ratio="1"
@@ -191,7 +192,7 @@ bonus4="nodirectreads"
 bonus2=""
 bonus3=""
 bonus4="" # "shortprepare"
-gcWriteBackSize=600
+gcWriteBackSize=100000
 checkrepeat=""
 fcl=10
 kdc=64
@@ -204,6 +205,7 @@ ops=("10M")
 checkrepeat=""
 maxBucketNumber=32768
 runModeSet=('raw' 'bkv')
+runModeSet=('kd')
 bonus2=""
 bonus3="initBit8"
 bonus4="shortprepare"

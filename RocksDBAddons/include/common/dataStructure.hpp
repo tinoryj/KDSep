@@ -200,14 +200,18 @@ struct hashStoreFileMetaDataHandler {
         return total_on_disk_bytes + file_op_ptr->getFileBufferedSize() >
             threshold;
     }
+    bool UnsortedPartExceeds(uint64_t threshold) {
+        return total_on_disk_bytes + file_op_ptr->getFileBufferedSize() 
+           - unsorted_part_offset > threshold;
+    }
 };
 
 typedef struct hashStoreWriteOperationHandler {
-    mempoolHandler_t* mempoolHandler_ptr_;
+    mempoolHandler_t* object;
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    mempoolHandler_t* mempool_handler_vec_ptr_;
+    mempoolHandler_t* objects;
     unsigned int size;
 } hashStoreBatchedWriteOperationHandler;
 
@@ -259,7 +263,7 @@ typedef struct hashStoreFileHeader {
 // header size: 16 bytes
 typedef struct hashStoreRecordHeader {
     uint32_t key_size_;
-    uint32_t value_size_;
+    uint32_t value_size_ = 0;
     uint32_t sequence_number_;
     bool is_anchor_;
     bool is_gc_done_ = false; // to mark gc job done

@@ -990,7 +990,8 @@ bool DeltaKV::PutWithWriteBatch(mempoolHandler_t obj)
         if (mapIt != writeBatchMapForSearch_[currentWriteBatchDequeInUse]->end()) {
             for (auto it : mapIt->second) {
                 objectPairMemPool_->eraseContentFromMemPool(it.second);
-//                batchedOperationsCounter[currentWriteBatchDequeInUse]--;
+                batchedOperationsSizes[currentWriteBatchDequeInUse] -=
+                    it.second.keySize_ + it.second.valueSize_;
             }
             mapIt->second.clear();
             mapIt->second.push_back(make_pair(kPutOp, obj));

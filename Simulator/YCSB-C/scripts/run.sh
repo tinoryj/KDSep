@@ -177,20 +177,21 @@ kdcache=0
 workerThreadNumber=8
 gcThreadNumber=2
 ds_gc_thres=0.9
-ds_split_thres=0.45
+ds_split_thres=0.8
 batchSize=2  # In MiB
+batchSizeK=0
 cacheIndexFilter="true"
 paretokey="false"
 scanThreads=8
 nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
-gcWriteBackSize=1000
+gcWriteBackSize=100000
 enableParallel="false"
 enableIndexBlock="true"
 enableCrashConsistency="false"
 to=0
-wbread=10
+wbread=0
 blobgcforce=1.0
 # usage
 
@@ -234,6 +235,7 @@ l1sz=256
 memtable=64
 memSize=""
 initBit=20
+unsort=1024
 
 havekd="false"
 
@@ -301,6 +303,12 @@ for param in $*; do
             initBit=$tmp
             run_suffix=${run_suffix}_${param}
         fi
+    elif [[ "$param" =~ ^unsort[0-9]+$ ]]; then
+        tmp=`echo $param | sed 's/unsort//g'`
+        if [[ $tmp -ne $unsort && "$havekd" == "true" ]]; then
+            unsort=$tmp
+            run_suffix=${run_suffix}_${param}
+        fi
     elif [[ "$param" =~ ^Exp[0-9a-zA-Z_]+$ ]]; then
         ExpID=`echo $param | sed 's/Exp//g'`
         ResultLogFolder="Exp$ExpID/ResultLogs"
@@ -354,6 +362,12 @@ for param in $*; do
             batchSize=$tmp
             run_suffix=${run_suffix}_bs${tmp}M
         fi
+    elif [[ "$param" =~ ^batchSize[0-9]+K$ ]]; then
+        tmp=$(echo $param | sed 's/batchSize//g' | sed 's/K//g')
+        if [[ "$tmp" != "$batchSizeK" ]]; then
+            batchSizeK=$tmp
+            run_suffix=${run_suffix}_bs${tmp}K
+        fi
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
         MAXRunTimes=$(echo $param | sed 's/round//g')
     elif [[ "$param" =~ ^timeout[0-9]+$ ]]; then
@@ -396,8 +410,9 @@ for param in $*; do
             suffix=${suffix}_$param
         fi
     elif [[ "$param" =~ ^gcWriteBackSize[0-9]+$ ]]; then
-        gcWriteBackSize=$(echo $param | sed 's/gcWriteBackSize//g')
-        if [[ $gcWriteBackSize -ne 1000 ]]; then
+        num=$(echo $param | sed 's/gcWriteBackSize//g')
+        if [[ $gcWriteBackSize != $num ]]; then
+            gcWriteBackSize=$num
             run_suffix=${run_suffix}_gcwbsz${gcWriteBackSize}
         fi
     elif [[ "$param" =~ ^flushSize[0-9]+$ ]]; then
@@ -432,6 +447,14 @@ for param in $*; do
     elif [[ "$param" =~ ^open[0-9]+$ ]]; then
         maxOpenFiles=`echo $param | sed 's/open//g'`
         if [[ $maxOpenFiles -ne 1048576 ]]; then
+            run_suffix=${run_suffix}_$param
+        fi
+    elif [[ "$param" =~ ^zipf[0-9.]+$ ]]; then
+        tmp=`echo $param | sed 's/zipf//g'`
+        if [[ $tmp != "0.9" ]]; then
+            sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = ${tmp};" core/zipfian_generator.h
+            scripts/make_release.sh
+            sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = 0.9;" core/zipfian_generator.h
             run_suffix=${run_suffix}_$param
         fi
     elif [[ "$param" =~ ^clean$ ]]; then
@@ -540,6 +563,7 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/ds_split_thres/c\\ds_split_thres = $ds_split_thres" temp.ini
     sed -i "/ds_bucket_size/c\\ds_bucket_size = $bucketSize" temp.ini
     sed -i "/ds_gc_write_back_size/c\\ds_gc_write_back_size = $gcWriteBackSize" temp.ini
+    sed -i "/unsorted_part_size_threshold/c\\unsorted_part_size_threshold = $(( ${unsort} * 1024 ))" temp.ini
     if [[ $wbread -ne 10 ]]; then
         sed -i "/ds_read_write_back_num/c\\ds_read_write_back_num = $wbread" temp.ini
         sed -i "/ds_read_write_back_size/c\\ds_read_write_back_size = $wbread" temp.ini
@@ -547,6 +571,9 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
 fi
 
 sed -i "/write_buffer_size/c\\write_buffer_size = $(( $batchSize * 1024 * 1024 ))" temp.ini
+if [[ $batchSizeK != "0" ]]; then
+    sed -i "/write_buffer_size/c\\write_buffer_size = $(( $batchSizeK * 1024 ))" temp.ini
+fi
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
@@ -724,7 +751,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     if [[ "$shortprepare" == "true" ]]; then
         sed -i "/operationcount/c\\operationcount=10000" $SPEC
     else
-        sed -i "/operationcount/c\\operationcount=10000000" $SPEC
+        sed -i "/operationcount/c\\operationcount=3000000" $SPEC
     fi
     sed -i "/readproportion/c\\readproportion=1" $SPEC
     sed -i "/updateproportion/c\\updateproportion=0" $SPEC

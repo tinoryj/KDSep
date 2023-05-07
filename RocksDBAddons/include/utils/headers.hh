@@ -6,6 +6,8 @@ namespace DELTAKV_NAMESPACE {
 
 const bool use_varint_index = true;
 const bool use_varint_kv_header = true;
+const bool use_varint_d_header = true;
+const bool use_sequence_number = true;
 
 inline char* EncodeVarint32(char* dst, uint32_t v) {
     // Operate on characters as unsigneds
@@ -262,6 +264,62 @@ inline size_t GetKVHeaderVarintSize(KvHeader header) {
     return sz0 + 1;
 }
 
+inline size_t PutDeltaHeaderVarint(char* buf, hashStoreRecordHeader header) {
+    uint8_t c = 0;
+    c |= ((header.is_anchor_) ? 1 : 0);
+    c |= ((header.is_gc_done_) ? 2 : 0);
+    c |= (header.key_size_ << 2) & 252;
 
+    buf[0] = c;
+    if (header.is_gc_done_) {
+        return 1;
+    }
+    size_t sz0 = 1;
+    if (use_sequence_number) {
+        sz0 += PutVarint32(buf + sz0, header.sequence_number_);
+    }
+    if (header.is_anchor_ == false) {
+        sz0 += PutVarint32(buf + sz0, header.value_size_);
+    }
+    return sz0;
+}
+
+inline hashStoreRecordHeader GetDeltaHeaderVarint(const char* buf, 
+        size_t& offset) {
+    hashStoreRecordHeader header;
+    const char* ptr = buf;
+    uint8_t c = ptr[0];
+    header.is_gc_done_ = ((c & 2) > 0);
+    header.is_anchor_ = ((c & 1) > 0);
+    if (header.is_gc_done_) {
+        offset = 1;
+        return header;
+    }
+    header.key_size_ = c >> 2;
+    size_t sz0 = 1; 
+    if (use_sequence_number) {
+        sz0 += GetVarint32(ptr + sz0, &header.sequence_number_);
+    }
+    if (header.is_anchor_ == false) {
+        sz0 += GetVarint32(ptr + sz0, &header.value_size_);
+    }
+    offset = sz0;
+    return header;
+}
+
+inline size_t GetDeltaHeaderVarintSize(hashStoreRecordHeader header) {
+    if (header.is_gc_done_) {
+        return 1;
+    }
+    size_t sz = 0; 
+    char buf[5];
+    if (use_sequence_number) {
+        sz += PutVarint32(buf, header.sequence_number_);
+    }
+    if (header.is_anchor_ == false) {
+        sz += PutVarint32(buf, header.value_size_);
+    }
+    return sz + 1;
+}
 
 }

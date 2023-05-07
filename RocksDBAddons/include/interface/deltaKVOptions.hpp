@@ -63,6 +63,7 @@ public:
     uint64_t deltaStore_prefix_tree_initial_bit_number_ = 999;
     uint32_t deltaStore_mem_pool_object_number_ = 5;
     uint32_t deltaStore_mem_pool_object_size_ = 4096;
+    uint64_t unsorted_part_size_threshold = 1024 * 1024 * 1024;
 
     // valueStore options
     bool enable_valueStore = false;

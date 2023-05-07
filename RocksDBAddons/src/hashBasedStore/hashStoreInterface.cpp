@@ -254,7 +254,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
             mapIt.first->markedByMultiPut_ = false;
             hashStoreOperationHandler* op_hdl = new hashStoreOperationHandler(mapIt.first);
-            op_hdl->multiput_op.mempool_handler_vec_ptr_ = handlerVecTemp + handlerStartVecIndex;
+            op_hdl->multiput_op.objects = handlerVecTemp + handlerStartVecIndex;
             op_hdl->multiput_op.size = handlerVecIndex - handlerStartVecIndex;
             op_hdl->op_type = kMultiPut;
             op_hdl->need_flush = need_flush;

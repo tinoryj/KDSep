@@ -65,6 +65,7 @@ class ExternDBConfig {
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
     bool enable_index_block_;
+    uint64_t unsorted_part_size_threshold_;
     double blobgcforce_;
 
     struct {
@@ -127,6 +128,7 @@ class ExternDBConfig {
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
+        unsorted_part_size_threshold_ = pt_.get<uint64_t>("config.unsorted_part_size_threshold", 1024 * 1024);
     }
 
     int getBloomBits() {
@@ -308,6 +310,9 @@ class ExternDBConfig {
     }
     double getBlobGCForce() {
         return blobgcforce_;
+    }
+    uint64_t getUnsortedPartSizeThreshold() {
+        return unsorted_part_size_threshold_;
     }
 };
 }  // namespace ycsbc
