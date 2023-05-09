@@ -2012,76 +2012,76 @@ bool HashStoreFileManager::singleFileSplit(hashStoreFileMetaDataHandler*
 }
 
 bool HashStoreFileManager::twoAdjacentFileMerge(
-        hashStoreFileMetaDataHandler* currentHandlerPtr1,
-        hashStoreFileMetaDataHandler* currentHandlerPtr2, 
+        hashStoreFileMetaDataHandler* file_hdl1,
+        hashStoreFileMetaDataHandler* file_hdl2, 
         uint64_t target_prefix, uint64_t prefix_len)
 {
     struct timeval tvAll, tv;
     gettimeofday(&tvAll, 0);
-    std::scoped_lock<std::shared_mutex> w_lock1(currentHandlerPtr1->fileOperationMutex_);
-    std::scoped_lock<std::shared_mutex> w_lock2(currentHandlerPtr2->fileOperationMutex_);
+    std::scoped_lock<std::shared_mutex> w_lock1(file_hdl1->fileOperationMutex_);
+    std::scoped_lock<std::shared_mutex> w_lock2(file_hdl2->fileOperationMutex_);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_WAIT_LOCK, tvAll);
     gettimeofday(&tv, 0);
     debug_info("Perform merge GC for file ID 1 = %lu, ID 2 = %lu\n",
-            currentHandlerPtr1->file_id, currentHandlerPtr2->file_id);
+            file_hdl1->file_id, file_hdl2->file_id);
     hashStoreFileMetaDataHandler* mergedFileHandler;
     hashStoreFileHeader newFileHeaderForMergedFile;
     bool generateFileHandlerStatus = createFileHandlerForGC(
             mergedFileHandler, prefix_len, 
-            currentHandlerPtr1->file_id, currentHandlerPtr2->file_id,
+            file_hdl1->file_id, file_hdl2->file_id,
             newFileHeaderForMergedFile);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_CREATE_HANDLER, tv);
     gettimeofday(&tv, 0);
     if (generateFileHandlerStatus == false) {
-        debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", currentHandlerPtr1->file_id, currentHandlerPtr2->file_id);
-        currentHandlerPtr1->file_ownership = 0;
-        currentHandlerPtr2->file_ownership = 0;
+        debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", file_hdl1->file_id, file_hdl2->file_id);
+        file_hdl1->file_ownership = 0;
+        file_hdl2->file_ownership = 0;
         return false;
     }
     std::scoped_lock<std::shared_mutex> w_lock3(mergedFileHandler->fileOperationMutex_);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_WAIT_LOCK3, tv);
     gettimeofday(&tv, 0);
     // process file 1
-    char readWriteBuffer1[currentHandlerPtr1->total_object_bytes];
+    char readWriteBuffer1[file_hdl1->total_object_bytes];
     FileOpStatus readStatus1;
-    STAT_PROCESS(readStatus1 = currentHandlerPtr1->file_op_ptr->readFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes), StatsType::DELTAKV_GC_READ);
-    StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr1->total_on_disk_bytes, currentHandlerPtr1->total_object_bytes, syncStatistics_);
+    STAT_PROCESS(readStatus1 = file_hdl1->file_op_ptr->readFile(readWriteBuffer1, file_hdl1->total_object_bytes), StatsType::DELTAKV_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(file_hdl1->total_on_disk_bytes, file_hdl1->total_object_bytes, syncStatistics_);
     // process GC contents
     unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap1;
-    pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, currentHandlerPtr1->total_object_bytes, gcResultMap1);
-    debug_info("Merge GC read file ID 1 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr1->file_id, remainObjectNumberPair1.first, remainObjectNumberPair1.second);
+    pair<uint64_t, uint64_t> remainObjectNumberPair1 = deconstructAndGetValidContentsFromFile(readWriteBuffer1, file_hdl1->total_object_bytes, gcResultMap1);
+    debug_info("Merge GC read file ID 1 = %lu done, valid object number = %lu, total object number = %lu\n", file_hdl1->file_id, remainObjectNumberPair1.first, remainObjectNumberPair1.second);
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_FILE1, tv);
     gettimeofday(&tv, 0);
 
     // process file2
-    char readWriteBuffer2[currentHandlerPtr2->total_object_bytes];
+    char readWriteBuffer2[file_hdl2->total_object_bytes];
     FileOpStatus readStatus2;
-    STAT_PROCESS(readStatus2 = currentHandlerPtr2->file_op_ptr->readFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes), StatsType::DELTAKV_GC_READ);
-    StatsRecorder::getInstance()->DeltaGcBytesRead(currentHandlerPtr2->total_on_disk_bytes, currentHandlerPtr2->total_object_bytes, syncStatistics_);
+    STAT_PROCESS(readStatus2 = file_hdl2->file_op_ptr->readFile(readWriteBuffer2, file_hdl2->total_object_bytes), StatsType::DELTAKV_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(file_hdl2->total_on_disk_bytes, file_hdl2->total_object_bytes, syncStatistics_);
     // process GC contents
     unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t> gcResultMap2;
-    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, currentHandlerPtr2->total_object_bytes, gcResultMap2);
-    debug_info("Merge GC read file ID 2 = %lu done, valid object number = %lu, total object number = %lu\n", currentHandlerPtr2->file_id, remainObjectNumberPair2.first, remainObjectNumberPair2.second);
+    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, file_hdl2->total_object_bytes, gcResultMap2);
+    debug_info("Merge GC read file ID 2 = %lu done, valid object number = %lu, total object number = %lu\n", file_hdl2->file_id, remainObjectNumberPair2.first, remainObjectNumberPair2.second);
 
     StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_FILE2, tv);
     gettimeofday(&tv, 0);
 
     uint64_t targetWriteSize = 0;
     for (auto& keyIt : gcResultMap1) {
-        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
-            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[valueAndRecordHeaderIt].size_);
+        for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[vec_i].size_);
         }
     }
     for (auto& keyIt : gcResultMap2) {
-        for (auto valueAndRecordHeaderIt = 0; valueAndRecordHeaderIt < keyIt.second.first.size(); valueAndRecordHeaderIt++) {
-            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[valueAndRecordHeaderIt].size_);
+        for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
+            targetWriteSize += (sizeof(hashStoreRecordHeader) + keyIt.first.size_ + keyIt.second.first[vec_i].size_);
         }
     }
     // reserve more space, use sizeof()
     targetWriteSize += (sizeof(hashStoreRecordHeader) + sizeof(hashStoreFileHeader));
     debug_info("Merge GC target write file size = %lu\n", targetWriteSize);
-    debug_error("Merge not implemented well %s", "");
-    exit(1);
+    debug_error("Merge not implemented well: id %lu and %lu\n", 
+            file_hdl1->file_id, file_hdl2->file_id);
     char write_buf[targetWriteSize];
     memcpy(write_buf, &newFileHeaderForMergedFile, sizeof(hashStoreFileHeader));
     mergedFileHandler->filter->Clear();
@@ -2134,6 +2134,7 @@ bool HashStoreFileManager::twoAdjacentFileMerge(
     gc_fin_header.sequence_number_ = 0;
     gc_fin_header.key_size_ = 0;
     gc_fin_header.value_size_ = 0;
+    mergedFileHandler->unsorted_part_offset = sizeof(hashStoreFileHeader);
     if (use_varint_d_header == false) {
         copyInc(write_buf, write_i, &gc_fin_header, header_sz);
     } else {
@@ -2150,22 +2151,22 @@ bool HashStoreFileManager::twoAdjacentFileMerge(
     mergedFileHandler->total_object_bytes += write_i;
     mergedFileHandler->total_on_disk_bytes += onDiskWriteSizePair.physicalSize_;
     mergedFileHandler->total_object_cnt++;
-    debug_info("Flushed new file to filesystem since merge gc, the new file ID = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n", mergedFileHandler->file_id, currentHandlerPtr1->file_id, currentHandlerPtr2->file_id);
+    debug_info("Flushed new file to filesystem since merge gc, the new file ID = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n", mergedFileHandler->file_id, file_hdl1->file_id, file_hdl2->file_id);
 
     // update metadata
     uint64_t newLeafNodeBitNumber = 0;
     bool mergeNodeStatus = file_trie_.mergeNodesToNewLeafNode(target_prefix,
             prefix_len, newLeafNodeBitNumber);
     if (mergeNodeStatus == false) {
-        debug_error("[ERROR] Could not merge two existing node corresponding file ID 1 = %lu, ID 2 = %lu\n", currentHandlerPtr1->file_id, currentHandlerPtr2->file_id);
+        debug_error("[ERROR] Could not merge two existing node corresponding file ID 1 = %lu, ID 2 = %lu\n", file_hdl1->file_id, file_hdl2->file_id);
         if (mergedFileHandler->file_op_ptr->isFileOpen() == true) {
             mergedFileHandler->file_op_ptr->closeFile();
         }
         fileDeleteVecMtx_.lock();
         targetDeleteFileHandlerVec_.push_back(mergedFileHandler->file_id);
         fileDeleteVecMtx_.unlock();
-        currentHandlerPtr1->file_ownership = 0;
-        currentHandlerPtr2->file_ownership = 0;
+        file_hdl1->file_ownership = 0;
+        file_hdl2->file_ownership = 0;
         if (mergedFileHandler->index_block) {
             delete mergedFileHandler->index_block;
         }
@@ -2203,33 +2204,33 @@ bool HashStoreFileManager::twoAdjacentFileMerge(
                     prefix_len, newLeafNodeBitNumber, mergedFileHandler);
         if (updateFileHandlerToNewLeafNodeStatus == true) {
             fileDeleteVecMtx_.lock();
-            targetDeleteFileHandlerVec_.push_back(currentHandlerPtr1->file_id);
-            targetDeleteFileHandlerVec_.push_back(currentHandlerPtr2->file_id);
+            targetDeleteFileHandlerVec_.push_back(file_hdl1->file_id);
+            targetDeleteFileHandlerVec_.push_back(file_hdl2->file_id);
             fileDeleteVecMtx_.unlock();
-            currentHandlerPtr1->gc_status = kShouldDelete;
-            currentHandlerPtr2->gc_status = kShouldDelete;
-            currentHandlerPtr1->file_ownership = 0;
-            currentHandlerPtr2->file_ownership = 0;
-            if (currentHandlerPtr1->file_op_ptr->isFileOpen() == true) {
-                currentHandlerPtr1->file_op_ptr->closeFile();
+            file_hdl1->gc_status = kShouldDelete;
+            file_hdl2->gc_status = kShouldDelete;
+            file_hdl1->file_ownership = 0;
+            file_hdl2->file_ownership = 0;
+            if (file_hdl1->file_op_ptr->isFileOpen() == true) {
+                file_hdl1->file_op_ptr->closeFile();
             }
             fileDeleteVecMtx_.lock();
-            targetDeleteFileHandlerVec_.push_back(currentHandlerPtr1->file_id);
+            targetDeleteFileHandlerVec_.push_back(file_hdl1->file_id);
             fileDeleteVecMtx_.unlock();
-            // delete currentHandlerPtr1->file_op_ptr;
-            // delete currentHandlerPtr1;
-            if (currentHandlerPtr2->file_op_ptr->isFileOpen() == true) {
-                currentHandlerPtr2->file_op_ptr->closeFile();
+            // delete file_hdl1->file_op_ptr;
+            // delete file_hdl1;
+            if (file_hdl2->file_op_ptr->isFileOpen() == true) {
+                file_hdl2->file_op_ptr->closeFile();
             }
             fileDeleteVecMtx_.lock();
-            targetDeleteFileHandlerVec_.push_back(currentHandlerPtr2->file_id);
+            targetDeleteFileHandlerVec_.push_back(file_hdl2->file_id);
             fileDeleteVecMtx_.unlock();
-            // delete currentHandlerPtr2->file_op_ptr;
-            // delete currentHandlerPtr2;
+            // delete file_hdl2->file_op_ptr;
+            // delete file_hdl2;
             mergedFileHandler->file_ownership = 0;
             StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_METADATA, tv);
 //            debug_error("finished merge GC for file ID 1 = %lu, ID 2 = %lu\n",
-//                    currentHandlerPtr1->file_id, currentHandlerPtr2->file_id);
+//                    file_hdl1->file_id, file_hdl2->file_id);
             return true;
         } else {
             debug_error("[ERROR] Could not update metadata for file ID = %lu\n", mergedFileHandler->file_id);
@@ -2246,8 +2247,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(
             delete mergedFileHandler->sorted_filter;
             delete mergedFileHandler->filter;
             delete mergedFileHandler;
-            currentHandlerPtr1->file_ownership = 0;
-            currentHandlerPtr2->file_ownership = 0;
+            file_hdl1->file_ownership = 0;
+            file_hdl2->file_ownership = 0;
             StatsRecorder::getInstance()->timeProcess(StatsType::MERGE_METADATA, tv);
             return false;
         }

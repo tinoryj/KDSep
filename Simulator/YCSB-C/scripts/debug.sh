@@ -203,7 +203,7 @@ reqs=("10M")
 ops=("10M")
 
 checkrepeat=""
-maxBucketNumber=32768
+maxBucketNumber=1024
 runModeSet=('raw' 'bkv')
 runModeSet=('kd')
 bonus2=""

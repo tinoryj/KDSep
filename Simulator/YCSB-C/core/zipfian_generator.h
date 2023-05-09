@@ -23,13 +23,28 @@ public:
         , n_for_zeta_(0)
     {
         std::cerr << "zipfian const: " << zipfian_const << std::endl;
-        assert(num_items_ >= 2 && num_items_ < kMaxNumItems);
-        zeta_2_ = Zeta(2, theta_);
-        alpha_ = 1.0 / (1.0 - theta_);
-        RaiseZeta(num_items_);
-        eta_ = Eta();
 
-        Next();
+        if (zipfian_const < 1.0) {
+            assert(num_items_ >= 2 && num_items_ < kMaxNumItems);
+            zeta_2_ = Zeta(2, theta_);
+            alpha_ = 1.0 / (1.0 - theta_);
+            RaiseZeta(num_items_);
+            eta_ = Eta();
+
+            Next();
+        } else {
+            std::cerr << "read from external file" << std::endl;
+            fixed_values_ = new uint64_t[fv_i_thres_];
+            FILE* fp = fopen("out.data", "r");
+            uint64_t num;
+            while (fscanf(fp, "%lu", &num) == 1) {
+                if (fv_i_ >= fv_i_thres_) {
+                    break;
+                }
+                fixed_values_[fv_i_++] = num;
+            }
+            fclose(fp);
+        }
     }
 
     ZipfianGenerator(uint64_t num_items)
@@ -88,11 +103,24 @@ private:
     double theta_, zeta_n_, eta_, alpha_, zeta_2_;
     uint64_t n_for_zeta_; /// Number of items used to compute zeta_n
     uint64_t last_value_;
+
+    const uint64_t fv_i_thres_ = 105 * 1000 * 1000;
+    uint64_t* fixed_values_ = nullptr;
+    uint64_t fv_i_ = 0;
+    uint64_t fv_p_ = 0;
 };
 
 inline uint64_t ZipfianGenerator::Next(uint64_t num)
 {
     assert(num >= 2 && num < kMaxNumItems);
+
+    if (fixed_values_ != nullptr) {
+        if (fv_p_ >= fv_i_) {
+            fv_p_ = 0;
+        }
+        return last_value_ = fixed_values_[fv_p_++];
+    }
+
     if (num > n_for_zeta_) { // Recompute zeta_n and eta
         RaiseZeta(num);
         eta_ = Eta();

@@ -322,7 +322,11 @@ for param in $*; do
         note=$(echo $param | sed 's/note//g')
         run_suffix=${run_suffix}_${note}
     elif [[ "$param" =~ ^threads[0-9]+$ ]]; then
-        RocksDBThreadNumber=$(echo $param | sed 's/threads//g')
+        tmp=$(echo $param | sed 's/threads//g')
+        if [[ $tmp -ne $RocksDBThreadNumber ]]; then
+            RocksDBThreadNumber=$tmp
+            run_suffix=${run_suffix}_thd${RocksDBThreadNumber}
+        fi
     elif [[ "$param" =~ ^gcT[0-9]+$ ]]; then
         tmp=$(echo $param | sed 's/gcT//g')
         if [[ "$tmp" != "$gcThreadNumber" && "$havekd" == "true" ]]; then
@@ -456,6 +460,15 @@ for param in $*; do
             scripts/make_release.sh
             sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = 0.9;" core/zipfian_generator.h
             run_suffix=${run_suffix}_$param
+            if (( $(echo "$tmp >= 1.0" | bc -l ) )); then
+                filename="zipf${tmp}_$(( $KVPairsNumber / 1000000 ))M_$(( $OperationsNumber / 1000000))M.data"
+                echo $filename
+                if [[ ! -f $filename ]]; then
+                    Rscript scripts/gen.r $tmp $KVPairsNumber $OperationsNumber
+                    cp out.data $filename
+                fi
+                cp $filename out.data
+            fi
         fi
     elif [[ "$param" =~ ^clean$ ]]; then
         cleanFlag="true"

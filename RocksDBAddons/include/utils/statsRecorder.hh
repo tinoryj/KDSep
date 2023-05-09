@@ -109,6 +109,7 @@ enum StatsType {
     /* DeltaKV batch read interface */
     DKV_GET_WAIT_BUFFER,
     DKV_GET_READ_BUFFER,
+    DKV_GET_READ_BUFFER_P3_MERGE,
     DELTAKV_BATCH_READ_GET_KEY,
     DELTAKV_BATCH_READ_MERGE,
     DELTAKV_BATCH_READ_MERGE_ALL,
@@ -120,6 +121,7 @@ enum StatsType {
     DKV_MERGE_LOCK_1,
     DKV_MERGE_LOCK_2,
     DKV_MERGE_APPEND_BUFFER,
+    DKV_MERGE_CLEAN_BUFFER,
     DKV_MERGE_FULL_MERGE,
 
     DKV_LSM_INTERFACE_OP,
@@ -305,6 +307,7 @@ public:
     static unsigned long long timeAddto(struct timeval& start_time, unsigned long long& resTime);
 
     static StatsRecorder* getInstance();
+    static void staticProcess(StatsType stat, struct timeval& start_time);
     static void DestroyInstance();
 
 #define STAT_PROCESS(_FUNC_, _TYPE_)                                  \

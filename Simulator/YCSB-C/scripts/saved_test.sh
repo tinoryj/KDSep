@@ -9,7 +9,7 @@ func() {
                 l1sz=$(( ${sst} * 16 ))
 
                 for runMode in "${runModeSet[@]}"; do
-                    threadNumber=8
+                    threadNumber=16
 
                     fl=${flengths[$j]}
                     req=${reqs[$j]}
@@ -175,7 +175,7 @@ ops=("100M")
 ExpName="_p50_exp2"
 cacheSizes=(4096)
 runModeSet=('bkv' 'raw' 'kv')
-bonus5=""
+bonus5="noteflushwal"
 #bonus5="blobgcforce0.8"
 runModeSet=('kv')
 #func
@@ -223,6 +223,7 @@ fcs=(10 20 40 80)
 rreqs=("105M" "54M" "27M" "14M")
 
 runModeSet=('bkv' 'raw' 'kv')
+runModeSet=('kv')
 cacheSizes=(4096)
 
 for ((ri=0; ri<${#rreqs[@]}; ri++)); do
@@ -232,6 +233,7 @@ for ((ri=0; ri<${#rreqs[@]}; ri++)); do
 done
 
 runModeSet=('bkvkd' 'kvkd' 'kd') 
+runModeSet=('kvkd') 
 cacheSizes=(3584)
 
 for ((ri=0; ri<${#rreqs[@]}; ri++)); do
@@ -355,7 +357,7 @@ kdcacheSize=512
 
 ExpName="Exp_p50_exp6_wbuf"
 bss=(64K 128K 256K 512K 1 2 4 8 16)
-bss=(64K 256K 1 16)
+bss=(16K 64K 1 4 16)
 fcl=10
 flengths=(100)
 reqs=("105M")
@@ -366,25 +368,24 @@ for ((bssi=0; bssi<${#bss[@]}; bssi++)); do
     cacheSizes=(3584)
     runModeSet=('kvkd')
     batchSize=${bss[$bssi]}
-#    wbread="wbread200"
+    wbread="wbread200"
 #    func
     wbread="wbread0"
-#func
+#    func
+    indexSet=(0)
     cacheSizes=(4096)
     runModeSet=('kv')
-    func
-    indexSet=(0)
+#    func
 #    cacheSizes=(4096)
 #    runModeSet=('kv')
 #    func
 
     bonus4="overwrite"
-#1    func
+    func
     bonus4=""
     indexSet=(1)
 done
 batchSize=2
-exit
 
 ExpName="Exp_p50_exp9_bucsize"
 bucnums=(16384 65536 131072)
@@ -477,23 +478,20 @@ bonus4=""
 
 ExpName="Exp_p50_exp14_zipf"
 sts=(1.0 1.1 1.2)
-sts=(1.0 1.1 1.2)
 #sts=(0.7 0.8 1.0 1.1 1.2)
 indexSet=(1)
-maxBucketNumber=32768
+maxBucketNumber=40000
 for ((i=0; i<${#sts[@]}; i++)); do
     runModeSet=('bkv' 'raw')
-    runModeSet=('kv')
     cacheSizes=(4096)
     bonus4="zipf${sts[$i]}"
     func
     runModeSet=('bkvkd' 'kd')
-    runModeSet=('kvkd')
     cacheSizes=(3584)
 #    wbread="wbread200"
     func
-#    wbread="wbread200"
-#    func
+    wbread="wbread200"
+    func
     wbread="wbread0"
     bonus4=""
 done

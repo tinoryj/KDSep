@@ -24,6 +24,10 @@ StatsRecorder* StatsRecorder::getInstance()
     return mInstance;
 }
 
+void StatsRecorder::staticProcess(StatsType stat, struct timeval& start_time) {
+    StatsRecorder::getInstance()->timeProcess(stat, start_time);
+}
+
 void StatsRecorder::DestroyInstance()
 {
     if (mInstance != NULL) {
@@ -160,6 +164,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  lock-1", DKV_MERGE_LOCK_1, time[DELTAKV_MERGE]);
     PRINT_FULL("  lock-2", DKV_MERGE_LOCK_2, time[DELTAKV_MERGE]);
     PRINT_FULL("  buffer append", DKV_MERGE_APPEND_BUFFER, time[DELTAKV_MERGE]);
+    PRINT_FULL("  buffer clean", DKV_MERGE_CLEAN_BUFFER, time[DELTAKV_MERGE]);
 
     fprintf(stdout, "-------------- DeltaKV Put request Breakdown ------------------------------\n");
     PRINT_FULL("All", DELTAKV_PUT, time[DELTAKV_PUT]);
@@ -221,6 +226,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  Buffer-get-return", DELTAKV_BATCH_READ_GET_KEY, time[DELTAKV_GET]);
     PRINT_FULL("  Buffer-get-merge-return", DELTAKV_BATCH_READ_MERGE, time[DELTAKV_GET]);
     PRINT_FULL("  Buffer-miss-no-wait", DELTAKV_BATCH_READ_MERGE_ALL, time[DELTAKV_GET]);
+    PRINT_FULL("  Buffer-p3-merge", DKV_GET_READ_BUFFER_P3_MERGE, time[DELTAKV_GET]);
     PRINT_FULL("Get-internal", DELTAKV_BATCH_READ_STORE, time[DELTAKV_GET]);
     PRINT_FULL("  dkv-lsm", DKV_LSM_INTERFACE_OP, time[DELTAKV_GET]);
     PRINT_FULL("    lsm-interface-get", LSM_INTERFACE_GET, time[DELTAKV_GET]);
