@@ -165,6 +165,8 @@ enum StatsType {
     DS_MULTIPUT_WAIT_HANDLERS,
     DS_MULTIPUT_DIRECT_OP,
 
+    DKV_SCAN,
+
     /* delta merge */
     FULL_MERGE,
     PARTIAL_MERGE,
@@ -184,6 +186,7 @@ enum StatsType {
     /* op */
     OP_GET,
     OP_MULTIPUT,
+    OP_MULTIGET,
     OP_PUT,
     OP_FLUSH,
     OP_FIND,

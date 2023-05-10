@@ -1497,6 +1497,485 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
     }
 }
 
+bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hdl)
+{
+    auto& file_hdl = op_hdl->file_hdl; 
+
+    std::scoped_lock<std::shared_mutex> r_lock(file_hdl->fileOperationMutex_);
+    // check if not flushed anchors exit, return directly.
+    // try extract from cache first
+
+    // only read the first key
+    auto& multiget_op = op_hdl->multiget_op;
+    auto& key = *((*multiget_op.keys)[0]);
+    auto& valueVec2 = (*multiget_op.values);
+    vector<string> valueVec;
+
+    if (kd_cache_ != nullptr) {
+        // does not check the cache. Already checked in the interface
+         if (enable_index_block_) {
+            // Do not enable index block, directly write 
+            // Not exist in cache, find the content in the file
+            str_t key_str_t(key.data(), key.size());
+
+            vector<string_view> kd_list;
+
+            char* buf = nullptr;
+            bool success;
+
+            if (file_hdl->index_block != nullptr) {
+                if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
+                    if (file_hdl->filter->MayExist(key_str_t) == false) {
+                        // only in sorted part
+                        success = readAndProcessSortedPart(file_hdl, key,
+                                kd_list, &buf);
+                    } else {
+                        // both parts 
+                        success = readAndProcessBothParts(file_hdl, key,
+                                kd_list, &buf);
+                    }
+                } else {
+                    if (file_hdl->filter->MayExist(key_str_t) == false) {
+                        // does not exist, or not stored in the memory 
+                        if (enableLsmTreeDeltaMeta_ == true) {
+                            debug_error("[ERROR] Read bucket done, but could not"
+                                    " found values for key = %s\n", key.c_str());
+                            exit(1);
+                        }
+                        valueVec.clear();
+//                        file_hdl->file_ownership = 0;
+                        return true;
+                    } else {
+                        // only in unsorted part
+                        success = readAndProcessUnsortedPart(file_hdl, key,
+                                kd_list, &buf);
+                    }
+                }
+            } else {
+                success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+            }
+
+            valueVec.clear();
+            if (success == false) {
+                debug_error("[ERROR] read and process failed %s\n", key.c_str());
+                exit(1);
+            } else if (buf == nullptr) {
+                // Key miss because (partially) sorted part does not have key
+                file_hdl->file_ownership = 0;
+                return true;
+            } 
+
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
+
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            vector<str_t> deltas;
+            for (auto& it : kd_list) {
+                deltas.push_back(str_t(const_cast<char*>(it.data()),
+                            it.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
+            }
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
+            updateKDCache(key.data(), key.size(), merged_delta);
+            StatsRecorder::getInstance()->timeProcess(
+                    StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+
+            delete[] buf;
+
+//            file_hdl->file_ownership = 0;
+            return true;
+        } else {
+            // Do not enable index block, directly read the whole file 
+            // Not exist in cache, find the content in the file
+            vector<string_view> kd_list;
+            char* buf;
+            bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+            valueVec.clear();
+
+            if (s == false) {
+                debug_error("[ERROR] read and process failed %s\n", key.c_str());
+//                file_hdl->file_ownership = 0;
+                return false;
+            }
+
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
+
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            vector<str_t> deltas;
+            for (auto& it : kd_list) {
+                deltas.push_back(str_t(const_cast<char*>(it.data()), it.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_,
+                            merged_delta.size_));
+            }
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
+            updateKDCache(key.data(), key.size(), merged_delta);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+
+            delete[] buf;
+
+//            file_hdl->file_ownership = 0;
+            return true;
+        }
+        
+        return true;
+    } 
+    
+    if (enable_index_block_) {
+        // Do not enable index block, directly write 
+        // Not exist in cache, find the content in the file
+        str_t key_str_t(key.data(), key.size());
+
+        vector<string_view> kd_list;
+
+        char* buf = nullptr;
+        bool success;
+
+        if (file_hdl->index_block != nullptr) {
+            if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // only in sorted part
+                    success = readAndProcessSortedPart(file_hdl, key,
+                            kd_list, &buf);
+                } else {
+                    // both parts 
+                    success = readAndProcessBothParts(file_hdl, key,
+                            kd_list, &buf);
+                }
+            } else {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // does not exist, or not stored in the memory 
+                    if (enableLsmTreeDeltaMeta_ == true) {
+                        debug_error("[ERROR] Read bucket done, but could not"
+                                " found values for key = %s\n", key.c_str());
+                        exit(1);
+                    }
+                    valueVec.clear();
+//                    file_hdl->file_ownership = 0;
+                    return true;
+                } else {
+                    // only in unsorted part
+                    success = readAndProcessUnsortedPart(file_hdl, key,
+                            kd_list, &buf);
+                }
+            }
+        } else {
+            success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+        }
+
+        valueVec.clear();
+        if (success == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+            exit(1);
+        } else if (buf == nullptr) {
+            // Key miss because (partially) sorted part does not have key
+//            file_hdl->file_ownership = 0;
+            return true;
+        } 
+
+        if (kd_list.size() > 0) {
+            valueVec.reserve(kd_list.size());
+            for (auto vecIt : kd_list) {
+                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+            }
+        }
+
+        delete[] buf;
+
+//        file_hdl->file_ownership = 0;
+        return true;
+    } else {
+        // no cache, directly read the whole file
+        vector<string_view> kd_list;
+        char* buf;
+        bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+        valueVec.clear();
+
+        if (s == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+//            file_hdl->file_ownership = 0;
+            return false;
+        }
+
+        if (kd_list.empty() == false) {
+            valueVec.reserve(kd_list.size());
+            for (auto vecIt : kd_list) {
+                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+            }
+        }
+
+        delete[] buf;
+//        file_hdl->file_ownership = 0;
+        return true;
+    }
+}
+
+bool HashStoreFileOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* op_hdl)
+{
+    if (op_hdl->multiget_op.keys->size() == 1) {
+        return operationWorkerGetFunction(op_hdl);
+    }
+
+    auto& file_hdl = op_hdl->file_hdl; 
+
+    std::scoped_lock<std::shared_mutex> r_lock(file_hdl->fileOperationMutex_);
+    // check if not flushed anchors exit, return directly.
+    // try extract from cache first
+
+    // only read the first key
+    auto& multiget_op = op_hdl->multiget_op;
+    auto& key = *((*multiget_op.keys)[0]);
+    auto& valueVec2 = (*multiget_op.values);
+    vector<string> valueVec;
+
+    if (kd_cache_ != nullptr) {
+        str_t currentKey(key.data(), key.size());
+        str_t delta = kd_cache_->getFromCache(currentKey);
+        if (enable_index_block_) {
+            // Do not enable index block, directly write 
+            // Not exist in cache, find the content in the file
+            str_t key_str_t(key.data(), key.size());
+
+            vector<string_view> kd_list;
+
+            char* buf = nullptr;
+            bool success;
+
+            if (file_hdl->index_block != nullptr) {
+                if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
+                    if (file_hdl->filter->MayExist(key_str_t) == false) {
+                        // only in sorted part
+                        success = readAndProcessSortedPart(file_hdl, key,
+                                kd_list, &buf);
+                    } else {
+                        // both parts 
+                        success = readAndProcessBothParts(file_hdl, key,
+                                kd_list, &buf);
+                    }
+                } else {
+                    if (file_hdl->filter->MayExist(key_str_t) == false) {
+                        // does not exist, or not stored in the memory 
+                        if (enableLsmTreeDeltaMeta_ == true) {
+                            debug_error("[ERROR] Read bucket done, but could not"
+                                    " found values for key = %s\n", key.c_str());
+                            exit(1);
+                        }
+                        valueVec.clear();
+//                        file_hdl->file_ownership = 0;
+                        return true;
+                    } else {
+                        // only in unsorted part
+                        success = readAndProcessUnsortedPart(file_hdl, key,
+                                kd_list, &buf);
+                    }
+                }
+            } else {
+                success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+            }
+
+            valueVec.clear();
+            if (success == false) {
+                debug_error("[ERROR] read and process failed %s\n", key.c_str());
+                exit(1);
+            } else if (buf == nullptr) {
+                // Key miss because (partially) sorted part does not have key
+//                file_hdl->file_ownership = 0;
+                return true;
+            } 
+
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
+
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            vector<str_t> deltas;
+            for (auto& it : kd_list) {
+                deltas.push_back(str_t(const_cast<char*>(it.data()),
+                            it.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
+            }
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
+            updateKDCache(key.data(), key.size(), merged_delta);
+            StatsRecorder::getInstance()->timeProcess(
+                    StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+
+            delete[] buf;
+
+//            file_hdl->file_ownership = 0;
+            return true;
+        } else {
+            // Do not enable index block, directly read the whole file 
+            // Not exist in cache, find the content in the file
+            vector<string_view> kd_list;
+            char* buf;
+            bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+            valueVec.clear();
+
+            if (s == false) {
+                debug_error("[ERROR] read and process failed %s\n", key.c_str());
+//                file_hdl->file_ownership = 0;
+                return false;
+            }
+
+//            if (kd_list.size() > 0) {
+//                valueVec.reserve(kd_list.size());
+//                for (auto vecIt : kd_list) {
+//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
+//                }
+//            }
+
+            struct timeval tv;
+            gettimeofday(&tv, 0);
+            vector<str_t> deltas;
+            for (auto& it : kd_list) {
+                deltas.push_back(str_t(const_cast<char*>(it.data()), it.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                valueVec.push_back(string(merged_delta.data_,
+                            merged_delta.size_));
+            }
+
+//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+//                    key.size(), deltas);
+            updateKDCache(key.data(), key.size(), merged_delta);
+            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+
+            delete[] buf;
+
+//            file_hdl->file_ownership = 0;
+            return true;
+        }
+        
+        return true;
+    } 
+    
+    if (enable_index_block_) {
+        // Do not enable index block, directly write 
+        // Not exist in cache, find the content in the file
+        str_t key_str_t(key.data(), key.size());
+
+        vector<string_view> kd_list;
+
+        char* buf = nullptr;
+        bool success;
+
+        if (file_hdl->index_block != nullptr) {
+            if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // only in sorted part
+                    success = readAndProcessSortedPart(file_hdl, key,
+                            kd_list, &buf);
+                } else {
+                    // both parts 
+                    success = readAndProcessBothParts(file_hdl, key,
+                            kd_list, &buf);
+                }
+            } else {
+                if (file_hdl->filter->MayExist(key_str_t) == false) {
+                    // does not exist, or not stored in the memory 
+                    if (enableLsmTreeDeltaMeta_ == true) {
+                        debug_error("[ERROR] Read bucket done, but could not"
+                                " found values for key = %s\n", key.c_str());
+                        exit(1);
+                    }
+                    valueVec.clear();
+//                    file_hdl->file_ownership = 0;
+                    return true;
+                } else {
+                    // only in unsorted part
+                    success = readAndProcessUnsortedPart(file_hdl, key,
+                            kd_list, &buf);
+                }
+            }
+        } else {
+            success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+        }
+
+        valueVec.clear();
+        if (success == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+            exit(1);
+        } else if (buf == nullptr) {
+            // Key miss because (partially) sorted part does not have key
+//            file_hdl->file_ownership = 0;
+            return true;
+        } 
+
+        if (kd_list.size() > 0) {
+            valueVec.reserve(kd_list.size());
+            for (auto vecIt : kd_list) {
+                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+            }
+        }
+
+        delete[] buf;
+
+//        file_hdl->file_ownership = 0;
+        return true;
+    } else {
+        // no cache, directly read the whole file
+        vector<string_view> kd_list;
+        char* buf;
+        bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
+        valueVec.clear();
+
+        if (s == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+//            file_hdl->file_ownership = 0;
+            return false;
+        }
+
+        if (kd_list.empty() == false) {
+            valueVec.reserve(kd_list.size());
+            for (auto vecIt : kd_list) {
+                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+            }
+        }
+
+        delete[] buf;
+//        file_hdl->file_ownership = 0;
+        return true;
+    }
+}
+
 void HashStoreFileOperator::operationWorker(int threadID)
 {
     struct timeval tvs, tve;
@@ -1532,9 +2011,8 @@ void HashStoreFileOperator::operationWorker(int threadID)
             }
 
             switch (op_hdl->op_type) {
-            case kGet:
-                debug_error("receive operations, type = kGet, key = %s, target file ID = %lu\n", (*op_hdl->read_op.key_str_).c_str(), file_hdl->file_id);
-                operationsStatus = false;
+            case kMultiGet:
+                STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
                 break;
             case kMultiPut:
                 debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", file_hdl->file_id, op_hdl->multiput_op.size);

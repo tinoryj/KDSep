@@ -39,6 +39,7 @@ private:
     // get function pointers
     HashStoreFileManager* file_manager_ = nullptr;
     HashStoreFileOperator* file_operator_ = nullptr;
+    KDLRUCache* kd_cache_ = nullptr;
     // message queues for internal usage
     messageQueue<hashStoreFileMetaDataHandler*>* notifyGCMQ_ = nullptr;
 };

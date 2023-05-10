@@ -61,7 +61,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     // object mem pool
     lsmTreeInterface_.Open(options, name);
 
-//    write_stall_.set(false);
+    write_stall_ = options.write_stall;
 
     objectPairMemPool_ = new KeyValueMemPool(options.deltaStore_mem_pool_object_number_, options.deltaStore_mem_pool_object_size_);
     // Rest merge function if delta/value separation enabled
@@ -533,9 +533,16 @@ bool DeltaKV::GetInternal(const string& key, string* value,
 
 bool DeltaKV::Put(const string& key, const string& value)
 {
-//    while (write_stall_.get() == true) {
-//        asm volatile("");
-//    }
+    // check write stall 
+    if (write_stall_ != nullptr) {
+        if (*write_stall_ == true) {
+            debug_error("write stall key %s\n", key.c_str());
+            while (*write_stall_ == true) {
+                asm volatile("");
+            }
+        }
+    }
+
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
     // insert to cache if is value update
     if (enableKeyValueCache_ == true) {
@@ -754,6 +761,16 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
 
 bool DeltaKV::Merge(const string& key, const string& value)
 {
+    // check write stall 
+    if (write_stall_ != nullptr) {
+        if (*write_stall_ == true) {
+            debug_error("write stall key %s\n", key.c_str());
+            while (*write_stall_ == true) {
+                asm volatile("");
+            }
+        }
+    }
+
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
     if (enableKeyValueCache_ == true) {
         string cacheKey = key;
@@ -1473,11 +1490,13 @@ void DeltaKV::processBatchedOperationsWorker()
 
 void DeltaKV::processWriteBackOperationsWorker()
 {
+    int written_pairs = 0;
     while (true) {
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
         }
         writeBackObject* currentProcessPair;
+        written_pairs = 0;
         while (writeBackOperationsQueue_->pop(currentProcessPair)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
@@ -1489,8 +1508,16 @@ void DeltaKV::processWriteBackOperationsWorker()
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
+            written_pairs++;
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
             delete currentProcessPair;
+        }
+
+        if (written_pairs > 0) {
+            debug_error("Write back: %d KD pairs\n", written_pairs);
+            if (write_stall_ != nullptr) {
+                *write_stall_ = false;
+            }
         }
     }
     return;

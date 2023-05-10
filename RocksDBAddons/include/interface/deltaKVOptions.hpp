@@ -106,6 +106,7 @@ public:
 
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     KDLRUCache* kd_cache = nullptr;
+    boost::atomic<bool>* write_stall = nullptr;
 
     // dump options
     bool dumpOptions(string dumpPath);

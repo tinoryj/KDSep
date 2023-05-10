@@ -47,6 +47,7 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     singleFileFlushSize_ = options->deltaStore_file_flush_buffer_size_limit_;
     deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
     enable_index_block_ = options->enable_index_block;
+    write_stall_ = options->write_stall;
     RetriveHashStoreFileMetaDataList();
 }
 
@@ -1052,7 +1053,8 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                 StatsType::DSTORE_MULTIPUT_GET_HANDLER, tv);
     }
 
-    if (getFileHandlerStatus == false && op_type == kGet) {
+    if (getFileHandlerStatus == false && 
+            (op_type == kGet || op_type == kMultiGet)) {
         file_hdl = nullptr;
         return true;
     }
@@ -1081,7 +1083,9 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                     file_hdl->gc_status,
                     file_hdl->prefix_bit);
             if (op_type == kMultiPut) {
-                file_hdl->markedByMultiPut_ = true;
+                file_hdl->markedByMultiPut = true;
+            } else if (op_type == kMultiGet) {
+                file_hdl->markedByMultiGet = true;
             }
             file_hdl->file_ownership = 1;
             return true;
@@ -1126,15 +1130,19 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                         file_hdl->file_id, keyBuffer, file_hdl->gc_status,
                         file_hdl->prefix_bit);
                 if (op_type == kMultiPut) {
-                    file_hdl->markedByMultiPut_ = true;
+                    file_hdl->markedByMultiPut = true;
+                } else {
+                    file_hdl->markedByMultiGet = true;
                 }
                 file_hdl->file_ownership = 1;
                 return true;
             }
         } else {
             if (file_hdl->file_ownership == 1 && 
-                    (op_type == kMultiPut && 
-                     file_hdl->markedByMultiPut_ == true)) {
+                    ((op_type == kMultiPut && 
+                     file_hdl->markedByMultiPut == true) ||
+                    (op_type == kMultiGet &&
+                      file_hdl->markedByMultiGet == true))) {
                 StatsRecorder::getInstance()->timeProcess(
                         StatsType::DSTORE_GET_HANDLER_LOOP, tv_loop);
                 return true;
@@ -1151,8 +1159,10 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                 gettimeofday(&tv, 0);
                 while (file_hdl->file_ownership == -1 ||
                         (file_hdl->file_ownership == 1 && 
-                         (op_type != kMultiPut || file_hdl->markedByMultiPut_
-                          == false))) {
+                         (!(op_type == kMultiPut && file_hdl->markedByMultiPut)
+                          &&
+                         !(op_type == kMultiGet &&
+                             file_hdl->markedByMultiGet)))) {
                     gettimeofday(&tv2, 0);
                     if (tv2.tv_sec - tv.tv_sec > 10) {
                         debug_error("wait for 5 seconds; own %d, id %d, op %d\n",
@@ -1179,7 +1189,9 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                 debug_trace("Get exist file ID = %lu, for key = %s\n",
                         file_hdl->file_id, keyBuffer);
                 if (op_type == kMultiPut) {
-                    file_hdl->markedByMultiPut_ = true;
+                    file_hdl->markedByMultiPut = true;
+                } else if (op_type == kMultiGet) {
+                    file_hdl->markedByMultiGet = true;
                 }
                 file_hdl->file_ownership = 1;
                 StatsRecorder::getInstance()->timeProcess(
@@ -1660,8 +1672,27 @@ bool HashStoreFileManager::singleFileRewrite(
         // check if after rewrite, file size still exceed threshold, mark as no GC.
         if (file_hdl->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
             debug_error("flushed new file with file ID = %lu marked as no GC from %lu (%lu) to %lu, object count %lu\n", 
-                    file_header.file_id, beforeRewriteSize, beforeRewriteBytes, file_hdl->total_on_disk_bytes, file_hdl->total_object_cnt);
+                    file_header.file_id, beforeRewriteSize, beforeRewriteBytes,
+                    file_hdl->total_on_disk_bytes, file_hdl->total_object_cnt);
             file_hdl->gc_status = kNoGC;
+
+            if (write_stall_ != nullptr) {
+                debug_error("Start to rewrite, key number %lu\n",
+                        gcResultMap.size());
+                vector<writeBackObject*> objs;
+                objs.resize(gcResultMap.size());
+                int obji = 0;
+                file_hdl->write_back_num = gcResultMap.size();
+                for (auto& it : gcResultMap) {
+                    string k(it.first.data_, it.first.size_);
+                    writeBackObject* obj = new writeBackObject(k, "", 0);
+                    objs[obji++] = obj;
+                }
+                *write_stall_ = true; 
+                debug_error("Start to push %lu\n", gcResultMap.size());
+                pushObjectsToWriteBackQueue(objs);
+                debug_error("push end %lu\n", gcResultMap.size());
+            }
         }
         debug_info("flushed new file to filesystem since single file gc, the"
                 " new file ID = %lu, corresponding previous file ID = %lu,"
@@ -2258,8 +2289,8 @@ bool HashStoreFileManager::twoAdjacentFileMerge(
 }
 
 bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
-        hashStoreFileMetaDataHandler*& currentHandlerPtr1,
-        hashStoreFileMetaDataHandler*& currentHandlerPtr2, 
+        hashStoreFileMetaDataHandler*& file_hdl1,
+        hashStoreFileMetaDataHandler*& file_hdl2, 
         uint64_t& target_prefix, uint64_t& prefix_len)
 {
     struct timeval tvAll;
@@ -2273,6 +2304,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
         return false;
     } 
 
+    debug_error("selectFileForMerge %s\n", "");
     struct timeval tv;
     gettimeofday(&tv, 0);
     debug_trace("Current validNodes vector size = %lu\n", validNodes.size());
@@ -2308,8 +2340,8 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
     }
     StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_SELECT_MERGE, tv);
     gettimeofday(&tv, 0);
-    debug_info("Selected from file number = %lu for merge GC\n",
-            targetFileForMergeMap.size());
+//    debug_error("Selected from file number = %lu for merge GC (valid %lu)\n",
+//            targetFileForMergeMap.size(), validNodes.size());
     if (targetFileForMergeMap.size() != 0) {
         int maxTryNumber = 100;
         while (maxTryNumber--) {
@@ -2356,7 +2388,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
                         target_prefix = prefix1; // don't care about substr
                         prefix_len = prefix_len1 - 1;
 
-                        currentHandlerPtr1 = mapIt.second;
+                        file_hdl1 = mapIt.second;
                         if (tempHandler->file_ownership != 0) {
                             mapIt.second->file_ownership = 0;
                             debug_info("Stop this merge for file ID = %lu\n", tempHandler->file_id);
@@ -2367,13 +2399,12 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 //                                }
                         }
                         tempHandler->file_ownership = -1;
-                        currentHandlerPtr2 = tempHandler;
+                        file_hdl2 = tempHandler;
                         debug_info("Find two file for merge GC success,"
                                 " file_hdl 1 ptr = %p,"
                                 " file_hdl 2 ptr = %p,"
                                 " target prefix = %lx\n",
-                                currentHandlerPtr1, currentHandlerPtr2,
-                                target_prefix);
+                                file_hdl1, file_hdl2, target_prefix);
                         StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_AFTER_SELECT, tv);
                         StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE, tvAll);
                         return true;
@@ -2421,32 +2452,36 @@ void HashStoreFileManager::processMergeGCRequestWorker()
             break;
         }
         uint64_t remainEmptyBucketNumber = file_trie_.getRemainFileNumber();
-        if (remainEmptyBucketNumber > singleFileGCWorkerThreadsNumebr_) {
+        usleep(100000);
+        if (remainEmptyBucketNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
             continue;
         }
         debug_info("May reached max file number, need to merge, current remain empty file numebr = %lu\n", remainEmptyBucketNumber);
         // perfrom merge before split, keep the total file number not changed
-        hashStoreFileMetaDataHandler* targetFileHandler1;
-        hashStoreFileMetaDataHandler* targetFileHandler2;
+        hashStoreFileMetaDataHandler* file_hdl1;
+        hashStoreFileMetaDataHandler* file_hdl2;
         uint64_t merge_prefix;
         uint64_t prefix_len;
-        usleep(1000);
         bool selectFileForMergeStatus = selectFileForMerge(0,
-                targetFileHandler1, targetFileHandler2, merge_prefix,
+                file_hdl1, file_hdl2, merge_prefix,
                 prefix_len);
         if (selectFileForMergeStatus == true) {
             debug_info("Select two file for merge GC success, "
                     "file_hdl 1 ptr = %p, file_hdl 2 ptr = %p, "
                     "target prefix = %lx\n", 
-                    targetFileHandler1, targetFileHandler2, merge_prefix);
+                    file_hdl1, file_hdl2, merge_prefix);
+            debug_error("Select two file for merge GC success, "
+                    "file_hdl 1 ptr = %p, file_hdl 2 ptr = %p, "
+                    "target prefix = %lx\n", 
+                    file_hdl1, file_hdl2, merge_prefix);
             bool performFileMergeStatus =
-                twoAdjacentFileMerge(targetFileHandler1, targetFileHandler2,
+                twoAdjacentFileMerge(file_hdl1, file_hdl2,
                         merge_prefix, prefix_len);
             if (performFileMergeStatus != true) {
                 debug_error("[ERROR] Could not merge two files for GC,"
                         " file_hdl 1 ptr = %p, file_hdl 2 ptr = %p, "
                         "target prefix = %lx\n", 
-                        targetFileHandler1, targetFileHandler2, merge_prefix);
+                        file_hdl1, file_hdl2, merge_prefix);
             }
         }
     }
@@ -2651,6 +2686,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
                         pushObjectsToWriteBackQueue(targetWriteBackVec);
                     }
                 } else {
+                    // Case 3 in the paper: push all KD pairs in the bucket to the queue 
                     if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
                         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
                         STAT_PROCESS(singleFileRewrite(file_hdl, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);

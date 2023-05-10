@@ -69,6 +69,7 @@ private:
     std::shared_mutex fileDeleteVecMtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
+    boost::atomic<bool>* write_stall_ = nullptr;
     uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
     uint64_t singleFileFlushSize_ = 4096;
 

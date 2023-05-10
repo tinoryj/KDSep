@@ -43,6 +43,8 @@ private:
     bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
+    bool operationWorkerMultiGetFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerFlush(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerFind(hashStoreOperationHandler* currentHandlerPtr);

@@ -18,6 +18,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
 
     if (options->enable_deltaStore_KDLevel_cache == true) {
         options->kd_cache = new KDLRUCache(options->deltaStore_KDLevel_cache_item_number);
+        kd_cache_ = options->kd_cache;
     }
     if (options->enable_write_back_optimization_ == true) {
         hashStoreFileManager = new HashStoreFileManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
@@ -216,7 +217,6 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
     }
 
-
     gettimeofday(&tv, 0);
     if (shouldUseDirectOperationsFlag_ == true) {
         unordered_map<hashStoreFileMetaDataHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
@@ -225,7 +225,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
             for (auto index = 0; index < mapIt.second.size(); index++) {
                 handlerVec.push_back(objects[mapIt.second[index]]);
             }
-            mapIt.first->markedByMultiPut_ = false;
+            mapIt.first->markedByMultiPut = false;
             tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVec));
         }
         debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
@@ -252,7 +252,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
                 handlerVecTemp[handlerVecIndex++] = objects[mapIt.second[index]];
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
-            mapIt.first->markedByMultiPut_ = false;
+            mapIt.first->markedByMultiPut = false;
             hashStoreOperationHandler* op_hdl = new hashStoreOperationHandler(mapIt.first);
             op_hdl->multiput_op.objects = handlerVecTemp + handlerStartVecIndex;
             op_hdl->multiput_op.size = handlerVecIndex - handlerStartVecIndex;
@@ -360,10 +360,113 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
 }
 
-bool HashStoreInterface::multiGet(vector<string> keyStrVec, vector<vector<string>>& valueStrVecVec)
+bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& valueStrVecVec)
 {
-    debug_error("Not implemented %s\n", "");
-    return false;
+    bool ret;
+
+    bool get_result[keys.size()]; 
+    valueStrVecVec.resize(keys.size());
+    int need_read = keys.size();
+    int all = keys.size();
+
+    // Go through the cache one by one
+    // TODO parallelize
+    for (int i = 0; i < keys.size(); i++) {
+        get_result[i] = false;
+        if (kd_cache_ != nullptr) {
+            str_t key(keys[i].data(), keys[i].size());
+            str_t delta = kd_cache_->getFromCache(key);
+            if (delta.data_ != nullptr && delta.size_ > 0) {
+                valueStrVecVec[i].push_back(string(delta.data_, delta.size_));
+                // non-empty delta for this key
+                get_result[i] = true;
+                need_read--;
+            } else if (delta.data_ == nullptr && delta.size_ == 0) {
+                valueStrVecVec[i].clear();
+                // empty delta for this key
+                get_result[i] = true;
+                need_read--;
+            }
+        }
+    }
+
+    // Check the file pointer one by one
+    // TODO parallelize
+    vector<hashStoreFileMetaDataHandler*> file_hdls;
+    file_hdls.resize(all);
+    for (int i = 0; i < all; i++) {
+        if (get_result[i] == false) {
+            STAT_PROCESS(ret = 
+                    file_manager_->getFileHandlerWithKey(keys[i].data(),
+                        keys[i].size(), kMultiGet, file_hdls[i], false),
+                    StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
+            if (ret == false) {
+                debug_error("Get handler error for key %s\n", keys[i].c_str());
+                exit(1);
+            }
+
+            auto& file_hdl = file_hdls[i];
+
+            if (file_hdls[i] == nullptr) { 
+                // no bucket
+                valueStrVecVec[i].clear();
+                get_result[i] = true;
+                need_read--;
+            } else if (file_hdl->filter->MayExist(keys[i]) == false && 
+                    file_hdl->sorted_filter->MayExist(keys[i]) == false) {
+                // bucket does not have the delta
+                valueStrVecVec[i].clear();
+                get_result[i] = true;
+                need_read--;
+            }
+        } else {
+            file_hdls[i] = nullptr;
+        }
+    }
+
+    StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
+
+    // operation handlers
+    vector<hashStoreOperationHandler*> handlers;
+    handlers.resize(need_read);
+
+    // map the small array (all needs read) to the large array (some needs)
+    int needed_indices[need_read];
+    int needed_i = 0;
+
+    for (int i = 0; i < all; i++) {
+        if (get_result[i] == true) {
+            continue;
+        }
+        
+        needed_indices[needed_i] = i; 
+
+        auto op_hdl = new hashStoreOperationHandler(file_hdls[i]);
+        op_hdl->multiget_op.keys = new vector<string*>; 
+        op_hdl->multiget_op.keys->push_back(&keys[i]); 
+        op_hdl->multiget_op.values = new vector<string*>; 
+        op_hdl->op_type = kMultiGet;
+
+        file_operator_->putIntoJobQueue(op_hdl);
+        handlers[needed_i++] = op_hdl;
+    }
+
+    for (int i = 0; i < needed_i; i++) {
+        auto& it = handlers[i];
+        file_operator_->waitOperationHandlerDone(it);
+        
+
+        
+    }
+
+    for (int i = 0; i < all; i++) {
+        if (file_hdls[i] != nullptr) {
+            file_hdls[i]->markedByMultiGet = false;
+            file_hdls[i]->file_ownership = 0;
+        }
+    }
+
+    return true;
 }
 
 bool HashStoreInterface::forcedManualGarbageCollection()

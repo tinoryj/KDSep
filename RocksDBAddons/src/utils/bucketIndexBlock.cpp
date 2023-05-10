@@ -32,6 +32,25 @@ void BucketIndexBlock::EnlargeBuffer(size_t needed_size) {
     buf_size_ *= 2;
     char* new_buf = new char[buf_size_];
     memcpy(new_buf, key_buf_, key_buf_size_);
+
+    uint64_t offsets[mp_.size()];
+    uint64_t sizes[mp_.size()];
+    uint64_t v[mp_.size()];
+
+    // renew the mapping
+    int i = 0;
+    for (auto& it : mp_) {
+        auto& str = it.first;
+        offsets[i] = str.data() - key_buf_;
+        sizes[i] = str.size(); 
+        v[i++] = it.second;
+    }
+
+    mp_.clear();
+    for (int j = 0; j < i; j++) {
+        mp_[string_view(new_buf + offsets[j], sizes[j])] = v[j];
+    }
+
     delete[] key_buf_;
     key_buf_ = new_buf;
 }

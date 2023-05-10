@@ -165,9 +165,10 @@ enum hashStoreFileCreateReason { kNewFile = 0,
 
 enum hashStoreFileOperationType { kPut = 0,
     kGet = 1,
-    kMultiPut = 2,
-    kFlush = 3,
-    kFind = 4};
+    kMultiGet = 2,
+    kMultiPut = 3,
+    kFlush = 4,
+    kFind = 5};
 
 enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
@@ -186,7 +187,10 @@ struct hashStoreFileMetaDataHandler {
     uint64_t total_on_disk_bytes = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
     hashStoreFileGCType gc_status = kNew;
-    bool markedByMultiPut_ = false;
+    bool markedByMultiPut = false;
+    bool markedByMultiGet = false;
+    uint64_t write_back_num = 0;
+
     int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_op_ptr;
     std::shared_mutex fileOperationMutex_;
@@ -206,19 +210,19 @@ struct hashStoreFileMetaDataHandler {
     }
 };
 
-typedef struct hashStoreWriteOperationHandler {
+struct hashStoreWriteOperationHandler {
     mempoolHandler_t* object;
-} hashStoreWriteOperationHandler;
+}; 
 
-typedef struct hashStoreBatchedWriteOperationHandler {
+struct hashStoreMultiPutOperationHandler {
     mempoolHandler_t* objects;
     unsigned int size;
-} hashStoreBatchedWriteOperationHandler;
+};
 
-typedef struct hashStoreReadOperationHandler {
-    string* key_str_;
-    vector<string>* value_str_vec_;
-} hashStoreReadOperationHandler;
+struct hashStoreMultiGetOperationHandler {
+    vector<string*>* keys;
+    vector<string*>* values;
+};
 
 enum operationStatus {
     kDone = 1,
@@ -226,18 +230,18 @@ enum operationStatus {
     kError = 3
 };
 
-typedef struct hashStoreOperationHandler {
+struct hashStoreOperationHandler {
     hashStoreFileOperationType op_type;
     hashStoreFileMetaDataHandler* file_hdl;
 
     // kPut
     hashStoreWriteOperationHandler write_op;
 
-    // kGet
-    hashStoreReadOperationHandler read_op;
+    // kMultiGet
+    hashStoreMultiGetOperationHandler multiget_op;
 
     // kMultiput
-    hashStoreBatchedWriteOperationHandler multiput_op;
+    hashStoreMultiPutOperationHandler multiput_op;
     bool need_flush = false;
 
     // kFind
@@ -247,7 +251,7 @@ typedef struct hashStoreOperationHandler {
     hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_hdl)
         : file_hdl(file_hdl) {};
     hashStoreOperationHandler() : file_hdl(nullptr) {};
-} hashStoreOperationHandler;
+};
 
 // header size: 24 bytes 
 typedef struct hashStoreFileHeader {

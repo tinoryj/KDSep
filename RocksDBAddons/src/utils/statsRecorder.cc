@@ -211,6 +211,9 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("      rocksdb-pm", LSM_FLUSH_ROCKSDB_PARTIALMERGE, time[DKV_FLUSH]);
     PRINT_FULL("    flush-wal", LSM_FLUSH_WAL, time[DKV_FLUSH]);
 
+    fprintf(stdout, "-------------- DeltaKV Scan request Breakdown ------------------------------\n");
+    PRINT_FULL("    [b]worker-multiget", OP_MULTIGET, time[DKV_SCAN]);
+
     fprintf(stdout, "-------------- DeltaKV Delta Merge Breakdown ------------------------------\n");
     PRINT_FULL("Full Merge", FULL_MERGE, time[FULL_MERGE]);
 
