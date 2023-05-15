@@ -189,7 +189,7 @@ struct hashStoreFileMetaDataHandler {
     hashStoreFileGCType gc_status = kNew;
     bool markedByMultiPut = false;
     bool markedByMultiGet = false;
-    uint64_t write_back_num = 0;
+    uint64_t num_anchors = 0;
 
     int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_op_ptr;

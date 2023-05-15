@@ -84,6 +84,8 @@ private:
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     uint64_t workerThreadNumber_ = 0;
     bool syncStatistics_;
+//    boost::atomic<bool>* write_stall_;
+    bool* write_stall_;
 };
 
 } // namespace DELTAKV_NAMESPACE

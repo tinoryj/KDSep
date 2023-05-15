@@ -449,8 +449,9 @@ for param in $*; do
             suffix=${suffix}_$param
         fi
     elif [[ "$param" =~ ^open[0-9]+$ ]]; then
-        maxOpenFiles=`echo $param | sed 's/open//g'`
-        if [[ $maxOpenFiles -ne 1048576 ]]; then
+        tmp=`echo $param | sed 's/open//g'`
+        if [[ $maxOpenFiles -ne $tmp ]]; then
+            maxOpenFiles=$tmp
             run_suffix=${run_suffix}_$param
         fi
     elif [[ "$param" =~ ^zipf[0-9.]+$ ]]; then

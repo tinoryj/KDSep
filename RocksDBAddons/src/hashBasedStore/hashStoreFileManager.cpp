@@ -48,6 +48,8 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
     enable_index_block_ = options->enable_index_block;
     write_stall_ = options->write_stall;
+    wb_keys = options->wb_keys;
+    wb_keys_mutex = options->wb_keys_mutex;
     RetriveHashStoreFileMetaDataList();
 }
 
@@ -1671,27 +1673,27 @@ bool HashStoreFileManager::singleFileRewrite(
         fileDeleteVecMtx_.unlock();
         // check if after rewrite, file size still exceed threshold, mark as no GC.
         if (file_hdl->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-            debug_error("flushed new file with file ID = %lu marked as no GC from %lu (%lu) to %lu, object count %lu\n", 
-                    file_header.file_id, beforeRewriteSize, beforeRewriteBytes,
-                    file_hdl->total_on_disk_bytes, file_hdl->total_object_cnt);
+//            debug_error("flushed new file with file ID = %lu marked as no GC from %lu (%lu) to %lu, object count %lu\n", 
+//                    file_header.file_id, beforeRewriteSize, beforeRewriteBytes,
+//                    file_hdl->total_on_disk_bytes, file_hdl->total_object_cnt);
             file_hdl->gc_status = kNoGC;
 
             if (write_stall_ != nullptr) {
-                debug_error("Start to rewrite, key number %lu\n",
-                        gcResultMap.size());
+//                debug_error("Start to rewrite, key number %lu\n",
+//                        gcResultMap.size());
                 vector<writeBackObject*> objs;
                 objs.resize(gcResultMap.size());
                 int obji = 0;
-                file_hdl->write_back_num = gcResultMap.size();
+                file_hdl->num_anchors = 0;
                 for (auto& it : gcResultMap) {
                     string k(it.first.data_, it.first.size_);
                     writeBackObject* obj = new writeBackObject(k, "", 0);
                     objs[obji++] = obj;
                 }
                 *write_stall_ = true; 
-                debug_error("Start to push %lu\n", gcResultMap.size());
+//                debug_error("Start to push %lu\n", gcResultMap.size());
                 pushObjectsToWriteBackQueue(objs);
-                debug_error("push end %lu\n", gcResultMap.size());
+//                debug_error("push end %lu\n", gcResultMap.size());
             }
         }
         debug_info("flushed new file to filesystem since single file gc, the"
@@ -2304,7 +2306,6 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
         return false;
     } 
 
-    debug_error("selectFileForMerge %s\n", "");
     struct timeval tv;
     gettimeofday(&tv, 0);
     debug_trace("Current validNodes vector size = %lu\n", validNodes.size());
@@ -2436,6 +2437,9 @@ bool HashStoreFileManager::pushObjectsToWriteBackQueue(
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (!write_back_queue_->tryPush(writeBackIt)) {
+                wb_keys_mutex->lock();
+                wb_keys->push(writeBackIt->key);
+                wb_keys_mutex->unlock();
                 delete writeBackIt;
             } 
             StatsRecorder::getInstance()->timeProcess(

@@ -33,6 +33,7 @@ public:
         debug_error("init %lu %lu\n", initBitNumber, maxFileNumber);
         init_bit_num_ = initBitNumber;
         fixed_bit_num_ = (initBitNumber <= 3) ? 0 : (initBitNumber - 3);
+        if (fixed_bit_num_ >= 7) fixed_bit_num_ = 7;
         if (fixed_bit_num_ > 64) {
             fixed_bit_num_ = 0;
         }

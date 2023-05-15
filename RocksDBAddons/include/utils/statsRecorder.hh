@@ -239,6 +239,7 @@ enum StatsType {
     GET,
     GET_KEY_LOOKUP,
     GET_VALUE,
+    GET_VALUE_DISK,
     /* Scan */
     SCAN,
     /* GC */

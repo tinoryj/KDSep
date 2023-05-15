@@ -365,6 +365,8 @@ bool ValueManager::getValueFromBuffer(const char* keyStr, key_len_t keySize, cha
 // here keyStr already become key records
 bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, ValueLocation readValueLoc, char*& valueStr, len_t& valueSize)
 {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
 
     ConfigManager& cm = ConfigManager::getInstance();
     bool vlog = _isSlave || cm.enabledVLogMode();
@@ -440,6 +442,7 @@ bool ValueManager::getValueFromDisk(const char* keyStr, key_len_t keySize, Value
         ret = true;
     }
 
+    StatsRecorder::getInstance()->timeProcess(StatsType::GET_VALUE_DISK, tv);
     return ret;
 }
 

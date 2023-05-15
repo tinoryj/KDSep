@@ -37,7 +37,11 @@ private:
     messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
-    boost::atomic<bool>* write_stall_ = nullptr;
+//    boost::atomic<bool>* write_stall_ = nullptr;
+    bool* write_stall_ = nullptr;
+    std::queue<string>* wb_keys = nullptr;
+    std::mutex* wb_keys_mutex = nullptr;
+
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
 

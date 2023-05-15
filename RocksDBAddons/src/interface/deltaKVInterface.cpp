@@ -62,6 +62,10 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     lsmTreeInterface_.Open(options, name);
 
     write_stall_ = options.write_stall;
+    options.wb_keys = new std::queue<string>;
+    options.wb_keys_mutex = new std::mutex;
+    wb_keys = options.wb_keys; 
+    wb_keys_mutex = options.wb_keys_mutex;
 
     objectPairMemPool_ = new KeyValueMemPool(options.deltaStore_mem_pool_object_number_, options.deltaStore_mem_pool_object_size_);
     // Rest merge function if delta/value separation enabled
@@ -540,6 +544,7 @@ bool DeltaKV::Put(const string& key, const string& value)
             while (*write_stall_ == true) {
                 asm volatile("");
             }
+            debug_error("write stall finish %s\n", key.c_str());
         }
     }
 
@@ -764,10 +769,11 @@ bool DeltaKV::Merge(const string& key, const string& value)
     // check write stall 
     if (write_stall_ != nullptr) {
         if (*write_stall_ == true) {
-            debug_error("write stall key %s\n", key.c_str());
+            debug_error("merge stall key %s\n", key.c_str());
             while (*write_stall_ == true) {
                 asm volatile("");
             }
+            debug_error("merge stall finish %s\n", key.c_str());
         }
     }
 
@@ -1490,6 +1496,7 @@ void DeltaKV::processBatchedOperationsWorker()
 
 void DeltaKV::processWriteBackOperationsWorker()
 {
+    uint64_t total_written_pairs = 0;
     int written_pairs = 0;
     while (true) {
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
@@ -1501,7 +1508,9 @@ void DeltaKV::processWriteBackOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
+//            debug_error("(sta) Target Write back key = %s\n", currentProcessPair->key.c_str());
             bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
+//            debug_error("(fin) Target Write back key = %s\n", currentProcessPair->key.c_str());
             if (writeBackStatus == false) {
                 debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
                 exit(1);
@@ -1514,7 +1523,37 @@ void DeltaKV::processWriteBackOperationsWorker()
         }
 
         if (written_pairs > 0) {
-            debug_error("Write back: %d KD pairs\n", written_pairs);
+            wb_keys_mutex->lock();
+            if (wb_keys->size() > 0) {
+                uint64_t num_keys = wb_keys->size();
+                debug_error("Use extra queue: size %lu\n", num_keys);
+                std::queue<string> q(*wb_keys);
+                std::queue<string> empty;
+                std::swap(*wb_keys, empty); // clean the queue
+                wb_keys_mutex->unlock();
+
+                while (!q.empty()) {
+                    auto k = q.front(); // get the first element
+                    q.pop();             // remove the first element
+
+                    bool wb = GetCurrentValueThenWriteBack(k);
+                    if (wb == false) {
+                        debug_error("Could not write back target key = %s\n",
+                                k.c_str());
+                        exit(1);
+                    } else {
+                    }
+                }
+                written_pairs += num_keys;
+            } else {
+                wb_keys_mutex->unlock();
+            }
+        }
+
+        if (written_pairs > 0) {
+            total_written_pairs += written_pairs;
+            debug_error("Write back: %d KD pairs (total %lu)\n", 
+                    written_pairs, total_written_pairs);
             if (write_stall_ != nullptr) {
                 *write_stall_ = false;
             }

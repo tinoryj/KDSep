@@ -67,6 +67,7 @@ class ExternDBConfig {
     bool enable_index_block_;
     uint64_t unsorted_part_size_threshold_;
     double blobgcforce_;
+    bool enable_gc_write_stall_;
 
     struct {
         uint64_t level;
@@ -128,6 +129,7 @@ class ExternDBConfig {
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
+        enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
         unsorted_part_size_threshold_ = pt_.get<uint64_t>("config.unsorted_part_size_threshold", 1024 * 1024);
     }
 
@@ -307,6 +309,9 @@ class ExternDBConfig {
     }
     bool getEnableIndexBlock() {
         return enable_index_block_;
+    }
+    bool getEnableGcWriteStall() {
+        return enable_gc_write_stall_;
     }
     double getBlobGCForce() {
         return blobgcforce_;

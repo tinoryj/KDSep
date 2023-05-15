@@ -205,18 +205,18 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
             ssize_t ret = 0;
             if (isWrite) {
                 if (useFS) {
-                    lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                    //                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
-                    //                    ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
+                    //lock_guard<mutex> lk(*_diskMutex.at(diskId));
+                    //fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
+                    //ret = fwrite(buf + inOffset, sizeof(unsigned char), len, fd);
                     ret = pwrite(fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
                 } else {
                     ret = pwrite(_diskInfo.at(diskId).fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
                 }
             } else {
                 if (useFS) {
-                    lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                    //                    fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
-                    //                    ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
+                    //lock_guard<mutex> lk(*_diskMutex.at(diskId));
+                    //fseek(fd, runningDiskOffset + _diskInfo.at(diskId).skipOffset, SEEK_SET);
+                    //ret = fread(buf + inOffset, sizeof(unsigned char), len, fd);
                     ret = pread(fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
                 } else {
                     ret = pread(_diskInfo.at(diskId).fd, tempBuf + inOffset, len, runningDiskOffset + _diskInfo.at(diskId).skipOffset);
@@ -232,16 +232,16 @@ len_t DeviceManager::accessDisk(disk_id_t diskId, unsigned char* buf, offset_t d
         ssize_t ret = 0;
         if (isWrite) {
             if (useFS) {
-                lock_guard<mutex> lk(*_diskMutex.at(diskId));
-                //                fseek(fd, diskOffset, SEEK_SET);
-                //                ret = fwrite(buf, sizeof(unsigned char), length, fd);
+                //lock_guard<mutex> lk(*_diskMutex.at(diskId));
+                //fseek(fd, diskOffset, SEEK_SET);
+                //ret = fwrite(buf, sizeof(unsigned char), length, fd);
                 ret = pwrite(fd, tempBuf, length, diskOffset);
             } else {
                 ret = pwrite(_diskInfo.at(diskId).fd, tempBuf, length, diskOffset);
             }
         } else {
             if (useFS) {
-                lock_guard<mutex> lk(*_diskMutex.at(diskId));
+                //lock_guard<mutex> lk(*_diskMutex.at(diskId));
                 //                fseek(fd, diskOffset, SEEK_SET);
                 //                ret = fread(buf, sizeof(unsigned char), length, fd);
                 ret = pread(fd, tempBuf, length, diskOffset);

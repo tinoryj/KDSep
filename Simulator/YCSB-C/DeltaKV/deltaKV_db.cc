@@ -283,6 +283,11 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     cerr << "targe file size base " << options_.rocks_opt.target_file_size_base << endl;
     cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
 
+    if (config.getEnableGcWriteStall()) {
+        options_.write_stall = new bool; // new boost::atomic<bool>;
+        *options_.write_stall = false;
+    }
+
     if (!compression) {
         options_.rocks_opt.compression = rocksdb::kNoCompression;
     }

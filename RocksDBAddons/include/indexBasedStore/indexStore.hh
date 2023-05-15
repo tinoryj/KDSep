@@ -66,6 +66,11 @@ private:
     SegmentGroupManager* _segmentGroupManager;
 
     messageQueue<getValueStruct*>* notifyScanMQ_ = nullptr;
+    std::deque<getValueStruct*> scanDq_;
+    std::mutex scan_dq_mtx_;
+
+    bool fake_scan_ = false;
+
     std::mutex scan_mtx_;
     std::condition_variable scan_cv_;
     vector<boost::thread*> thList_;

@@ -32,6 +32,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     }
     deltaKVMergeOperatorPtr_ = options->deltaKV_merge_operation_ptr;
     unsorted_part_size_threshold_ = options->unsorted_part_size_threshold;
+    write_stall_ = options->write_stall;
     fprintf(stdout, "read use partial merged delta in the KD cache!\n");
     fprintf(stdout, "put use partial merged delta in the KD cache!\n");
 //    fprintf(stdout, "use all deltas in the KD cache!\n");
@@ -762,6 +763,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + 
                 op_hdl->multiput_op.objects[i].keySize_);
         if (op_hdl->multiput_op.objects[i].isAnchorFlag_ == true) {
+            op_hdl->file_hdl->num_anchors++;
             continue;
         } else {
             targetWriteBufferSize += op_hdl->multiput_op.objects[i].valueSize_;
@@ -875,6 +877,12 @@ bool HashStoreFileOperator::operationWorkerFind(hashStoreOperationHandler* op_hd
 bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl)
 {
     static int cnt = 0;
+    if (write_stall_ != nullptr) {
+        if (*write_stall_ == true) {
+            // performing write-back, does not do GC now
+            return false;
+        }
+    }
     // insert into GC job queue if exceed the threshold
     if (file_hdl->DiskAndBufferSizeExceeds(perFileGCSizeLimit_) || 
             file_hdl->UnsortedPartExceeds(unsorted_part_size_threshold_)) {
@@ -891,7 +899,8 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
         }
         if (file_hdl->gc_status == kNoGC) {
             file_hdl->no_gc_wait_operation_number_++;
-            if (file_hdl->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_) {
+            if (file_hdl->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_ ||
+                    file_hdl->num_anchors >= operationNumberThresholdForForcedSingleFileGC_) {
                 file_hdl->file_ownership = -1;
                 file_hdl->gc_status = kMayGC;
 //                notifyGCToManagerMQ_->push(file_hdl);

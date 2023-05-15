@@ -97,8 +97,12 @@ void KvServer::scanWorker() {
             empty_started = false;
             uint8_t ret;
 
-            getValueMt(st->ckey, st->keySize, st->value, st->valueSize, 
-                    st->storageInfo, ret, (*st->keysInProcess));
+            if (fake_scan_) {
+                (*st->keysInProcess)--;
+            } else {
+                getValueMt(st->ckey, st->keySize, st->value, st->valueSize, 
+                        st->storageInfo, ret, (*st->keysInProcess));
+            }
 
         } else {
             if (empty_started == false) {
@@ -362,6 +366,11 @@ void KvServer::getRangeValuesDecoupled(
         readValueLoc.offset = loc.externalFileOffset_ + ((uint64_t)loc.externalFileID_ << 32);
         readValueLoc.length = loc.externalContentSize_;
 
+//        while (keysInProcess >= 8) //(ConfigManager::getInstance().getNumRangeScanThread() * 2) 
+//        {
+//            asm volatile("");
+//        }
+
         if (ConfigManager::getInstance().enabledScanReadAhead()) {
             _deviceManager->readAhead(readValueLoc.segmentId,
                     readValueLoc.offset, 
@@ -370,7 +379,6 @@ void KvServer::getRangeValuesDecoupled(
 
         // search into buffer and disk in parallel
         // TODO to multithreading
-
 
         if (useMultiThreading == false) {
             KvServer::getValueMt(ckey, keySize, valueChars.at(i),
@@ -409,9 +417,14 @@ void KvServer::getRangeValuesDecoupled(
         }
     } else {
         for (int i = 0; i < numKeys; i++) {
-            values[i] = string(sts.at(i)->value, sts.at(i)->valueSize);
-            free(sts.at(i)->value);
-            delete sts.at(i);
+            if (fake_scan_) {
+                values[i] = string("abc"); 
+                delete sts.at(i);
+            } else {
+                values[i] = string(sts.at(i)->value, sts.at(i)->valueSize);
+                free(sts.at(i)->value);
+                delete sts.at(i);
+            }
         }
     }
 

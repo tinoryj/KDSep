@@ -102,7 +102,7 @@ cacheSizes=(4096)
 splitThres=0.8
 gcWriteBackSize=100000
 maxBucketNumber=32768
-kdcacheSize=512
+kdcacheSize=128
 
 if [[ $(diff ycsbc ycsbc_release | wc -l) -ne 0 ]]; then
     echo "Not release version!"
@@ -175,17 +175,14 @@ ops=("100M")
 ExpName="_p50_exp2"
 cacheSizes=(4096)
 runModeSet=('bkv' 'raw' 'kv')
-bonus5=""
-#bonus5="blobgcforce0.8"
 runModeSet=('kv')
 #func
 
-cacheSizes=(3584)
+cacheSizes=(3712)
 runModeSet=('kvkd' 'bkvkd' 'kd')
-runModeSet=('kvkd')
-#wbread="wbread200"
+runModeSet=('bkvkd')
+wbread="wbread1"
 #func
-bonus5=""
 wbread="wbread0"
 
 #### 3. UP2X
@@ -202,6 +199,7 @@ bonus4="up2x"
 bonus5=""
 wbread="wbread1"
 #func
+wbread="wbread0"
 
 cacheSizes=(3584)
 runModeSet=('kvkd' 'kd' 'bkvkd')
@@ -209,7 +207,30 @@ runModeSet=('kvkd')
 #func
 bonus4=""
 bonus5=""
+
+############### 5. Read ratio
+
+##### Running
+ExpName="_p50_exp5_ratio"
+fcl=10
+reqs=("105M")
 ops=("100M")
+indexSet=(3 5 7 9) 
+runModeSet=('bkv' 'raw' 'kv') 
+runModeSet=('kv') 
+cacheSizes=(4096)
+#func
+
+indexSet=(3 5 7 9) 
+runModeSet=('kvkd') 
+cacheSizes=(3712)
+wbread="wbread1"
+#func
+wbread="wbread0"
+
+runModeSet=('bkvkd') 
+cacheSizes=(3584)
+#func
 
 #### 4. value size
 
@@ -222,21 +243,30 @@ rreqs=("100M" "50M" "25M" "13M" "6M" "4M" "2M")
 fcs=(10 20 40 80)
 rreqs=("105M" "54M" "27M" "14M")
 
+#fcs=(2 5)
+#rreqs=("537M" "215M")
+
 runModeSet=('bkv' 'raw' 'kv')
+runModeSet=('kv')
 cacheSizes=(4096)
 
 for ((ri=0; ri<${#rreqs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     reqs=(${rreqs[$ri]})
-    func
+#    func
 done
 
 runModeSet=('bkvkd' 'kvkd' 'kd') 
-cacheSizes=(3584)
+runModeSet=('kvkd') 
+cacheSizes=(3712)
 
-for ((ri=0; ri<${#rreqs[@]}; ri++)); do
+#for ((ri=0; ri<${#rreqs[@]}; ri++)); do
+for ((ri=1; ri<${#rreqs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     reqs=(${rreqs[$ri]})
+    wbread="wbread1"
+    func
+    wbread="wbread0"
     func
 done
 
@@ -247,10 +277,8 @@ runModeSet=('bkv' 'raw' 'kv')
 runModeSet=('kv')
 cacheSizes=(2048)
 
-fcs=(40 20 10)
-fls=(200 400 800)
-fcs=(40 20)
-fls=(200 400)
+fcs=(80 40 20 10)
+fls=(100 200 400 800)
 reqs=("14M")
 
 for ((ri=0; ri<${#fcs[@]}; ri++)); do
@@ -259,9 +287,7 @@ for ((ri=0; ri<${#fcs[@]}; ri++)); do
 #    func
 done
 
-fcs=(40 10)
-fls=(200 800)
-bns=(65536 131072)
+bns=(32768 65536 98304 131072)
 runModeSet=('bkvkd' 'kvkd' 'kd') 
 runModeSet=('kvkd') 
 #cacheSizes=(3584)
@@ -271,7 +297,10 @@ for ((ri=0; ri<${#fcs[@]}; ri++)); do
     fcl=${fcs[$ri]}
     flengths=(${fls[$ri]})
     maxBucketNumber=${bns[$ri]}
-#    func
+    wbread="wbread1"
+    func
+    wbread="wbread0"
+    func
 done
 maxBucketNumber=32768
 
@@ -296,27 +325,6 @@ cacheSizes=(4096)
 #func
 
 
-############### 5. Read ratio
-ops=("100M")
-
-##### Running
-#ExpName="_p42_test"
-indexSet=(1 3 5 7 9) 
-runModeSet=('bkv' 'raw' 'kv') 
-runModeSet=('kv') 
-cacheSizes=(4096)
-#func
-
-indexSet=(3 5 7) 
-runModeSet=('kvkd') 
-cacheSizes=(3584)
-wbread="wbread200"
-#func
-wbread="wbread0"
-
-runModeSet=('bkvkd') 
-cacheSizes=(3584)
-#func
 
 ##### Test
 
@@ -332,13 +340,20 @@ runModeSet=('bkvkd')
 
 ExpName="Exp_p50_exp7_kdc"
 
+kdcs=(0 64 128 256 1024)
+
 for ((kdcsi=0; kdcsi<${#kdcs[@]}; kdcsi++)); do
     kdcacheSize=${kdcs[$kdcsi]}
-    indexSet=(1 3) 
-    cacheSizes=(3584)
+    indexSet=(1) 
+    cacheSizes=( $(( 3584 + ${kdcacheSize} )) )
     runModeSet=('kvkd' 'bkvkd' 'kd') 
+    runModeSet=('kvkd') 
 #    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 10 * 6))
 #    func
+    wbread="wbread1"
+    func
+    wbread="wbread0"
+    func
 done
 
 kdcs=(0 64 128 256 1024)
@@ -350,6 +365,7 @@ for ((kdcsi=0; kdcsi<${#kdcs[@]}; kdcsi++)); do
 #    gcWriteBackSize=$((${fcl} * ${flengths[0]} / 10 * 6))
 #    func
 done
+exit
 #gcWriteBackSize=600
 kdcacheSize=512
 
@@ -372,7 +388,7 @@ for ((bssi=0; bssi<${#bss[@]}; bssi++)); do
 #func
     cacheSizes=(4096)
     runModeSet=('kv')
-    func
+#    func
     indexSet=(0)
 #    cacheSizes=(4096)
 #    runModeSet=('kv')
@@ -384,7 +400,6 @@ for ((bssi=0; bssi<${#bss[@]}; bssi++)); do
     indexSet=(1)
 done
 batchSize=2
-exit
 
 ExpName="Exp_p50_exp9_bucsize"
 bucnums=(16384 65536 131072)
@@ -395,7 +410,8 @@ runModeSet=('kvkd')
 for ((buci=0; buci<${#bucnums[@]}; buci++)); do
     maxBucketNumber=${bucnums[$buci]}
     splitThres=0.8
-#    func
+    func
+    exit
     if [[ ${buci} -ge 1 ]]; then
         splitThres=0.5
 #        func
