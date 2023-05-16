@@ -100,6 +100,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     int processLabel_base = num_ops / 100;
     struct timeval tv;
     int output_base = 200;
+    bool final_scan = true;
+    double duration_scan_start = 0;
+    uint64_t final_scan_ops = 1000000;
     for (int i = 0; i < num_ops; ++i) {
         gettimeofday(&tv, 0);
         timer.Start();
@@ -113,6 +116,18 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             operation_type = client.DoTransaction();
             oks += 1;
         }
+        if (final_scan && num_ops - i == final_scan_ops) {
+            duration_scan_start = timerStart.End();
+            std::cerr << "\nset to scan: duration: " << 
+                duration_scan_start / 1000000.0 <<
+                std::endl;
+            std::cout << "\nset to scan: duration: " <<
+                duration_scan_start / 1000000.0 <<
+                std::endl;
+            client.SetFinalScan();
+            output_base = 200;
+        }
+
         DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
                 DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION, tv);
         double duration = timer.End();
@@ -124,17 +139,29 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         if (i % output_base == 0 || i % processLabel_base == 0) {
             std::cerr << "\r";
             double tot_duration = timerStart.End() / 1000000.0;
-            double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
+            int speed = i / tot_duration;
+            float speed_f = (float)i / tot_duration;
+            double estimate_duration = (i < num_ops - 1) ? 
+                tot_duration / (i+1) * (num_ops - i - 1) : 0;
+
+            if (duration_scan_start > 0.0) {
+                tot_duration = (timerStart.End() - duration_scan_start) /
+                    1000000.0;
+                speed = (i - (num_ops - final_scan_ops)) / tot_duration;
+                estimate_duration = (i < num_ops - 1) ? 
+                    tot_duration / (i - (num_ops - final_scan_ops) + 1) * (num_ops - i - 1) : 0;
+                speed_f = ((float)(i - (num_ops - final_scan_ops))) / tot_duration;
+            }
             int est_minutes = int(estimate_duration) / 60;
             int est_seconds = int(estimate_duration) % 60;
-            int speed = i / tot_duration;
+
             if (speed < 1000) {
                 output_base = 200;
             } else {
                 output_base = speed / 1000 * 200;
             }
 //            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
-            std::cerr << "[Running] " << (float)i / processLabel_base << "% (" << (float)i / tot_duration << " ops)    est ";
+            std::cerr << "[Running] " << (float)i / processLabel_base << "% (" << speed_f << " ops)    est ";
             if (est_minutes > 0) {
                 std::cerr << est_minutes << ":";
             }
@@ -142,7 +169,8 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
                 std::cerr << est_seconds << " ";
             }
 	    if (i % processLabel_base == 0) {
-		std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " ops)\n";
+		std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops 
+                    << "   (" << speed_f << " ops)\n";
 	    }
         }
 	// }
@@ -152,6 +180,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     std::cerr << std::endl;
 
     std::cout << "resident " << DELTAKV_NAMESPACE::getRss() / 1024.0 / 1024.0 << " GiB" << std::endl;
+    if (duration_scan_start > 0.0) {
+        duration_scan_start = timerStart.End() - duration_scan_start;
+        std::cout << "\nscan throughput: " <<
+            final_scan_ops / (duration_scan_start / 1000000.0) <<
+            std::endl;
+    }
     db->Close();
     return oks;
 }

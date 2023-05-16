@@ -26,6 +26,8 @@ class Client {
     virtual Operation DoInsert();
     virtual Operation DoTransaction();
 
+    virtual void SetFinalScan();
+
     virtual ~Client() {}
 
    protected:
@@ -38,10 +40,16 @@ class Client {
 
     YCSBDB& db_;
     CoreWorkload& workload_;
+
+    bool final_scan_ = false;
 };
 
 // FILE* fw = fopen("write_latencies", "a");
 // FILE* fr = fopen("read_latencies","a");
+
+inline void Client::SetFinalScan() {
+    final_scan_ = true;
+}
 
 inline Operation Client::DoInsert() {
     std::string key = workload_.NextSequenceKey();
@@ -55,6 +63,9 @@ inline Operation Client::DoTransaction() {
     int status = -1;
     utils::Timer timer;
     Operation operation_type = workload_.NextOperation();
+    if (final_scan_) {
+        operation_type = SCAN;
+    }
     timer.Start();
     switch (operation_type) {
         case READ:

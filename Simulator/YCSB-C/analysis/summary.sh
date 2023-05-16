@@ -25,11 +25,14 @@ for file in ${files[@]}; do
 
     c_sz=`grep "GetUsage()" $file | awk '{t+=$NF;} END {print t/1024/1024/1024;}'`
 
-    thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
+    thpt=`grep "scan throughput" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
     if [[ "$thpt" == "0" ]]; then
-        loadtime=`grep "Load time" $file | awk 'BEGIN {t=0;} {t=$(NF-1);} END {print t;}'`
-        records=`grep "Loading records" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'`
-        thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
+        thpt=`grep "rocksdb.*workload" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'` 
+        if [[ "$thpt" == "0" ]]; then
+            loadtime=`grep "Load time" $file | awk 'BEGIN {t=0;} {t=$(NF-1);} END {print t;}'`
+            records=`grep "Loading records" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'`
+            thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
+        fi
     fi
 
     rock_r=`grep "actual.read.bytes" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t / 1024 / 1024 / 1024;}'`
