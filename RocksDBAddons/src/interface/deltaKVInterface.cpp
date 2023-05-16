@@ -30,6 +30,13 @@ DeltaKV::~DeltaKV()
     if (enableKeyValueCache_ == true) {
         delete keyToValueListCache_;
     }
+    if (wb_keys != nullptr) {
+	delete wb_keys;
+	delete wb_keys_mutex;
+    }
+    if (write_stall_ != nullptr) {
+	delete write_stall_;
+    }
     cerr << "[DeltaKV Interface] Try delete HashStore " << rss << endl;
     if (HashStoreInterfaceObjPtr_ != nullptr) {
         rss = getRss();
