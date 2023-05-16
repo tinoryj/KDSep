@@ -438,6 +438,8 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "------------------------- SCAN Request --------------------------------------\n");
     PRINT_FULL("Scan Time", SCAN, time[SCAN]);
+    PRINT_FULL("lsm Scan", DKV_SCAN_LSM, time[SCAN]);
+    PRINT_FULL("ds Scan", DKV_SCAN_DS, time[SCAN]);
 
     fprintf(stdout, "----------------------------- FLUSH -----------------------------------------\n");
     PRINT_FULL("GroupFlushInPool", GROUP_IN_POOL_FLUSH, time[POOL_FLUSH]);

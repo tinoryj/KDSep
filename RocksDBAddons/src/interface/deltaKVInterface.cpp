@@ -752,12 +752,16 @@ bool DeltaKV::Get(const string& key, string* value)
 bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values) 
 {
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
+    struct timeval tv;
+    gettimeofday(&tv, 0);
 
     // 1. Scan the RocksDB/vLog for keys and values
-    lsmTreeInterface_.Scan(startKey, len, keys, values);
+    STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, keys, values),
+            StatsType::DKV_SCAN_LSM);
 
     if (deltaKVRunningMode_ == kWithNoDeltaStore || 
 	    deltaKVRunningMode_ == kBatchedWithNoDeltaStore) {
+        StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
 	return true;
     }
 
@@ -770,7 +774,9 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
     bool ret;
     vector<vector<string>> valueStrVecVec;
 //    debug_error("Start key %s len %d\n", startKey.c_str(), len);
-    ret = HashStoreInterfaceObjPtr_->multiGet(keys, valueStrVecVec);
+    STAT_PROCESS(
+    ret = HashStoreInterfaceObjPtr_->multiGet(keys, valueStrVecVec),
+    StatsType::DKV_SCAN_DS);
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
@@ -784,6 +790,7 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
 //    }
 //    exit(1);
 
+    StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
     return true;
 }
 

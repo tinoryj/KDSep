@@ -242,6 +242,8 @@ enum StatsType {
     GET_VALUE_DISK,
     /* Scan */
     SCAN,
+    DKV_SCAN_LSM,
+    DKV_SCAN_DS,
     /* GC */
     GC_WRITE_BYTES,
     GC_SCAN_BYTES,
