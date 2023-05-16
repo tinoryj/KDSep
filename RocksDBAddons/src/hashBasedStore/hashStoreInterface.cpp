@@ -422,6 +422,12 @@ bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& 
                 valueStrVecVec[i].clear();
                 get_result[i] = true;
                 need_read--;
+		if (fileHandlerToIndexMap.find(file_hdl) ==
+			fileHandlerToIndexMap.end()) {
+		    file_hdl->file_ownership = 0;
+		    file_hdl->markedByMultiGet = false;
+		    file_hdls[i] = nullptr;
+		}
             } else {
 		// need to 
 		if (fileHandlerToIndexMap.find(file_hdl) !=

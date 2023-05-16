@@ -2746,6 +2746,9 @@ bool HashStoreFileManager::forcedManualGCAllFiles()
     vector<hashStoreFileMetaDataHandler*> validFilesVec;
     file_trie_.getCurrentValidNodesNoKey(validFilesVec);
     for (auto file_handler : validFilesVec) {
+	if (file_handler->file_ownership != 0) {
+	    debug_error("file id %lu not zero %d\n", file_handler->file_id, file_handler->file_ownership);
+	}
         while (file_handler->file_ownership != 0) {
             asm volatile("");
         }
