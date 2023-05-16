@@ -258,7 +258,8 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
             op_hdl->multiput_op.size = handlerVecIndex - handlerStartVecIndex;
             op_hdl->op_type = kMultiPut;
             op_hdl->need_flush = need_flush;
-            STAT_PROCESS(file_operator_->putIntoJobQueue(op_hdl), StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
+            STAT_PROCESS(file_operator_->putIntoJobQueue(op_hdl),
+                    StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR);
             handlers[opHandlerIndex++] = op_hdl;
         }
         StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PUT_TO_JOB_QUEUE, tv);
@@ -473,7 +474,7 @@ bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& 
 	    op_hdl->multiget_op.keys->push_back(&keys[index_vec[index]]); 
 	}
         
-        file_operator_->putIntoJobQueue(op_hdl);
+        file_operator_->startJob(op_hdl);
         handlers[needed_i++] = op_hdl;
     }
 

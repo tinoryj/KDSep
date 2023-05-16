@@ -13,6 +13,7 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     singleFileSizeLimit_ = options->deltaStore_single_file_maximum_size;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
+        workerThreads_ = new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_);
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
     if (options->kd_cache != nullptr) {
@@ -21,7 +22,6 @@ HashStoreFileOperator::HashStoreFileOperator(DeltaKVOptions* options, string wor
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     enable_index_block_ = options->enable_index_block;
-//    notifyGCToManagerMQ_ = notifyGCToManagerMQ;
     hashStoreFileManager_ = hashStoreFileManager;
     workingDir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForForcedSingleFileGCThreshold_;
@@ -46,6 +46,9 @@ HashStoreFileOperator::~HashStoreFileOperator()
     if (operationToWorkerMQ_ != nullptr) {
         delete operationToWorkerMQ_;
     }
+    if (workerThreads_ != nullptr) {
+        delete workerThreads_;
+    }
 }
 
 bool HashStoreFileOperator::setJobDone()
@@ -60,36 +63,21 @@ bool HashStoreFileOperator::setJobDone()
     return true;
 }
 
-// file operations
-bool HashStoreFileOperator::putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* mempoolHandler)
-{
-    hashStoreOperationHandler* currentHandler = new hashStoreOperationHandler(file_hdl);
-    currentHandler->job_done = kNotDone;
-    currentHandler->write_op.object = mempoolHandler;
-    currentHandler->op_type = kPut;
-    operationToWorkerMQ_->push(currentHandler);
-    operationNotifyCV_.notify_all();
-    if (currentHandler->job_done == kNotDone) {
-        debug_trace("Wait for write job done%s\n", "");
-        while (currentHandler->job_done == kNotDone) {
-            asm volatile("");
-        }
-        debug_trace("Wait for write job done%s over\n", "");
-    }
-    if (currentHandler->job_done == kError) {
-        delete currentHandler;
-        return false;
-    } else {
-        delete currentHandler;
-        return true;
-    }
-}
-
 bool HashStoreFileOperator::putIntoJobQueue(hashStoreOperationHandler* op_hdl)
 {
     bool ret = operationToWorkerMQ_->push(op_hdl);
     operationNotifyCV_.notify_all();
     return ret;
+}
+
+bool HashStoreFileOperator::startJob(hashStoreOperationHandler* op_hdl)
+{
+    boost::asio::post(*workerThreads_, 
+            boost::bind(
+                &HashStoreFileOperator::operationBoostThreadWorker,
+                this,
+                op_hdl));
+    return true;
 }
 
 bool HashStoreFileOperator::waitOperationHandlerDone(hashStoreOperationHandler* op_hdl, bool need_delete) {
@@ -997,7 +985,6 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
                     file_hdl->num_anchors >= operationNumberThresholdForForcedSingleFileGC_) {
                 file_hdl->file_ownership = -1;
                 file_hdl->gc_status = kMayGC;
-//                notifyGCToManagerMQ_->push(file_hdl);
                 hashStoreFileManager_->pushToGCQueue(file_hdl);
                 debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue, no gc wait count = %lu, threshold = %lu\n", file_hdl->file_id, perFileGCSizeLimit_, file_hdl->total_object_bytes, file_hdl->total_on_disk_bytes + file_hdl->file_op_ptr->getFileBufferedSize(), file_hdl->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
                 file_hdl->no_gc_wait_operation_number_ = 0;
@@ -1011,7 +998,6 @@ bool HashStoreFileOperator::putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMe
             }
         } else if (file_hdl->gc_status == kNew || file_hdl->gc_status == kMayGC) {
             file_hdl->file_ownership = -1;
-//            notifyGCToManagerMQ_->push(file_hdl);
             hashStoreFileManager_->pushToGCQueue(file_hdl);
             debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", file_hdl->file_id, perFileGCSizeLimit_, file_hdl->total_object_bytes, file_hdl->total_on_disk_bytes + file_hdl->file_op_ptr->getFileBufferedSize());
             return true;
@@ -1908,6 +1894,69 @@ bool HashStoreFileOperator::operationWorkerMultiGetFunction(hashStoreOperationHa
     return true;
 }
 
+void HashStoreFileOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hdl)
+{
+    bool operationsStatus = true;
+    bool file_hdl_is_input = true;
+    auto file_hdl = op_hdl->file_hdl;
+
+    std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
+    if (file_hdl != nullptr) {
+        w_lock = new
+            std::scoped_lock<std::shared_mutex>(file_hdl->fileOperationMutex_);
+    }
+
+    switch (op_hdl->op_type) {
+        case kMultiGet:
+            STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
+            break;
+        case kMultiPut:
+            debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", file_hdl->file_id, op_hdl->multiput_op.size);
+            STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
+            break;
+        case kPut:
+            debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, file_hdl->file_id);
+            STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
+            break;
+        case kFlush:
+            STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
+            break;
+        case kFind:
+            STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
+            file_hdl_is_input = false;
+            break;
+        default:
+            debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
+            break;
+    }
+
+    if (operationsStatus == false) {
+        file_hdl->file_ownership = 0;
+        debug_trace("Process file ID = %lu error\n", file_hdl->file_id);
+        op_hdl->job_done = kError;
+    } else if (file_hdl_is_input == true) {
+        if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
+                && enableGCFlag_ == true) {
+            bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(file_hdl);
+            if (putIntoGCJobQueueStatus == false) {
+                file_hdl->file_ownership = 0;
+                op_hdl->job_done = kDone;
+            } else {
+                op_hdl->job_done = kDone;
+            }
+        } else {
+            op_hdl->file_hdl->file_ownership = 0;
+            op_hdl->job_done = kDone;
+        }
+    } else {
+        op_hdl->job_done = kDone;
+    }
+
+    if (w_lock) {
+        delete w_lock;
+    }
+}
+
 void HashStoreFileOperator::operationWorker(int threadID)
 {
     struct timeval tvs, tve;
@@ -1916,7 +1965,6 @@ void HashStoreFileOperator::operationWorker(int threadID)
     bool empty_started = false;
     while (true) {
         gettimeofday(&tve, 0);
-
         {
             std::unique_lock<std::mutex> lk(operationNotifyMtx_);
             if (operationToWorkerMQ_->isEmpty() && 

@@ -4,6 +4,11 @@
 #include "interface/deltaKVOptions.hpp"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/bind/bind.hpp>
+#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include <bits/stdc++.h>
 #include <shared_mutex>
 #include <string_view>
@@ -19,6 +24,7 @@ public:
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
     bool putIntoJobQueue(hashStoreOperationHandler* op_hdl); 
+    bool startJob(hashStoreOperationHandler* op_hdl);
 
     // file operations without job queue support-> only support single operation
     bool directlyWriteOperation(hashStoreFileMetaDataHandler* file_hdl, mempoolHandler_t* memPoolHandler);
@@ -84,6 +90,9 @@ private:
     void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);
     void updateKDCache(char* keyPtr, size_t keySize, str_t delta); 
     bool putFileHandlerIntoGCJobQueueIfNeeded(hashStoreFileMetaDataHandler* file_hdl);
+    void operationBoostThreadWorker(hashStoreOperationHandler* op_hdl);
+    // boost thread
+    boost::asio::thread_pool*  workerThreads_ = nullptr;
     // message management
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     HashStoreFileManager* hashStoreFileManager_ = nullptr;
