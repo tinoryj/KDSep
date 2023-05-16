@@ -751,8 +751,31 @@ bool DeltaKV::Get(const string& key, string* value)
 // 3. Scan delta store to find deltas.
 bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values) 
 {
+    scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
+
     // 1. Scan the RocksDB/vLog for keys and values
     lsmTreeInterface_.Scan(startKey, len, keys, values);
+
+    if (deltaKVRunningMode_ == kWithNoDeltaStore || 
+	    deltaKVRunningMode_ == kBatchedWithNoDeltaStore) {
+	return true;
+    }
+
+    // 2. Scan the delta store
+
+    if (enableLsmTreeDeltaMeta_ == true) {
+	debug_error("not implemented: key %lu\n", keys.size());
+    }
+
+    bool ret;
+    vector<vector<string>> valueStrVecVec;
+//    debug_error("Start key %s len %d\n", startKey.c_str(), len);
+    ret = HashStoreInterfaceObjPtr_->multiGet(keys, valueStrVecVec);
+
+    if (ret == false) {
+	debug_error("scan in delta store failed: %lu\n", keys.size());
+    }
+
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
 //    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
 //            values.size());

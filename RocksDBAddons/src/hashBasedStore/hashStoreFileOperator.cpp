@@ -271,6 +271,51 @@ bool HashStoreFileOperator::readAndProcessWholeFile(
     return true;
 }
 
+bool HashStoreFileOperator::readAndProcessWholeFileKeyList(
+        hashStoreFileMetaDataHandler* file_hdl, vector<string*>* keys,
+        vector<vector<string_view>>& kd_lists, char** buf)
+{
+    auto& file_size = file_hdl->total_object_bytes;
+    bool readFromFileStatus = readWholeFile(file_hdl, buf);
+    uint64_t skip_size = sizeof(hashStoreFileHeader);
+
+    kd_lists.clear();
+    if (readFromFileStatus == false) {
+        debug_error("[ERROR] Could not read from file for key list %lu\n",
+                keys->size());
+        exit(1);
+        return false;
+    }
+
+    vector<string_view> key_views;
+    key_views.resize(keys->size());
+    for (int i = 0; i < keys->size(); i++) {
+	key_views[i] = string_view((*(*keys)[i]));
+    }
+
+    uint64_t process_delta_num = 0;
+
+    STAT_PROCESS(process_delta_num = processReadContentToValueListsWithKeyList(
+                *buf + skip_size, file_size - skip_size, 
+                kd_lists, key_views),
+            StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
+    if (process_delta_num != file_hdl->total_object_cnt) {
+        debug_error("[ERROR] processed object number during read = %lu, not"
+                " equal to object number in metadata = %lu\n",
+                process_delta_num, file_hdl->total_object_cnt);
+        return false;
+    }
+
+    if (kd_lists.empty() == false) {
+        if (enableLsmTreeDeltaMeta_ == true) {
+            debug_error("[ERROR] Read bucket done, but could not found values"
+                    " for key %lu\n", keys->size());
+            exit(1);
+        }
+    }
+    return true;
+}
+
 bool HashStoreFileOperator::readAndProcessSortedPart(
         hashStoreFileMetaDataHandler* file_hdl, string& key,
         vector<string_view>& kd_list, char** buf)
@@ -493,7 +538,6 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(
     uint64_t processed_delta_num = 0;
     size_t header_sz = sizeof(hashStoreRecordHeader);
     hashStoreRecordHeader header;
-    vector<uint64_t> ivalues;
     while (i < read_buf_size) {
         processed_delta_num++;
         if (use_varint_d_header == false) {
@@ -502,8 +546,6 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(
             header = GetDeltaHeaderVarint(read_buf + i, header_sz);
         }
         i += header_sz;
-        ivalues.push_back(i);
-        ivalues.push_back(header_sz);
         if (header.is_gc_done_ == true) {
             // skip since it is gc flag, no content.
             continue;
@@ -526,17 +568,69 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(
             kd_list.push_back(currentValue);
             i += header.value_size_;
         }
-        ivalues.push_back(header.key_size_);
-        ivalues.push_back(header.value_size_);
-        ivalues.push_back(i);
-        ivalues.push_back(99999);
     }
     if (i > read_buf_size) {
         debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
                 i, read_buf_size);
-        for (auto& it : ivalues) {
-            debug_error("i %lu\n", it);
+        return 0;
+    }
+    return processed_delta_num;
+}
+
+uint64_t HashStoreFileOperator::processReadContentToValueListsWithKeyList(
+        char* read_buf, uint64_t read_buf_size, 
+	vector<vector<string_view>>& kd_lists,
+        const vector<string_view>& keys)
+{
+    kd_lists.clear();
+    kd_lists.resize(keys.size());
+
+    uint64_t i = 0;
+    uint64_t processed_delta_num = 0;
+    size_t header_sz = sizeof(hashStoreRecordHeader);
+    hashStoreRecordHeader header;
+    while (i < read_buf_size) {
+        processed_delta_num++;
+        if (use_varint_d_header == false) {
+            memcpy(&header, read_buf + i, header_sz);
+        } else {
+            header = GetDeltaHeaderVarint(read_buf + i, header_sz);
         }
+        i += header_sz;
+        if (header.is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
+            continue;
+        }
+
+        // get key 
+        string_view currentKey(read_buf + i, header.key_size_);
+
+	int key_i = 0;
+	bool has_key = false;
+	for (key_i = 0; key_i < (int)keys.size(); key_i++) {
+	    string_view key = keys[key_i];
+	    if (key != currentKey) {
+		continue;
+	    }
+
+	    has_key = true;
+	    i += header.key_size_;
+	    if (header.is_anchor_ == false) {
+		string_view currentValue(read_buf + i, header.value_size_);
+		kd_lists[key_i].push_back(currentValue);
+		i += header.value_size_;
+	    }
+	}
+
+	if (has_key == false) {
+	    i += header.key_size_ +
+		((header.is_anchor_) ? 0 :
+		 header.value_size_);
+	}
+    }
+    if (i > read_buf_size) {
+        debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
+                i, read_buf_size);
         return 0;
     }
     return processed_delta_num;
@@ -1509,16 +1603,13 @@ bool HashStoreFileOperator::directlyReadOperation(hashStoreFileMetaDataHandler* 
 bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hdl)
 {
     auto& file_hdl = op_hdl->file_hdl; 
-
-    std::scoped_lock<std::shared_mutex> r_lock(file_hdl->fileOperationMutex_);
     // check if not flushed anchors exit, return directly.
     // try extract from cache first
 
     // only read the first key
     auto& multiget_op = op_hdl->multiget_op;
     auto& key = *((*multiget_op.keys)[0]);
-    auto& valueVec2 = (*multiget_op.values);
-    vector<string> valueVec;
+    auto& valueVec = (*multiget_op.values);
 
     if (kd_cache_ != nullptr) {
         // does not check the cache. Already checked in the interface
@@ -1552,7 +1643,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                             exit(1);
                         }
                         valueVec.clear();
-//                        file_hdl->file_ownership = 0;
+                        file_hdl->file_ownership = 0;
                         return true;
                     } else {
                         // only in unsorted part
@@ -1592,7 +1683,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             str_t merged_delta(nullptr, 0);
             if (deltas.size() > 0) {
                 deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-                valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
+                valueVec.push_back(new string(merged_delta.data_, merged_delta.size_));
             }
 
 //            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
@@ -1603,7 +1694,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
 
             delete[] buf;
 
-//            file_hdl->file_ownership = 0;
+            file_hdl->file_ownership = 0;
             return true;
         } else {
             // Do not enable index block, directly read the whole file 
@@ -1615,7 +1706,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
 
             if (s == false) {
                 debug_error("[ERROR] read and process failed %s\n", key.c_str());
-//                file_hdl->file_ownership = 0;
+                file_hdl->file_ownership = 0;
                 return false;
             }
 
@@ -1636,7 +1727,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             str_t merged_delta(nullptr, 0);
             if (deltas.size() > 0) {
                 deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-                valueVec.push_back(string(merged_delta.data_,
+                valueVec.push_back(new string(merged_delta.data_,
                             merged_delta.size_));
             }
 
@@ -1647,7 +1738,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
 
             delete[] buf;
 
-//            file_hdl->file_ownership = 0;
+            file_hdl->file_ownership = 0;
             return true;
         }
         
@@ -1684,7 +1775,7 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
                         exit(1);
                     }
                     valueVec.clear();
-//                    file_hdl->file_ownership = 0;
+                    file_hdl->file_ownership = 0;
                     return true;
                 } else {
                     // only in unsorted part
@@ -1702,20 +1793,20 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
             exit(1);
         } else if (buf == nullptr) {
             // Key miss because (partially) sorted part does not have key
-//            file_hdl->file_ownership = 0;
+            file_hdl->file_ownership = 0;
             return true;
         } 
 
         if (kd_list.size() > 0) {
             valueVec.reserve(kd_list.size());
             for (auto vecIt : kd_list) {
-                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+                valueVec.push_back(new string(vecIt.data(), vecIt.size()));
             }
         }
 
         delete[] buf;
 
-//        file_hdl->file_ownership = 0;
+        file_hdl->file_ownership = 0;
         return true;
     } else {
         // no cache, directly read the whole file
@@ -1726,19 +1817,19 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
 
         if (s == false) {
             debug_error("[ERROR] read and process failed %s\n", key.c_str());
-//            file_hdl->file_ownership = 0;
+            file_hdl->file_ownership = 0;
             return false;
         }
 
         if (kd_list.empty() == false) {
             valueVec.reserve(kd_list.size());
             for (auto vecIt : kd_list) {
-                valueVec.push_back(string(vecIt.data(), vecIt.size()));
+                valueVec.push_back(new string(vecIt.data(), vecIt.size()));
             }
         }
 
         delete[] buf;
-//        file_hdl->file_ownership = 0;
+        file_hdl->file_ownership = 0;
         return true;
     }
 }
@@ -1746,243 +1837,75 @@ bool HashStoreFileOperator::operationWorkerGetFunction(hashStoreOperationHandler
 bool HashStoreFileOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* op_hdl)
 {
     if (op_hdl->multiget_op.keys->size() == 1) {
-        return operationWorkerGetFunction(op_hdl);
+	return operationWorkerGetFunction(op_hdl);
     }
 
     auto& file_hdl = op_hdl->file_hdl; 
 
-    std::scoped_lock<std::shared_mutex> r_lock(file_hdl->fileOperationMutex_);
     // check if not flushed anchors exit, return directly.
     // try extract from cache first
 
     // only read the first key
     auto& multiget_op = op_hdl->multiget_op;
-    auto& key = *((*multiget_op.keys)[0]);
-    auto& valueVec2 = (*multiget_op.values);
-    vector<string> valueVec;
+    //    auto& key = *((*multiget_op.keys)[0]);
+    auto& keys = multiget_op.keys;
+    auto& valueVec = (*multiget_op.values);
 
-    if (kd_cache_ != nullptr) {
-        str_t currentKey(key.data(), key.size());
-        str_t delta = kd_cache_->getFromCache(currentKey);
-        if (enable_index_block_) {
-            // Do not enable index block, directly write 
-            // Not exist in cache, find the content in the file
-            str_t key_str_t(key.data(), key.size());
+    vector<vector<string_view>> kd_lists;
 
-            vector<string_view> kd_list;
+    char* buf = nullptr;
+    bool success;
 
-            char* buf = nullptr;
-            bool success;
+//    debug_error("read hdl %p keys %lu\n", file_hdl, keys->size());
 
-            if (file_hdl->index_block != nullptr) {
-                if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
-                    if (file_hdl->filter->MayExist(key_str_t) == false) {
-                        // only in sorted part
-                        success = readAndProcessSortedPart(file_hdl, key,
-                                kd_list, &buf);
-                    } else {
-                        // both parts 
-                        success = readAndProcessBothParts(file_hdl, key,
-                                kd_list, &buf);
-                    }
-                } else {
-                    if (file_hdl->filter->MayExist(key_str_t) == false) {
-                        // does not exist, or not stored in the memory 
-                        if (enableLsmTreeDeltaMeta_ == true) {
-                            debug_error("[ERROR] Read bucket done, but could not"
-                                    " found values for key = %s\n", key.c_str());
-                            exit(1);
-                        }
-                        valueVec.clear();
-//                        file_hdl->file_ownership = 0;
-                        return true;
-                    } else {
-                        // only in unsorted part
-                        success = readAndProcessUnsortedPart(file_hdl, key,
-                                kd_list, &buf);
-                    }
-                }
-            } else {
-                success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
-            }
+    success = readAndProcessWholeFileKeyList(file_hdl, keys, kd_lists, &buf);
 
-            valueVec.clear();
-            if (success == false) {
-                debug_error("[ERROR] read and process failed %s\n", key.c_str());
-                exit(1);
-            } else if (buf == nullptr) {
-                // Key miss because (partially) sorted part does not have key
-//                file_hdl->file_ownership = 0;
-                return true;
-            } 
+    multiget_op.values->clear();
 
-//            if (kd_list.size() > 0) {
-//                valueVec.reserve(kd_list.size());
-//                for (auto vecIt : kd_list) {
-//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
-//                }
-//            }
-
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            vector<str_t> deltas;
-            for (auto& it : kd_list) {
-                deltas.push_back(str_t(const_cast<char*>(it.data()),
-                            it.size()));
-            }
-
-            str_t merged_delta(nullptr, 0);
-            if (deltas.size() > 0) {
-                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-                valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
-            }
-
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
-            updateKDCache(key.data(), key.size(), merged_delta);
-            StatsRecorder::getInstance()->timeProcess(
-                    StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
-
-            delete[] buf;
-
-//            file_hdl->file_ownership = 0;
-            return true;
-        } else {
-            // Do not enable index block, directly read the whole file 
-            // Not exist in cache, find the content in the file
-            vector<string_view> kd_list;
-            char* buf;
-            bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
-            valueVec.clear();
-
-            if (s == false) {
-                debug_error("[ERROR] read and process failed %s\n", key.c_str());
-//                file_hdl->file_ownership = 0;
-                return false;
-            }
-
-//            if (kd_list.size() > 0) {
-//                valueVec.reserve(kd_list.size());
-//                for (auto vecIt : kd_list) {
-//                    valueVec.push_back(string(vecIt.data(), vecIt.size()));
-//                }
-//            }
-
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            vector<str_t> deltas;
-            for (auto& it : kd_list) {
-                deltas.push_back(str_t(const_cast<char*>(it.data()), it.size()));
-            }
-
-            str_t merged_delta(nullptr, 0);
-            if (deltas.size() > 0) {
-                deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-                valueVec.push_back(string(merged_delta.data_,
-                            merged_delta.size_));
-            }
-
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
-            updateKDCache(key.data(), key.size(), merged_delta);
-            StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
-
-            delete[] buf;
-
-//            file_hdl->file_ownership = 0;
-            return true;
-        }
-        
-        return true;
+    if (success == false) {
+	debug_error("[ERROR] read and process failed: key num %lu\n",
+		keys->size());
+	exit(1);
+    } else if (buf == nullptr) {
+	// Key miss because (partially) sorted part does not have key
+	file_hdl->file_ownership = 0;
+	return true;
     } 
-    
-    if (enable_index_block_) {
-        // Do not enable index block, directly write 
-        // Not exist in cache, find the content in the file
-        str_t key_str_t(key.data(), key.size());
 
-        vector<string_view> kd_list;
+    struct timeval tv;
+    gettimeofday(&tv, 0);
 
-        char* buf = nullptr;
-        bool success;
+    valueVec.resize(keys->size());
+    for (auto key_i = 0; key_i < keys->size(); key_i++) {
+	valueVec[key_i] = nullptr;
 
-        if (file_hdl->index_block != nullptr) {
-            if (file_hdl->sorted_filter->MayExist(key_str_t) == true) {
-                if (file_hdl->filter->MayExist(key_str_t) == false) {
-                    // only in sorted part
-                    success = readAndProcessSortedPart(file_hdl, key,
-                            kd_list, &buf);
-                } else {
-                    // both parts 
-                    success = readAndProcessBothParts(file_hdl, key,
-                            kd_list, &buf);
-                }
-            } else {
-                if (file_hdl->filter->MayExist(key_str_t) == false) {
-                    // does not exist, or not stored in the memory 
-                    if (enableLsmTreeDeltaMeta_ == true) {
-                        debug_error("[ERROR] Read bucket done, but could not"
-                                " found values for key = %s\n", key.c_str());
-                        exit(1);
-                    }
-                    valueVec.clear();
-//                    file_hdl->file_ownership = 0;
-                    return true;
-                } else {
-                    // only in unsorted part
-                    success = readAndProcessUnsortedPart(file_hdl, key,
-                            kd_list, &buf);
-                }
-            }
-        } else {
-            success = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
-        }
+	vector<str_t> deltas;
+	for (auto& it : kd_lists[key_i]) {
+	    deltas.push_back(str_t(const_cast<char*>(it.data()),
+			it.size()));
+	}
 
-        valueVec.clear();
-        if (success == false) {
-            debug_error("[ERROR] read and process failed %s\n", key.c_str());
-            exit(1);
-        } else if (buf == nullptr) {
-            // Key miss because (partially) sorted part does not have key
-//            file_hdl->file_ownership = 0;
-            return true;
-        } 
+	str_t merged_delta(nullptr, 0);
+	if (deltas.size() > 0) {
+	    deltaKVMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+	    valueVec[key_i] = new string(merged_delta.data_,
+		    merged_delta.size_);
+	}
 
-        if (kd_list.size() > 0) {
-            valueVec.reserve(kd_list.size());
-            for (auto vecIt : kd_list) {
-                valueVec.push_back(string(vecIt.data(), vecIt.size()));
-            }
-        }
-
-        delete[] buf;
-
-//        file_hdl->file_ownership = 0;
-        return true;
-    } else {
-        // no cache, directly read the whole file
-        vector<string_view> kd_list;
-        char* buf;
-        bool s = readAndProcessWholeFile(file_hdl, key, kd_list, &buf);
-        valueVec.clear();
-
-        if (s == false) {
-            debug_error("[ERROR] read and process failed %s\n", key.c_str());
-//            file_hdl->file_ownership = 0;
-            return false;
-        }
-
-        if (kd_list.empty() == false) {
-            valueVec.reserve(kd_list.size());
-            for (auto vecIt : kd_list) {
-                valueVec.push_back(string(vecIt.data(), vecIt.size()));
-            }
-        }
-
-        delete[] buf;
-//        file_hdl->file_ownership = 0;
-        return true;
+	//putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
+	//    key.size(), deltas);
+	if (kd_cache_ != nullptr) {
+	    updateKDCache((*keys)[key_i]->data(), 
+		    (*keys)[key_i]->size(), merged_delta);
+	}
     }
+    StatsRecorder::getInstance()->timeProcess(
+	    StatsType::DELTAKV_HASHSTORE_GET_INSERT_CACHE, tv);
+
+    delete[] buf;
+
+    file_hdl->file_ownership = 0;
+    return true;
 }
 
 void HashStoreFileOperator::operationWorker(int threadID)
@@ -2009,7 +1932,7 @@ void HashStoreFileOperator::operationWorker(int threadID)
         hashStoreOperationHandler* op_hdl;
         if (operationToWorkerMQ_->pop(op_hdl)) {
             empty_started = false;
-            bool operationsStatus;
+            bool operationsStatus = true;
             bool file_hdl_is_input = true;
             auto file_hdl = op_hdl->file_hdl;
 

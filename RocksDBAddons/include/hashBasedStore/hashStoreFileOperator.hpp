@@ -66,9 +66,19 @@ private:
     bool readAndProcessBothParts(hashStoreFileMetaDataHandler* file_hdl,
             string& key, vector<string_view>& kd_list, char** buf);
     
+    // for multiget
+    bool readAndProcessWholeFileKeyList(
+	    hashStoreFileMetaDataHandler* file_hdl, vector<string*>* key,
+	    vector<vector<string_view>>& kd_list, char** buf);
+
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, vector<str_t>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMapInternal);
     uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, unordered_map<string_view, vector<string_view>>& resultMapInternal, const string_view& currentKey);
-    uint64_t processReadContentToValueLists(char* contentBuffer, uint64_t contentSize, vector<string_view>& kd_list, const string_view& currentKey);
+    uint64_t processReadContentToValueLists(char* contentBuffer, 
+	    uint64_t contentSize, vector<string_view>& kd_list, 
+	    const string_view& currentKey);
+    uint64_t processReadContentToValueListsWithKeyList(char* read_buf, 
+	    uint64_t read_buf_size, vector<vector<string_view>>& kd_list,
+	    const vector<string_view>& keys);
     void putKeyValueToAppendableCacheIfExist(char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, bool isAnchor);
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
     void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);

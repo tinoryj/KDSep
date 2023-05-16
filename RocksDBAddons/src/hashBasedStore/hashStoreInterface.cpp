@@ -195,21 +195,21 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
                 debug_error("[ERROR] Get file handler for key = %s error "
                         "during multiput\n", objects[i].keyPtr_);
                 return false;
-            } else {
-                if (currentFileHandlerPtr == nullptr) {
-                    // should skip current key since it is only an anchor
-                    continue;
-                }
-                if (fileHandlerToIndexMap.find(currentFileHandlerPtr) !=
-                        fileHandlerToIndexMap.end()) {
-                    fileHandlerToIndexMap.at(currentFileHandlerPtr).push_back(i);
-                } else {
-                    vector<int> indexVec;
-                    indexVec.push_back(i);
-                    fileHandlerToIndexMap.insert(make_pair(currentFileHandlerPtr,
-                                indexVec));
-                }
-            }
+            } 
+
+	    if (currentFileHandlerPtr == nullptr) {
+		// should skip current key since it is only an anchor
+		continue;
+	    }
+	    if (fileHandlerToIndexMap.find(currentFileHandlerPtr) !=
+		    fileHandlerToIndexMap.end()) {
+		fileHandlerToIndexMap.at(currentFileHandlerPtr).push_back(i);
+	    } else {
+		vector<int> indexVec;
+		indexVec.push_back(i);
+		fileHandlerToIndexMap.insert(make_pair(currentFileHandlerPtr,
+			    indexVec));
+	    }
         }
         if (fileHandlerToIndexMap.size() == 0) {
             return true;
@@ -360,7 +360,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
 }
 
-bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& valueStrVecVec)
+bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& valueStrVecVec)
 {
     bool ret;
 
@@ -368,6 +368,7 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
     valueStrVecVec.resize(keys.size());
     int need_read = keys.size();
     int all = keys.size();
+
 
     // Go through the cache one by one
     // TODO parallelize
@@ -394,8 +395,11 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
     // TODO parallelize
     vector<hashStoreFileMetaDataHandler*> file_hdls;
     file_hdls.resize(all);
+    unordered_map<hashStoreFileMetaDataHandler*, vector<int>> fileHandlerToIndexMap;
+
     for (int i = 0; i < all; i++) {
         if (get_result[i] == false) {
+	    // get the file handlers in parallel
             STAT_PROCESS(ret = 
                     file_manager_->getFileHandlerWithKey(keys[i].data(),
                         keys[i].size(), kMultiGet, file_hdls[i], false),
@@ -407,7 +411,7 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
 
             auto& file_hdl = file_hdls[i];
 
-            if (file_hdls[i] == nullptr) { 
+            if (file_hdl == nullptr) { 
                 // no bucket
                 valueStrVecVec[i].clear();
                 get_result[i] = true;
@@ -418,7 +422,17 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
                 valueStrVecVec[i].clear();
                 get_result[i] = true;
                 need_read--;
-            }
+            } else {
+		// need to 
+		if (fileHandlerToIndexMap.find(file_hdl) !=
+			fileHandlerToIndexMap.end()) {
+		    fileHandlerToIndexMap.at(file_hdl).push_back(i);
+		} else {
+		    vector<int> indexVec;
+		    indexVec.push_back(i);
+		    fileHandlerToIndexMap.insert(make_pair(file_hdl, indexVec));
+		}
+	    }
         } else {
             file_hdls[i] = nullptr;
         }
@@ -428,39 +442,57 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
 
     // operation handlers
     vector<hashStoreOperationHandler*> handlers;
-    handlers.resize(need_read);
+    handlers.resize(fileHandlerToIndexMap.size());
 
     // map the small array (all needs read) to the large array (some needs)
-    int needed_indices[need_read];
     int needed_i = 0;
 
-    for (int i = 0; i < all; i++) {
-        if (get_result[i] == true) {
-            continue;
-        }
-        
-        needed_indices[needed_i] = i; 
-
-        auto op_hdl = new hashStoreOperationHandler(file_hdls[i]);
+    for (auto& mapIt : fileHandlerToIndexMap) {
+	auto& file_hdl = mapIt.first;
+	auto& index_vec = mapIt.second;
+        auto op_hdl = new hashStoreOperationHandler(file_hdl);
+	file_hdl->markedByMultiGet = false;
         op_hdl->multiget_op.keys = new vector<string*>; 
-        op_hdl->multiget_op.keys->push_back(&keys[i]); 
         op_hdl->multiget_op.values = new vector<string*>; 
+	op_hdl->multiget_op.key_indices = index_vec;
         op_hdl->op_type = kMultiGet;
 
+	for (auto index = 0; index < index_vec.size(); index++) {
+	    auto& key_i = index_vec[index];
+	    if (key_i >= keys.size() || get_result[key_i] == true) {
+		debug_error("key_i %d keys.size() %lu get result %d\n",
+			key_i, keys.size(), (int)get_result[key_i]);
+		exit(1);
+	    }
+	    op_hdl->multiget_op.keys->push_back(&keys[index_vec[index]]); 
+	}
+        
         file_operator_->putIntoJobQueue(op_hdl);
         handlers[needed_i++] = op_hdl;
     }
 
     for (int i = 0; i < needed_i; i++) {
-        auto& it = handlers[i];
-        file_operator_->waitOperationHandlerDone(it);
-    }
+        auto& op_hdl = handlers[i];
+	// do not delete the handler
+        file_operator_->waitOperationHandlerDone(op_hdl, false);
+	auto& values = *(op_hdl->multiget_op.values);
 
-    for (int i = 0; i < all; i++) {
-        if (file_hdls[i] != nullptr) {
-            file_hdls[i]->markedByMultiGet = false;
-            file_hdls[i]->file_ownership = 0;
-        }
+	for (int index_i = 0; index_i < values.size(); index_i++) {
+	    auto& key_i = op_hdl->multiget_op.key_indices[index_i];
+	    if (get_result[key_i] == true) {
+		debug_error("key_i %d has result?\n", key_i);
+	    }
+	    if (values[index_i] != nullptr) {
+		valueStrVecVec[key_i].clear();
+		valueStrVecVec[key_i].push_back(*values[index_i]);
+
+		delete values[index_i];
+	    }
+	}
+
+	delete op_hdl->multiget_op.keys;
+	delete op_hdl->multiget_op.values;
+	delete op_hdl;
     }
 
     return true;

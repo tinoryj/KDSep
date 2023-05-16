@@ -436,19 +436,17 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
             memcpy(valueBuffer + header_sz, vLogValue.c_str(), vLogValue.size());
             valueBufferSize = header_sz + vLogValue.size();
 
-            string* value = nullptr;
-
             // replace the external value index with the raw value
             if (remainingDeltas.size() > 0) {
+		string value;
                 Slice key("lsmInterface", 12);
                 Slice existingValue(valueBuffer, valueBufferSize);
                 deque<string> operandList;
                 operandList.push_back(remainingDeltas);
                 
                 mergeOperator_->FullMerge(key, &existingValue, operandList,
-                        value, nullptr);
-                values.push_back(*value);
-                delete value;
+                        &value, nullptr);
+                values.push_back(value);
             } else {
                 values.push_back(string(valueBuffer, valueBufferSize));
             }

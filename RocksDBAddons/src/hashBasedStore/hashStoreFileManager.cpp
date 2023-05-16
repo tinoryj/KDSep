@@ -1336,8 +1336,6 @@ HashStoreFileManager::deconstructAndGetValidContentsFromFile(
     size_t header_sz = sizeof(hashStoreRecordHeader);
     // skip file header
     read_i += sizeof(hashStoreFileHeader);
-    hashStoreFileHeader* file_header = (hashStoreFileHeader*)read_buf;
-//    read_i += file_header->index_block_size;
 
     while (read_i < buf_size) {
         obj_num++;
@@ -1492,8 +1490,8 @@ bool HashStoreFileManager::singleFileRewrite(
     // [file_header] [index block] [[record_header] [key] [value]] ... [record_header]
 
     // Write header 
-    uint64_t beforeRewriteSize = file_hdl->total_on_disk_bytes;
-    uint64_t beforeRewriteBytes = file_hdl->total_object_bytes;
+//    uint64_t beforeRewriteSize = file_hdl->total_on_disk_bytes;
+//    uint64_t beforeRewriteBytes = file_hdl->total_object_bytes;
     uint64_t newObjectNumber = 0;
     uint64_t write_i = sizeof(hashStoreFileHeader);
     hashStoreFileHeader file_header;
@@ -2568,7 +2566,7 @@ void HashStoreFileManager::processSingleFileGCRequestWorker(int threadID)
 
                 for (auto i = 0; i < keyIt.second.first.size(); i++) {
                     auto& value = keyIt.second.first[i];
-                    auto& header = keyIt.second.second[i];
+//                    auto& header = keyIt.second.second[i];
 //                    if (use_varint_d_header == true) {
 //                        header_sz = GetDeltaHeaderVarintSize(headerIt); 
 //                    }

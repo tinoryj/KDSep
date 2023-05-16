@@ -222,6 +222,7 @@ struct hashStoreMultiPutOperationHandler {
 struct hashStoreMultiGetOperationHandler {
     vector<string*>* keys;
     vector<string*>* values;
+    vector<int> key_indices;
 };
 
 enum operationStatus {
