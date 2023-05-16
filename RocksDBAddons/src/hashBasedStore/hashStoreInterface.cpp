@@ -454,9 +454,6 @@ bool HashStoreInterface::multiGet(vector<string> keys, vector<vector<string>>& v
     for (int i = 0; i < needed_i; i++) {
         auto& it = handlers[i];
         file_operator_->waitOperationHandlerDone(it);
-        
-
-        
     }
 
     for (int i = 0; i < all; i++) {

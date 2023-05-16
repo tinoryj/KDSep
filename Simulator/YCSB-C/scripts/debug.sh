@@ -200,17 +200,20 @@ kdc=64
 ##################### Part 2
 flengths=(100)
 reqs=("10M")
-ops=("10M")
+ops=("200K")
 
 checkrepeat=""
 maxBucketNumber=1024
 runModeSet=('raw' 'bkv')
-runModeSet=('kd')
-bonus2=""
-bonus3="initBit8"
+runModeSet=('kv')
+bonus2="workloadg"
+#bonus3="initBit8"
+bonus3=""
 bonus4="shortprepare"
-bonus5=""
-bonus6=""
+bonus5="scanThreads10"
+#bonus6="nodirectreads"
+bonus6="noReadAhead"
+mem=""
 indexSet=(1) 
 func
 

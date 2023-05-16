@@ -68,6 +68,10 @@ config_workload() {
         sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
         ReadProportion=0
         UpdateProportion=0
+    elif [[ "$workloadg" == "true" ]]; then
+        sed -i "/scanproportion/c\\scanproportion=1" $SPEC
+        ReadProportion=0
+        UpdateProportion=0
     fi
 
     if [[ "$ReadProportion" == "" ]]; then
@@ -183,6 +187,7 @@ batchSizeK=0
 cacheIndexFilter="true"
 paretokey="false"
 scanThreads=8
+noReadAhead="false"
 nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
@@ -217,6 +222,7 @@ workloadc="false"
 workloadd="false"
 workloade="false"
 workloadf="false"
+workloadg="false"
 gc="true"
 shortprepare="false"
 blockSize=65536
@@ -345,6 +351,9 @@ for param in $*; do
             scanThreads=$tmp
             run_suffix=${run_suffix}_${param}
         fi
+    elif [[ "$param" =~ ^noReadAhead$ ]]; then
+        noReadAhead="true"
+        run_suffix=${run_suffix}_noReadAhead
     elif [[ "$param" =~ ^splitThres[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/splitThres//g')
         if [[ "$tmp" != "$ds_split_thres" ]]; then
@@ -476,7 +485,7 @@ for param in $*; do
     elif [[ "$param" == "keep" ]]; then
         keep="true"
         run_suffix=${run_suffix}_keep
-    elif [[ "$param" =~ ^workload[a-f]$ ]]; then
+    elif [[ "$param" =~ ^workload[a-g]$ ]]; then
         if [[ $fix_workload == "true" ]]; then
             echo "error: repeated workload"
             exit
@@ -494,6 +503,8 @@ for param in $*; do
             workloade="true"
         elif [[ "$param" == "workloadf" ]]; then
             workloadf="true"
+        elif [[ "$param" == "workloadg" ]]; then
+            workloadg="true"
         fi
         run_suffix=${run_suffix}_$param
     elif [[ "$param" == "shortprepare" ]]; then
@@ -635,6 +646,9 @@ if [[ $numMainSegment -le 100 ]]; then
 fi
 sed -i "/numMainSegment/c\\numMainSegment = $numMainSegment" temp.ini
 sed -i "/numRangeScanThread/c\\numRangeScanThread = $scanThreads" temp.ini
+if [[ $noReadAhead == "true" ]]; then
+    sed -i "/enableScanReadAhead/c\\enableScanReadAhead = 0" temp.ini
+fi
 
 
 size="$(( $KVPairsNumber / 1000000 ))M"
