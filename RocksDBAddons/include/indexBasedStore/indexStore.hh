@@ -73,10 +73,10 @@ private:
 
     std::mutex scan_mtx_;
     std::condition_variable scan_cv_;
-    vector<boost::thread*> thList_;
     void scanWorker(); 
 
-    // boost::asio::thread_pool*  _scanthreads;
+    boost::asio::thread_pool*  _scanthreads;
+//    boost::threadpool::pool  _scanthreads;
 
     struct {
         LruList* lru;

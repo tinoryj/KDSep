@@ -10,7 +10,7 @@ set(ROCKSDB_STATIC_LIBRARY_OBJ /opt/rocksdb-7.7.3/librocksdb.a)
 
 include_directories(../include ${ROCKSDB_INCLUDE_DIR})
 
-set(BOOST_LIBRARY_OBJ boost_thread boost_system boost_serialization)
+set(BOOST_LIBRARY_OBJ boost_thread boost_system boost_filesystem boost_serialization)
 set(SYSTEM_LIBRARY_OBJ pthread rt dl)
 set(ROCKSDB_LIBRARY_OBJ lz4 z snappy bz2 zstd uring)
 

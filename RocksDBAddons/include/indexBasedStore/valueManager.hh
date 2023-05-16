@@ -124,8 +124,8 @@ private:
 
     Segment _zeroSegment;
 
-    boost::asio::thread_pool* _iothreads;
-    boost::asio::thread_pool* _flushthreads;
+//    boost::asio::thread_pool* _iothreads;
+//    boost::asio::thread_pool* _flushthreads;
     pthread_t _bgflushThread;
 
     pthread_cond_t _needBgFlush;

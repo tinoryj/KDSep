@@ -44,15 +44,8 @@ KvServer::KvServer(DeviceManager* deviceManager, rocksdb::DB* pointerToRawRocksD
     boost::thread::attributes attrs;
     attrs.set_stack_size(1000 * 1024 * 1024);
 
-    notifyScanMQ_ = new messageQueue<getValueStruct*>;
-    thList_.clear();
-
-    for (int i = 0; i < ConfigManager::getInstance().getNumRangeScanThread(); i++) {
-        boost::thread* th = new boost::thread(attrs, boost::bind(&KvServer::scanWorker, this));
-        thList_.push_back(th);
-    }
-
-    //    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
+//    _scanthreads.size_controller().resize(ConfigManager::getInstance().getNumRangeScanThread());
+    _scanthreads = new boost::asio::thread_pool(ConfigManager::getInstance().getNumRangeScanThread());
 }
 
 KvServer::~KvServer()
@@ -72,14 +65,6 @@ KvServer::~KvServer()
         delete _cache.lru;
     if (_freeDeviceManager)
         delete _deviceManager;
-    
-    notifyScanMQ_->done = true;
-    scan_cv_.notify_all();
-    for (auto& thIt : thList_) {
-        thIt->join();
-        delete thIt;
-    }
-    delete notifyScanMQ_;
 }
 
 void KvServer::scanWorker() {
@@ -117,7 +102,6 @@ void KvServer::scanWorker() {
             }
         }
     }
-
 }
 
 bool KvServer::checkKeySize(len_t& keySize)
@@ -386,23 +370,36 @@ void KvServer::getRangeValuesDecoupled(
         } else {
             getValueStruct* st = new getValueStruct(ckey, keySize, loc, &keysInProcess);
             sts[i] = st;
-            notifyScanMQ_->push(st);
-            scan_cv_.notify_all();
-        }
+//            notifyScanMQ_->push(st);
+//            scan_cv_.notify_all();
 
-//        _scanthreads.schedule(
-//                std::bind(
-//                    &KvServer::getValueMt,
-//                    this,
-//                    keys.at(i),
-//                    KEY_SIZE,
-//                    boost::ref(values.at(i)),
-//                    boost::ref(valueSize.at(i)),
-//                    locs.at(i),
-//                    boost::ref(rets.at(i)),
-//                    boost::ref(keysInProcess)
-//                )
-//        );
+            boost::asio::post(*_scanthreads, 
+                    boost::bind(
+                        &KvServer::getValueMt,
+                        this,
+                        ckey, 
+                        keySize, 
+                        boost::ref(st->value), 
+                        boost::ref(st->valueSize),
+                        st->storageInfo, 
+                        boost::ref(rets.at(i)),
+                        boost::ref(keysInProcess)
+                        ));
+            // threadpool implementation
+//            _scanthreads.schedule(
+//                    std::bind(
+//                        &KvServer::getValueMt,
+//                        this,
+//                        ckey, // keys.at(i),
+//                        keySize, // KEY_SIZE,
+//                        boost::ref(st->value), // boost::ref(values.at(i)),
+//                        boost::ref(st->valueSize), // boost::ref(valueSize.at(i)),
+//                        st->storageInfo, // locs.at(i),
+//                        boost::ref(rets.at(i)),
+//                        boost::ref(keysInProcess)
+//                        )
+//                    );
+        }
     }
 
 //    kit->release();
