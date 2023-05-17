@@ -277,6 +277,8 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         vector<hashStoreFileMetaDataHandler*> file_hdls; 
         status = file_manager_->prepareForUpdatingMetadata(file_hdls); 
 
+	debug_error("need flush %lu\n", file_hdls.size());
+
         if (status == false) {
             debug_error("Error for updating meta: %d\n", (int)status);
             exit(1);
@@ -290,6 +292,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         for (auto& it : file_hdls) {
             if (it != nullptr && 
                     it->file_op_ptr->getFileBufferedSize() > 0) {
+		debug_error("real flush file %lu\n", it->file_id);
                 if (it->file_ownership != 0) {
                     debug_error("wait file owner ship %lu %d\n",
                             it->file_id,

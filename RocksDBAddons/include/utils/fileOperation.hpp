@@ -18,8 +18,12 @@ enum fileOperationType { kFstream = 0,
 
 typedef struct FileOpStatus {
     bool success_;
+    
+    // the physical size added to the file
     uint64_t physicalSize_;
+    // the logical size added to the file in the disk (not including the buffer)
     uint64_t logicalSize_;
+    // the remaining data size in the buffer 
     uint64_t bufferedSize_;
     FileOpStatus(bool success,
         uint64_t physicalSize,

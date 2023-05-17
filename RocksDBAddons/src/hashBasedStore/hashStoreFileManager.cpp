@@ -114,7 +114,8 @@ bool HashStoreFileManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     if (commit_log_fop_ == nullptr) {
-        commit_log_fop_ = new FileOperation(kDirectIO, commit_log_maximum_size_, 0);
+	commit_log_fop_ = new FileOperation(kDirectIO,
+		commit_log_maximum_size_, 0);
         commit_log_fop_->createThenOpenFile(workingDir_ + "/commit.log");
     }
 

@@ -406,8 +406,10 @@ bool HashStoreFileOperator::readAndProcessUnsortedPart(
             StatsType::DELTAKV_HASHSTORE_GET_PROCESS);
 
     if (process_delta_num == 0) {
-        debug_error("[ERROR] processed object num = 0, read %lu fs %lu\n", 
-                read_sz, file_hdl->total_object_bytes);
+        debug_error("[ERROR] processed object num = 0, "
+		"read %lu fs %lu fid %lu, unsorted part off %lu\n", 
+		read_sz, file_hdl->total_object_bytes, file_hdl->file_id,
+		file_hdl->unsorted_part_offset);
         exit(1);
     }
 
@@ -558,8 +560,9 @@ uint64_t HashStoreFileOperator::processReadContentToValueLists(
         }
     }
     if (i > read_buf_size) {
-        debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
-                i, read_buf_size);
+        debug_error("[ERROR] read buf index error! %lu v.s. %lu"
+	       " already processed %lu\n", 
+                i, read_buf_size, processed_delta_num);
         return 0;
     }
     return processed_delta_num;
@@ -771,33 +774,35 @@ bool HashStoreFileOperator::operationWorkerPutFunction(hashStoreOperationHandler
     }
 }
 
-bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHandler* op_hdl)
+bool HashStoreFileOperator::operationWorkerMultiPutFunction(
+	hashStoreOperationHandler* op_hdl)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
+    auto& file_hdl = op_hdl->file_hdl;
 
-    if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
+    if (file_hdl->file_op_ptr->isFileOpen() == false) {
         // prepare write buffer, file not open, may load, skip;
         bool onlyAnchorFlag = true;
         for (auto index = 0; index < op_hdl->multiput_op.size; index++) {
             str_t currentKeyStr(op_hdl->multiput_op.objects[index].keyPtr_, 
                     op_hdl->multiput_op.objects[index].keySize_);
             if (op_hdl->multiput_op.objects[index].isAnchorFlag_ == true) {
-                if (op_hdl->file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
-                    op_hdl->file_hdl->filter->Insert(currentKeyStr);
-                    op_hdl->file_hdl->filter->Erase(currentKeyStr); // Add the count
+                if (file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
+                    file_hdl->filter->Insert(currentKeyStr);
+                    file_hdl->filter->Erase(currentKeyStr); // Add the count
                 } else {
-                    if (op_hdl->file_hdl->filter->MayExist(currentKeyStr) == true) {
-                        op_hdl->file_hdl->filter->Erase(currentKeyStr);
+                    if (file_hdl->filter->MayExist(currentKeyStr) == true) {
+                        file_hdl->filter->Erase(currentKeyStr);
                     }
                 }
             } else {
                 onlyAnchorFlag = false;
-                op_hdl->file_hdl->filter->Insert(currentKeyStr);
+                file_hdl->filter->Insert(currentKeyStr);
             }
         }
         if (onlyAnchorFlag == true) {
-            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", op_hdl->file_hdl->file_id);
+            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", file_hdl->file_id);
             return true;
         }
     } else {
@@ -805,16 +810,16 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
             str_t currentKeyStr(op_hdl->multiput_op.objects[index].keyPtr_, 
                     op_hdl->multiput_op.objects[index].keySize_);
             if (op_hdl->multiput_op.objects[index].isAnchorFlag_ == true) {
-                if (op_hdl->file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
-                    op_hdl->file_hdl->filter->Insert(currentKeyStr);
-                    op_hdl->file_hdl->filter->Erase(currentKeyStr); // Add the count
+                if (file_hdl->sorted_filter->MayExist(currentKeyStr) == true) {
+                    file_hdl->filter->Insert(currentKeyStr);
+                    file_hdl->filter->Erase(currentKeyStr); // Add the count
                 } else {
-                    if (op_hdl->file_hdl->filter->MayExist(currentKeyStr) == true) {
-                        op_hdl->file_hdl->filter->Erase(currentKeyStr);
+                    if (file_hdl->filter->MayExist(currentKeyStr) == true) {
+                        file_hdl->filter->Erase(currentKeyStr);
                     }
                 }
             } else {
-                op_hdl->file_hdl->filter->Insert(currentKeyStr);
+                file_hdl->filter->Insert(currentKeyStr);
             }
         }
     }
@@ -825,19 +830,19 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetWriteBufferSize = 0;
     hashStoreFileHeader newFileHeader;
     bool needFlushFileHeader = false;
-    if (op_hdl->file_hdl->file_op_ptr->isFileOpen() == false) {
-        string targetFilePath = workingDir_ + "/" + to_string(op_hdl->file_hdl->file_id) + ".delta";
+    if (file_hdl->file_op_ptr->isFileOpen() == false) {
+        string targetFilePath = workingDir_ + "/" + to_string(file_hdl->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePath) == false) {
-            op_hdl->file_hdl->file_op_ptr->createThenOpenFile(targetFilePath);
-            newFileHeader.prefix_bit = op_hdl->file_hdl->prefix_bit;
-            newFileHeader.file_create_reason_ = op_hdl->file_hdl->file_create_reason_;
-            newFileHeader.file_id = op_hdl->file_hdl->file_id;
-            newFileHeader.previous_file_id_first_ = op_hdl->file_hdl->previous_file_id_first_;
-            newFileHeader.previous_file_id_second_ = op_hdl->file_hdl->previous_file_id_second_;
+            file_hdl->file_op_ptr->createThenOpenFile(targetFilePath);
+            newFileHeader.prefix_bit = file_hdl->prefix_bit;
+            newFileHeader.file_create_reason_ = file_hdl->file_create_reason_;
+            newFileHeader.file_id = file_hdl->file_id;
+            newFileHeader.previous_file_id_first_ = file_hdl->previous_file_id_first_;
+            newFileHeader.previous_file_id_second_ = file_hdl->previous_file_id_second_;
             needFlushFileHeader = true;
             targetWriteBufferSize += sizeof(hashStoreFileHeader);
         } else {
-            op_hdl->file_hdl->file_op_ptr->openFile(targetFilePath);
+            file_hdl->file_op_ptr->openFile(targetFilePath);
         }
     }
     // leave more space for the buffer
@@ -845,7 +850,7 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         targetWriteBufferSize += (sizeof(hashStoreRecordHeader) + 
                 op_hdl->multiput_op.objects[i].keySize_);
         if (op_hdl->multiput_op.objects[i].isAnchorFlag_ == true) {
-            op_hdl->file_hdl->num_anchors++;
+            file_hdl->num_anchors++;
             continue;
         } else {
             targetWriteBufferSize += op_hdl->multiput_op.objects[i].valueSize_;
@@ -871,6 +876,11 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
         header.key_size_ = obj.keySize_;
         header.value_size_ = obj.valueSize_;
         header.sequence_number_ = obj.sequenceNumber_;
+//	if (file_hdl->unsorted_part_offset > 0) {
+//	    debug_error("fid %lu header key %d value %d anchor %d\n",
+//		    file_hdl->file_id, header.key_size_,
+//		    header.value_size_, (int)header.is_anchor_);
+//	}
         if (use_varint_d_header == false) {
             copyInc(write_buf, write_i, &header, header_sz);
         } else {
@@ -892,14 +902,14 @@ bool HashStoreFileOperator::operationWorkerMultiPutFunction(hashStoreOperationHa
     uint64_t targetObjectNumber = op_hdl->multiput_op.size;
     // write content
     bool writeContentStatus;
-    STAT_PROCESS(writeContentStatus = writeContentToFile(op_hdl->file_hdl,
+    STAT_PROCESS(writeContentStatus = writeContentToFile(file_hdl,
                 write_buf, write_i, targetObjectNumber,
                 op_hdl->need_flush),
             StatsType::DS_WRITE_FUNCTION);
     if (writeContentStatus == false) {
         debug_error("[ERROR] Could not write content to file, target file ID"
                 " = %lu, content size = %lu, content bytes number = %lu\n",
-                op_hdl->file_hdl->file_id, targetObjectNumber, write_i);
+                file_hdl->file_id, targetObjectNumber, write_i);
         exit(1);
         return false;
     } else {
@@ -934,11 +944,13 @@ bool HashStoreFileOperator::operationWorkerFlush(hashStoreOperationHandler* op_h
 
     // write content
     FileOpStatus status = op_hdl->file_hdl->file_op_ptr->flushFile();
+    debug_error("flush file %lu\n", op_hdl->file_hdl->file_id);
     if (status.success_ == false) {
         debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
                 op_hdl->file_hdl->file_id);
         exit(1);
     } 
+    op_hdl->file_hdl->total_on_disk_bytes += status.physicalSize_;
     return true;
 }
 
