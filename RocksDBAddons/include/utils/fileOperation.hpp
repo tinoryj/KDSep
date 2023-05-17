@@ -76,6 +76,7 @@ private:
 
     uint64_t mark_data_ = 0;
     uint64_t mark_disk_ = 0;
+    uint64_t mark_in_page_offset_ = 0;
 };
 
 } // namespace DELTAKV_NAMESPACE

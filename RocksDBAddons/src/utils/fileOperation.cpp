@@ -193,6 +193,7 @@ uint64_t FileOperation::getFileBufferedSize()
 void FileOperation::markDirectDataAddress(uint64_t data) {
     mark_data_ = data;
     mark_disk_ = disk_size_;
+    mark_in_page_offset_ = (buf_used_size_ == 0) ? 0 : 1;
 }
 
 FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
@@ -635,15 +636,12 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             disk_start_page_id = mark_disk_ / page_size_;  
             // not page_size_m4_ 
             disk_end_page_id = disk_size_  / page_size_;
-            page_index = 0;// offset - disk_start_page_id * page_size_m4_;
+            page_index = (mark_in_page_offset_ == 0) ? 0 : 
+		offset - disk_start_page_id * page_size_m4_;
 //            debug_error("mark_data_ %lu"
 //                    " offset %lu data size %lu start %lu end %lu index %lu\n",
 //                    mark_data_, offset, data_size_, 
 //                    disk_start_page_id, disk_end_page_id, page_index);
-	    debug_error("offset %lu to data size %lu data size %lu disk %lu "
-		    "buf %lu\n", 
-		    offset, req_disk_data_size, data_size_, mark_disk_, 
-		    buf_used_size_);
         } else if (offset + read_buf_size > data_size_) {
             // Half data on disk, half data in buffer 
             req_buf_data_size = offset + read_buf_size - data_size_;
