@@ -100,7 +100,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     int processLabel_base = num_ops / 100;
     struct timeval tv;
     int output_base = 200;
-    bool final_scan = true;
+    bool final_scan = (num_ops == 101 * 1000000);
     double duration_scan_start = 0;
     uint64_t final_scan_ops = 1000000;
     for (int i = 0; i < num_ops; ++i) {
@@ -168,7 +168,8 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             if (est_seconds > 0) {
                 std::cerr << est_seconds << " ";
             }
-	    if (i % processLabel_base == 0) {
+	    if (i % processLabel_base == 0 || 
+                    (duration_scan_start > 0.0 && i % (final_scan_ops / 100) == 0)) {
 		std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops 
                     << "   (" << speed_f << " ops)\n";
 	    }
