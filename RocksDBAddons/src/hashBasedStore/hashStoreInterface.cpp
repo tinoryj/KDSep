@@ -35,7 +35,7 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     file_manager_ = hashStoreFileManager;
     file_operator_ = hashStoreFileOperator;
     unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
-    file_manager_->recoveryFromFailure(targetListForRedo);
+    file_manager_->recoveryFromFailureOld(targetListForRedo);
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         shouldUseDirectOperationsFlag_ = false;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
@@ -330,6 +330,21 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     debug_info("New OP: get deltas for key = %s\n", keyStr.c_str());
     hashStoreFileMetaDataHandler* tempFileHandler;
     bool ret;
+
+    if (kd_cache_ != nullptr) {
+	str_t key(const_cast<char*>(keyStr.data()), keyStr.size());
+	str_t delta = kd_cache_->getFromCache(key);
+	if (delta.data_ != nullptr && delta.size_ > 0) {
+	    valueStrVec.push_back(string(delta.data_, delta.size_));
+	    return true;
+	    // non-empty delta for this key
+	} else if (delta.data_ == nullptr && delta.size_ == 0) {
+	    valueStrVec.clear();
+	    // empty delta for this key
+	    return true;
+	}
+    }
+
     STAT_PROCESS(ret = file_manager_->getFileHandlerWithKey((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::DELTAKV_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
         valueStrVec.clear();

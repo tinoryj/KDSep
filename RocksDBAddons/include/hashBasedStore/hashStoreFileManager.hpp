@@ -42,7 +42,8 @@ public:
     bool prepareForUpdatingMetadata(vector<hashStoreFileMetaDataHandler*>& file_hdls);
 
     // recovery
-    bool recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
+    bool recoveryFromFailure(); // return map of key to all related values that need redo, bool flag used for is_anchor check
+    bool recoveryFromFailureOld(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
 
 private:
     // settings

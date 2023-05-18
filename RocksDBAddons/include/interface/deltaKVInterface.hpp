@@ -73,6 +73,7 @@ private:
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
     void processLsmInterfaceOperationsWorker();
+    void processLsmInterfaceThreadPoolOperationsWorker(lsmInterfaceOperationStruct* op);
 
     bool isDeltaStoreInUseFlag_ = false;
     bool useInternalRocksDBBatchOperationsFlag_ = false;
@@ -94,11 +95,17 @@ private:
     std::shared_mutex batchedBufferOperationMtx_;
 
     messageQueue<writeBackObject*>* writeBackOperationsQueue_ = nullptr;
+    // useless
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
+    std::mutex lsm_interface_mutex;
+    std::condition_variable lsm_interface_cv;
     bool enable_write_back_ = false;
     std::shared_mutex writeBackOperationsMtx_;
     bool enableKeyValueCache_ = false;
     AppendAbleLRUCache<string, string>* keyToValueListCache_ = nullptr;
+
+    // boost thread
+    boost::asio::thread_pool*  lsm_thread_ = nullptr;
 
     // thread management
     vector<boost::thread*> thList_;
@@ -119,8 +126,6 @@ private:
     shared_ptr<DeltaKVMergeOperator> deltaKVMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
 
-    std::mutex lsm_interface_mutex;
-    std::condition_variable lsm_interface_cv;
 };
 
 } // namespace DELTAKV_NAMESPACE

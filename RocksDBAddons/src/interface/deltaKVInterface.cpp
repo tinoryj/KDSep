@@ -106,6 +106,7 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
 
     if (options.enable_parallel_lsm_interface_ == true) {
         enableParallelLsmInterface = true;
+//        lsm_thread_ = new boost::asio::thread_pool(1);
         lsmInterfaceOperationsQueue_ = new messageQueue<lsmInterfaceOperationStruct*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&DeltaKV::processLsmInterfaceOperationsWorker, this));
         thList_.push_back(th);
@@ -181,6 +182,10 @@ bool DeltaKV::Close()
     }
     cerr << "[DeltaKV Close DB] Set job done" << endl;
     if (enableParallelLsmInterface == true) {
+//	if (lsm_thread_ != nullptr) {
+//	    cerr << "delete lsm thread" << endl;
+//	    delete lsm_thread_;
+//	}
         lsmInterfaceOperationsQueue_->done = true;
         lsm_interface_cv.notify_one();
         while (lsmInterfaceOperationsQueue_->isEmpty() == false) {
@@ -428,16 +433,21 @@ bool DeltaKV::GetInternal(const string& key, string* value,
         // Use deltaStore
         string lsm_value;
         bool ret;
-        struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr;
+        struct lsmInterfaceOperationStruct* op = nullptr;
        
-        if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
-            lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
-            lsmInterfaceOpPtr->key = key;
-            lsmInterfaceOpPtr->value = &lsm_value;
-            lsmInterfaceOpPtr->is_write = false;
-            lsmInterfaceOpPtr->job_done = kNotDone;
-            lsmInterfaceOperationsQueue_->push(lsmInterfaceOpPtr);
-            lsm_interface_cv.notify_one();
+        if (enableParallelLsmInterface == true) {
+            op = new lsmInterfaceOperationStruct;
+            op->key = key;
+            op->value = &lsm_value;
+            op->is_write = false;
+            op->job_done = kNotDone;
+            lsmInterfaceOperationsQueue_->push(op);
+//            lsm_interface_cv.notify_one();
+//	    boost::asio::post(*lsm_thread_, 
+//		    boost::bind(
+//			&DeltaKV::processLsmInterfaceThreadPoolOperationsWorker,
+//			this,
+//			op));
         } else {
             // (, maxSequenceNumber, writing_back);
             STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); 
@@ -456,29 +466,14 @@ bool DeltaKV::GetInternal(const string& key, string* value,
             return false;
         }
 
-        if (enableParallelLsmInterface == true && deltaKVRunningMode_ == kWithDeltaStore) {
-//            struct timeval tv1, tv2;
-//            gettimeofday(&tv1, 0);
-//            uint64_t mx = 100000;
-//            lsm_interface_cv.notify_one();
-//            while (lsmInterfaceOpPtr->job_done == kNotDone) {
-//                gettimeofday(&tv2, 0);
-//                if ((tv2.tv_sec - tv1.tv_sec) * 1000000 + tv2.tv_sec -
-//                        tv1.tv_sec > mx) {
-//                    mx += 100000; 
-//                    if (mx > 10 * 1e6) {
-//                        debug_error("Wait for %.2lf second. Notify\n", mx / 1000000.0);
-//                        lsm_interface_cv.notify_one();
-//                    }
-//                }
-//            }
-            while (lsmInterfaceOpPtr->job_done == kNotDone) {
+        if (op != nullptr) {
+            while (op->job_done == kNotDone) {
                 asm volatile("");
             }
-            if (lsmInterfaceOpPtr->job_done == kError) {
+            if (op->job_done == kError) {
                 debug_error("lsmInterfaceOp error %s\n", ""); 
             }
-            delete lsmInterfaceOpPtr;
+            delete op;
         }
 
         KvHeader header;
@@ -1456,15 +1451,20 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 // LSM interface
-                struct lsmInterfaceOperationStruct* lsmInterfaceOpPtr = nullptr;
+                struct lsmInterfaceOperationStruct* op = nullptr;
                 if (enableParallelLsmInterface == true) {
-                    lsmInterfaceOpPtr = new lsmInterfaceOperationStruct;
-                    lsmInterfaceOpPtr->mergeBatch = &mergeBatch; 
-                    lsmInterfaceOpPtr->handlerToValueStoreVecPtr = &handlerToValueStoreVec;
-                    lsmInterfaceOpPtr->is_write = true;
-                    lsmInterfaceOpPtr->job_done = kNotDone;
-                    lsmInterfaceOperationsQueue_->push(lsmInterfaceOpPtr);
-                    lsm_interface_cv.notify_one();
+                    op = new lsmInterfaceOperationStruct;
+                    op->mergeBatch = &mergeBatch; 
+                    op->handlerToValueStoreVecPtr = &handlerToValueStoreVec;
+                    op->is_write = true;
+                    op->job_done = kNotDone;
+                    lsmInterfaceOperationsQueue_->push(op);
+//                    lsm_interface_cv.notify_one();
+//		    boost::asio::post(*lsm_thread_, 
+//			    boost::bind(
+//				&DeltaKV::processLsmInterfaceThreadPoolOperationsWorker,
+//				this,
+//				op));
                 } else {
                     STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch), 
                             StatsType::DKV_FLUSH_LSM_INTERFACE);
@@ -1481,24 +1481,15 @@ void DeltaKV::processBatchedOperationsWorker()
                 }
 
                 // Check LSM interface
-                if (enableParallelLsmInterface == true) {
-                    struct timeval tv1, tv2;
-                    gettimeofday(&tv1, 0);
-                    int mx = 0;
-                    lsm_interface_cv.notify_one();
-                    while (lsmInterfaceOpPtr->job_done == kNotDone) {
-                        gettimeofday(&tv2, 0);
-                        if ((tv2.tv_sec - tv1.tv_sec) % 10 == 0 && 
-                                tv2.tv_sec - tv1.tv_sec > mx) {
-                            mx = tv2.tv_sec - tv1.tv_sec;
-                            debug_error("Wait for %d seconds. Notify\n", mx);
-                            lsm_interface_cv.notify_one();
-                        }
+                if (op != nullptr) {
+//                    lsm_interface_cv.notify_one();
+                    while (op->job_done == kNotDone) {
+			asm volatile("");
                     }
-                    if (lsmInterfaceOpPtr->job_done == kError) {
+                    if (op->job_done == kError) {
                         debug_error("lsmInterfaceOp error %s\n", ""); 
                     }
-                    delete lsmInterfaceOpPtr;
+                    delete op;
                 }
                 
                 StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_DSTORE, tv);
@@ -1597,47 +1588,25 @@ void DeltaKV::processWriteBackOperationsWorker()
     return;
 }
 
+void DeltaKV::processLsmInterfaceThreadPoolOperationsWorker(lsmInterfaceOperationStruct* op) {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    if (op->is_write == false) {
+	STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); 
+    } else {
+	STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(*(op->handlerToValueStoreVecPtr), op->mergeBatch), 
+		StatsType::DKV_FLUSH_LSM_INTERFACE);
+    }
+    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
+    op->job_done = kDone;
+}
+
 void DeltaKV::processLsmInterfaceOperationsWorker()
 {
-    int counter = 0;
-//    uint64_t mx = 1200;
-//    struct timeval tvs, tve;
-//    gettimeofday(&tvs, 0);
+    lsmInterfaceOperationStruct* op;
     while (true) {
-//        gettimeofday(&tve, 0);
-//        if (tve.tv_sec - tvs.tv_sec > mx) {
-//            debug_error("lsm thread heart beat %lu\n", mx); 
-//            mx += 1200;
-//        }
         if (lsmInterfaceOperationsQueue_->done == true && lsmInterfaceOperationsQueue_->isEmpty() == true) {
             break;
-        }
-        lsmInterfaceOperationStruct* op;
-
-//        {
-//            std::unique_lock<std::mutex> lock(lsm_interface_mutex);
-//            struct timeval tv1, tv2, res;
-//            gettimeofday(&tv1, 0);
-//            while (lsmInterfaceOperationsQueue_->isEmpty() == true && 
-//                    this->lsmInterfaceOperationsQueue_->done == false) {
-//                gettimeofday(&tv2, 0);
-//                timersub(&tv2, &tv1, &res);
-//                auto t = timevalToMicros(res);
-//
-//                if (t > 10000) {
-//                    lsm_interface_cv.wait(lock);
-//                    tv1 = tv2;
-//                }
-//            }
-//        }
-        {
-            std::unique_lock<std::mutex> lock(lsm_interface_mutex);
-            if (counter == 0 && 
-                    lsmInterfaceOperationsQueue_->isEmpty() == true && 
-                    this->lsmInterfaceOperationsQueue_->done == false) {
-//                lsm_interface_cv.wait(lock);
-                counter++; 
-            }
         }
 
         while (lsmInterfaceOperationsQueue_->pop(op)) {
@@ -1651,9 +1620,6 @@ void DeltaKV::processLsmInterfaceOperationsWorker()
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
             op->job_done = kDone;
-            if (counter > 0) {
-                counter--;
-            }
         }
     }
     return;

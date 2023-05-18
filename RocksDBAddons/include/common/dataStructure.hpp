@@ -9,6 +9,11 @@
 #include <condition_variable>
 #include <shared_mutex>
 #include <string_view>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/bind/bind.hpp>
+#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
 #include "common/rocksdbHeaders.hpp"
 
 using namespace std;

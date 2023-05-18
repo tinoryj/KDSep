@@ -228,6 +228,11 @@ bool HashStoreFileManager::deleteObslateFileWithFileIDAsInput(uint64_t fileID)
     }
 }
 
+bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + value pair
+{
+    return true;
+}
+
 /*
  * File ID in metadata
     - file size > metadata size -> append new obj counter to metadata
@@ -255,7 +260,7 @@ bool HashStoreFileManager::deleteObslateFileWithFileIDAsInput(uint64_t fileID)
         - should be single file after gc or not deleted files after commit- > delete files
 */
 
-bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
+bool HashStoreFileManager::recoveryFromFailureOld(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo) // return key to isAnchor + value pair
 {
     vector<uint64_t> scannedOnDiskFileIDList;
     // scan file list
@@ -269,7 +274,9 @@ bool HashStoreFileManager::recoveryFromFailure(unordered_map<string, vector<pair
         }
     }
     if (shouldDoRecoveryFlag_ == false) {
-        debug_trace("DB closed success, do not need recovery, flag = %d, just delete all not tracked files, number = %lu\n", shouldDoRecoveryFlag_, scannedOnDiskFileIDList.size());
+	debug_trace("DB closed success, do not need recovery, flag = %d, just"
+		" delete all not tracked files, number = %lu\n",
+		shouldDoRecoveryFlag_, scannedOnDiskFileIDList.size());
         if (scannedOnDiskFileIDList.size() == 0) {
             return true;
         }
