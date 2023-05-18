@@ -292,7 +292,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         for (auto& it : file_hdls) {
             if (it != nullptr && 
                     it->file_op_ptr->getFileBufferedSize() > 0) {
-		debug_error("real flush file %lu\n", it->file_id);
+//		debug_error("real flush file %lu\n", it->file_id);
                 if (it->file_ownership != 0) {
                     debug_error("wait file owner ship %lu %d\n",
                             it->file_id,

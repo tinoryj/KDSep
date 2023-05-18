@@ -123,8 +123,13 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
         thList_.push_back(th);
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-            th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
-            thList_.push_back(th);
+            if (options.enable_bucket_merge) {
+                enable_bucket_merge_ = true;
+                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
+                thList_.push_back(th);
+            } else {
+                enable_bucket_merge_ = false;
+            }
             for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
                 th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_, threadID));
                 thList_.push_back(th);

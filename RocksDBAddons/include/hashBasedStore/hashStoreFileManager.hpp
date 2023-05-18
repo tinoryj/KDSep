@@ -146,8 +146,8 @@ private:
     bool syncStatistics_;
 
     FileOperation* commit_log_fop_ = nullptr;
-    uint64_t commit_log_maximum_size_ = 128 * 1024 * 1024;
-    uint64_t commit_log_next_threshold_ = 128 * 1024 * 1024;
+    uint64_t commit_log_maximum_size_ = 1024 * 1024 * 1024;
+    uint64_t commit_log_next_threshold_ = 1024 * 1024 * 1024;
 };
 
 } // namespace DELTAKV_NAMESPACE

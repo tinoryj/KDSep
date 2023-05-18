@@ -291,6 +291,10 @@ StatsRecorder::~StatsRecorder()
     fprintf(stdout, "-------------- DeltaKV HashStore Metadat Breakdown ------------------------------\n");
     PRINT_FULL("update meta", FM_UPDATE_META, (time[FM_UPDATE_META]));
 
+    fprintf(stdout, "-------------- DeltaKV HashStore Wait handlers ------------------------------\n");
+    PRINT_FULL("wait gc", WAIT_GC, (time[WAIT_GC]));
+    PRINT_FULL("wait normal", WAIT_NORMAL, (time[WAIT_NORMAL]));
+
     fprintf(stdout, "-------------- DeltaKV HashStore GC Breakdown ------------------------------\n");
     PRINT_FULL("worker-gc", DELTAKV_HASHSTORE_WORKER_GC, (time[DELTAKV_HASHSTORE_WORKER_GC]));
     PRINT_FULL("worker-gc-before-rewrite", DELTAKV_HASHSTORE_WORKER_GC_BEFORE_REWRITE, (time[DELTAKV_HASHSTORE_WORKER_GC]));
@@ -299,10 +303,16 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  gc deconstruct", DELTAKV_GC_PROCESS, time[DELTAKV_HASHSTORE_WORKER_GC]); 
     PRINT_FULL("  gc partial merge", DELTAKV_GC_PARTIAL_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]); 
     PRINT_FULL("- gc write", DELTAKV_GC_WRITE, time[DELTAKV_HASHSTORE_WORKER_GC]);
-    PRINT_FULL("select-merge", GC_SELECT_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge", GC_MERGE_SELECT, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge-r1", GC_SELECT_MERGE_R1_OWN, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge-r2", GC_SELECT_MERGE_R2_SUCCESS, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge-r3", GC_SELECT_MERGE_R3, time[DELTAKV_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("select-merge-r4", GC_SELECT_MERGE_R4, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  slmerge-get-nodes", GC_SELECT_MERGE_GET_NODES, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  slmerge-select", GC_SELECT_MERGE_SELECT_MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  slmerge-after-select", GC_SELECT_MERGE_AFTER_SELECT, time[DELTAKV_HASHSTORE_WORKER_GC]);
+
+    PRINT_FULL("merge-success", GC_MERGE_SUCCESS, time[DELTAKV_HASHSTORE_WORKER_GC]);
 
     PRINT_FULL("merge", MERGE, time[DELTAKV_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  wait-lock", MERGE_WAIT_LOCK, time[MERGE]);

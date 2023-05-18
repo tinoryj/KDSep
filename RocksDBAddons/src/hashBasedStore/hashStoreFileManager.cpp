@@ -1165,8 +1165,10 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
 //                        (int)file_hdl->gc_status);
                 debug_trace("Wait for file ownership, file ID = %lu, for"
                         " key = %s\n", file_hdl->file_id, keyBuffer);
-                struct timeval tv, tv2;
+                struct timeval tv, tv2, tv3;
                 gettimeofday(&tv, 0);
+                tv3 = tv;// for recording wait
+                int own = file_hdl->file_ownership;
                 while (file_hdl->file_ownership == -1 ||
                         (file_hdl->file_ownership == 1 && 
                          (!(op_type == kMultiPut && file_hdl->markedByMultiPut)
@@ -1187,6 +1189,11 @@ bool HashStoreFileManager::getFileHandlerWithKey(char* keyBuffer,
                 debug_trace("Wait for file ownership, file ID = %lu, for"
                         " key = %s over\n", file_hdl->file_id,
                         keyBuffer);
+                if (own == -1) {
+                    StatsRecorder::getInstance()->timeProcess(StatsType::WAIT_GC, tv3);
+                } else {
+                    StatsRecorder::getInstance()->timeProcess(StatsType::WAIT_NORMAL, tv3);
+                }
             }
 
             if (file_hdl->gc_status == kShouldDelete) {
@@ -2399,7 +2406,9 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
                         if (tempHandler->file_ownership != 0) {
                             mapIt.second->file_ownership = 0;
                             debug_info("Stop this merge for file ID = %lu\n", tempHandler->file_id);
-                            return false;
+                            continue;
+//                            StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_R1_OWN, tvAll);
+//                            return false;
 //                                debug_trace("Waiting for file ownership for select file ID = %lu\n", tempHandler->file_id);
 //                                while (tempHandler->file_ownership != 0) {
 //                                    asm volatile("");
@@ -2413,7 +2422,7 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
                                 " target prefix = %lx\n",
                                 file_hdl1, file_hdl2, target_prefix);
                         StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_AFTER_SELECT, tv);
-                        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE, tvAll);
+                        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_R2_SUCCESS, tvAll);
                         return true;
                     }
                 } else {
@@ -2426,11 +2435,11 @@ bool HashStoreFileManager::selectFileForMerge(uint64_t targetFileIDForSplit,
             }
         }
         debug_info("Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
-        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE, tvAll);
+        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_R3, tvAll);
         return false;
     } else {
         debug_info("Could not get could merge tree nodes from prefixTree, current targetFileForMergeMap size = %lu\n", targetFileForMergeMap.size());
-        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE, tvAll);
+        StatsRecorder::getInstance()->timeProcess(StatsType::GC_SELECT_MERGE_R4, tvAll);
         return false;
     }
 }
@@ -2462,7 +2471,8 @@ void HashStoreFileManager::processMergeGCRequestWorker()
             break;
         }
         uint64_t remainEmptyBucketNumber = file_trie_.getRemainFileNumber();
-        usleep(100000);
+        usleep(10000);
+//        debug_error("merge %lu vs %lu\n", remainEmptyBucketNumber, singleFileGCWorkerThreadsNumebr_ + 2);
         if (remainEmptyBucketNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
             continue;
         }
@@ -2472,9 +2482,13 @@ void HashStoreFileManager::processMergeGCRequestWorker()
         hashStoreFileMetaDataHandler* file_hdl2;
         uint64_t merge_prefix;
         uint64_t prefix_len;
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         bool selectFileForMergeStatus = selectFileForMerge(0,
                 file_hdl1, file_hdl2, merge_prefix,
                 prefix_len);
+        StatsRecorder::getInstance()->timeProcess(StatsType::GC_MERGE_SELECT, tv);
+        
         if (selectFileForMergeStatus == true) {
             debug_info("Select two file for merge GC success, "
                     "file_hdl 1 ptr = %p, file_hdl 2 ptr = %p, "
@@ -2493,6 +2507,7 @@ void HashStoreFileManager::processMergeGCRequestWorker()
                         "target prefix = %lx\n", 
                         file_hdl1, file_hdl2, merge_prefix);
             }
+            StatsRecorder::getInstance()->timeProcess(StatsType::GC_MERGE_SUCCESS, tv);
         }
     }
     return;

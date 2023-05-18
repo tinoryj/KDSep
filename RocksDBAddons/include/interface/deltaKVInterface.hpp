@@ -82,6 +82,7 @@ private:
     bool enableLsmTreeDeltaMeta_ = true;
     bool enableParallelLsmInterface = true;
     bool enable_crash_consistency = false;
+    bool enable_bucket_merge_ = true;
 
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
     int writeBackWhenReadDeltaSizeThreshold_ = 4;

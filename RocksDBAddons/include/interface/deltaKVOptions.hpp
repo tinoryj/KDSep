@@ -92,6 +92,7 @@ public:
     bool enable_write_back_optimization_ = true;
     bool enable_parallel_lsm_interface_ = false;
     bool enable_crash_consistency = false;
+    bool enable_bucket_merge = true;
     bool enable_batched_operations_ = false;
     bool enable_key_value_cache_ = false;
     bool enable_lsm_tree_delta_meta = false;

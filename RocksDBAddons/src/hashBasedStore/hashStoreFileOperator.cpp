@@ -944,7 +944,7 @@ bool HashStoreFileOperator::operationWorkerFlush(hashStoreOperationHandler* op_h
 
     // write content
     FileOpStatus status = op_hdl->file_hdl->file_op_ptr->flushFile();
-    debug_error("flush file %lu\n", op_hdl->file_hdl->file_id);
+//    debug_error("flush file %lu\n", op_hdl->file_hdl->file_id);
     if (status.success_ == false) {
         debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
                 op_hdl->file_hdl->file_id);
