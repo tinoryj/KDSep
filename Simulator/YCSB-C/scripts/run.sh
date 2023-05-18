@@ -195,6 +195,7 @@ gcWriteBackSize=100000
 enableParallel="false"
 enableIndexBlock="true"
 enableCrashConsistency="false"
+disableMerge="false"
 to=0
 wbread=0
 blobgcforce=1.0
@@ -531,6 +532,11 @@ for param in $*; do
             enableCrashConsistency="true"
             run_suffix=${run_suffix}_ec
         fi
+    elif [[ "$param" == "dm" ]]; then
+        if [[ "$havekd" == "true" ]]; then
+            disableMerge="true"
+            run_suffix=${run_suffix}_dm
+        fi
     elif [[ "$param" == "nodirect" ]]; then
         nodirect="true"
         run_suffix=${run_suffix}_nodirect
@@ -636,6 +642,10 @@ fi
 
 if [[ "$enableCrashConsistency" == "true" ]]; then
     sed -i "/crash_consistency/c\\crash_consistency = true" temp.ini
+fi
+
+if [[ "$disableMerge" == "true" ]]; then
+    sed -i "/enable_bucket_merge/c\\enable_bucket_merge = false" temp.ini
 fi
 
 if [[ "$nommap" == "true" ]]; then

@@ -253,6 +253,7 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
     options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta(); 
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
     options_.enable_crash_consistency = config.getEnableCrashConsistency();
+    options_.enable_bucket_merge = config.getEnableBucketMerge(); 
     options_.enable_index_block = config.getEnableIndexBlock();
     options_.key_value_cache_object_number_ = config.getDeltaKVCacheSize();
 

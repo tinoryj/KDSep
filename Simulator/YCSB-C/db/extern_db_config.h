@@ -64,6 +64,7 @@ class ExternDBConfig {
     bool ds_KDLevel_cache_use_str_t_;
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
+    bool enable_bucket_merge_;
     bool enable_index_block_;
     uint64_t unsorted_part_size_threshold_;
     double blobgcforce_;
@@ -128,6 +129,7 @@ class ExternDBConfig {
         ds_KDLevel_cache_use_str_t_ = pt_.get<bool>("config.ds_KDLevel_cache_use_str_t", true);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
+        enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
         unsorted_part_size_threshold_ = pt_.get<uint64_t>("config.unsorted_part_size_threshold", 1024 * 1024);
@@ -306,6 +308,9 @@ class ExternDBConfig {
     }
     bool getEnableCrashConsistency() {
         return enable_crash_consistency_;
+    }
+    bool getEnableBucketMerge() {
+        return enable_bucket_merge_;
     }
     bool getEnableIndexBlock() {
         return enable_index_block_;
