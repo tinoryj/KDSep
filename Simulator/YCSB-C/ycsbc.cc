@@ -22,6 +22,7 @@
 #include "core/timer.h"
 #include "core/utils.h"
 #include "db/db_factory.h"
+#include "db/extern_db_config.h"
 #include "malloc.h"  // malloc_trim(0)
 #include "unistd.h"
 
@@ -100,9 +101,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     int processLabel_base = num_ops / 100;
     struct timeval tv;
     int output_base = 200;
-    bool final_scan = (num_ops == 101 * 1000000);
+    bool final_scan = false; // (num_ops == 101 * 1000000);
     double duration_scan_start = 0;
-    uint64_t final_scan_ops = 1000000;
+    uint64_t final_scan_ops = 20000; //1000000;
     for (int i = 0; i < num_ops; ++i) {
         gettimeofday(&tv, 0);
         timer.Start();
@@ -239,6 +240,8 @@ int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
     setbuf(stderr, nullptr);
 
+    utils::Timer timerStart;
+    timerStart.Start();
 //    simpleTest();
 
     struct sigaction sa = {};
@@ -256,6 +259,15 @@ int main(const int argc, const char *argv[]) {
     if (!db) {
         cout << "Unknown database name " << props["dbname"] << endl;
         exit(0);
+    }
+
+    ycsbc::ExternDBConfig config(props["configpath"]);
+    if (config.getTestRecovery()) {
+	double duration_recovery = timerStart.End();
+	printf("recovery total time: %.7lf\n", duration_recovery / 1000000.0); 
+	fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery /
+		1000000.0); 
+	exit(0);
     }
 
     vector<future<int>> actual_ops;

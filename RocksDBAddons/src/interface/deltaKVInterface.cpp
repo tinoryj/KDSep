@@ -66,7 +66,17 @@ bool DeltaKV::Open(DeltaKVOptions& options, const string& name)
     boost::thread::attributes attrs;
     attrs.set_stack_size(1000 * 1024 * 1024);
     // object mem pool
+    struct timeval tv, tv2;
+    gettimeofday(&tv, 0);
     lsmTreeInterface_.Open(options, name);
+    gettimeofday(&tv2, 0);
+
+    printf("restore lsmTree interface time: %.6lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+    debug_error("restore lsmTree interface time: %.6lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
 
     write_stall_ = options.write_stall;
     options.wb_keys = new std::queue<string>;

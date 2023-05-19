@@ -289,6 +289,10 @@ DeltaKVDB::DeltaKVDB(const char *dbfilename, const std::string &config_file_path
         *options_.write_stall = false;
     }
 
+    if (config.getTestRecovery()) {
+	options_.test_recovery = true;
+    }
+
     if (!compression) {
         options_.rocks_opt.compression = rocksdb::kNoCompression;
     }

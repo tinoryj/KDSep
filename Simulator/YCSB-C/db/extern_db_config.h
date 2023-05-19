@@ -69,6 +69,7 @@ class ExternDBConfig {
     uint64_t unsorted_part_size_threshold_;
     double blobgcforce_;
     bool enable_gc_write_stall_;
+    bool test_recovery_;
 
     struct {
         uint64_t level;
@@ -132,6 +133,7 @@ class ExternDBConfig {
         enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
+	test_recovery_ = pt_.get<bool>("debug.test_recovery", false);
         unsorted_part_size_threshold_ = pt_.get<uint64_t>("config.unsorted_part_size_threshold", 1024 * 1024);
     }
 
@@ -317,6 +319,9 @@ class ExternDBConfig {
     }
     bool getEnableGcWriteStall() {
         return enable_gc_write_stall_;
+    }
+    bool getTestRecovery() {
+        return test_recovery_;
     }
     double getBlobGCForce() {
         return blobgcforce_;

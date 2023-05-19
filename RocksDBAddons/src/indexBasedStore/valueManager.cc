@@ -106,7 +106,14 @@ ValueManager::ValueManager(DeviceManager *deviceManager, SegmentGroupManager *se
     if (_logManager) {
         if (ConfigManager::getInstance().enabledVLogMode()) {
             std::map<std::string, externalIndexInfo> keyValues;
+	    struct timeval tv, tv2;
+	    gettimeofday(&tv, 0);
             restoreVLog(keyValues);
+	    gettimeofday(&tv2, 0);
+
+	    printf("restore vLog time: %.3lf\n", 
+		    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+		     tv.tv_usec / 1000000.0);
         } else {
             //            restoreFromUpdateLog();
             //            restoreFromGCLog();
