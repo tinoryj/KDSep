@@ -580,8 +580,6 @@ else
     sed -i "/enableDeltaKVCache/c\\enableDeltaKVCache = false" temp.ini
 fi
 
-
-
 if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; then
     sed -i "/ds_init_bit/c\\ds_init_bit = $initBit" temp.ini
     sed -i "/ds_bucket_buffer_size/c\\ds_bucket_buffer_size = $flushSize" temp.ini
@@ -842,13 +840,15 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
 
     # Running the ycsb-benchmark
     if [[ "$loaded" == "false" ]]; then
-        if [ -d $workingDB ]; then
-            rm -rf $workingDB 
-            echo "Deleted old database folder"
-        fi
-        echo "cp -r $loadedDB $workingDB"
-        cp -r $loadedDB $workingDB
-        echo "Copy loaded database"
+	if [[ "$recovery" == "false" ]]; then
+	    if [ -d $workingDB ]; then
+		rm -rf $workingDB 
+		echo "Deleted old database folder"
+	    fi
+	    echo "cp -r $loadedDB $workingDB"
+	    cp -r $loadedDB $workingDB
+	    echo "Copy loaded database"
+	fi
     fi
     if [ ! -d $workingDB ]; then
         echo "Retrived loaded database error"
@@ -867,7 +867,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         wait $newpid
     else
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
-#        echo "./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file"
+#        gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath
 #        exit
     fi
     set +x

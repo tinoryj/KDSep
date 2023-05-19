@@ -13,8 +13,12 @@ inline static uint64_t prefixSubstr(uint64_t prefix, uint64_t len) {
 
 inline static uint64_t prefixStrToU64(const string& prefix) {
     uint64_t prefix_u64 = 0;
+    if (prefix.size() == 0) {
+	return 0;
+    }
     for (auto i = prefix.size() - 1; i >= 0; i--) {
         prefix_u64 = (prefix_u64 << 1) + (prefix[i] - '0');
+	if (i == 0) break;
     }
     return prefix_u64;
 }

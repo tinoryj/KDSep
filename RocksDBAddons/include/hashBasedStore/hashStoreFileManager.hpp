@@ -20,8 +20,11 @@ public:
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
     // file operations
-    bool getFileHandlerWithKey(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, uint64_t& prefixU64);
+    bool getFileHandlerWithKey(const char* keyBuffer, uint32_t keySize,
+	    hashStoreFileOperationType opType, 
+	    hashStoreFileMetaDataHandler*& fileHandlerPtr, 
+	    bool getForAnchorWriting = false);
+    bool generateHashBasedPrefix(const char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
     void processSingleFileGCRequestWorker(int threadID);
@@ -36,6 +39,7 @@ public:
 
     // Consistency
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag);
+    bool cleanCommitLog();
 //    bool flushAllBuffers();
     bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
     bool RemoveObsoleteFiles();
@@ -145,9 +149,11 @@ private:
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
 
+    boost::atomic<uint64_t> num_buckets_;
+
     FileOperation* commit_log_fop_ = nullptr;
-    uint64_t commit_log_maximum_size_ = 1024 * 1024 * 1024;
-    uint64_t commit_log_next_threshold_ = 1024 * 1024 * 1024;
+    uint64_t commit_log_maximum_size_ = 128 * 1024 * 1024; // 1024 * 1024 * 1024;
+    uint64_t commit_log_next_threshold_ = 128 * 1024 * 1024; //1024 * 1024 * 1024;
 };
 
 } // namespace DELTAKV_NAMESPACE

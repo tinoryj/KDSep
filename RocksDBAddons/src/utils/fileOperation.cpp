@@ -34,6 +34,7 @@ FileOperation::~FileOperation()
 
 bool FileOperation::createFile(string path)
 {
+    path_ = path;
     if (operationType_ == kFstream) {
         fileStream_.open(path, ios::out);
         if (fileStream_.is_open() == false) {
@@ -61,6 +62,7 @@ bool FileOperation::createFile(string path)
 
 bool FileOperation::openFile(string path)
 {
+    path_ = path;
     if (operationType_ == kFstream) {
         fileStream_.open(path, ios::in | ios::out | ios::binary);
         if (fileStream_.is_open() == false) {
@@ -96,6 +98,7 @@ bool FileOperation::openFile(string path)
 
 bool FileOperation::createThenOpenFile(string path)
 {
+    path_ = path;
     switch (operationType_) {
     case kFstream:
         fileStream_.open(path, ios::out);
@@ -258,7 +261,8 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             struct timeval tv;
             gettimeofday(&tv, 0);
             auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size, disk_size_);
-            StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
+            StatsRecorder::getInstance()->timeProcess(
+		    StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
             if (wReturn != actual_disk_write_size) {
                 free(write_buf_dio);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
@@ -937,6 +941,19 @@ uint64_t FileOperation::getFileSize()
     } else {
         return 0;
     }
+}
+
+bool FileOperation::removeAndReopen() {
+    if (isFileOpen()) {
+	closeFile();
+    }
+    auto ret = remove(path_.c_str());
+    if (ret == -1) {
+	debug_error("[ERROR] could not delete %s\n", path_.c_str());
+	return false;
+    }
+    bool r = createThenOpenFile(path_);
+    return true;
 }
 
 uint64_t FileOperation::getCachedFileSize() {

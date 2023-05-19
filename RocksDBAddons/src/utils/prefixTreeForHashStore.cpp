@@ -6,7 +6,7 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
     size_t rss_before = getRss();
     size_t rss_after;
     //        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
-    for (int i = 0; i < (1 << fixed_bit_num_); i++) {
+    for (int i = 0; i < (1 << partition_bit_); i++) {
         stack<prefixTreeNode*> stk;
         prefixTreeNode *p = roots_[i], *pre = nullptr;
 

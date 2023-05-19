@@ -36,6 +36,7 @@ public:
     bool Merge(const char* key, uint32_t keySize, const char* value, uint32_t valueSize);
     bool Get(const string& key, string* value);
     bool Scan(const string& key, int len, vector<string>& keys, vector<string>& values);
+    bool MultiGet(const vector<string>& key, vector<string>& values);
     bool MultiWriteWithBatch(const vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch);
     rocksdb::Iterator* NewIterator();
 
@@ -49,6 +50,9 @@ private:
 
     enum LsmTreeRunningMode { kValueLog = 0, kNoValueLog = 1};
     LsmTreeRunningMode lsmTreeRunningMode_ = kValueLog;
+
+    bool vLogMultiGetInternal(const vector<string>& keys,
+	const vector<string>& values_lsm, vector<string>& values);
 
     // operations
 

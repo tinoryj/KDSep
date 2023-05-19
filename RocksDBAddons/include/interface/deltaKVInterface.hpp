@@ -62,11 +62,18 @@ private:
     bool SinglePutInternal(const mempoolHandler_t& mempoolHandler); 
     bool SingleMergeInternal(const mempoolHandler_t& mempoolHandler);
     bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool writing_back);
+    bool MultiGetFullMergeInternal(const vector<string>& keys,
+	const vector<string>& lsm_values,
+	const vector<vector<string>>& key_deltas,
+	vector<string>& values); 
 
+    bool MultiGetInternal(const vector<string>& keys, vector<string>& values); 
 //    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool writing_back);
     bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     bool GetCurrentValueThenWriteBack(const string& key);
+    bool GetCurrentValuesThenWriteBack(const vector<string>& keys);
+//    bool GetFromBuffer(const string& key, vector<string>& values);
 
     bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
