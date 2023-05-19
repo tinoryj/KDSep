@@ -44,7 +44,7 @@ public:
 
     uint64_t getRemainFileNumber()
     {
-//        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         if (max_file_num_ + 10 < current_file_num_) {
             debug_error("[ERROR] too many files! %lu v.s. %lu\n", 
                     max_file_num_, current_file_num_); 
