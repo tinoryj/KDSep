@@ -253,6 +253,7 @@ rmw="false"
 up2x="false"
 recovery="false"
 crash="false"
+crashTime=3600
 
 flushSize=4092
 sstsz=64
@@ -587,6 +588,14 @@ for param in $*; do
         rmw="overwrite"
     elif [[ "$param" == "recovery" ]]; then
 	recovery="true"
+        run_suffix=${run_suffix}_recovery
+    elif [[ "$param" =~ ^crash[0-9]+$ ]]; then
+	crash="true"
+        crashTime=`echo $param | sed 's/crash//g'`
+	rTime=$RANDOM
+	crashTime=$(( $rTime % $crashTime ))
+        run_suffix=${run_suffix}_${param}_${crashTime}
+	echo "${param} ${crashTime}"
     fi
 done
 
@@ -710,6 +719,10 @@ fi
 
 if [[ $nogc == "true" ]]; then
     sed -i "/deltaStoreEnableGC/c\\deltaStoreEnableGC = false" temp.ini 
+fi
+
+if [[ $recovery == "true" ]]; then
+    sed -i "/test_recovery/c\\test_recovery = true" temp.ini 
 fi
 
 max_kv_size=$(( (${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
@@ -888,6 +901,14 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         timeout -k ${to}s ${to}s ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file &
         newpid=$!
         wait $newpid
+    elif [[ "$crash" == "true" ]]; then
+        ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file &
+	newpid=$!
+	echo "wait for $crashTime seconds"
+	sleep $crashTime
+	echo "kill $newpid"
+	kill -9 $newpid
+	wait $newpid
     else
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath >$output_file
 #        gdb --args ./ycsbc -db rocksdb -dbfilename $workingDB -threads $Thread_number -P workload-temp.spec -phase run -configpath $configPath

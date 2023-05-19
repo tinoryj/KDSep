@@ -104,6 +104,7 @@ public:
     bool rocksdb_sync = false;
 
     bool enable_index_block = true;
+    bool test_recovery = false; 
 
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     KDLRUCache* kd_cache = nullptr;

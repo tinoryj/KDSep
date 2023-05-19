@@ -50,7 +50,13 @@ HashStoreFileManager::HashStoreFileManager(DeltaKVOptions* options, string worki
     write_stall_ = options->write_stall;
     wb_keys = options->wb_keys;
     wb_keys_mutex = options->wb_keys_mutex;
+    struct timeval tv, tv2;
+    gettimeofday(&tv, 0);
     RetriveHashStoreFileMetaDataList();
+    gettimeofday(&tv2, 0);
+    printf("retrieve metadata list time: %.6lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
 }
 
 HashStoreFileManager::~HashStoreFileManager()
@@ -245,6 +251,8 @@ bool HashStoreFileManager::deleteObslateFileWithFileIDAsInput(uint64_t fileID)
 bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + value pair
 {
     // get all the file ids (temporarily)
+    struct timeval tv, tv2;
+    gettimeofday(&tv, 0);
     debug_error("start recovery %s\n", "");
     vector<uint64_t> scannedOnDiskFileIDList;
     int cnt_f = 0;
@@ -252,14 +260,22 @@ bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + val
     for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
         string currentFilePath = dirEntry.path();
         if (currentFilePath.find(".delta") != string::npos) {
-	    auto flag = O_RDWR | O_DIRECT;
-	    int fd = open(currentFilePath.c_str(), flag, 0644);
-	    struct stat statbuf;
-	    stat(currentFilePath.c_str(), &statbuf);
-	    uint64_t physicalFileSize = statbuf.st_size;
-	    char buf[physicalFileSize];
-	    pread(fd, buf, physicalFileSize, 0);
-	    read_size += physicalFileSize;
+
+	    if (true) {
+		auto flag = O_RDWR | O_DIRECT;
+		int fd = open(currentFilePath.c_str(), flag, 0644);
+		struct stat statbuf;
+		stat(currentFilePath.c_str(), &statbuf);
+		uint64_t physicalFileSize = statbuf.st_size;
+		char buf[physicalFileSize];
+		pread(fd, buf, physicalFileSize, 0);
+		read_size += physicalFileSize;
+		close(fd);
+	    } else {
+		FileOperation* fop = new FileOperation(kDirectIO, 
+			maxBucketSize_, 0);
+		fop->openFile(currentFilePath);
+	    }
 	    cnt_f++;
 //            currentFilePath = currentFilePath.substr(currentFilePath.find("/") + 1);
 //            uint64_t currentFileID = stoull(currentFilePath);
@@ -269,8 +285,47 @@ bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + val
         }
     }
 
-    debug_error("end recovery %s (%d files, read size %lu)\n", 
-	    "", cnt_f, read_size);
+    debug_error("part 2 (%d files, read size %lu)\n", 
+	    cnt_f, read_size);
+    gettimeofday(&tv2, 0);
+    debug_error("read all buckets time: %.3lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+    printf("read all buckets time: %.3lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+    
+    gettimeofday(&tv, 0);
+
+    string commit_log_path = workingDir_ + "/commit.log";
+
+    auto flag = O_RDWR | O_DIRECT;
+    int fd = open(commit_log_path.c_str(), flag, 0644);
+    debug_error("open finished: %d\n", fd);
+    if (fd > 0) {
+	struct stat statbuf;
+	stat(commit_log_path.c_str(), &statbuf);
+	uint64_t physicalFileSize = statbuf.st_size;
+	debug_error("physical file size : %lu\n", physicalFileSize); 
+	if (physicalFileSize > 0) {
+	    char* buf = new char[physicalFileSize];
+	    pread(fd, buf, physicalFileSize, 0);
+	    read_size += physicalFileSize;
+	    cnt_f++;
+	    close(fd);
+	    delete[] buf;
+	}
+    }
+    gettimeofday(&tv2, 0);
+    printf("read commit log time: %.3lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+    debug_error("read commit log time: %.3lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+
+    debug_error("end recovery (%d files, read size %lu)\n", 
+	    cnt_f, read_size);
     return true;
 }
 
