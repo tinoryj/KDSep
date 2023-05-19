@@ -72,6 +72,19 @@ config_workload() {
         sed -i "/scanproportion/c\\scanproportion=1" $SPEC
         ReadProportion=0
         UpdateProportion=0
+    elif [[ "$workload2" == "true" ]]; then
+        ReadProportion=0
+        UpdateProportion=1
+        rmw="false"
+    elif [[ "$workload3" == "true" ]]; then
+        sed -i "/overwriteproportion/c\\overwriteproportion=0.5" $SPEC
+        ReadProportion=0
+        UpdateProportion=0.5
+        rmw="false"
+    elif [[ "$workload4" == "true" ]]; then
+        sed -i "/overwriteproportion/c\\overwriteproportion=1" $SPEC
+        ReadProportion=0
+        UpdateProportion=0
     fi
 
     if [[ "$ReadProportion" == "" ]]; then
@@ -224,6 +237,9 @@ workloadd="false"
 workloade="false"
 workloadf="false"
 workloadg="false"
+workload2="false"
+workload3="false"
+workload4="false"
 gc="true"
 shortprepare="false"
 blockSize=65536
@@ -236,6 +252,7 @@ checkRepeat="false"
 rmw="false"
 up2x="false"
 recovery="false"
+crash="false"
 
 flushSize=4092
 sstsz=64
@@ -487,7 +504,7 @@ for param in $*; do
     elif [[ "$param" == "keep" ]]; then
         keep="true"
         run_suffix=${run_suffix}_keep
-    elif [[ "$param" =~ ^workload[a-g]$ ]]; then
+    elif [[ "$param" =~ ^workload[a-g2-9]$ ]]; then
         if [[ $fix_workload == "true" ]]; then
             echo "error: repeated workload"
             exit
@@ -507,6 +524,12 @@ for param in $*; do
             workloadf="true"
         elif [[ "$param" == "workloadg" ]]; then
             workloadg="true"
+        elif [[ "$param" == "workload2" ]]; then
+            workload2="true"
+        elif [[ "$param" == "workload3" ]]; then
+            workload3="true"
+        elif [[ "$param" == "workload4" ]]; then
+            workload4="true"
         fi
         run_suffix=${run_suffix}_$param
     elif [[ "$param" == "shortprepare" ]]; then
