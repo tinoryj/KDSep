@@ -329,7 +329,6 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
     rocksdb::Iterator* it = rocksdb_->NewIterator(rocksdb::ReadOptions());
     it->Seek(targetStartKey);
     int cnt = 0;
-    bool ret = true;
     keys.clear();
     values.clear();
     vector<string> values_lsm;
@@ -347,12 +346,51 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
         return true;
     }
 
+    return vLogMultiGetInternal(keys, values_lsm, values);
+}
+
+bool LsmTreeInterface::MultiGet(const vector<string>& keys, 
+        vector<string>& values) {
+    int cnt = 0;
+    values.clear();
+    vector<string> values_lsm;
+    values_lsm.resize(keys.size());
+
+    rocksdb::Status rocksDBStatus;
+    for (int i = 0; i < keys.size(); i++) {
+	STAT_PROCESS(
+		rocksDBStatus =
+		rocksdb_->Get(rocksdb::ReadOptions(), keys[i], 
+		    &(values_lsm[i])),
+		StatsType::DELTAKV_GET_ROCKSDB);
+	if (!rocksDBStatus.ok()) {
+	    debug_error("[ERROR] Read underlying rocksdb with raw value "
+		    "fault, key = %s, status = %s\n", keys[i].c_str(),
+		    rocksDBStatus.ToString().c_str());
+	    return false;
+	}
+    }
+
+    if (lsmTreeRunningMode_ == kNoValueLog) {
+        for (auto& it : values_lsm) {
+            values.push_back(it);
+        }
+        return true;
+    }
+
+    return vLogMultiGetInternal(keys, values_lsm, values);
+}
+
+bool LsmTreeInterface::vLogMultiGetInternal(const vector<string>& keys,
+	const vector<string>& values_lsm,
+	vector<string>& values) {
+    bool ret = true;
     vector<bool> isSeparated;
     vector<string> separated_keys;
     vector<externalIndexInfo> vLogIndices;
     vector<string> remainingDeltasVec;
 
-    len = keys.size();
+    int len = keys.size();
 
     isSeparated.resize(len);
     separated_keys.resize(len);
@@ -364,7 +402,7 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
     size_t header_sz = sizeof(KvHeader);
 
     for (uint64_t i = 0; i < len; i++) {
-        string& lsm_value = values_lsm.at(i);
+        const string& lsm_value = values_lsm.at(i);
         KvHeader header;
 
         if (use_varint_kv_header == false) {
@@ -404,7 +442,7 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
     separated_cnt = 0;
     values.clear();
     for (uint64_t i = 0; i < len; i++) {
-        string& lsm_value = values_lsm.at(i);
+        const string& lsm_value = values_lsm.at(i);
         KvHeader header;
         if (use_varint_kv_header == false) {
             memcpy(&header, lsm_value.c_str(), header_sz);
@@ -459,7 +497,6 @@ bool LsmTreeInterface::Scan(const string& targetStartKey,
 
     return ret;
 }
-
 
 void LsmTreeInterface::GetRocksDBProperty(const string& property, string* str) {
     rocksdb_->GetProperty(property.c_str(), str);

@@ -180,7 +180,8 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("Flush (No KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
     PRINT_FULL("Flush (KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
     PRINT_FULL("  hashStore", DKV_FLUSH_MUTIPUT_DSTORE, time[DKV_FLUSH]);
-    PRINT_FULL("    commit-log", DELTAKV_HASHSTORE_PUT_COMMIT_LOG, time[DKV_FLUSH]);
+    PRINT_FULL("    commit-log", DS_PUT_COMMIT_LOG, time[DKV_FLUSH]);
+    PRINT_FULL("    rm-commit-log", DS_REMOVE_COMMIT_LOG, time[DKV_FLUSH]);
     PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
     PRINT_FULL("      single", DS_MULTIPUT_GET_SINGLE_HANDLER, time[DKV_FLUSH]);
     PRINT_FULL("        get-hdl", DSTORE_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
@@ -448,8 +449,13 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "------------------------- SCAN Request --------------------------------------\n");
     PRINT_FULL("Scan Time", SCAN, time[SCAN]);
-    PRINT_FULL("lsm Scan", DKV_SCAN_LSM, time[SCAN]);
-    PRINT_FULL("ds Scan", DKV_SCAN_DS, time[SCAN]);
+    PRINT_FULL("  lsm", DKV_SCAN_LSM, time[SCAN]);
+    PRINT_FULL("  ds", DKV_SCAN_DS, time[SCAN]);
+    PRINT_FULL("  full merge", DKV_SCAN_FULL_MERGE, time[SCAN]);
+    PRINT_FULL("multiget", DKV_MULTIGET_LSM, time[SCAN]);
+    PRINT_FULL("  lsm", DKV_MULTIGET_LSM, time[SCAN]);
+    PRINT_FULL("  ds", DKV_MULTIGET_DS, time[SCAN]);
+    PRINT_FULL("  full merge", DKV_MULTIGET_FULL_MERGE, time[SCAN]);
 
     fprintf(stdout, "----------------------------- FLUSH -----------------------------------------\n");
     PRINT_FULL("GroupFlushInPool", GROUP_IN_POOL_FLUSH, time[POOL_FLUSH]);

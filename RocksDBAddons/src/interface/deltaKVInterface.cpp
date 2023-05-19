@@ -397,8 +397,6 @@ bool DeltaKV::GetInternal(const string& key, string* value,
                                     key.c_str());
                             exit(1);
                         }
-                        //writeBackObject* newPair = new writeBackObject(key, "", 0);
-                        //writeBackOperationsQueue_->push(newPair);
                     }
                     return true;
                 }
@@ -759,9 +757,10 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
     scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
     struct timeval tv;
     gettimeofday(&tv, 0);
+    vector<string> lsm_values;
 
     // 1. Scan the RocksDB/vLog for keys and values
-    STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, keys, values),
+    STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, keys, lsm_values),
             StatsType::DKV_SCAN_LSM);
 
     if (deltaKVRunningMode_ == kWithNoDeltaStore || 
@@ -777,15 +776,19 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
     }
 
     bool ret;
-    vector<vector<string>> valueStrVecVec;
+    vector<vector<string>> key_deltas;
 //    debug_error("Start key %s len %d\n", startKey.c_str(), len);
     STAT_PROCESS(
-    ret = HashStoreInterfaceObjPtr_->multiGet(keys, valueStrVecVec),
+    ret = HashStoreInterfaceObjPtr_->multiGet(keys, key_deltas),
     StatsType::DKV_SCAN_DS);
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
     }
+
+    STAT_PROCESS(
+    MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
+    StatsType::DKV_SCAN_FULL_MERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
 //    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
@@ -796,6 +799,116 @@ bool DeltaKV::Scan(const string& startKey, int len, vector<string>& keys, vector
 //    exit(1);
 
     StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
+    return true;
+}
+
+bool DeltaKV::MultiGetInternal(const vector<string>& keys, 
+	vector<string>& values) 
+{
+//    scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    vector<string> lsm_values;
+
+    // 1. Scan the RocksDB/vLog for keys and values
+    STAT_PROCESS(lsmTreeInterface_.MultiGet(keys, lsm_values),
+            StatsType::DKV_MULTIGET_LSM);
+
+    if (deltaKVRunningMode_ == kWithNoDeltaStore || 
+	    deltaKVRunningMode_ == kBatchedWithNoDeltaStore) {
+        StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
+	return true;
+    }
+
+    // 2. Scan the delta store
+
+    if (enableLsmTreeDeltaMeta_ == true) {
+	debug_error("not implemented: key %lu\n", keys.size());
+    }
+
+    bool ret;
+    vector<vector<string>> key_deltas;
+//    debug_error("Start key %s len %d\n", startKey.c_str(), len);
+    STAT_PROCESS(
+    ret = HashStoreInterfaceObjPtr_->multiGet(keys, key_deltas),
+    StatsType::DKV_MULTIGET_DS);
+
+    if (ret == false) {
+	debug_error("scan in delta store failed: %lu\n", keys.size());
+    }
+
+    STAT_PROCESS(
+    MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
+    StatsType::DKV_MULTIGET_FULL_MERGE);
+
+//    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
+//    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
+//            values.size());
+//    for (int i = 0; i < (int)keys.size(); i++) {
+//        fprintf(stderr, "%s %lu\n", keys[i].c_str(), values[i].size());
+//    }
+//    exit(1);
+
+    StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
+    return true;
+}
+
+bool DeltaKV::MultiGetFullMergeInternal(const vector<string>& keys,
+	const vector<string>& lsm_values,
+	const vector<vector<string>>& key_deltas,
+	vector<string>& values) {
+
+    values.resize(keys.size());
+    for (auto i = 0; i < keys.size(); i++) {
+	const string& lsm_value = lsm_values[i];
+	auto& key = keys[i];
+
+	// extract header
+        KvHeader header;
+        size_t header_sz = sizeof(KvHeader);
+        if (use_varint_kv_header == false) {
+            memcpy(&header, lsm_value.c_str(), header_sz);
+        } else {
+            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
+        }
+
+        if (header.valueSeparatedFlag_ == true) {
+            debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
+            assert(0);
+        }
+
+	// get the raw value
+	str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
+		header.rawValueSize_);
+
+	// check the deltas
+        if (key_deltas[i].empty() == true) { 
+            values[i].assign(raw_value.data_, raw_value.size_);
+	    continue;
+        }
+
+        bool mergeOperationStatus;
+        vector<str_t> deltaInStrT;
+        int total_d_sz = 0;
+        for (auto& it : key_deltas[i]) {
+            deltaInStrT.push_back(
+		    str_t(const_cast<char*>(it.data()), it.size()));
+            total_d_sz += it.size();
+        }
+
+        STAT_PROCESS(mergeOperationStatus =
+		deltaKVMergeOperatorPtr_->Merge(raw_value, deltaInStrT, 
+		    &(values[i])),
+                StatsType::DELTAKV_GET_FULL_MERGE);
+
+        if (mergeOperationStatus == false) { 
+            debug_error("[ERROR] Perform merge operation fail, key = %s\n",
+                    key.c_str());
+            return false;
+        }
+	// dont do write back
+    }
+
     return true;
 }
 
@@ -975,6 +1088,154 @@ bool DeltaKV::GetCurrentValueThenWriteBack(const string& key)
     STAT_PROCESS(ret = PutImpl(key, newValueStr), StatsType::DELTAKV_WRITE_BACK_PUT);
     if (ret == false) {
         debug_error("write back failed, key %s\n", key.c_str());
+    }
+
+    return ret;
+}
+
+bool DeltaKV::GetCurrentValuesThenWriteBack(const vector<string>& keys)
+{
+    scoped_lock<shared_mutex> w_lock(DeltaKVOperationsMtx_);
+
+    vector<vector<string>> buf_deltas_strs;
+    buf_deltas_strs.resize(keys.size());
+    bool need_write_back[keys.size()];
+    bool needMergeWithInBufferOperationsFlag[keys.size()];
+    bool any_no_need = false;
+
+    struct timeval tvAll;
+    gettimeofday(&tvAll, 0);
+
+    // read from buffer
+    for (int i = 0; i < keys.size(); i++) {
+	auto& key = keys[i];
+	need_write_back[i] = true;
+	needMergeWithInBufferOperationsFlag[i] = false;
+
+	if (isBatchedOperationsWithBufferInUse_ == false) {
+	    break;
+	}
+	
+	// try read from buffer first;
+	if (oneBufferDuringProcessFlag_ == true) {
+	    debug_trace("Wait for batched buffer process%s\n", "");
+	    while (oneBufferDuringProcessFlag_ == true) {
+		asm volatile("");
+	    }
+	}
+	batchedBufferOperationMtx_.lock();
+	StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_WAIT_BUFFER, tvAll);
+	struct timeval tv;
+	gettimeofday(&tv, 0);
+	debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
+	char keyBuffer[key.size()];
+	memcpy(keyBuffer, key.c_str(), key.size());
+	str_t currentKey(keyBuffer, key.length());
+	auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
+	if (mapIt != batch_map_[batch_in_use_]->end()) {
+	    struct timeval tv0;
+	    gettimeofday(&tv0, 0);
+	    for (auto queueIt : mapIt->second) {
+		if (queueIt.first == kPutOp) {
+		    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
+		    batchedBufferOperationMtx_.unlock();
+		    StatsRecorder::getInstance()->timeProcess(
+			    StatsType::DELTAKV_WRITE_BACK_NO_WAIT_BUFFER,
+			    tv);
+		    need_write_back[i] = false;
+		    any_no_need = true;
+		} else {
+		    buf_deltas_strs[i].push_back(string(queueIt.second.valuePtr_,
+				queueIt.second.valueSize_));
+		}
+	    }
+	    if (buf_deltas_strs[i].size() != 0) {
+		needMergeWithInBufferOperationsFlag[i] = true;
+		debug_info("get deltas from unflushed buffer, for key = "
+			"%s, deltas number = %lu\n", key.c_str(),
+			buf_deltas_strs[i].size());
+	    }
+	}
+	batchedBufferOperationMtx_.unlock();
+	StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_NO_WAIT_BUFFER, tv);
+    }
+
+    StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK_CHECK_BUFFER, tvAll);
+
+    vector<string> persist_values;
+    bool ret = true;
+    bool mergeStatus;
+
+    if (any_no_need == false) {
+	MultiGetInternal(keys, persist_values);
+	for (int i = 0; i < keys.size(); i++) {
+	    auto& key = keys[i];
+	    string& tempRawValueStr = persist_values[i];
+	    string newValueStr;
+	    // merge with existing deltas;
+
+	    if (needMergeWithInBufferOperationsFlag[i] == true) {
+		STAT_PROCESS(mergeStatus =
+			deltaKVMergeOperatorPtr_->Merge(tempRawValueStr,
+			    buf_deltas_strs[i], &newValueStr),
+			StatsType::DELTAKV_WRITE_BACK_FULL_MERGE);
+		if (mergeStatus == false) {
+		    debug_error("merge failed: key %s raw value size %lu\n",
+			    key.c_str(), tempRawValueStr.size());
+		    exit(1);
+		}
+	    } else {
+		newValueStr.assign(tempRawValueStr);
+	    }
+
+	    // put
+	    STAT_PROCESS(ret = PutImpl(key, newValueStr),
+		    StatsType::DELTAKV_WRITE_BACK_PUT);
+	    if (ret == false) {
+		debug_error("write back failed, key %s\n", key.c_str());
+	    }
+	}
+    } else {
+	vector<string> new_keys;
+	for (int i = 0; i < keys.size(); i++) {
+	    if (need_write_back[i]) {
+		new_keys.push_back(keys[i]);
+	    }
+	}
+	MultiGetInternal(new_keys, persist_values);
+	int new_ki = 0;
+	for (int i = 0; i < keys.size(); i++) {
+	    if (need_write_back[i] == false) {
+		continue;
+	    }
+
+	    auto& key = keys[i];
+	    string& tempRawValueStr = persist_values[new_ki];
+	    string newValueStr;
+
+	    if (needMergeWithInBufferOperationsFlag[i] == true) {
+		STAT_PROCESS(mergeStatus =
+			deltaKVMergeOperatorPtr_->Merge(tempRawValueStr,
+			    buf_deltas_strs[i], &newValueStr),
+			StatsType::DELTAKV_WRITE_BACK_FULL_MERGE);
+		if (mergeStatus == false) {
+		    debug_error("merge failed: key %s raw value size %lu\n",
+			    key.c_str(), tempRawValueStr.size());
+		    exit(1);
+		}
+	    } else {
+		newValueStr.assign(tempRawValueStr);
+	    }
+
+	    // put
+	    STAT_PROCESS(ret = PutImpl(key, newValueStr),
+		    StatsType::DELTAKV_WRITE_BACK_PUT);
+	    if (ret == false) {
+		debug_error("write back failed, key %s\n", key.c_str());
+	    }
+	
+	    new_ki++;
+	}
     }
 
     return ret;
@@ -1529,6 +1790,9 @@ void DeltaKV::processWriteBackOperationsWorker()
 {
     uint64_t total_written_pairs = 0;
     int written_pairs = 0;
+    int write_back_batch_size = 100;
+    vector<writeBackObject*> pairs;
+    vector<string> keys;
     while (true) {
         if (writeBackOperationsQueue_->done == true && writeBackOperationsQueue_->isEmpty() == true) {
             break;
@@ -1539,8 +1803,16 @@ void DeltaKV::processWriteBackOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
+	    pairs.push_back(currentProcessPair);
+	    while (pairs.size() <= write_back_batch_size &&
+		    writeBackOperationsQueue_->pop(currentProcessPair)) {
+		pairs.push_back(currentProcessPair);
+		keys.push_back(currentProcessPair->key);
+	    }
+
 //            debug_error("(sta) Target Write back key = %s\n", currentProcessPair->key.c_str());
-            bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
+//            bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
+            bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
 //            debug_error("(fin) Target Write back key = %s\n", currentProcessPair->key.c_str());
             if (writeBackStatus == false) {
                 debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
@@ -1548,9 +1820,15 @@ void DeltaKV::processWriteBackOperationsWorker()
             } else {
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
-            written_pairs++;
+            written_pairs += keys.size();
             StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_WRITE_BACK, tv);
-            delete currentProcessPair;
+
+	    for (auto& op : pairs) {
+		delete op;
+	    }
+
+	    pairs.clear();
+	    keys.clear();
         }
 
         if (written_pairs > 0) {
@@ -1564,16 +1842,26 @@ void DeltaKV::processWriteBackOperationsWorker()
                 wb_keys_mutex->unlock();
 
                 while (!q.empty()) {
-                    auto k = q.front(); // get the first element
+//                    auto k = q.front(); // get the first element
+		    keys.push_back(q.front());
                     q.pop();             // remove the first element
 
-                    bool wb = GetCurrentValueThenWriteBack(k);
+		    while (keys.size() <= write_back_batch_size && !q.empty())
+		    {
+			keys.push_back(q.front());
+			q.pop();
+		    }	
+
+//                    bool wb = GetCurrentValueThenWriteBack(keys[0]);
+                    bool wb = GetCurrentValuesThenWriteBack(keys);
                     if (wb == false) {
-                        debug_error("Could not write back target key = %s\n",
-                                k.c_str());
+                        debug_error("Could not write back target keys %lu\n",
+                                keys.size());
                         exit(1);
                     } else {
                     }
+
+		    keys.clear();
                 }
                 written_pairs += num_keys;
             } else {

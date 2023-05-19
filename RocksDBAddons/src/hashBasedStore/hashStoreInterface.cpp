@@ -32,10 +32,13 @@ HashStoreInterface::HashStoreInterface(DeltaKVOptions* options, const string& wo
     if (!hashStoreFileOperator) {
         debug_error("[ERROR] Create HashStoreFileOperator error, file path = %s\n", workingDirStr.c_str());
     }
+    debug_error("part 1 %s\n", "");
     file_manager_ = hashStoreFileManager;
     file_operator_ = hashStoreFileOperator;
-    unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
-    file_manager_->recoveryFromFailureOld(targetListForRedo);
+//    unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
+//    file_manager_->recoveryFromFailureOld(targetListForRedo);
+    file_manager_->recoveryFromFailure();
+    debug_error("part 2 %s\n", "");
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         shouldUseDirectOperationsFlag_ = false;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
@@ -321,7 +324,10 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
         }
 
         StatsRecorder::getInstance()->timeProcess(StatsType::DELTAKV_HASHSTORE_SYNC, tv);
+
+	file_manager_->cleanCommitLog();
     }
+
     return true;
 }
 
@@ -379,7 +385,8 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
 }
 
-bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& valueStrVecVec)
+bool HashStoreInterface::multiGet(const vector<string>& keys,
+	vector<vector<string>>& valueStrVecVec)
 {
     bool ret;
 
@@ -394,7 +401,7 @@ bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& 
     for (int i = 0; i < keys.size(); i++) {
         get_result[i] = false;
         if (kd_cache_ != nullptr) {
-            str_t key(keys[i].data(), keys[i].size());
+	    str_t key(const_cast<char*>(keys[i].data()), keys[i].size());
             str_t delta = kd_cache_->getFromCache(key);
             if (delta.data_ != nullptr && delta.size_ > 0) {
                 valueStrVecVec[i].push_back(string(delta.data_, delta.size_));
@@ -489,7 +496,7 @@ bool HashStoreInterface::multiGet(vector<string>& keys, vector<vector<string>>& 
 			key_i, keys.size(), (int)get_result[key_i]);
 		exit(1);
 	    }
-	    op_hdl->multiget_op.keys->push_back(&keys[index_vec[index]]); 
+	    op_hdl->multiget_op.keys->push_back(const_cast<string*>(&keys[index_vec[index]])); 
 	}
         
         file_operator_->startJob(op_hdl);

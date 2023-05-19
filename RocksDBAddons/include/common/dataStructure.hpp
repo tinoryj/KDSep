@@ -265,8 +265,6 @@ typedef struct hashStoreFileHeader {
     uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
     uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
     uint64_t prefix_bit;
-    uint32_t index_block_size = 0;
-    uint32_t unsorted_part_offset = 0;
     hashStoreFileCreateReason file_create_reason_;
 } hashStoreFileHeader;
 

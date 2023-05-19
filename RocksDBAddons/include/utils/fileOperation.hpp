@@ -54,6 +54,7 @@ public:
     bool createThenOpenFile(string path);
     bool closeFile();
     bool isFileOpen();
+    bool removeAndReopen();
     uint64_t getFileSize();
     uint64_t getCachedFileSize();
     uint64_t getFilePhysicalSize(string path);
@@ -73,6 +74,8 @@ private:
     char* globalWriteBuffer_ = nullptr;
     uint64_t buf_used_size_ = 0;
     uint64_t buf_size_ = 0;
+
+    string path_;
 
     uint64_t mark_data_ = 0;
     uint64_t mark_disk_ = 0;
