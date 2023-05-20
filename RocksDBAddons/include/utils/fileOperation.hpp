@@ -50,12 +50,14 @@ public:
     FileOpStatus flushFile();
 
     bool openFile(string path);
+    bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size);
     bool createFile(string path);
     bool createThenOpenFile(string path);
     bool closeFile();
     bool isFileOpen();
     bool removeAndReopen();
     uint64_t getFileSize();
+    uint64_t getCachedFileDataSize();
     uint64_t getCachedFileSize();
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();

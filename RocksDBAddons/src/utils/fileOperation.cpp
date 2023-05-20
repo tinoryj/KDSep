@@ -96,6 +96,81 @@ bool FileOperation::openFile(string path)
     }
 }
 
+bool FileOperation::openAndReadFile(string path, char*& read_buf, uint64_t& data_size)
+{
+    path_ = path;
+    if (operationType_ == kFstream) {
+        fileStream_.open(path, ios::in | ios::out | ios::binary);
+        if (fileStream_.is_open() == false) {
+            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
+            return false;
+        } else {
+            return true;
+        }
+    } else if (operationType_ == kDirectIO ||
+            operationType_ == kAlignLinuxIO) {
+        auto flag = O_RDWR | (operationType_ == kDirectIO ? O_DIRECT : 0);
+        fd_ = open(path.c_str(), flag, 0644);
+        if (fd_ == -1) {
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fd_, strerror(errno));
+            return false;
+        } 
+
+        if (newlyCreatedFileFlag_ == true) {
+            disk_size_ = 0;
+            data_size_ = 0;
+            debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fd_, disk_size_, data_size_);
+        } 
+        
+        // here different from openFile()
+        disk_size_ = getFilePhysicalSize(path);
+        data_size_ = 0;
+
+        uint64_t req_page_num = (disk_size_ + page_size_ - 1) / page_size_;
+        // align mem
+        char* readBuffer;
+        auto readBufferSize = page_size_ * req_page_num;
+        auto ret = posix_memalign((void**)&readBuffer, page_size_, readBufferSize);
+        read_buf = new char[readBufferSize];
+
+        if (ret) {
+            debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+            return false;
+        }
+        auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
+        if (rReturn != readBufferSize) {
+            free(readBuffer);
+            debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", rReturn, strerror(errno), req_page_num, readBufferSize, disk_size_);
+            free(readBuffer);
+            return false;
+        }
+
+        data_size = 0;
+        disk_size_ = 0;
+        for (auto page_i = 0; page_i < req_page_num; page_i++) {
+            uint32_t page_data_size = 0;
+            memcpy(&page_data_size, readBuffer + page_i * page_size_, sizeof(uint32_t));
+
+            if (page_data_size == 0) {
+                break;
+            }
+
+            disk_size_ += page_size_;
+            memcpy(read_buf + data_size, 
+                    readBuffer + page_i * page_size_ + sizeof(uint32_t), 
+                    page_data_size);
+            data_size += page_data_size;
+        }
+        data_size_ = data_size;
+        free(readBuffer);
+        buf_used_size_ = 0;
+        debug_info("Open old file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fd_, disk_size_, data_size_);
+        return true;
+    } else {
+        return false;
+    }
+}
+
 bool FileOperation::createThenOpenFile(string path)
 {
     path_ = path;
@@ -967,6 +1042,22 @@ uint64_t FileOperation::getCachedFileSize() {
             operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
         return disk_size_;
+    } else {
+        return 0;
+    }
+}
+
+uint64_t FileOperation::getCachedFileDataSize() {
+    // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
+    if (operationType_ == kFstream) {
+        fileStream_.seekg(0, ios::end);
+        uint64_t fileSize = fileStream_.tellg();
+        fileStream_.seekg(0, ios::beg);
+        return fileSize;
+    } else if (operationType_ == kDirectIO || 
+            operationType_ == kAlignLinuxIO ||
+            operationType_ == kPreadWrite) {
+        return data_size_;
     } else {
         return 0;
     }

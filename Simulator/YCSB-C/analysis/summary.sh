@@ -32,6 +32,9 @@ for file in ${files[@]}; do
             loadtime=`grep "Load time" $file | awk 'BEGIN {t=0;} {t=$(NF-1);} END {print t;}'`
             records=`grep "Loading records" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'`
             thpt=`echo "$loadtime $records" | awk '{print $2/($1+0.000001);}'`
+            if [[ "$thpt" == "0" ]]; then
+                thpt=`grep "recovery total time" $file | awk 'BEGIN {t=0;} {t=$NF;} END {print t;}'`
+            fi
         fi
     fi
 

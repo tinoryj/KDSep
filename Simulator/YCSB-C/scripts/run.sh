@@ -593,7 +593,7 @@ for param in $*; do
 	crash="true"
         crashTime=`echo $param | sed 's/crash//g'`
 	rTime=$RANDOM
-	crashTime=$(( $rTime % $crashTime ))
+	crashTime=$(( $rTime % $crashTime + 60))
         run_suffix=${run_suffix}_${param}_${crashTime}
 	echo "${param} ${crashTime}"
     fi

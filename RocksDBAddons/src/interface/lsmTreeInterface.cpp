@@ -8,9 +8,20 @@ bool LsmTreeInterface::Open(DeltaKVOptions& options, const string& name) {
         options.rocks_opt.merge_operator.reset(mergeOperator_); // reset
 //    }
 
+    struct timeval tv, tv2;
+    gettimeofday(&tv, 0);
     rocksdb::Status rocksDBStatus =
         rocksdb::DB::Open(options.rocks_opt, name,
                 &rocksdb_);
+    gettimeofday(&tv2, 0);
+
+    printf("restore rocksdb time: %.6lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+    debug_error("restore rocksdb time: %.6lf\n", 
+	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+	    tv.tv_usec / 1000000.0);
+
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n",
                 rocksDBStatus.ToString().c_str());

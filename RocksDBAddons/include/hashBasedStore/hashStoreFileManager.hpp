@@ -46,6 +46,10 @@ public:
     bool prepareForUpdatingMetadata(vector<hashStoreFileMetaDataHandler*>& file_hdls);
 
     // recovery
+    void recoveryFile(string filename, 
+            boost::atomic<uint64_t>& data_sizes,
+            boost::atomic<uint64_t>& disk_sizes,
+            boost::atomic<uint64_t>& cnt); // return map of key to all related values that need redo, bool flag used for is_anchor check
     bool recoveryFromFailure(); // return map of key to all related values that need redo, bool flag used for is_anchor check
     bool recoveryFromFailureOld(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
 

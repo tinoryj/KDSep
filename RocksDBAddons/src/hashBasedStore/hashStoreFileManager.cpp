@@ -248,6 +248,37 @@ bool HashStoreFileManager::deleteObslateFileWithFileIDAsInput(uint64_t fileID)
     }
 }
 
+void HashStoreFileManager::recoveryFile(string filename, 
+        boost::atomic<uint64_t>& data_sizes,
+        boost::atomic<uint64_t>& disk_sizes,
+        boost::atomic<uint64_t>& cnt) {
+    FileOperation* fop = new FileOperation(kDirectIO, 
+            maxBucketSize_, 0);
+    bool ret = fop->openFile(filename);
+    if (ret == true) {
+        uint64_t onDiskFileSize = fop->getCachedFileSize();
+        uint64_t data_size = fop->getCachedFileDataSize();
+        if (onDiskFileSize == 0) {
+            printf("[ERROR] read failed: %s\n",
+                    filename.c_str()); 
+            debug_error("[ERROR] read failed: %s\n",
+                    filename.c_str()); 
+        }
+
+        disk_sizes += onDiskFileSize;
+        data_sizes += data_size;
+    } else {
+        printf("[ERROR] open failed: %s\n",
+                filename.c_str()); 
+        debug_error("[ERROR] open failed: %s\n",
+                filename.c_str()); 
+    }
+
+    fop->closeFile();
+    delete fop;
+    cnt--;
+}
+
 bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + value pair
 {
     // get all the file ids (temporarily)
@@ -256,26 +287,30 @@ bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + val
     debug_error("start recovery %s\n", "");
     vector<uint64_t> scannedOnDiskFileIDList;
     int cnt_f = 0;
-    uint64_t read_size = 0;
+    uint64_t success_read_size = 0;
+
+    boost::asio::thread_pool* recovery_thread_ = new boost::asio::thread_pool(8);
+    boost::atomic<uint64_t> cnt_in_progress;
+    boost::atomic<uint64_t> data_sizes;
+    boost::atomic<uint64_t> disk_sizes;
+    cnt_in_progress = 0;
+    data_sizes = 0;
+    disk_sizes = 0;
+
     for (const auto& dirEntry : filesystem::recursive_directory_iterator(workingDir_)) {
         string currentFilePath = dirEntry.path();
         if (currentFilePath.find(".delta") != string::npos) {
+            cnt_in_progress++;
 
-	    if (true) {
-		auto flag = O_RDWR | O_DIRECT;
-		int fd = open(currentFilePath.c_str(), flag, 0644);
-		struct stat statbuf;
-		stat(currentFilePath.c_str(), &statbuf);
-		uint64_t physicalFileSize = statbuf.st_size;
-		char buf[physicalFileSize];
-		pread(fd, buf, physicalFileSize, 0);
-		read_size += physicalFileSize;
-		close(fd);
-	    } else {
-		FileOperation* fop = new FileOperation(kDirectIO, 
-			maxBucketSize_, 0);
-		fop->openFile(currentFilePath);
-	    }
+            boost::asio::post(*recovery_thread_,
+                    boost::bind(
+                        &HashStoreFileManager::recoveryFile,
+                        this,
+                        currentFilePath,
+                        boost::ref(data_sizes),
+                        boost::ref(disk_sizes),
+                        boost::ref(cnt_in_progress)));
+
 	    cnt_f++;
 //            currentFilePath = currentFilePath.substr(currentFilePath.find("/") + 1);
 //            uint64_t currentFileID = stoull(currentFilePath);
@@ -285,47 +320,52 @@ bool HashStoreFileManager::recoveryFromFailure() // return key to isAnchor + val
         }
     }
 
-    debug_error("part 2 (%d files, read size %lu)\n", 
-	    cnt_f, read_size);
+    while (cnt_in_progress > 0) {
+        asm volatile("");
+    }
+
+    uint64_t t1, t2;
+    t1 = data_sizes;
+    t2 = disk_sizes;
+
+    debug_error("part 2 (%d files, data size %lu disk size %lu)\n", 
+	    cnt_f, t1, t2);
+    printf("part 2 (%d files, data size %lu disk size %lu)\n", 
+	    cnt_f, t1, t2);
+
     gettimeofday(&tv2, 0);
-    debug_error("read all buckets time: %.3lf\n", 
+    debug_error("read all buckets time: (asio) %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
-    printf("read all buckets time: %.3lf\n", 
+    printf("read all buckets time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
     
     gettimeofday(&tv, 0);
 
     string commit_log_path = workingDir_ + "/commit.log";
-
-    auto flag = O_RDWR | O_DIRECT;
-    int fd = open(commit_log_path.c_str(), flag, 0644);
-    debug_error("open finished: %d\n", fd);
-    if (fd > 0) {
-	struct stat statbuf;
-	stat(commit_log_path.c_str(), &statbuf);
-	uint64_t physicalFileSize = statbuf.st_size;
-	debug_error("physical file size : %lu\n", physicalFileSize); 
-	if (physicalFileSize > 0) {
-	    char* buf = new char[physicalFileSize];
-	    pread(fd, buf, physicalFileSize, 0);
-	    read_size += physicalFileSize;
-	    cnt_f++;
-	    close(fd);
-	    delete[] buf;
-	}
+    commit_log_fop_ = new FileOperation(kDirectIO,
+            commit_log_maximum_size_, 0);
+    bool ret_open = commit_log_fop_->openFile(commit_log_path);
+    if (ret_open == true) {
+        uint64_t fs = commit_log_fop_->getCachedFileSize();
+        if (fs > 0) {
+            cnt_f++;
+        }
+    } else {
+        commit_log_fop_->createThenOpenFile(commit_log_path);
     }
+
     gettimeofday(&tv2, 0);
-    printf("read commit log time: %.3lf\n", 
+    printf("read commit log time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
-    debug_error("read commit log time: %.3lf\n", 
+    debug_error("read commit log time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
 
-    debug_error("end recovery (%d files, read size %lu)\n", 
-	    cnt_f, read_size);
+    debug_error("end recovery (%d files)\n", 
+	    cnt_f);
     return true;
 }
 
@@ -844,13 +884,13 @@ bool HashStoreFileManager::RetriveHashStoreFileMetaDataList()
 	file_hdl->sorted_filter = new BucketKeyFilter();
 	file_hdl->filter = new BucketKeyFilter();
 	// open current file for further usage
-	file_hdl->file_op_ptr->openFile(workingDir_ + "/" + to_string(file_hdl->file_id) + ".delta");
-	uint64_t onDiskFileSize = file_hdl->file_op_ptr->getFileSize();
-	if (onDiskFileSize > file_hdl->total_object_bytes && shouldDoRecoveryFlag_ == false) {
-	    debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, file_hdl->total_object_bytes);
-	} else if (onDiskFileSize < file_hdl->total_object_bytes && shouldDoRecoveryFlag_ == false) {
-	    debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, file_hdl->total_object_bytes);
-	}
+//	file_hdl->file_op_ptr->openFile(workingDir_ + "/" + to_string(file_hdl->file_id) + ".delta");
+//	uint64_t onDiskFileSize = file_hdl->file_op_ptr->getFileSize();
+//	if (onDiskFileSize > file_hdl->total_object_bytes && shouldDoRecoveryFlag_ == false) {
+//	    debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, file_hdl->total_object_bytes);
+//	} else if (onDiskFileSize < file_hdl->total_object_bytes && shouldDoRecoveryFlag_ == false) {
+//	    debug_error("[ERROR] Should not recovery, but on diks file size = %lu, in metadata file size = %lu. The flushed metadata not correct\n", onDiskFileSize, file_hdl->total_object_bytes);
+//	}
 	// re-insert into trie and map for build index
 	if (currentFileUsedPrefixLength != prefixHashStr.size()) {
 	    debug_error("[ERROR] prefix len error: %lu v.s. %lu\n",
