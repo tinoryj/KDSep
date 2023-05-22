@@ -2,7 +2,7 @@
 
 #include "utils/utils.hpp"
 #include "utils/murmurHash.hpp"
-#include "indexBasedStore/ds/bitmap.hh"
+#include "vlog/ds/bitmap.hh"
 #include <unordered_set>
 
 using namespace std;

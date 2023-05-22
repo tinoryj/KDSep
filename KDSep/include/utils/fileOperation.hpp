@@ -50,7 +50,6 @@ public:
     FileOpStatus flushFile();
 
     bool openFile(string path);
-    bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size);
     bool createFile(string path);
     bool createThenOpenFile(string path);
     bool closeFile();
@@ -62,6 +61,11 @@ public:
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();
     void markDirectDataAddress(uint64_t data);
+
+    // for recovery
+    bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
+	    bool save_page_data_sizes);
+    bool rollbackFile(char* read_buf, uint64_t rollback_offset);
 
 private:
     fileOperationType operationType_;
@@ -82,6 +86,9 @@ private:
     uint64_t mark_data_ = 0;
     uint64_t mark_disk_ = 0;
     uint64_t mark_in_page_offset_ = 0;
+
+    bool recovery_state_ = false;
+    std::vector<uint32_t> page_data_sizes_;
 };
 
 } // namespace KDSEP_NAMESPACE

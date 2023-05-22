@@ -45,8 +45,8 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
 
     for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
         if (targetDeleteVec[i] != nullptr) {
-            if (targetDeleteVec[i]->file_op_ptr != nullptr) {
-                delete targetDeleteVec[i]->file_op_ptr;
+            if (targetDeleteVec[i]->io_ptr != nullptr) {
+                delete targetDeleteVec[i]->io_ptr;
             }
             delete targetDeleteVec[i];
         }

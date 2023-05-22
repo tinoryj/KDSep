@@ -13,8 +13,8 @@
 #include <vector>
 
 // diskManager
-// #define DISK_DIRECT_IO
-// #define PAGE_ALIGN
+//#define DISK_DIRECT_IO
+//#define PAGE_ALIGN
 #define DISK_BLKSIZE (512)
 #define DIRECT_LBA_SEGMENT_MAPPING 1
 
@@ -61,8 +61,8 @@ static inline void* buf_calloc(size_t s, unsigned int unit)
 #endif
 
 // keyManager (in general)
-// #define KEY_SIZE    (16)
-// #define KEY_SIZE    (24)
+//#define KEY_SIZE    (16)
+//#define KEY_SIZE    (24)
 
 // valueManager
 #define MAX_CP_NUM (128)
@@ -102,7 +102,7 @@ typedef boost::shared_mutex RWMutex;
 #define ACTUAL_DISK_IO
 #undef DISKLBA_OUT
 #endif
-// #define READ_AHEAD    (64 * 1024)
+//#define READ_AHEAD    (64 * 1024)
 #define INVALID_VALUE (-1)
 #define INVALID_LBA (lba_t)(INVALID_VALUE)
 #define INVALID_DISK (disk_id_t)(INVALID_VALUE)

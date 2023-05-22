@@ -25,7 +25,7 @@ public:
 
     void GetRocksDBProperty(const string& property, string* str);
     bool Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values);
-    //    bool SingleDelete(const string& key);
+//    bool SingleDelete(const string& key);
 
 private:
     KeyValueMemPoolBase* objectPairMemPool_ = nullptr;
@@ -37,7 +37,7 @@ private:
     messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
-    //    boost::atomic<bool>* write_stall_ = nullptr;
+//    boost::atomic<bool>* write_stall_ = nullptr;
     bool* write_stall_ = nullptr;
     std::queue<string>* wb_keys = nullptr;
     std::mutex* wb_keys_mutex = nullptr;
@@ -59,28 +59,28 @@ private:
     bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
 
     bool PutImpl(const string& key, const string& value);
-    bool SinglePutInternal(const mempoolHandler_t& mempoolHandler);
+    bool SinglePutInternal(const mempoolHandler_t& mempoolHandler); 
     bool SingleMergeInternal(const mempoolHandler_t& mempoolHandler);
-    bool GetInternal(const string& key, string* value, uint32_t maxSequenceNumber, bool writing_back);
+    bool GetInternal(const string& key, string* value, bool writing_back);
     bool MultiGetFullMergeInternal(const vector<string>& keys,
-        const vector<string>& lsm_values,
-        const vector<vector<string>>& key_deltas,
-        vector<string>& values);
+	const vector<string>& lsm_values,
+	const vector<vector<string>>& key_deltas,
+	vector<string>& values); 
 
-    bool MultiGetInternal(const vector<string>& keys, vector<string>& values);
-    //    bool GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool writing_back);
+    bool MultiGetInternal(const vector<string>& keys, vector<string>& values); 
     bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
     bool GetCurrentValueThenWriteBack(const string& key);
     bool GetCurrentValuesThenWriteBack(const vector<string>& keys);
-    //    bool GetFromBuffer(const string& key, vector<string>& values);
+//    bool GetFromBuffer(const string& key, vector<string>& values);
 
     bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
     void processLsmInterfaceOperationsWorker();
-    void processLsmInterfaceThreadPoolOperationsWorker(lsmInterfaceOperationStruct* op);
+
+    void Recovery();
 
     bool isDeltaStoreInUseFlag_ = false;
     bool useInternalRocksDBBatchOperationsFlag_ = false;
@@ -109,30 +109,24 @@ private:
     std::condition_variable lsm_interface_cv;
     bool enable_write_back_ = false;
     std::shared_mutex writeBackOperationsMtx_;
-    bool enableKeyValueCache_ = false;
-    AppendAbleLRUCache<string, string>* keyToValueListCache_ = nullptr;
-
-    // boost thread
-    boost::asio::thread_pool* lsm_thread_ = nullptr;
 
     // thread management
     vector<boost::thread*> thList_;
     bool deleteExistingThreads();
     // for separated operations
     bool extractDeltas(string internalValue, uint64_t skipSize,
-        vector<pair<bool, string>>& mergeOperatorsVec,
-        uint32_t& maxSequenceNumber);
+            vector<pair<bool, string>>& mergeOperatorsVec);
     bool extractDeltas(string internalValue, uint64_t skipSize,
-        vector<pair<bool, string>>& mergeOperatorsVec,
-        vector<KvHeader>& mergeOperatorsRecordVec,
-        uint32_t& maxSequenceNumber);
+            vector<pair<bool, string>>& mergeOperatorsVec, 
+            vector<KvHeader>& mergeOperatorsRecordVec);
     // Storage component for delta store
 
     HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
-    HashStoreFileManager* hashStoreFileManagerPtr_ = nullptr;
-    HashStoreFileOperator* hashStoreFileOperatorPtr_ = nullptr;
+    BucketManager* hashStoreFileManagerPtr_ = nullptr;
+    BucketOperator* hashStoreFileOperatorPtr_ = nullptr;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
+
 };
 
 } // namespace KDSEP_NAMESPACE

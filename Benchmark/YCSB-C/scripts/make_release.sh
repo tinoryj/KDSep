@@ -8,6 +8,8 @@
 #    sleep 2
 #done
 
+#cd /home/jhli/workspace/KDSep/KDSep-work/KDSep
+
 DIR=$(dirname $(realpath $0))
 
 cd ${DIR}/../../../KDSep

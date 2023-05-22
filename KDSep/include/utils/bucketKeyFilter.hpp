@@ -1,6 +1,6 @@
 #pragma once
 
-#include "indexBasedStore/ds/bitmap.hh"
+#include "vlog/ds/bitmap.hh"
 #include <unordered_set>
 
 using namespace std;

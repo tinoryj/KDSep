@@ -53,7 +53,7 @@ public:
         return max_file_num_ - current_file_num_;
     }
 
-    uint64_t insert(const uint64_t& prefix_u64, hashStoreFileMetaDataHandler*&
+    uint64_t insert(const uint64_t& prefix_u64, BucketHandler*&
             newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
@@ -87,8 +87,8 @@ public:
     }
 
     pair<uint64_t, uint64_t> insertPairOfNodes(const uint64_t& prefix1,
-            hashStoreFileMetaDataHandler*& newData1, const uint64_t& prefix2,
-            hashStoreFileMetaDataHandler*& newData2)
+            BucketHandler*& newData1, const uint64_t& prefix2,
+            BucketHandler*& newData2)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
 //        std::scoped_lock<std::shared_mutex> w_lock(
@@ -141,8 +141,8 @@ public:
     }
 
     uint64_t insertWithFixedBitNumber(const uint64_t& prefix_u64, uint64_t
-            fixedBitNumber, hashStoreFileMetaDataHandler* newData, 
-	    hashStoreFileMetaDataHandler*& oldData)
+            fixedBitNumber, BucketHandler* newData, 
+	    BucketHandler*& oldData)
     {
 //        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         std::scoped_lock<std::shared_mutex> w_lock(
@@ -183,7 +183,7 @@ public:
     }
 
     bool get(const uint64_t prefix_u64,
-            hashStoreFileMetaDataHandler*& newData, 
+            BucketHandler*& newData, 
             uint64_t prefix_len = 64)
     {
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
@@ -206,7 +206,7 @@ public:
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         std::scoped_lock<std::shared_mutex> r_lock(
                 rootMtx_[prefix_u64 & fixed_bit_mask_]);
-        hashStoreFileMetaDataHandler* newData;
+        BucketHandler* newData;
         bool status = findPrefixTreeNode(roots_[prefix_u64 & fixed_bit_mask_],
                 prefix_u64, newData, find_at_level_id);
         return status;
@@ -248,7 +248,7 @@ public:
 
     bool updateDataObjectForTargetLeafNode(const uint64_t& prefix_u64, 
             const uint64_t& prefix_len, uint64_t& find_at_level_id, 
-            hashStoreFileMetaDataHandler* newDataObj)
+            BucketHandler* newDataObj)
     {
 //        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
         std::scoped_lock<std::shared_mutex> w_lock(
@@ -263,7 +263,7 @@ public:
         }
     }
 
-    bool getCurrentValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
+    bool getCurrentValidNodes(vector<pair<string, BucketHandler*>>& validObjectList)
     {
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
@@ -314,7 +314,7 @@ public:
     }
 
     bool getCurrentValidNodes(vector<pair<uint64_t,
-            hashStoreFileMetaDataHandler*>>& validObjectList)
+            BucketHandler*>>& validObjectList)
     {
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
 
@@ -356,7 +356,7 @@ public:
         }
     }
 
-    bool getCurrentValidNodesNoKey(vector<hashStoreFileMetaDataHandler*>&
+    bool getCurrentValidNodesNoKey(vector<BucketHandler*>&
             validObjectList)
     {
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
@@ -396,7 +396,7 @@ public:
         }
     }
 
-    bool getPossibleValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& validObjectList)
+    bool getPossibleValidNodes(vector<pair<string, BucketHandler*>>& validObjectList)
     {
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         // post order
@@ -440,7 +440,7 @@ public:
         return (validObjectList.size() != 0);
     }
 
-    bool getInValidNodes(vector<pair<string, hashStoreFileMetaDataHandler*>>& invalidObjectList)
+    bool getInValidNodes(vector<pair<string, BucketHandler*>>& invalidObjectList)
     {
 
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
@@ -483,7 +483,7 @@ public:
         return (invalidObjectList.size() != 0);
     }
 
-    bool getInvalidNodesNoKey(vector<hashStoreFileMetaDataHandler*>& invalidObjectList)
+    bool getInvalidNodesNoKey(vector<BucketHandler*>& invalidObjectList)
     {
 
 //        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
@@ -563,9 +563,9 @@ private:
         bool is_leaf = false;
         uint64_t prefix_u64 = 0;
         uint64_t prefix_len = 0;
-        hashStoreFileMetaDataHandler* data = nullptr; //
+        BucketHandler* data = nullptr; //
     } prefixTreeNode;
-    vector<hashStoreFileMetaDataHandler*> targetDeleteVec;
+    vector<BucketHandler*> targetDeleteVec;
     std::shared_mutex nodeOperationMtx_;
     std::shared_mutex* rootMtx_;
     uint64_t nextNodeID_ = 0;
@@ -605,7 +605,7 @@ private:
     }
 
     bool addPrefixTreeNode(prefixTreeNode* root, const uint64_t& prefix_u64,
-            hashStoreFileMetaDataHandler* newDataObj, 
+            BucketHandler* newDataObj, 
             uint64_t& insertAtLevelID)
     {
         access_num_++;
@@ -747,8 +747,8 @@ private:
 
     bool addPrefixTreeNodeWithFixedBitNumber(prefixTreeNode* root, 
             const uint64_t& prefix_u64, uint64_t fixedBitNumber,
-            hashStoreFileMetaDataHandler* newDataObj, 
-	    hashStoreFileMetaDataHandler*& oldDataObj,
+            BucketHandler* newDataObj, 
+	    BucketHandler*& oldDataObj,
             uint64_t& insertAtLevelID)
     {
         uint64_t lvl = partition_bit_;
@@ -857,7 +857,7 @@ private:
     }
 
     bool findPrefixTreeNode(prefixTreeNode* root, const uint64_t& prefix_u64,
-            hashStoreFileMetaDataHandler*& currentDataTObj, 
+            BucketHandler*& currentDataTObj, 
             uint64_t& find_at_level_id, uint64_t prefix_len = 64)
     {
         access_num_++;
@@ -1002,7 +1002,7 @@ private:
 
     bool updateLeafNodeDataObject(prefixTreeNode* root, const uint64_t&
             prefix_u64, const uint64_t prefix_len, uint64_t& find_at_level_id,
-            hashStoreFileMetaDataHandler* newDataObj)
+            BucketHandler* newDataObj)
     {
         uint64_t searchLevelNumber = prefix_len;
         find_at_level_id = partition_bit_;

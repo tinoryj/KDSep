@@ -7,4 +7,3 @@ scripts/buildRelease.sh
 cd ${DIR}/Benchmark/YCSB-C
 make clean
 make
-$(pwd)

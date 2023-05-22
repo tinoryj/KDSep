@@ -11,7 +11,7 @@ typedef struct mempoolHandler_t {
     uint32_t mempoolHandlerID_;
     uint32_t keySize_;
     uint32_t valueSize_;
-    uint32_t sequenceNumber_;
+    uint32_t seq_num;
     bool isAnchorFlag_;
     char* keyPtr_ = nullptr;
     char* valuePtr_ = nullptr;

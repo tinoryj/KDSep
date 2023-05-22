@@ -1,20 +1,20 @@
 #pragma once
 
 #include "boost/thread.hpp"
-#include "common/rocksdbHeaders.hpp"
+#include "utils/utils.hpp"
 #include "utils/fileOperation.hpp"
 #include "utils/mempool.hpp"
-#include "utils/utils.hpp"
 #include "utils/xxhash.h"
-#include <boost/asio.hpp>
-#include <boost/asio/thread_pool.hpp>
 #include <boost/atomic.hpp>
-#include <boost/bind/bind.hpp>
-#include <boost/thread.hpp>
-#include <boost/thread/thread.hpp>
 #include <condition_variable>
 #include <shared_mutex>
 #include <string_view>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/bind/bind.hpp>
+#include <boost/thread.hpp>
+#include <boost/thread/thread.hpp>
+#include "common/rocksdbHeaders.hpp"
 
 using namespace std;
 
@@ -40,7 +40,7 @@ static unsigned int charBasedHashFunc(char* data, uint32_t n)
     unsigned int scale = 388650179;
     unsigned int hardener = 1176845762;
     uint32_t i;
-    for (i = 0; i < n / 4 * 4; i += 4) {
+    for (i = 0; i < n / 4 * 4; i+=4) {
         hash *= scale;
         hash += *((uint32_t*)(data + i));
     }
@@ -57,7 +57,7 @@ static unsigned int charBasedHashFuncConst(const char* data, uint32_t n)
     unsigned int scale = 388650179;
     unsigned int hardener = 1176845762;
     uint32_t i;
-    for (i = 0; i < n / 4 * 4; i += 4) {
+    for (i = 0; i < n / 4 * 4; i+=4) {
         hash *= scale;
         hash += *((uint32_t*)(data + i));
     }
@@ -132,17 +132,13 @@ struct mapHashKeyForMemPoolHandler_t {
 struct KvHeader {
     bool mergeFlag_ = false; // true if the value request merge.
     bool valueSeparatedFlag_ = false; // true if the value is stored outside LSM-tree
-    uint32_t sequenceNumber_ = 0; // global sequence number
+    uint32_t seq_num = 0; // global sequence number
     uint32_t rawValueSize_ = 0; // store the raw value size, in case some delta are not separated.
-    KvHeader() { }
+    KvHeader() {} 
     KvHeader(bool mergeFlag, bool valueSeparatedFlag, uint32_t sequenceNumber,
-        uint32_t rawValueSize)
-        : mergeFlag_(mergeFlag)
-        , valueSeparatedFlag_(valueSeparatedFlag)
-        , sequenceNumber_(sequenceNumber)
-        , rawValueSize_(rawValueSize)
-    {
-    }
+            uint32_t rawValueSize) : mergeFlag_(mergeFlag),
+    valueSeparatedFlag_(valueSeparatedFlag), seq_num(sequenceNumber),
+    rawValueSize_(rawValueSize) {} 
 };
 
 // index size: 12 bytes
@@ -166,64 +162,56 @@ struct externalIndexInfo {
 enum DBOperationType { kPutOp = 0,
     kMergeOp = 1 };
 
-enum hashStoreFileCreateReason { kNewFile = 0,
-    kInternalGCFile = 1,
-    kSplitFile = 2,
-    kMergeFile = 3,
-    kRewritedObjectFile = 4 };
-
-enum hashStoreFileOperationType { kPut = 0,
+enum deltaStoreOperationType { kPut = 0,
     kGet = 1,
     kMultiGet = 2,
     kMultiPut = 3,
     kFlush = 4,
-    kFind = 5 };
+    kFind = 5};
 
-enum hashStoreFileGCType { kNew = 0, // newly created files (or only gc internal files)
+enum deltaStoreGCType { kNew = 0, // newly created files (or only gc internal files)
     kMayGC = 1, // tried gc by start threshold, but could not done internal gc or split right now， waiting for force threshold
     kNoGC = 2, // tried gc by force threshold, but could not done internal gc or split, mark as not gc forever
     kNeverGC = 3, // if GC, the file will exceed trie bit number limit
     kShouldDelete = 4 }; // gc done, split/merge to new file, this file should be delete
 
-struct hashStoreFileMetaDataHandler {
+struct BucketHandler {
     uint64_t file_id = 0;
     uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
     uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
-    uint64_t prefix_bit = 0;
-    hashStoreFileCreateReason file_create_reason_ = kNewFile;
+    uint64_t prefix = 0;
+    uint64_t max_seq_num = 0;
     uint64_t total_object_cnt = 0;
     uint64_t total_object_bytes = 0;
     uint64_t total_on_disk_bytes = 0;
     uint64_t no_gc_wait_operation_number_ = 0;
-    hashStoreFileGCType gc_status = kNew;
+    deltaStoreGCType gc_status = kNew;
     bool markedByMultiPut = false;
     bool markedByMultiGet = false;
     uint64_t num_anchors = 0;
 
-    int8_t file_ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
-    FileOperation* file_op_ptr;
-    std::shared_mutex fileOperationMutex_;
-    //    std::unordered_set<string> storedKeysSet_;
+    int8_t ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
+    FileOperation* io_ptr;
+    std::shared_mutex op_mtx;
+//    std::unordered_set<string> storedKeysSet_;
     BucketKeyFilter* filter = nullptr;
     BucketKeyFilter* sorted_filter = nullptr;
     BucketIndexBlock* index_block = nullptr;
     uint64_t unsorted_part_offset = 0;
 
-    bool DiskAndBufferSizeExceeds(uint64_t threshold)
-    {
-        return total_on_disk_bytes + file_op_ptr->getFileBufferedSize() > threshold;
+    bool DiskAndBufferSizeExceeds(uint64_t threshold) {
+        return total_on_disk_bytes + io_ptr->getFileBufferedSize() >
+            threshold;
     }
-    bool UnsortedPartExceeds(uint64_t threshold)
-    {
-        return total_on_disk_bytes + file_op_ptr->getFileBufferedSize()
-            - unsorted_part_offset
-            > threshold;
+    bool UnsortedPartExceeds(uint64_t threshold) {
+        return total_on_disk_bytes + io_ptr->getFileBufferedSize() 
+           - unsorted_part_offset > threshold;
     }
 };
 
 struct hashStoreWriteOperationHandler {
     mempoolHandler_t* object;
-};
+}; 
 
 struct hashStoreMultiPutOperationHandler {
     mempoolHandler_t* objects;
@@ -243,8 +231,8 @@ enum operationStatus {
 };
 
 struct hashStoreOperationHandler {
-    hashStoreFileOperationType op_type;
-    hashStoreFileMetaDataHandler* file_hdl;
+    deltaStoreOperationType op_type;
+    BucketHandler* bucket;
 
     // kPut
     hashStoreWriteOperationHandler write_op;
@@ -260,29 +248,19 @@ struct hashStoreOperationHandler {
     mempoolHandler_t* object;
     operationStatus job_done = kNotDone;
 
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_hdl)
-        : file_hdl(file_hdl) {};
-    hashStoreOperationHandler()
-        : file_hdl(nullptr) {};
+    hashStoreOperationHandler(BucketHandler* bucket)
+        : bucket(bucket) {};
+    hashStoreOperationHandler() : bucket(nullptr) {};
 };
 
-// header size: 24 bytes
-typedef struct hashStoreFileHeader {
-    uint64_t file_id;
-    uint64_t previous_file_id_first_ = 0xffffffffffffffff; // used for file create reason == kInternalGCFile || kSplitFile || kMergeFile
-    uint64_t previous_file_id_second_ = 0xffffffffffffffff; // only used for file create reason == kMergeFile
-    uint64_t prefix_bit;
-    hashStoreFileCreateReason file_create_reason_;
-} hashStoreFileHeader;
-
 // header size: 16 bytes
-typedef struct hashStoreRecordHeader {
+typedef struct KDRecordHeader {
     uint32_t key_size_;
     uint32_t value_size_ = 0;
-    uint32_t sequence_number_;
+    uint32_t seq_num;
     bool is_anchor_;
     bool is_gc_done_ = false; // to mark gc job done
-} hashStoreRecordHeader;
+} KDRecordHeader;
 
 typedef struct writeBackObject {
     string key;

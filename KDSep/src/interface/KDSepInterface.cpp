@@ -27,9 +27,6 @@ KDSep::~KDSep()
     }
     rss = getRss();
     cerr << "[KDSep Interface] Try delete Read Cache " << rss << endl;
-    if (enableKeyValueCache_ == true) {
-        delete keyToValueListCache_;
-    }
     if (wb_keys != nullptr) {
 	delete wb_keys;
 	delete wb_keys_mutex;
@@ -74,9 +71,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     printf("restore lsmTree interface time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
-    debug_error("restore lsmTree interface time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
 
     write_stall_ = options.write_stall;
     options.wb_keys = new std::queue<string>;
@@ -88,12 +82,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     // Rest merge function if delta/value separation enabled
     KDSepMergeOperatorPtr_ = options.KDSep_merge_operation_ptr;
     enableLsmTreeDeltaMeta_ = options.enable_lsm_tree_delta_meta;
-    if (options.enable_key_value_cache_ == true && options.key_value_cache_object_number_ != 0) {
-        enableKeyValueCache_ = true;
-        keyToValueListCache_ = new AppendAbleLRUCache<string, string>(options.key_value_cache_object_number_);
-    } else {
-        enableKeyValueCache_ = false;
-    }
+
     if (options.enable_batched_operations_ == true) {
         batch_map_[0] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
         batch_map_[1] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
@@ -116,7 +105,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
     if (options.enable_parallel_lsm_interface_ == true) {
         enableParallelLsmInterface = true;
-//        lsm_thread_ = new boost::asio::thread_pool(1);
         lsmInterfaceOperationsQueue_ = new messageQueue<lsmInterfaceOperationStruct*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&KDSep::processLsmInterfaceOperationsWorker, this));
         thList_.push_back(th);
@@ -127,27 +115,29 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     if (options.enable_deltaStore == true && HashStoreInterfaceObjPtr_ == nullptr) {
         isDeltaStoreInUseFlag_ = true;
         HashStoreInterfaceObjPtr_ = new HashStoreInterface(&options, name, hashStoreFileManagerPtr_, hashStoreFileOperatorPtr_, writeBackOperationsQueue_);
-        deltaExtractSize_ = HashStoreInterfaceObjPtr_->getExtractSizeThreshold();
         // create deltaStore related threads
-        boost::thread* th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
+        boost::thread* th;
+	// will not need this later
+        th = new boost::thread(attrs, boost::bind(&BucketManager::scheduleMetadataUpdateWorker, hashStoreFileManagerPtr_));
         thList_.push_back(th);
+
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
             if (options.enable_bucket_merge) {
                 enable_bucket_merge_ = true;
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
+                th = new boost::thread(attrs, boost::bind(&BucketManager::processMergeGCRequestWorker, hashStoreFileManagerPtr_));
                 thList_.push_back(th);
             } else {
                 enable_bucket_merge_ = false;
             }
             for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_, threadID));
+                th = new boost::thread(attrs, boost::bind(&BucketManager::processSingleFileGCRequestWorker, hashStoreFileManagerPtr_, threadID));
                 thList_.push_back(th);
             }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
             for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&HashStoreFileOperator::operationWorker, hashStoreFileOperatorPtr_, threadID));
+                th = new boost::thread(attrs, boost::bind(&BucketOperator::operationWorker, hashStoreFileOperatorPtr_, threadID));
                 thList_.push_back(th);
             }
         } else {
@@ -161,6 +151,8 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     } else {
         KDSepRunningMode_ = options.enable_batched_operations_ ? kBatchedWithNoDeltaStore : kWithNoDeltaStore;
     }
+
+    Recovery();
 
     return true;
 }
@@ -197,10 +189,6 @@ bool KDSep::Close()
     }
     cerr << "[KDSep Close DB] Set job done" << endl;
     if (enableParallelLsmInterface == true) {
-//	if (lsm_thread_ != nullptr) {
-//	    cerr << "delete lsm thread" << endl;
-//	    delete lsm_thread_;
-//	}
         lsmInterfaceOperationsQueue_->done = true;
         lsm_interface_cv.notify_one();
         while (lsmInterfaceOperationsQueue_->isEmpty() == false) {
@@ -230,7 +218,7 @@ bool KDSep::SinglePutInternal(const mempoolHandler_t& obj)
             debug_error("[ERROR] Put LSM-tree failed, key = %s\n", obj.keyPtr_);
         }
         bool updateAnchorStatus;
-        STAT_PROCESS(updateAnchorStatus = HashStoreInterfaceObjPtr_->put(obj), StatsType::DKV_PUT_DSTORE);
+        STAT_PROCESS(updateAnchorStatus = HashStoreInterfaceObjPtr_->put(obj), StatsType::KDS_PUT_DSTORE);
         return updateAnchorStatus;
     }
 }
@@ -251,7 +239,7 @@ bool KDSep::SingleMergeInternal(const mempoolHandler_t& obj)
             }
 
             char lsm_buffer[header_sz];
-            KvHeader header(false, true, obj.sequenceNumber_, obj.valueSize_);
+            KvHeader header(false, true, obj.seq_num, obj.valueSize_);
 
             // encode header
             if (use_varint_kv_header == false) {
@@ -263,7 +251,7 @@ bool KDSep::SingleMergeInternal(const mempoolHandler_t& obj)
                     lsm_buffer, header_sz);
         } else { // do not do separation
             char lsm_buffer[header_sz + obj.valueSize_];
-            KvHeader header(false, false, obj.sequenceNumber_, obj.valueSize_);
+            KvHeader header(false, false, obj.seq_num, obj.valueSize_);
 
             // encode header
             if (use_varint_kv_header == false) {
@@ -282,8 +270,7 @@ bool KDSep::SingleMergeInternal(const mempoolHandler_t& obj)
     }
 }
 
-bool KDSep::GetInternal(const string& key, string* value, 
-        uint32_t maxSequenceNumber, bool writing_back) {
+bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
     // Do not use deltaStore
     if (KDSepRunningMode_ == kWithNoDeltaStore || KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
         string lsm_value;
@@ -306,7 +293,6 @@ bool KDSep::GetInternal(const string& key, string* value,
         // Use deltaStore
         string lsm_value;
         bool ret;
-        // maxSequenceNumber, writing_back);
         STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); 
 
         if (ret == false) {
@@ -338,8 +324,7 @@ bool KDSep::GetInternal(const string& key, string* value,
             // get deltas from the LSM-tree value 
             vector<pair<bool, string>> deltaInfoVec;
             STAT_PROCESS(extractDeltas(lsm_value, 
-                        header_sz + header.rawValueSize_, deltaInfoVec,
-                        maxSequenceNumber),
+                        header_sz + header.rawValueSize_, deltaInfoVec),
                     StatsType::KDSep_GET_PROCESS_BUFFER);
 
             // get value from the LSM-tree value
@@ -432,7 +417,6 @@ bool KDSep::GetInternal(const string& key, string* value,
                 return true;
             }
         } else {
-            maxSequenceNumber = header.sequenceNumber_;
             if (lsm_value.size() < header_sz + header.rawValueSize_) {
                 debug_error("string size %lu raw value size %u\n", lsm_value.size(), header.rawValueSize_); 
                 exit(1);
@@ -455,14 +439,7 @@ bool KDSep::GetInternal(const string& key, string* value,
             op->is_write = false;
             op->job_done = kNotDone;
             lsmInterfaceOperationsQueue_->push(op);
-//            lsm_interface_cv.notify_one();
-//	    boost::asio::post(*lsm_thread_, 
-//		    boost::bind(
-//			&KDSep::processLsmInterfaceThreadPoolOperationsWorker,
-//			this,
-//			op));
         } else {
-            // (, maxSequenceNumber, writing_back);
             STAT_PROCESS(ret = lsmTreeInterface_.Get(key, &lsm_value), StatsType::LSM_INTERFACE_GET); 
             if (ret == false) {
                 debug_error("[ERROR] Read LSM-tree fault, key = %s\n", key.c_str());
@@ -503,7 +480,6 @@ bool KDSep::GetInternal(const string& key, string* value,
         }
 
         str_t raw_value(lsm_value.data() + header_sz, header.rawValueSize_);
-        maxSequenceNumber = header.sequenceNumber_;
         
         if (deltasFromDeltaStoreVec.empty() == true) { 
             value->assign(raw_value.data_, raw_value.size_);
@@ -562,16 +538,6 @@ bool KDSep::Put(const string& key, const string& value)
     }
 
     scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
-    // insert to cache if is value update
-    if (enableKeyValueCache_ == true) {
-        string cacheKey = key;
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
-            keyToValueListCache_->getFromCache(cacheKey).assign(value);
-            StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_CACHE_INSERT_NEW, tv);
-        }
-    }
 
     bool ret = PutImpl(key, value);
     if (ret == false) {
@@ -626,16 +592,6 @@ bool KDSep::Get(const string& key, string* value)
 {
     scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
     // search first
-    if (enableKeyValueCache_ == true) {
-        string cacheKey = key;
-        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            value->assign(keyToValueListCache_->getFromCache(cacheKey));
-            StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_CACHE_GET, tv);
-            return true;
-        }
-    }
     vector<str_t> buf_deltas;
     vector<string> buf_deltas_str;
     bool needMergeWithInBufferOperationsFlag = false;
@@ -651,7 +607,7 @@ bool KDSep::Get(const string& key, string* value)
             }
         }
         scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_WAIT_BUFFER, tvAll);
+        StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_WAIT_BUFFER, tvAll);
         struct timeval tv, tvtmp;
         gettimeofday(&tv, 0);
         debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
@@ -669,7 +625,7 @@ bool KDSep::Get(const string& key, string* value)
                 StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_BATCH_READ_GET_KEY, tv);
                 return true;
             }
-//            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_READ_BUFFER_PART1_LAST_PUT, tv0);
+//            StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_READ_BUFFER_PART1_LAST_PUT, tv0);
             gettimeofday(&tv0, 0);
             str_t newValueStr;
             bool findNewValueFlag = false;
@@ -685,10 +641,10 @@ bool KDSep::Get(const string& key, string* value)
                     buf_deltas.push_back(currentValue);
                 }
             }
-//            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_READ_BUFFER_PART2, tv0);
+//            StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_READ_BUFFER_PART2, tv0);
             gettimeofday(&tvtmp, 0);
             if (findNewValueFlag == true) {
-                STAT_PROCESS(KDSepMergeOperatorPtr_->Merge(newValueStr, buf_deltas, value), StatsType::DKV_GET_FULL_MERGE);
+                STAT_PROCESS(KDSepMergeOperatorPtr_->Merge(newValueStr, buf_deltas, value), StatsType::KDS_GET_FULL_MERGE);
                 debug_info("get raw value and deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), buf_deltas.size());
                 StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_BATCH_READ_MERGE, tv0);
                 return true;
@@ -712,17 +668,16 @@ bool KDSep::Get(const string& key, string* value)
 //                buf_deltas_str.push_back(string(it.data_, it.size_));
 //            }
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_READ_BUFFER_P3_MERGE, tv_merge);
-        StatsRecorder::getInstance()->timeProcess(StatsType::DKV_GET_READ_BUFFER, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_READ_BUFFER_P3_MERGE, tv_merge);
+        StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_READ_BUFFER, tv);
     }
 
     struct timeval tv;
     gettimeofday(&tv, 0);
-    uint32_t maxSequenceNumberPlaceHolder = 0;
     bool ret;
 
     // Read from deltastore (or no deltastore)
-    ret = GetInternal(key, value, maxSequenceNumberPlaceHolder, false);
+    ret = GetInternal(key, value, false);
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_BATCH_READ_STORE, tv);
     if (ret == false) {
         return false;
@@ -737,21 +692,10 @@ bool KDSep::Get(const string& key, string* value)
             }
             value->clear();
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->Merge(tempValueStrT, tempVec, value), StatsType::DKV_GET_FULL_MERGE);
+            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->Merge(tempValueStrT, tempVec, value), StatsType::KDS_GET_FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] merge failed: key %s number of deltas %lu raw value size %lu\n", key.c_str(), tempVec.size(), tempValueStr.size());
                 exit(1);
-            }
-        }
-        if (enableKeyValueCache_ == true) {
-            string cacheKey = key;
-            if (keyToValueListCache_->existsInCache(cacheKey) == false) {
-                struct timeval tv;
-                gettimeofday(&tv, 0);
-                string cacheValue;
-                cacheValue.assign(*value);
-                keyToValueListCache_->insertToCache(cacheKey, cacheValue);
-                StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_CACHE_INSERT_NEW, tv);
             }
         }
         return true;
@@ -771,7 +715,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<s
 
     // 1. Scan the RocksDB/vLog for keys and values
     STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, keys, lsm_values),
-            StatsType::DKV_SCAN_LSM);
+            StatsType::KDS_SCAN_LSM);
 
     if (KDSepRunningMode_ == kWithNoDeltaStore || 
 	    KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
@@ -790,7 +734,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<s
 //    debug_error("Start key %s len %d\n", startKey.c_str(), len);
     STAT_PROCESS(
     ret = HashStoreInterfaceObjPtr_->multiGet(keys, key_deltas),
-    StatsType::DKV_SCAN_DS);
+    StatsType::KDS_SCAN_DS);
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
@@ -798,7 +742,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<s
 
     STAT_PROCESS(
     MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
-    StatsType::DKV_SCAN_FULL_MERGE);
+    StatsType::KDS_SCAN_FULL_MERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
 //    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
@@ -822,7 +766,7 @@ bool KDSep::MultiGetInternal(const vector<string>& keys,
 
     // 1. Scan the RocksDB/vLog for keys and values
     STAT_PROCESS(lsmTreeInterface_.MultiGet(keys, lsm_values),
-            StatsType::DKV_MULTIGET_LSM);
+            StatsType::KDS_MULTIGET_LSM);
 
     if (KDSepRunningMode_ == kWithNoDeltaStore || 
 	    KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
@@ -841,7 +785,7 @@ bool KDSep::MultiGetInternal(const vector<string>& keys,
 //    debug_error("Start key %s len %d\n", startKey.c_str(), len);
     STAT_PROCESS(
     ret = HashStoreInterfaceObjPtr_->multiGet(keys, key_deltas),
-    StatsType::DKV_MULTIGET_DS);
+    StatsType::KDS_MULTIGET_DS);
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
@@ -849,7 +793,7 @@ bool KDSep::MultiGetInternal(const vector<string>& keys,
 
     STAT_PROCESS(
     MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
-    StatsType::DKV_MULTIGET_FULL_MERGE);
+    StatsType::KDS_MULTIGET_FULL_MERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
 //    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
@@ -936,20 +880,6 @@ bool KDSep::Merge(const string& key, const string& value)
     }
 
     scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
-    if (enableKeyValueCache_ == true) {
-        string cacheKey = key;
-        if (keyToValueListCache_->existsInCache(cacheKey) == true) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            string oldValue = keyToValueListCache_->getFromCache(cacheKey);
-            string finalValue;
-            vector<string> operandListForCacheUpdate;
-            operandListForCacheUpdate.push_back(value);
-            STAT_PROCESS(KDSepMergeOperatorPtr_->Merge(oldValue, operandListForCacheUpdate, &finalValue), StatsType::DKV_MERGE_FULL_MERGE);
-            keyToValueListCache_->getFromCache(cacheKey).assign(finalValue);
-            StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_CACHE_INSERT_MERGE, tv);
-        }
-    }
     globalSequenceNumberGeneratorMtx_.lock();
     uint32_t currentSequenceNumber = globalSequenceNumber_++;
     globalSequenceNumberGeneratorMtx_.unlock();
@@ -989,36 +919,6 @@ bool KDSep::Merge(const string& key, const string& value)
         return false;
     }
 }
-
-/*
-bool KDSep::GetWithMaxSequenceNumber(const string& key, string* value, uint32_t& maxSequenceNumber, bool writing_back)
-{
-    scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
-    switch (KDSepRunningMode_) {
-    case kBatchedWithDeltaStore:
-    case kWithDeltaStore:
-        if (GetWithDeltaStore(key, value, maxSequenceNumber, writing_back) == false) {
-            return false;
-        } else {
-            return true;
-        }
-        break;
-    case kBatchedWithNoDeltaStore:
-    case kWithNoDeltaStore:
-        if (GetWithNoDeltaStore(key, value) == false) {
-            return false;
-        } else {
-            return true;
-        }
-        break;
-    default:
-        debug_error("[ERROR] unknown running mode = %d", KDSepRunningMode_);
-        return false;
-        break;
-    }
-    return false;
-}
-*/
 
 bool KDSep::GetCurrentValueThenWriteBack(const string& key)
 {
@@ -1070,10 +970,9 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
     // get content from underlying DB
     string newValueStr;
-    uint32_t maxSequenceNumber = 0;
     string tempRawValueStr;
     bool getNewValueStrSuccessFlag;
-    STAT_PROCESS(getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, maxSequenceNumber, true), StatsType::KDSep_WRITE_BACK_GET);
+    STAT_PROCESS(getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, true), StatsType::KDSep_WRITE_BACK_GET);
     bool mergeStatus;
     if (getNewValueStrSuccessFlag) { 
         if (needMergeWithInBufferOperationsFlag == true) {
@@ -1283,10 +1182,10 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
             }
         }
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_1, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::KDS_PUT_LOCK_1, tv);
     gettimeofday(&tv, 0);
     scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_LOCK_2, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::KDS_PUT_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", batch_in_use_, batch_nums_[batch_in_use_]);
     if (batch_sizes_[batch_in_use_] >=
@@ -1325,13 +1224,14 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
         batch_sizes_[batch_in_use_] += obj.keySize_ + obj.valueSize_;
         batch_nums_[batch_in_use_]++;
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_PUT_APPEND_BUFFER, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::KDS_PUT_APPEND_BUFFER, tv);
     return true;
 }
 
 bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
 {
-    debug_info("[MergeOp] key = %s, sequence number = %u\n", string(obj.keyPtr_, obj.keySize_).c_str(), obj.sequenceNumber_);
+    debug_info("[MergeOp] key = %s, sequence number = %u\n",
+	    string(obj.keyPtr_, obj.keySize_).c_str(), obj.seq_num);
     if (obj.isAnchorFlag_ == true) {
         debug_error("[ERROR] merge operation should has no anchor flag%s\n", "");
     }
@@ -1348,10 +1248,10 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
             }
         }
     }
-    StatsRecorder::staticProcess(StatsType::DKV_MERGE_LOCK_1, tv);
+    StatsRecorder::staticProcess(StatsType::KDS_MERGE_LOCK_1, tv);
     gettimeofday(&tv, 0);
     scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
-    StatsRecorder::staticProcess(StatsType::DKV_MERGE_LOCK_2, tv);
+    StatsRecorder::staticProcess(StatsType::KDS_MERGE_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", batch_in_use_,
             batch_nums_[batch_in_use_]);
@@ -1420,7 +1320,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
                 mempoolHandler_t merged_obj;
                 objectPairMemPool_->insertContentToMemPoolAndGetHandler(
                         string(obj.keyPtr_, obj.keySize_), result,
-                        obj.sequenceNumber_, true, merged_obj); 
+                        obj.seq_num, true, merged_obj); 
                 vec.clear();
                 vec.push_back(make_pair(kPutOp, merged_obj));
                 batch_sizes_[batch_in_use_] +=
@@ -1454,7 +1354,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
                 objectPairMemPool_->insertContentToMemPoolAndGetHandler(
                         string(obj.keyPtr_, obj.keySize_), 
                         string(result.data_, result.size_),
-                        obj.sequenceNumber_, false, merged_obj); 
+                        obj.seq_num, false, merged_obj); 
                 delete[] result.data_;
 
                 vec.clear();
@@ -1464,7 +1364,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
             }
 
             StatsRecorder::getInstance()->timeProcess(
-                    StatsType::DKV_MERGE_CLEAN_BUFFER, tv_clean);
+                    StatsType::KDS_MERGE_CLEAN_BUFFER, tv_clean);
         }
 
     } else {
@@ -1475,7 +1375,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
         batch_nums_[batch_in_use_]++;
         batch_sizes_[batch_in_use_] += obj.keySize_ + obj.valueSize_;
     }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_MERGE_APPEND_BUFFER, tv);
+    StatsRecorder::getInstance()->timeProcess(StatsType::KDS_MERGE_APPEND_BUFFER, tv);
     return true;
 }
 
@@ -1496,7 +1396,7 @@ bool KDSep::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair
                 operandList.push_back(operandStr);
             }
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue), StatsType::DKV_DEDUP_FULL_MERGE);
+            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->Merge(firstValue, operandList, &finalValue), StatsType::KDS_DEDUP_FULL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size() - 1);
                 return false;
@@ -1527,7 +1427,7 @@ bool KDSep::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair
             }
             vector<string> finalOperandList;
             bool mergeStatus;
-            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->PartialMerge(operandList, finalOperandList), StatsType::DKV_DEDUP_PARTIAL_MERGE);
+            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->PartialMerge(operandList, finalOperandList), StatsType::KDS_DEDUP_PARTIAL_MERGE);
             if (mergeStatus == false) {
                 debug_error("[ERROR] Could not partial merge for key = %s, delta number = %lu\n", newKeyStr.c_str(), it->second.size());
                 return false;
@@ -1575,7 +1475,7 @@ void KDSep::processBatchedOperationsWorker()
             oneBufferDuringProcessFlag_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
 //            if (KDSepRunningMode_ != kBatchedWithNoDeltaStore) {
-                STAT_PROCESS(performInBatchedBufferDeduplication(currentHandler), StatsType::DKV_FLUSH_DEDUP);
+                STAT_PROCESS(performInBatchedBufferDeduplication(currentHandler), StatsType::KDS_FLUSH_DEDUP);
                 StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_PLAIN_ROCKSDB, tv);
 //            }
             vector<mempoolHandler_t> handlerToValueStoreVec, handlerToDeltaStoreVec;
@@ -1608,7 +1508,7 @@ void KDSep::processBatchedOperationsWorker()
                 for (auto index = 0; index < handlerToDeltaStoreVec.size(); index++) {
                     if (handlerToDeltaStoreVec[index].isAnchorFlag_ == false) {
                         auto& it = handlerToDeltaStoreVec[index];
-                        KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+                        KvHeader header(false, false, it.seq_num, it.valueSize_);
                         // reserve space
                         char buf[it.valueSize_ + sizeof(KvHeader)];
                         size_t header_sz = sizeof(KvHeader);
@@ -1630,7 +1530,7 @@ void KDSep::processBatchedOperationsWorker()
                 if (lsmTreeInterfaceStatus == false) {
                     debug_error("lsmTreeInterfaceStatus %d\n", (int)lsmTreeInterfaceStatus);
                 }
-                StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_NO_DSTORE, tv);
+                StatsRecorder::getInstance()->timeProcess(StatsType::KDS_FLUSH_WITH_NO_DSTORE, tv);
                 break;
             }
             case kBatchedWithDeltaStore:
@@ -1662,7 +1562,7 @@ void KDSep::processBatchedOperationsWorker()
                                 // write delta to rocksdb
                                 char lsm_buffer[sizeof(KvHeader) + notSeparatedDeltasVec[notSeparatedID].valueSize_];
                                 KvHeader header(false, false,
-                                        notSeparatedDeltasVec[notSeparatedID].sequenceNumber_,
+                                        notSeparatedDeltasVec[notSeparatedID].seq_num,
                                         notSeparatedDeltasVec[notSeparatedID].valueSize_);
                                 size_t header_sz = sizeof(KvHeader);
 
@@ -1681,14 +1581,14 @@ void KDSep::processBatchedOperationsWorker()
                                 rocksdb::Slice newValue(
                                         lsm_buffer, header_sz +
                                         notSeparatedDeltasVec[notSeparatedID].valueSize_);
-                                debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
+                                debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), notSeparatedDeltasVec[notSeparatedID].seq_num);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
                                 // skip anchor
                                 string newKey(
                                         notSeparatedDeltasVec[notSeparatedID].keyPtr_,
                                         notSeparatedDeltasVec[notSeparatedID].keySize_);
-                                debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), notSeparatedDeltasVec[notSeparatedID].sequenceNumber_);
+                                debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), notSeparatedDeltasVec[notSeparatedID].seq_num);
                             }
                             notSeparatedID++;
                         } else {
@@ -1696,7 +1596,7 @@ void KDSep::processBatchedOperationsWorker()
                                 // write delta meta to rocksdb
                                 char lsm_buffer[sizeof(KvHeader)];
                                 KvHeader header(false, true,
-                                        handlerToDeltaStoreVec[separatedID].sequenceNumber_,
+                                        handlerToDeltaStoreVec[separatedID].seq_num,
                                         handlerToDeltaStoreVec[separatedID].valueSize_);
                                 size_t header_sz = sizeof(KvHeader);
 
@@ -1710,14 +1610,14 @@ void KDSep::processBatchedOperationsWorker()
                                         handlerToDeltaStoreVec[separatedID].keyPtr_,
                                         handlerToDeltaStoreVec[separatedID].keySize_);
                                 rocksdb::Slice newValue(lsm_buffer, header_sz);
-                                debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
+                                debug_info("[MergeOp-rocks] key = %s, sequence number = %u\n", newKey.ToString().c_str(), handlerToDeltaStoreVec[separatedID].seq_num);
                                 mergeBatch.Merge(newKey, newValue);
                             } else {
                                 // skip anchor for rocksdb
                                 string newKey(
                                         handlerToDeltaStoreVec[separatedID].keyPtr_,
                                         handlerToDeltaStoreVec[separatedID].keySize_);
-                                debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), handlerToDeltaStoreVec[separatedID].sequenceNumber_);
+                                debug_info("[MergeOp-rocks] skip anchor key = %s, sequence number = %u\n", newKey.c_str(), handlerToDeltaStoreVec[separatedID].seq_num);
                             }
                             separatedID++;
                         }
@@ -1735,20 +1635,14 @@ void KDSep::processBatchedOperationsWorker()
                     op->is_write = true;
                     op->job_done = kNotDone;
                     lsmInterfaceOperationsQueue_->push(op);
-//                    lsm_interface_cv.notify_one();
-//		    boost::asio::post(*lsm_thread_, 
-//			    boost::bind(
-//				&KDSep::processLsmInterfaceThreadPoolOperationsWorker,
-//				this,
-//				op));
                 } else {
                     STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(handlerToValueStoreVec, &mergeBatch), 
-                            StatsType::DKV_FLUSH_LSM_INTERFACE);
+                            StatsType::KDS_FLUSH_LSM_INTERFACE);
                 }
 
                 // DeltaStore interface
                 STAT_PROCESS(putToDeltaStoreStatus = HashStoreInterfaceObjPtr_->multiPut(handlerToDeltaStoreVec), 
-                        StatsType::DKV_FLUSH_MUTIPUT_DSTORE);
+                        StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
                 if (putToDeltaStoreStatus == false) {
                     debug_error("[ERROR] could not put %zu object into delta store,"
                             " as well as not separated object number = %zu\n", 
@@ -1768,7 +1662,7 @@ void KDSep::processBatchedOperationsWorker()
                     delete op;
                 }
                 
-                StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH_WITH_DSTORE, tv);
+                StatsRecorder::getInstance()->timeProcess(StatsType::KDS_FLUSH_WITH_DSTORE, tv);
                 break;
             }
             default:
@@ -1788,7 +1682,7 @@ void KDSep::processBatchedOperationsWorker()
             currentHandler->clear();
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
             oneBufferDuringProcessFlag_ = false;
-            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_FLUSH, tv);
+            StatsRecorder::getInstance()->timeProcess(StatsType::KDS_FLUSH, tv);
         }
     }
     writeBatchOperationWorkExitFlag = true;
@@ -1891,19 +1785,6 @@ void KDSep::processWriteBackOperationsWorker()
     return;
 }
 
-void KDSep::processLsmInterfaceThreadPoolOperationsWorker(lsmInterfaceOperationStruct* op) {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    if (op->is_write == false) {
-	STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); 
-    } else {
-	STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(*(op->handlerToValueStoreVecPtr), op->mergeBatch), 
-		StatsType::DKV_FLUSH_LSM_INTERFACE);
-    }
-    StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
-    op->job_done = kDone;
-}
-
 void KDSep::processLsmInterfaceOperationsWorker()
 {
     lsmInterfaceOperationStruct* op;
@@ -1916,16 +1797,25 @@ void KDSep::processLsmInterfaceOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (op->is_write == false) {
-                STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value), StatsType::DKV_LSM_INTERFACE_GET); // (, maxSequenceNumber, writing_back);
+		STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value),
+			StatsType::KDS_LSM_INTERFACE_GET); 
             } else {
-                STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(*(op->handlerToValueStoreVecPtr), op->mergeBatch), 
-                            StatsType::DKV_FLUSH_LSM_INTERFACE);
+		STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
+			    *(op->handlerToValueStoreVecPtr),
+			    op->mergeBatch), 
+                            StatsType::KDS_FLUSH_LSM_INTERFACE);
             }
-            StatsRecorder::getInstance()->timeProcess(StatsType::DKV_LSM_INTERFACE_OP, tv);
+            StatsRecorder::getInstance()->timeProcess(StatsType::KDS_LSM_INTERFACE_OP, tv);
             op->job_done = kDone;
         }
     }
     return;
+}
+
+void KDSep::Recovery() {
+    if (HashStoreInterfaceObjPtr_ != nullptr) {
+	HashStoreInterfaceObjPtr_->Recovery();
+    }
 }
 
 // TODO: upper functions are not complete
@@ -1945,8 +1835,7 @@ bool KDSep::deleteExistingThreads()
 }
 
 bool KDSep::extractDeltas(string lsm_value, uint64_t skipSize, 
-        vector<pair<bool, string>>& mergeOperatorsVec, 
-        uint32_t& maxSequenceNumber) {
+        vector<pair<bool, string>>& mergeOperatorsVec) {
     uint64_t internalValueSize = lsm_value.size();
     uint64_t value_i = skipSize;
     size_t header_sz = sizeof(KvHeader);
@@ -1958,9 +1847,6 @@ bool KDSep::extractDeltas(string lsm_value, uint64_t skipSize,
             header = GetKVHeaderVarint(lsm_value.c_str() + value_i, header_sz);
         }
         value_i += header_sz;
-        if (maxSequenceNumber < header.sequenceNumber_) {
-            maxSequenceNumber = header.sequenceNumber_;
-        }
         if (header.mergeFlag_ == true) {
             debug_error("[ERROR] Find new value index in merge operand list,"
                     " this index refer to raw value size = %u\n",

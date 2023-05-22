@@ -135,7 +135,7 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("KDSep-put", KDSep_PUT, time[KDSep_PUT]);
     PRINT_FULL("KDSep-put-rocksdb", KDSep_PUT_ROCKSDB, time[KDSep_PUT]);
     PRINT_FULL("KDSep-put-vLog", KDSep_PUT_INDEXSTORE, time[KDSep_PUT]);
-    PRINT_FULL("KDSep-put-dStore", DKV_PUT_DSTORE, time[KDSep_PUT]);
+    PRINT_FULL("KDSep-put-dStore", KDS_PUT_DSTORE, time[KDSep_PUT]);
     fprintf(stdout, "\n");
     PRINT_FULL("get", KDSep_GET, time[KDSep_GET]);
     PRINT_FULL("lsm-interface-get", LSM_INTERFACE_GET, time[KDSep_GET]);
@@ -161,59 +161,59 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "-------------- KDSep Merge request Breakdown ------------------------------\n");
     PRINT_FULL("All", KDSep_MERGE, time[KDSep_MERGE]);
-    PRINT_FULL("  lock-1", DKV_MERGE_LOCK_1, time[KDSep_MERGE]);
-    PRINT_FULL("  lock-2", DKV_MERGE_LOCK_2, time[KDSep_MERGE]);
-    PRINT_FULL("  buffer append", DKV_MERGE_APPEND_BUFFER, time[KDSep_MERGE]);
-    PRINT_FULL("  buffer clean", DKV_MERGE_CLEAN_BUFFER, time[KDSep_MERGE]);
+    PRINT_FULL("  lock-1", KDS_MERGE_LOCK_1, time[KDSep_MERGE]);
+    PRINT_FULL("  lock-2", KDS_MERGE_LOCK_2, time[KDSep_MERGE]);
+    PRINT_FULL("  buffer append", KDS_MERGE_APPEND_BUFFER, time[KDSep_MERGE]);
+    PRINT_FULL("  buffer clean", KDS_MERGE_CLEAN_BUFFER, time[KDSep_MERGE]);
 
     fprintf(stdout, "-------------- KDSep Put request Breakdown ------------------------------\n");
     PRINT_FULL("All", KDSep_PUT, time[KDSep_PUT]);
-    PRINT_FULL("  lock-1", DKV_PUT_LOCK_1, time[KDSep_PUT]);
-    PRINT_FULL("  lock-2", DKV_PUT_LOCK_2, time[KDSep_PUT]);
-    PRINT_FULL("  buffer append", DKV_PUT_APPEND_BUFFER, time[KDSep_PUT]);
+    PRINT_FULL("  lock-1", KDS_PUT_LOCK_1, time[KDSep_PUT]);
+    PRINT_FULL("  lock-2", KDS_PUT_LOCK_2, time[KDSep_PUT]);
+    PRINT_FULL("  buffer append", KDS_PUT_APPEND_BUFFER, time[KDSep_PUT]);
 
     fprintf(stdout, "-------------- KDSep Background Flush Buffer Breakdown -------------------\n");
-    PRINT_FULL(" --- All ---", DKV_FLUSH, time[DKV_FLUSH]);
-    PRINT_FULL("Dedup", DKV_FLUSH_DEDUP, time[DKV_FLUSH]);
-    PRINT_FULL("  full merge", DKV_DEDUP_FULL_MERGE, time[DKV_FLUSH]);
-    PRINT_FULL("  partial merge", DKV_DEDUP_PARTIAL_MERGE, time[DKV_FLUSH]);
-    PRINT_FULL("Flush (No KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
-    PRINT_FULL("Flush (KD)", DKV_FLUSH_WITH_DSTORE, time[DKV_FLUSH]);
-    PRINT_FULL("  hashStore", DKV_FLUSH_MUTIPUT_DSTORE, time[DKV_FLUSH]);
-    PRINT_FULL("    commit-log", DS_PUT_COMMIT_LOG, time[DKV_FLUSH]);
-    PRINT_FULL("    rm-commit-log", DS_REMOVE_COMMIT_LOG, time[DKV_FLUSH]);
-    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
-    PRINT_FULL("      single", DS_MULTIPUT_GET_SINGLE_HANDLER, time[DKV_FLUSH]);
-    PRINT_FULL("        get-hdl", DSTORE_MULTIPUT_GET_HANDLER, time[DKV_FLUSH]);
-    PRINT_FULL("        loop", DSTORE_GET_HANDLER_LOOP, time[DKV_FLUSH]);
+    PRINT_FULL(" --- All ---", KDS_FLUSH, time[KDS_FLUSH]);
+    PRINT_FULL("Dedup", KDS_FLUSH_DEDUP, time[KDS_FLUSH]);
+    PRINT_FULL("  full merge", KDS_DEDUP_FULL_MERGE, time[KDS_FLUSH]);
+    PRINT_FULL("  partial merge", KDS_DEDUP_PARTIAL_MERGE, time[KDS_FLUSH]);
+    PRINT_FULL("Flush (No KD)", KDS_FLUSH_WITH_DSTORE, time[KDS_FLUSH]);
+    PRINT_FULL("Flush (KD)", KDS_FLUSH_WITH_DSTORE, time[KDS_FLUSH]);
+    PRINT_FULL("  hashStore", KDS_FLUSH_MUTIPUT_DSTORE, time[KDS_FLUSH]);
+    PRINT_FULL("    commit-log", DS_PUT_COMMIT_LOG, time[KDS_FLUSH]);
+    PRINT_FULL("    rm-commit-log", DS_REMOVE_COMMIT_LOG, time[KDS_FLUSH]);
+    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[KDS_FLUSH]);
+    PRINT_FULL("      single", DS_MULTIPUT_GET_SINGLE_HANDLER, time[KDS_FLUSH]);
+    PRINT_FULL("        get-hdl", DSTORE_MULTIPUT_GET_HANDLER, time[KDS_FLUSH]);
+    PRINT_FULL("        loop", DSTORE_GET_HANDLER_LOOP, time[KDS_FLUSH]);
 
-    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[DKV_FLUSH]);
-    PRINT_FULL("      process", DS_MULTIPUT_PROCESS_HANDLERS, time[DKV_FLUSH]);
-    PRINT_FULL("      single", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[DKV_FLUSH]);
-    PRINT_FULL("    wait-handlers", DS_MULTIPUT_WAIT_HANDLERS, time[DKV_FLUSH]);
-    PRINT_FULL("    [b]worker-multiput", OP_MULTIPUT, time[DKV_FLUSH]);
-    PRINT_FULL("        update-filter", DS_MULTIPUT_UPDATE_FILTER, time[DKV_FLUSH]);
-    PRINT_FULL("        prepare-header", DS_MULTIPUT_PREPARE_FILE_HEADER, time[DKV_FLUSH]);
-    PRINT_FULL("        prepare-content", DS_MULTIPUT_PREPARE_FILE_CONTENT, time[DKV_FLUSH]);
-    PRINT_FULL("        file-write-func", DS_WRITE_FUNCTION, time[DKV_FLUSH]);
-    PRINT_FULL("          file-op", KDSep_HASHSTORE_PUT_IO_TRAFFIC, time[DKV_FLUSH]);
-    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_WRITE, time[DKV_FLUSH]);
-    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_FLUSH, time[DKV_FLUSH]);
-    PRINT_FULL("        insert-cache", DS_MULTIPUT_INSERT_CACHE, time[DKV_FLUSH]);
-    PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[DKV_FLUSH]);
-    PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[DKV_FLUSH]);
-    PRINT_FULL("    sync", KDSep_HASHSTORE_SYNC, time[DKV_FLUSH]);
-    PRINT_FULL("      sync", KDSep_HASHSTORE_WAIT_SYNC, time[DKV_FLUSH]);
-    PRINT_FULL("  lsm-interface", DKV_FLUSH_LSM_INTERFACE, time[DKV_FLUSH]);
-    PRINT_FULL("    pre-put", LSM_FLUSH_PRE_PUT, time[DKV_FLUSH]);
-    PRINT_FULL("    put-merge-vlog", LSM_FLUSH_VLOG, time[DKV_FLUSH]);
-    PRINT_FULL("    put-merge-rocksdb", LSM_FLUSH_ROCKSDB, time[DKV_FLUSH]);
-    PRINT_FULL("      rocksdb-fm", LSM_FLUSH_ROCKSDB_FULLMERGE, time[DKV_FLUSH]);
-    PRINT_FULL("      rocksdb-pm", LSM_FLUSH_ROCKSDB_PARTIALMERGE, time[DKV_FLUSH]);
-    PRINT_FULL("    flush-wal", LSM_FLUSH_WAL, time[DKV_FLUSH]);
+    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[KDS_FLUSH]);
+    PRINT_FULL("      process", DS_MULTIPUT_PROCESS_HANDLERS, time[KDS_FLUSH]);
+    PRINT_FULL("      single", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[KDS_FLUSH]);
+    PRINT_FULL("    wait-handlers", DS_MULTIPUT_WAIT_HANDLERS, time[KDS_FLUSH]);
+    PRINT_FULL("    [b]worker-multiput", OP_MULTIPUT, time[KDS_FLUSH]);
+    PRINT_FULL("        update-filter", DS_MULTIPUT_UPDATE_FILTER, time[KDS_FLUSH]);
+    PRINT_FULL("        prepare-header", DS_MULTIPUT_PREPARE_FILE_HEADER, time[KDS_FLUSH]);
+    PRINT_FULL("        prepare-content", DS_MULTIPUT_PREPARE_FILE_CONTENT, time[KDS_FLUSH]);
+    PRINT_FULL("        file-write-func", DS_WRITE_FUNCTION, time[KDS_FLUSH]);
+    PRINT_FULL("          file-op", KDSep_HASHSTORE_PUT_IO_TRAFFIC, time[KDS_FLUSH]);
+    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_WRITE, time[KDS_FLUSH]);
+    PRINT_FULL("            real-write", DS_FILE_FUNC_REAL_FLUSH, time[KDS_FLUSH]);
+    PRINT_FULL("        insert-cache", DS_MULTIPUT_INSERT_CACHE, time[KDS_FLUSH]);
+    PRINT_FULL("          check", DS_MULTIPUT_INSERT_CACHE_CHECK, time[KDS_FLUSH]);
+    PRINT_FULL("          update", DS_MULTIPUT_INSERT_CACHE_UPDATE, time[KDS_FLUSH]);
+    PRINT_FULL("    sync", KDSep_HASHSTORE_SYNC, time[KDS_FLUSH]);
+    PRINT_FULL("      sync", KDSep_HASHSTORE_WAIT_SYNC, time[KDS_FLUSH]);
+    PRINT_FULL("  lsm-interface", KDS_FLUSH_LSM_INTERFACE, time[KDS_FLUSH]);
+    PRINT_FULL("    pre-put", LSM_FLUSH_PRE_PUT, time[KDS_FLUSH]);
+    PRINT_FULL("    put-merge-vlog", LSM_FLUSH_VLOG, time[KDS_FLUSH]);
+    PRINT_FULL("    put-merge-rocksdb", LSM_FLUSH_ROCKSDB, time[KDS_FLUSH]);
+    PRINT_FULL("      rocksdb-fm", LSM_FLUSH_ROCKSDB_FULLMERGE, time[KDS_FLUSH]);
+    PRINT_FULL("      rocksdb-pm", LSM_FLUSH_ROCKSDB_PARTIALMERGE, time[KDS_FLUSH]);
+    PRINT_FULL("    flush-wal", LSM_FLUSH_WAL, time[KDS_FLUSH]);
 
     fprintf(stdout, "-------------- KDSep Scan request Breakdown ------------------------------\n");
-    PRINT_FULL("    [b]worker-multiget", OP_MULTIGET, time[DKV_SCAN]);
+    PRINT_FULL("    [b]worker-multiget", OP_MULTIGET, time[KDS_SCAN]);
 
     fprintf(stdout, "-------------- KDSep Delta Merge Breakdown ------------------------------\n");
     PRINT_FULL("Full Merge", FULL_MERGE, time[FULL_MERGE]);
@@ -225,14 +225,14 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("Partial Merge", PARTIAL_MERGE, time[PARTIAL_MERGE]);
 
     fprintf(stdout, "-------------- KDSep Get Breakdown ------------------------------\n");
-    PRINT_FULL("Buffer-wait", DKV_GET_WAIT_BUFFER, time[KDSep_GET]);
-    PRINT_FULL("Buffer-read", DKV_GET_READ_BUFFER, time[KDSep_GET]);
+    PRINT_FULL("Buffer-wait", KDS_GET_WAIT_BUFFER, time[KDSep_GET]);
+    PRINT_FULL("Buffer-read", KDS_GET_READ_BUFFER, time[KDSep_GET]);
     PRINT_FULL("  Buffer-get-return", KDSep_BATCH_READ_GET_KEY, time[KDSep_GET]);
     PRINT_FULL("  Buffer-get-merge-return", KDSep_BATCH_READ_MERGE, time[KDSep_GET]);
     PRINT_FULL("  Buffer-miss-no-wait", KDSep_BATCH_READ_MERGE_ALL, time[KDSep_GET]);
-    PRINT_FULL("  Buffer-p3-merge", DKV_GET_READ_BUFFER_P3_MERGE, time[KDSep_GET]);
+    PRINT_FULL("  Buffer-p3-merge", KDS_GET_READ_BUFFER_P3_MERGE, time[KDSep_GET]);
     PRINT_FULL("Get-internal", KDSep_BATCH_READ_STORE, time[KDSep_GET]);
-    PRINT_FULL("  dkv-lsm", DKV_LSM_INTERFACE_OP, time[KDSep_GET]);
+    PRINT_FULL("  dkv-lsm", KDS_LSM_INTERFACE_OP, time[KDSep_GET]);
     PRINT_FULL("    lsm-interface-get", LSM_INTERFACE_GET, time[KDSep_GET]);
     PRINT_FULL("      get-rocksdb", KDSep_GET_ROCKSDB, time[KDSep_GET]);
     PRINT_FULL("      get-vLog", KDSep_GET_INDEXSTORE, time[KDSep_GET]);
@@ -249,13 +249,13 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("KV", BATCH_KV, time[BATCH_KV]);
     PRINT_FULL("  vLog", KDSep_PUT_INDEXSTORE, time[BATCH_KV]);
     PRINT_FULL("  rocksdb", KDSep_MERGE_ROCKSDB, time[BATCH_KV]);
-    PRINT_FULL("KD", DKV_PUT_DSTORE, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("  hashStore", DKV_PUT_DSTORE, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("      operator", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[DKV_PUT_DSTORE]);
-    PRINT_FULL("  put-merge", LSM_FLUSH_ROCKSDB, time[DKV_PUT_DSTORE]);
+    PRINT_FULL("KD", KDS_PUT_DSTORE, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("  hashStore", KDS_PUT_DSTORE, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("    get-handler", DS_MULTIPUT_GET_HANDLER, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("    put-jobqueue", DS_MULTIPUT_PUT_TO_JOB_QUEUE, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("      operator", DS_MULTIPUT_PUT_TO_JOB_QUEUE_OPERATOR, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("    direct-op", DS_MULTIPUT_DIRECT_OP, time[KDS_PUT_DSTORE]);
+    PRINT_FULL("  put-merge", LSM_FLUSH_ROCKSDB, time[KDS_PUT_DSTORE]);
 
     fprintf(stdout, "-------------- KDSep Batch OP Breakdown ------------------------------\n");
     PRINT_FULL("op-read", OP_GET, time[OP_GET]);
@@ -323,12 +323,14 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  file2", MERGE_FILE2, time[MERGE]);
     PRINT_FULL("  file3", MERGE_FILE3, time[MERGE]);
     PRINT_FULL("  metadata", MERGE_METADATA, time[MERGE]);
+    PRINT_FULL("  manifest", DS_MANIFEST_GC_MERGE, time[MERGE]);
 
     PRINT_FULL("split", SPLIT, time[KDSep_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  handler", SPLIT_HANDLER, time[SPLIT]);
     PRINT_FULL("  in-memory", SPLIT_IN_MEMORY, time[SPLIT]);
     PRINT_FULL("  write", SPLIT_WRITE_FILES, time[SPLIT]);
     PRINT_FULL("  metadata", SPLIT_METADATA, time[SPLIT]);
+    PRINT_FULL("  manifest", DS_MANIFEST_GC_SPLIT, time[SPLIT]);
 
     PRINT_FULL("rewrite", REWRITE, time[KDSep_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  file-id", REWRITE_GET_FILE_ID, time[REWRITE]);
@@ -338,6 +340,18 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  open-file", REWRITE_OPEN_FILE, time[REWRITE]);
     PRINT_FULL("  write", REWRITE_WRITE, time[REWRITE]);
     PRINT_FULL("  after-write", REWRITE_AFTER_WRITE, time[REWRITE]);
+    PRINT_FULL("  manifest", DS_MANIFEST_GC_REWRITE, time[REWRITE]);
+
+    fprintf(stdout, "-------------- KDSep HashStore Recovery Breakdown ------------------------------\n");
+    PRINT_FULL("  read", DS_RECOVERY_READ, time[REWRITE]);
+    PRINT_FULL("  index-filter", DS_RECOVERY_INDEX_FILTER, time[REWRITE]);
+    PRINT_FULL("  rollback", DS_RECOVERY_ROLLBACK, time[REWRITE]);
+    PRINT_FULL("  commit-read", DS_RECOVERY_COMMIT_LOG_READ, time[REWRITE]);
+    PRINT_FULL("  find", DS_RECOVERY_GET_FILE_HANDLER, time[REWRITE]);
+    PRINT_FULL("  put write", DS_RECOVERY_PUT_TO_QUEUE, time[REWRITE]);
+    PRINT_FULL("    put write op", DS_RECOVERY_PUT_TO_QUEUE_OP, time[REWRITE]);
+    PRINT_FULL("  wait handlers", DS_RECOVERY_WAIT_HANDLERS, time[REWRITE]);
+
 
     fprintf(stdout, "-------------------------- SET Request --------------------------------------\n");
     PRINT_FULL("SetOverall", SET, time[SET]);
@@ -449,13 +463,13 @@ StatsRecorder::~StatsRecorder()
 
     fprintf(stdout, "------------------------- SCAN Request --------------------------------------\n");
     PRINT_FULL("Scan Time", SCAN, time[SCAN]);
-    PRINT_FULL("  lsm", DKV_SCAN_LSM, time[SCAN]);
-    PRINT_FULL("  ds", DKV_SCAN_DS, time[SCAN]);
-    PRINT_FULL("  full merge", DKV_SCAN_FULL_MERGE, time[SCAN]);
-    PRINT_FULL("multiget", DKV_MULTIGET_LSM, time[SCAN]);
-    PRINT_FULL("  lsm", DKV_MULTIGET_LSM, time[SCAN]);
-    PRINT_FULL("  ds", DKV_MULTIGET_DS, time[SCAN]);
-    PRINT_FULL("  full merge", DKV_MULTIGET_FULL_MERGE, time[SCAN]);
+    PRINT_FULL("  lsm", KDS_SCAN_LSM, time[SCAN]);
+    PRINT_FULL("  ds", KDS_SCAN_DS, time[SCAN]);
+    PRINT_FULL("  full merge", KDS_SCAN_FULL_MERGE, time[SCAN]);
+    PRINT_FULL("multiget", KDS_MULTIGET_LSM, time[SCAN]);
+    PRINT_FULL("  lsm", KDS_MULTIGET_LSM, time[SCAN]);
+    PRINT_FULL("  ds", KDS_MULTIGET_DS, time[SCAN]);
+    PRINT_FULL("  full merge", KDS_MULTIGET_FULL_MERGE, time[SCAN]);
 
     fprintf(stdout, "----------------------------- FLUSH -----------------------------------------\n");
     PRINT_FULL("GroupFlushInPool", GROUP_IN_POOL_FLUSH, time[POOL_FLUSH]);

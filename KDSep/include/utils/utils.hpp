@@ -31,6 +31,10 @@ inline static uint64_t prefixLenExtract(uint64_t k) {
     return k >> 56;
 }
 
+inline static uint64_t prefixConcat(uint64_t prefix_u64, uint64_t len) {
+    return (len << 56) | prefixSubstr(prefix_u64, len);
+}
+
 inline static void copyInc(char* buf, uint64_t& index, 
         const void* read_buf, size_t size) {
     memcpy(buf + index, (const char*)read_buf, size);

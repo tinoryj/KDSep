@@ -264,7 +264,7 @@ inline size_t GetKVHeaderVarintSize(KvHeader header) {
     return sz0 + 1;
 }
 
-inline size_t PutDeltaHeaderVarint(char* buf, hashStoreRecordHeader header) {
+inline size_t PutDeltaHeaderVarint(char* buf, KDRecordHeader header) {
     uint8_t c = 0;
     c |= ((header.is_anchor_) ? 1 : 0);
     c |= ((header.is_gc_done_) ? 2 : 0);
@@ -276,7 +276,7 @@ inline size_t PutDeltaHeaderVarint(char* buf, hashStoreRecordHeader header) {
     }
     size_t sz0 = 1;
     if (use_sequence_number) {
-        sz0 += PutVarint32(buf + sz0, header.sequence_number_);
+        sz0 += PutVarint32(buf + sz0, header.seq_num);
     }
     if (header.is_anchor_ == false) {
         sz0 += PutVarint32(buf + sz0, header.value_size_);
@@ -284,9 +284,9 @@ inline size_t PutDeltaHeaderVarint(char* buf, hashStoreRecordHeader header) {
     return sz0;
 }
 
-inline hashStoreRecordHeader GetDeltaHeaderVarint(const char* buf, 
+inline KDRecordHeader GetDeltaHeaderVarint(const char* buf, 
         size_t& offset) {
-    hashStoreRecordHeader header;
+    KDRecordHeader header;
     const char* ptr = buf;
     uint8_t c = ptr[0];
     header.is_gc_done_ = ((c & 2) > 0);
@@ -298,7 +298,7 @@ inline hashStoreRecordHeader GetDeltaHeaderVarint(const char* buf,
     header.key_size_ = c >> 2;
     size_t sz0 = 1; 
     if (use_sequence_number) {
-        sz0 += GetVarint32(ptr + sz0, &header.sequence_number_);
+        sz0 += GetVarint32(ptr + sz0, &header.seq_num);
     }
     if (header.is_anchor_ == false) {
         sz0 += GetVarint32(ptr + sz0, &header.value_size_);
@@ -307,14 +307,54 @@ inline hashStoreRecordHeader GetDeltaHeaderVarint(const char* buf,
     return header;
 }
 
-inline size_t GetDeltaHeaderVarintSize(hashStoreRecordHeader header) {
+inline KDRecordHeader GetDeltaHeaderVarintMayFail(const char* buf, 
+	uint64_t buf_len, size_t& offset, bool& success) {
+    KDRecordHeader header;
+
+    success = true;
+    if (buf_len == 0) {
+	success = false;
+	return header;
+    }
+
+    const char* ptr = buf;
+    uint8_t c = ptr[0];
+    header.is_gc_done_ = ((c & 2) > 0);
+    header.is_anchor_ = ((c & 1) > 0);
+    if (header.is_gc_done_) {
+        offset = 1;
+        return header;
+    }
+    header.key_size_ = c >> 2;
+    size_t sz0 = 1; 
+    char tmpbuf[15];
+    memset(tmpbuf, 0xff, sizeof(tmpbuf));
+    memcpy(tmpbuf, buf + 1, ((buf_len - 1 >= 14) ? 14 : buf_len - 1)); 
+
+    if (use_sequence_number) {
+        sz0 += GetVarint32(tmpbuf, &header.seq_num);
+    }
+    if (header.is_anchor_ == false) {
+        sz0 += GetVarint32(tmpbuf + sz0 - 1, &header.value_size_);
+    }
+
+    if (sz0 > buf_len) {
+	success = false;
+	return header;
+    }
+
+    offset = sz0;
+    return header;
+}
+
+inline size_t GetDeltaHeaderVarintSize(KDRecordHeader header) {
     if (header.is_gc_done_) {
         return 1;
     }
     size_t sz = 0; 
     char buf[5];
     if (use_sequence_number) {
-        sz += PutVarint32(buf, header.sequence_number_);
+        sz += PutVarint32(buf, header.seq_num);
     }
     if (header.is_anchor_ == false) {
         sz += PutVarint32(buf, header.value_size_);

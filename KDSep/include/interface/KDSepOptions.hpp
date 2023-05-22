@@ -104,11 +104,11 @@ public:
     bool rocksdb_sync = false;
 
     bool enable_index_block = true;
-    bool test_recovery = false; 
+    bool test_recovery = false;
 
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     KDLRUCache* kd_cache = nullptr;
-//    boost::atomic<bool>* write_stall = nullptr;
+    //    boost::atomic<bool>* write_stall = nullptr;
     bool* write_stall = nullptr;
     std::queue<string>* wb_keys = nullptr;
     std::mutex* wb_keys_mutex = nullptr;

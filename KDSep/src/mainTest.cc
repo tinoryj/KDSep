@@ -293,7 +293,7 @@ pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileConten
     while (currentProcessLocationIndex != fileSize) {
         processedKeepObjectNumber++;
         processedTotalObjectNumber++;
-        hashStoreRecordHeader currentObjectRecordHeader;
+        KDRecordHeader currentObjectRecordHeader;
         memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         if (currentObjectRecordHeader.is_anchor_ == true) {

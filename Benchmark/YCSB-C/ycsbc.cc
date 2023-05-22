@@ -83,14 +83,14 @@ void CTRLC(int s) {
 // use to sync data between threads
 std::atomic_flag histogram_lock = ATOMIC_FLAG_INIT;
 
-void UsageMessage(const char *command);
-bool StrStartWith(const char *str, const char *pre);
-string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
+void UsageMessage(const char* command);
+bool StrStartWith(const char* str, const char* pre);
+string ParseCommandLine(int argc, const char* argv[], utils::Properties& props);
 double ops_time[6] = {0.0};
 long ops_cnt[6] = {0};
 
-int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops,
-                   bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>> &histogram) {
+int DelegateClient(ycsbc::YCSBDB* db, ycsbc::CoreWorkload* wl, const int num_ops,
+                   bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>>& histogram) {
     db->Init();
     read_cnt = read_finish_cnt = update_cnt = update_finish_cnt = 0;
     ycsbc::Client client(*db, *wl);
@@ -101,9 +101,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     int processLabel_base = num_ops / 100;
     struct timeval tv;
     int output_base = 200;
-    bool final_scan = false; // (num_ops == 101 * 1000000);
+    bool final_scan = false;          // (num_ops == 101 * 1000000);
     double duration_scan_start = 0;
-    uint64_t final_scan_ops = 20000; //1000000;
+    uint64_t final_scan_ops = 20000;  // 1000000;
     for (int i = 0; i < num_ops; ++i) {
         gettimeofday(&tv, 0);
         timer.Start();
@@ -119,18 +119,14 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
         }
         if (final_scan && num_ops - i == final_scan_ops) {
             duration_scan_start = timerStart.End();
-            std::cerr << "\nset to scan: duration: " << 
-                duration_scan_start / 1000000.0 <<
-                std::endl;
-            std::cout << "\nset to scan: duration: " <<
-                duration_scan_start / 1000000.0 <<
-                std::endl;
+            std::cerr << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << std::endl;
+            std::cout << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << std::endl;
             client.SetFinalScan();
             output_base = 200;
         }
 
         KDSEP_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
-                KDSEP_NAMESPACE::StatsType::YCSB_OPERATION, tv);
+            KDSEP_NAMESPACE::StatsType::YCSB_OPERATION, tv);
         double duration = timer.End();
         while (histogram_lock.test_and_set())
             ;
@@ -142,15 +138,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             double tot_duration = timerStart.End() / 1000000.0;
             int speed = i / tot_duration;
             float speed_f = (float)i / tot_duration;
-            double estimate_duration = (i < num_ops - 1) ? 
-                tot_duration / (i+1) * (num_ops - i - 1) : 0;
+            double estimate_duration = (i < num_ops - 1) ? tot_duration / (i + 1) * (num_ops - i - 1) : 0;
 
             if (duration_scan_start > 0.0) {
-                tot_duration = (timerStart.End() - duration_scan_start) /
-                    1000000.0;
+                tot_duration = (timerStart.End() - duration_scan_start) / 1000000.0;
                 speed = (i - (num_ops - final_scan_ops)) / tot_duration;
-                estimate_duration = (i < num_ops - 1) ? 
-                    tot_duration / (i - (num_ops - final_scan_ops) + 1) * (num_ops - i - 1) : 0;
+                estimate_duration = (i < num_ops - 1) ? tot_duration / (i - (num_ops - final_scan_ops) + 1) * (num_ops - i - 1) : 0;
                 speed_f = ((float)(i - (num_ops - final_scan_ops))) / tot_duration;
             }
             int est_minutes = int(estimate_duration) / 60;
@@ -161,7 +154,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             } else {
                 output_base = speed / 1000 * 200;
             }
-//            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+            //            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
             std::cerr << "[Running] " << (float)i / processLabel_base << "% (" << speed_f << " ops)    est ";
             if (est_minutes > 0) {
                 std::cerr << est_minutes << ":";
@@ -169,13 +162,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             if (est_seconds > 0) {
                 std::cerr << est_seconds << " ";
             }
-	    if (i % processLabel_base == 0 || 
-                    (duration_scan_start > 0.0 && i % (final_scan_ops / 100) == 0)) {
-		std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops 
-                    << "   (" << speed_f << " ops)\n";
-	    }
+            if (i % processLabel_base == 0 || (duration_scan_start > 0.0 && i % (final_scan_ops / 100) == 0)) {
+                std::cout << "[Running] " << (float)i / processLabel_base << "%, " << i << "/" << num_ops
+                          << "   (" << speed_f << " ops)\n";
+            }
         }
-	// }
+        // }
     }
     std::cerr << "\r";
     std::cerr << "[Running Status] 100%, " << num_ops << "/" << num_ops;
@@ -184,65 +176,18 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     std::cout << "resident " << KDSEP_NAMESPACE::getRss() / 1024.0 / 1024.0 << " GiB" << std::endl;
     if (duration_scan_start > 0.0) {
         duration_scan_start = timerStart.End() - duration_scan_start;
-        std::cout << "\nscan throughput: " <<
-            final_scan_ops / (duration_scan_start / 1000000.0) <<
-            std::endl;
+        std::cout << "\nscan throughput: " << final_scan_ops / (duration_scan_start / 1000000.0) << std::endl;
     }
     db->Close();
     return oks;
 }
 
-void simpleTest() {
-    KDSEP_NAMESPACE::KvHeader header, header2;
-    header.mergeFlag_ = true;
-    header.valueSeparatedFlag_ = false;
-    header.rawValueSize_ = 511;
-
-    char buf[15];
-    size_t sz = KDSEP_NAMESPACE::PutKVHeaderVarint(buf, header, true, true);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    size_t offset = 0;
-    header2 = KDSEP_NAMESPACE::GetKVHeaderVarint(buf, offset); 
-    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
-            (int)header2.valueSeparatedFlag_,
-           header2.rawValueSize_, offset); 
-    sz = KDSEP_NAMESPACE::PutKVHeaderVarint(buf, header, true, false);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    offset = 0;
-    header2 = KDSEP_NAMESPACE::GetKVHeaderVarint(buf, offset); 
-    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
-            (int)header2.valueSeparatedFlag_,
-           header2.rawValueSize_, offset); 
-
-    KDSEP_NAMESPACE::externalIndexInfo index, index2;
-    index.externalFileID_ = 1;
-    index.externalFileOffset_ = 2;
-    index.externalContentSize_ = 3; 
-    offset = 0;
-    sz = KDSEP_NAMESPACE::PutVlogIndexVarint(buf, index);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    index2 = KDSEP_NAMESPACE::GetVlogIndexVarint(buf, offset);
-    fprintf(stderr, "index2: %d %d %d\n", 
-            index2.externalFileID_, index2.externalFileOffset_, 
-            index2.externalContentSize_);
-}
-
-int main(const int argc, const char *argv[]) {
+int main(const int argc, const char* argv[]) {
     setbuf(stdout, nullptr);
     setbuf(stderr, nullptr);
 
     utils::Timer timerStart;
     timerStart.Start();
-//    simpleTest();
 
     struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;
@@ -255,7 +200,7 @@ int main(const int argc, const char *argv[]) {
     utils::Properties props;
     string file_name = ParseCommandLine(argc, argv, props);
 
-    ycsbc::YCSBDB *db = ycsbc::DBFactory::CreateDB(props);
+    ycsbc::YCSBDB* db = ycsbc::DBFactory::CreateDB(props);
     if (!db) {
         cout << "Unknown database name " << props["dbname"] << endl;
         exit(0);
@@ -263,11 +208,11 @@ int main(const int argc, const char *argv[]) {
 
     ycsbc::ExternDBConfig config(props["configpath"]);
     if (config.getTestRecovery()) {
-	double duration_recovery = timerStart.End();
-	printf("recovery total time: %.7lf\n", duration_recovery / 1000000.0); 
-	fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery /
-		1000000.0); 
-	exit(0);
+        double duration_recovery = timerStart.End();
+        printf("recovery total time: %.7lf\n", duration_recovery / 1000000.0);
+        fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery / 1000000.0);
+        KDSEP_NAMESPACE::StatsRecorder::DestroyInstance();
+        exit(0);
     }
 
     vector<future<int>> actual_ops;
@@ -295,7 +240,7 @@ int main(const int argc, const char *argv[]) {
         assert((int)actual_ops.size() == num_threads);
 
         int sum = 0;
-        for (auto &n : actual_ops) {
+        for (auto& n : actual_ops) {
             assert(n.valid());
             sum += n.get();
         }
@@ -368,7 +313,7 @@ int main(const int argc, const char *argv[]) {
         assert((int)actual_ops.size() == num_threads);
 
         int sum = 0;
-        for (auto &n : actual_ops) {
+        for (auto& n : actual_ops) {
             assert(n.valid());
             sum += n.get();
         }
@@ -450,7 +395,7 @@ int main(const int argc, const char *argv[]) {
     return 0;
 }
 
-string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {
+string ParseCommandLine(int argc, const char* argv[], utils::Properties& props) {
     int argindex = 1;
     string filename;
     while (argindex < argc && StrStartWith(argv[argindex], "-")) {
@@ -547,7 +492,7 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
             ifstream input(argv[argindex]);
             try {
                 props.Load(input);
-            } catch (const string &message) {
+            } catch (const string& message) {
                 cout << message << endl;
                 exit(0);
             }
@@ -568,7 +513,7 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
     return filename;
 }
 
-void UsageMessage(const char *command) {
+void UsageMessage(const char* command) {
     cout << "Usage: " << command << " [options]" << endl;
     cout << "Options:" << endl;
     cout << "  -threads n: execute using n threads (default: 1)" << endl;
@@ -581,6 +526,6 @@ void UsageMessage(const char *command) {
     cout << "                   specified, and will be processed in the order specified" << endl;
 }
 
-inline bool StrStartWith(const char *str, const char *pre) {
+inline bool StrStartWith(const char* str, const char* pre) {
     return strncmp(str, pre, strlen(pre)) == 0;
 }

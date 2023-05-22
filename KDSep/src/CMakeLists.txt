@@ -45,22 +45,23 @@ add_library(KDSep STATIC
       utils/utils.cc
       utils/KDLRUCache.cpp
       utils/prefixTreeForHashStore.cpp
-      hashBasedStore/hashStoreInterface.cpp
-      hashBasedStore/hashStoreFileManager.cpp
-      hashBasedStore/hashStoreFileOperator.cpp
-      indexBasedStore/deviceManager.cc
-      indexBasedStore/ds/bitmap.cc
-      indexBasedStore/ds/segmentPool.cc
-      indexBasedStore/ds/lru.cc
-      indexBasedStore/gcManager.cc
-      indexBasedStore/indexStoreInterface.cpp
-      indexBasedStore/indexStore.cpp
-      indexBasedStore/configManager.cc
-      indexBasedStore/indexStoreInterface.cpp
-      indexBasedStore/logManager.cc
-      indexBasedStore/rocksdbKeyManager.cc
-      indexBasedStore/segmentGroupManager.cc
-      indexBasedStore/valueManager.cc
+      deltaStore/hashStoreInterface.cpp
+      deltaStore/bucketManager.cpp
+      deltaStore/bucketOperator.cpp
+      deltaStore/manifestManager.cpp
+      vlog/deviceManager.cc
+      vlog/ds/bitmap.cc
+      vlog/ds/segmentPool.cc
+      vlog/ds/lru.cc
+      vlog/gcManager.cc
+      vlog/indexStoreInterface.cpp
+      vlog/indexStore.cpp
+      vlog/configManager.cc
+      vlog/indexStoreInterface.cpp
+      vlog/logManager.cc
+      vlog/rocksdbKeyManager.cc
+      vlog/segmentGroupManager.cc
+      vlog/valueManager.cc
       interface/KDSepOptions.cpp
       interface/KDSepInterface.cpp
       interface/lsmTreeInterface.cpp

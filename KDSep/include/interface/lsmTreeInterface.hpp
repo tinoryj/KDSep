@@ -1,9 +1,9 @@
 #pragma once
 
-#include "hashBasedStore/hashStoreFileManager.hpp"
-#include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreInterface.hpp"
-#include "indexBasedStore/indexStoreInterface.hpp"
+#include "deltaStore/bucketManager.hpp"
+#include "deltaStore/bucketOperator.hpp"
+#include "deltaStore/hashStoreInterface.hpp"
+#include "vlog/indexStoreInterface.hpp"
 #include "interface/KDSepOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"

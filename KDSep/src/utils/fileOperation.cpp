@@ -96,7 +96,8 @@ bool FileOperation::openFile(string path)
     }
 }
 
-bool FileOperation::openAndReadFile(string path, char*& read_buf, uint64_t& data_size)
+bool FileOperation::openAndReadFile(string path, char*& read_buf, 
+	uint64_t& data_size, bool save_page_data_sizes)
 {
     path_ = path;
     if (operationType_ == kFstream) {
@@ -147,6 +148,10 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf, uint64_t& data
 
         data_size = 0;
         disk_size_ = 0;
+
+	if (save_page_data_sizes) {
+	    page_data_sizes_.clear();
+	}
         for (auto page_i = 0; page_i < req_page_num; page_i++) {
             uint32_t page_data_size = 0;
             memcpy(&page_data_size, readBuffer + page_i * page_size_, sizeof(uint32_t));
@@ -154,6 +159,10 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf, uint64_t& data
             if (page_data_size == 0) {
                 break;
             }
+
+	    if (save_page_data_sizes) {
+		page_data_sizes_.push_back(page_data_size);
+	    }
 
             disk_size_ += page_size_;
             memcpy(read_buf + data_size, 
@@ -163,12 +172,57 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf, uint64_t& data
         }
         data_size_ = data_size;
         free(readBuffer);
-        buf_used_size_ = 0;
-        debug_info("Open old file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fd_, disk_size_, data_size_);
+	debug_info("Open old file at path = %s, file fd = %d, current "
+		" physical file size = %lu, actual file size = %lu\n", 
+		path.c_str(), fd_, disk_size_, data_size_);
+
+	if (save_page_data_sizes) {
+	    recovery_state_ = true;
+	}
         return true;
     } else {
         return false;
     }
+}
+
+bool FileOperation::rollbackFile(char* read_buf, uint64_t rollback_offset) {
+
+    if (rollback_offset > data_size_) {
+	debug_error("[ERROR] roll back offset too large: %lu > %lu\n",
+		rollback_offset, data_size_);
+	return false;
+    }
+
+    if (recovery_state_ == false) {
+	debug_error("[ERROR] not in recovery but rollback: %lu %lu\n",
+		data_size_, rollback_offset);
+	return false;
+    }
+
+    uint64_t data_i_on_disk = 0;
+    for (auto i = 0; i < page_data_sizes_.size(); i++) {
+	if (data_i_on_disk + page_data_sizes_[i] > rollback_offset) {
+	    debug_info("roll back to page %d\n", i);
+
+	    data_size_ = data_i_on_disk;
+	    disk_size_ = i * page_size_;
+	    buf_used_size_ = rollback_offset - data_i_on_disk;
+	    debug_error("roll back: %s new data size %lu new disk size %lu"
+		    " roll offset %lu buf size %lu\n",
+		    path_.c_str(),
+		    data_size_, disk_size_, rollback_offset, 
+		    buf_used_size_);
+		    
+	    if (buf_used_size_ > 0) {
+		memcpy(globalWriteBuffer_, read_buf + data_i_on_disk,
+			buf_used_size_); 
+	    }
+	    break;
+	}
+	data_i_on_disk += page_data_sizes_[i];
+    }
+    
+    return true;
 }
 
 bool FileOperation::createThenOpenFile(string path)
@@ -272,6 +326,16 @@ void FileOperation::markDirectDataAddress(uint64_t data) {
     mark_data_ = data;
     mark_disk_ = disk_size_;
     mark_in_page_offset_ = (buf_used_size_ == 0) ? 0 : 1;
+
+    if (recovery_state_) {
+	uint64_t data_i_on_disk = 0;
+	for (auto i = 0; i < page_data_sizes_.size(); i++) {
+	    if (data_i_on_disk + page_data_sizes_[i] == data) {
+		mark_disk_ = i * page_size_;
+	    }
+	}
+	mark_in_page_offset_ = 0; // must be in recovery state
+    }
 }
 
 FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
@@ -335,7 +399,8 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size, disk_size_);
+	    auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
+		    disk_size_);
             StatsRecorder::getInstance()->timeProcess(
 		    StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
             if (wReturn != actual_disk_write_size) {
@@ -498,6 +563,9 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             gettimeofday(&tv, 0);
             auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size, disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
+	    // stop recovery
+	    recovery_state_ = false;
+
             if (wReturn != actual_disk_write_size) {
                 free(write_buf_dio);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));

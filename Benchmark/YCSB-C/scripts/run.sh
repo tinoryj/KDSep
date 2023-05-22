@@ -116,11 +116,6 @@ log_db_status() {
     ls -lt $DBPath | grep "delta" | sort -n -k5 | tail >>$output_file
     echo "-------- delta sizes and counts --" >>$output_file
     ls -lt $DBPath | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
-    echo "--------- total delta sizes ------" >>$output_file
-    ls $DBPath/hashStoreFileManifestFile.* | while read line; do
-        awk '{if (NR % 6 == 0) s+=$1;} END {print s / 1024 / 1024 " MiB delta";}' $line >>$output_file
-        awk '{if (NR % 6 == 0) mp[$1]++;} END {for (i in mp) print i " " mp[i];}' $line | sort -n -k1 >>$output_file
-    done
     ls -lt $DBPath | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >>$output_file
@@ -130,12 +125,6 @@ log_db_status() {
     echo "----------------------------------" >>$output_file
 
     lines=$(wc -l $output_file | awk '{print $1;}')
-    if [[ $lines -lt 50 ]]; then
-        cat $output_file
-    else
-        head -n 30 $output_file
-        tail -n 15 $output_file
-    fi
     cat $output_file >>$ResultLogFile
     cat temp.ini >>$ResultLogFile
 
@@ -170,14 +159,14 @@ OperationsNumber=10000000 #"300000000"
 fieldlength=400
 fieldcount=10
 DB_Working_Path="/mnt/g/KDSep/working"
-DB_Loaded_Path="/mnt/d/KDSepload"
+DB_Loaded_Path="/mnt/d/KDSepltakvload"
 if [[ ! -d "/mnt/g" ]]; then
     DB_Working_Path="/mnt/lvm/KDSep/working"
     DB_Loaded_Path="/mnt/lvm/KDSep"
 fi
 if [[ ! -d "/mnt/lvm" && ! -d "/mnt/g" ]]; then
-    DB_Working_Path="/mnt/sn640/KDSepjhli/working"
-    DB_Loaded_Path="/mnt/sn640/KDSepjhli"
+    DB_Working_Path="/mnt/sn640/KDSepanonymous/working"
+    DB_Loaded_Path="/mnt/sn640/KDSepanonymous"
 fi
 ResultLogFolder="Exp2/ResultLogs"
 DB_Name="loadedDB"

@@ -18,9 +18,6 @@ bool LsmTreeInterface::Open(KDSepOptions& options, const string& name) {
     printf("restore rocksdb time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
-    debug_error("restore rocksdb time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
 
     if (!rocksDBStatus.ok()) {
         debug_error("[ERROR] Can't open underlying rocksdb, status = %s\n",
@@ -77,7 +74,7 @@ bool LsmTreeInterface::Put(const mempoolHandler_t& obj)
     if (lsmTreeRunningMode_ == kNoValueLog || obj.valueSize_ < valueExtractSize_) {
          // no value log
         char valueBuffer[obj.valueSize_ + sizeof(KvHeader)];
-        KvHeader header(false, false, obj.sequenceNumber_, obj.valueSize_);
+        KvHeader header(false, false, obj.seq_num, obj.valueSize_);
         size_t header_sz = sizeof(KvHeader);
 
         // Put header
@@ -128,7 +125,7 @@ bool LsmTreeInterface::Merge(const char* key, uint32_t keySize, const char* valu
 // Merge for no separation. 
 bool LsmTreeInterface::Merge(const mempoolHandler_t& obj)
 {
-    KvHeader header(false, false, obj.sequenceNumber_, obj.valueSize_);
+    KvHeader header(false, false, obj.seq_num, obj.valueSize_);
     size_t value_sz = obj.valueSize_ + sizeof(KvHeader);
     char valueBuffer[value_sz];
     size_t header_sz = sizeof(KvHeader);
@@ -262,7 +259,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
     size_t value_sz;
     if (lsmTreeRunningMode_ == kNoValueLog) {
         for (auto& it : memPoolHandlersPut) {
-            KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+            KvHeader header(false, false, it.seq_num, it.valueSize_);
             // Reserve enough space. Use sizeof() here
             char buf[it.valueSize_ + sizeof(header)];
 
@@ -283,7 +280,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         vector<mempoolHandler_t> objects_for_vlog_put;
         for (auto& it : memPoolHandlersPut) {
             if (it.valueSize_ < valueExtractSize_) {
-                KvHeader header(false, false, it.sequenceNumber_, it.valueSize_);
+                KvHeader header(false, false, it.seq_num, it.valueSize_);
                 // Reserve enough space. Use sizeof() here
                 char buf[it.valueSize_ + sizeof(header)];
 
