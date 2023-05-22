@@ -7,7 +7,7 @@
 #include <stack>
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 template <typename dataT>
 class PrefixTree {

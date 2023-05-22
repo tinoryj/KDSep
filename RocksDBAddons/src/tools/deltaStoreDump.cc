@@ -1,5 +1,5 @@
-#include "interface/deltaKVInterface.hpp"
-#include "interface/deltaKVOptions.hpp"
+#include "interface/kdsepInterface.hpp"
+#include "interface/kdsepOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/fileOperation.hpp"
@@ -7,7 +7,7 @@
 #include "utils/prefixTree.hpp"
 #include "utils/timer.hpp"
 
-using namespace DELTAKV_NAMESPACE;
+using namespace KDSEP_NAMESPACE;
 
 pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<string>>& resultMap)
 {
@@ -21,7 +21,7 @@ pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileConten
     while (currentProcessLocationIndex != fileSize) {
         processedKeepObjectNumber++;
         processedTotalObjectNumber++;
-        hashStoreRecordHeader currentObjectRecordHeader;
+        KDRecordHeader currentObjectRecordHeader;
         memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         if (currentObjectRecordHeader.is_anchor_ == true) {

@@ -21,7 +21,7 @@
 // stripeMetaDataMod, valueMod
 #define MIN_FREE_SEGMENTS (2)
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 /** align the buffer with block size in memory for direct I/O **/
 static inline void* buf_malloc(size_t s)

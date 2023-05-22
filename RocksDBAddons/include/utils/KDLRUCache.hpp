@@ -5,7 +5,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 typedef str_t ktype;
 //typedef vector<str_t>* vtype;
@@ -367,4 +367,4 @@ public:
     }
 };
 
-} // DELTAKV_NAMESPACE
+} // KDSEP_NAMESPACE

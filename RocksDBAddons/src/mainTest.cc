@@ -1,5 +1,5 @@
-#include "interface/deltaKVInterface.hpp"
-#include "interface/deltaKVOptions.hpp"
+#include "interface/kdsepInterface.hpp"
+#include "interface/kdsepOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/appendAbleLRUCache.hpp"
 #include "utils/fileOperation.hpp"
@@ -7,7 +7,7 @@
 #include "utils/prefixTree.hpp"
 #include "utils/timer.hpp"
 
-using namespace DELTAKV_NAMESPACE;
+using namespace KDSEP_NAMESPACE;
 
 vector<string> split(string str, string token)
 {
@@ -75,7 +75,7 @@ public:
     const char* Name() const override { return "FieldUpdateMergeOperatorInternal"; }
 };
 
-bool testPut(DeltaKV& db_, string key, string& value)
+bool testPut(KDSep& db_, string key, string& value)
 {
     debug_info("Test put operation with key = %s\n", key.c_str());
     if (!db_.Put(key, value)) {
@@ -86,7 +86,7 @@ bool testPut(DeltaKV& db_, string key, string& value)
     }
 }
 
-bool testGet(DeltaKV& db_, string key, string& value)
+bool testGet(KDSep& db_, string key, string& value)
 {
     debug_info("Test get operation with key = %s\n", key.c_str());
     if (!db_.Get(key, &value)) {
@@ -97,7 +97,7 @@ bool testGet(DeltaKV& db_, string key, string& value)
     }
 }
 
-bool testMerge(DeltaKV& db_, string key, string& value)
+bool testMerge(KDSep& db_, string key, string& value)
 {
     debug_info("Test merge operation with key = %s\n", key.c_str());
     if (!db_.Merge(key, value)) {
@@ -108,7 +108,7 @@ bool testMerge(DeltaKV& db_, string key, string& value)
     }
 }
 
-bool testBatchedPut(DeltaKV& db_, string key, string& value)
+bool testBatchedPut(KDSep& db_, string key, string& value)
 {
     debug_info("Test batched put operation with key = %s\n", key.c_str());
     if (!db_.PutWithWriteBatch(key, value)) {
@@ -119,7 +119,7 @@ bool testBatchedPut(DeltaKV& db_, string key, string& value)
     }
 }
 
-bool testBatchedMerge(DeltaKV& db_, string key, string& value)
+bool testBatchedMerge(KDSep& db_, string key, string& value)
 {
     debug_info("Test batched merge operation with key = %s\n", key.c_str());
     if (!db_.MergeWithWriteBatch(key, value)) {
@@ -293,7 +293,7 @@ pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileConten
     while (currentProcessLocationIndex != fileSize) {
         processedKeepObjectNumber++;
         processedTotalObjectNumber++;
-        hashStoreRecordHeader currentObjectRecordHeader;
+        KDRecordHeader currentObjectRecordHeader;
         memcpy(&currentObjectRecordHeader, fileContentBuffer + currentProcessLocationIndex, sizeof(currentObjectRecordHeader));
         currentProcessLocationIndex += sizeof(currentObjectRecordHeader);
         if (currentObjectRecordHeader.is_anchor_ == true) {
@@ -360,8 +360,8 @@ int main(int argc, char* argv[])
     // fstreamTestDIRECT(100000);
     // return 0;
 
-    DeltaKV db_;
-    DeltaKVOptions options_;
+    KDSep db_;
+    KDSepOptions options_;
     int bloomBits = 10;
     size_t blockCacheSize = 128;
     bool directIO = true;

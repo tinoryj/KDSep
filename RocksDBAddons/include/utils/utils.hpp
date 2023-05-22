@@ -5,7 +5,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 inline static uint64_t prefixSubstr(uint64_t prefix, uint64_t len) {
     return prefix & ((1 << len) - 1);
@@ -29,6 +29,10 @@ inline static uint64_t prefixExtract(uint64_t k) {
 
 inline static uint64_t prefixLenExtract(uint64_t k) {
     return k >> 56;
+}
+
+inline static uint64_t prefixConcat(uint64_t prefix_u64, uint64_t len) {
+    return (len << 56) | prefixSubstr(prefix_u64, len);
 }
 
 inline static void copyInc(char* buf, uint64_t& index, 

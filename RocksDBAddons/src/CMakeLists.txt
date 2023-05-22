@@ -32,7 +32,7 @@ else()
    add_compile_options(-Wall -std=c++17 -fPIC -frtti -g -ggdb -g2 -fno-omit-frame-pointer -fsanitize=leak -DXXH_PRIVATE_API) 
 endif ()
 
-add_library(DeltaKV STATIC 
+add_library(KDSep STATIC 
       utils/bucketIndexBlock.cpp
       utils/bucketKeyFilter.cc
       utils/debug.cpp
@@ -45,30 +45,31 @@ add_library(DeltaKV STATIC
       utils/utils.cc
       utils/KDLRUCache.cpp
       utils/prefixTreeForHashStore.cpp
-      hashBasedStore/hashStoreInterface.cpp
-      hashBasedStore/hashStoreFileManager.cpp
-      hashBasedStore/hashStoreFileOperator.cpp
-      indexBasedStore/deviceManager.cc
-      indexBasedStore/ds/bitmap.cc
-      indexBasedStore/ds/segmentPool.cc
-      indexBasedStore/ds/lru.cc
-      indexBasedStore/gcManager.cc
-      indexBasedStore/indexStoreInterface.cpp
-      indexBasedStore/indexStore.cpp
-      indexBasedStore/configManager.cc
-      indexBasedStore/indexStoreInterface.cpp
-      indexBasedStore/logManager.cc
-      indexBasedStore/rocksdbKeyManager.cc
-      indexBasedStore/segmentGroupManager.cc
-      indexBasedStore/valueManager.cc
-      interface/deltaKVOptions.cpp
-      interface/deltaKVInterface.cpp
+      deltaStore/hashStoreInterface.cpp
+      deltaStore/bucketManager.cpp
+      deltaStore/bucketOperator.cpp
+      deltaStore/manifestManager.cpp
+      vlog/deviceManager.cc
+      vlog/ds/bitmap.cc
+      vlog/ds/segmentPool.cc
+      vlog/ds/lru.cc
+      vlog/gcManager.cc
+      vlog/indexStoreInterface.cpp
+      vlog/indexStore.cpp
+      vlog/configManager.cc
+      vlog/indexStoreInterface.cpp
+      vlog/logManager.cc
+      vlog/rocksdbKeyManager.cc
+      vlog/segmentGroupManager.cc
+      vlog/valueManager.cc
+      interface/kdsepOptions.cpp
+      interface/kdsepInterface.cpp
       interface/lsmTreeInterface.cpp
       interface/mergeOperation.cpp
 )
 
-target_link_libraries(DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
+target_link_libraries(KDSep ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
 # add_executable(deltaDump deltaStoreDump.cc)
-# target_link_libraries(deltaDump DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
+# target_link_libraries(deltaDump KDSep ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
 # add_executable(test mainTest.cc)
-# target_link_libraries(test DeltaKV ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})
+# target_link_libraries(test KDSep ${LINK_OBJ} ${ROCKSDB_STATIC_LIBRARY_OBJ})

@@ -9,9 +9,9 @@
 using namespace std;
 using namespace rocksdb;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
-class DeltaKVMergeOperator {
+class KDSepMergeOperator {
 public:
     virtual bool Merge(const string& rawValue, 
             const vector<string>& operandList, string* finalValue) = 0;
@@ -24,7 +24,7 @@ public:
     virtual string kClassName() = 0;
 };
 
-class DeltaKVFieldUpdateMergeOperator : public DeltaKVMergeOperator {
+class DeltaKVFieldUpdateMergeOperator : public KDSepMergeOperator {
 public:
     // All functions do not consider the headers
     bool Merge(const string& rawValue, const vector<string>& operandList,
@@ -64,4 +64,4 @@ private:
             str_t& finalDeltaListStr) const;
 };
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

@@ -1,6 +1,6 @@
 #include "utils/headers.hh"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 const char* GetVarint32PtrFallback(const char* p, const char* limit,
                                    uint32_t* value) {

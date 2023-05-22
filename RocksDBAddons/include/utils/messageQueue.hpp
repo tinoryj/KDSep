@@ -8,7 +8,7 @@
 #include <boost/thread/thread.hpp>
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 template <typename T>
 class messageQueue {
@@ -57,4 +57,4 @@ bool messageQueue<T>::isEmpty()
     return lockFreeQueue_.empty();
 }
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

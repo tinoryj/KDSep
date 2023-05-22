@@ -111,7 +111,7 @@ private:
         printf(BOLDMAGENTA fmt RESET "\n", __VA_ARGS__); \
     } while (0)
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 void printhex(char* buf, int n);
 std::string getTime();

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "hashBasedStore/hashStoreFileManager.hpp"
-#include "hashBasedStore/hashStoreFileOperator.hpp"
-#include "hashBasedStore/hashStoreInterface.hpp"
-#include "indexBasedStore/indexStoreInterface.hpp"
-#include "interface/deltaKVOptions.hpp"
+#include "deltaStore/bucketManager.hpp"
+#include "deltaStore/bucketOperator.hpp"
+#include "deltaStore/hashStoreInterface.hpp"
+#include "vlog/indexStoreInterface.hpp"
+#include "interface/kdsepOptions.hpp"
 #include "interface/mergeOperation.hpp"
 #include "utils/debug.hpp"
 #include "utils/headers.hh"
@@ -17,7 +17,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 class LsmTreeInterface {
 public:
@@ -28,7 +28,7 @@ public:
     LsmTreeInterface(const LsmTreeInterface&) = delete;
     void operator=(const LsmTreeInterface&) = delete;
 
-    bool Open(DeltaKVOptions& options, const string& name);
+    bool Open(KDSepOptions& options, const string& name);
     bool Close();
 
     bool Put(const mempoolHandler_t& mempoolHandler);
@@ -65,4 +65,4 @@ private:
     bool isValueStoreInUseFlag_ = false;
 };
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

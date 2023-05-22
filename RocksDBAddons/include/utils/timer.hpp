@@ -6,7 +6,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 class Timer {
 public:
@@ -24,4 +24,4 @@ private:
     size_t _prev;
 };
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

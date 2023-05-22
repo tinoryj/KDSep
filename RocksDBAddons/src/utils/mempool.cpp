@@ -2,7 +2,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 KeyValueMemPool::KeyValueMemPool(uint32_t objectNumberThreshold, uint32_t maxBlockSize)
 {
@@ -91,7 +91,7 @@ bool KeyValueMemPool::insertContentToMemPoolAndGetHandler(const string& keyStr, 
         memcpy(mempool_[mempoolHandler.mempoolHandlerID_] + mempoolHandler.keySize_, valueStr.c_str(), valueStr.size());
         mempoolHandler.keyPtr_ = mempool_[mempoolHandler.mempoolHandlerID_];
         mempoolHandler.valuePtr_ = mempool_[mempoolHandler.mempoolHandlerID_] + mempoolHandler.keySize_;
-        mempoolHandler.sequenceNumber_ = sequenceNumber;
+        mempoolHandler.seq_num = sequenceNumber;
         mempoolHandler.isAnchorFlag_ = isAnchorFlag;
         return true;
     }
@@ -152,7 +152,7 @@ bool KeyValueMemPoolSimple::insertContentToMemPoolAndGetHandler(const string& ke
         memcpy(buffer + mempoolHandler.keySize_, valueStr.c_str(), valueStr.size());
         mempoolHandler.keyPtr_ = buffer;
         mempoolHandler.valuePtr_ = buffer + mempoolHandler.keySize_;
-        mempoolHandler.sequenceNumber_ = sequenceNumber;
+        mempoolHandler.seq_num = sequenceNumber;
         mempoolHandler.isAnchorFlag_ = isAnchorFlag;
         return true;
     }

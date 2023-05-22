@@ -1,6 +1,6 @@
 #pragma once
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 class HashFunc {
 public:

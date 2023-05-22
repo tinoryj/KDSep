@@ -1,6 +1,6 @@
 #include "interface/mergeOperation.hpp"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 bool StringSplit(string str, const string& token, vector<string>& result)
 {
@@ -720,4 +720,4 @@ inline bool RocksDBInternalMergeOperator::FullMergeFieldUpdates(
 }
 
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

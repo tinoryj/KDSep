@@ -1,6 +1,6 @@
 #include "utils/bucketKeyFilter.hpp"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 uint32_t BucketKeyFilter::hash1(const str_t& s, int arrSize) {
     uint32_t hash = 0;

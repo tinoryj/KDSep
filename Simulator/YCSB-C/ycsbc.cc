@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "DeltaKV/deltaKV_db.h"
+#include "KDSep/kdsep_db.h"
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "core/histogram.h"
@@ -37,7 +37,7 @@ void CTRLC(int s) {
     cerr << "Server exit with keyboard interrupt" << endl;
     cerr << "read: " << read_cnt << " " << read_finish_cnt << endl;
     cerr << "update: " << update_cnt << " " << update_finish_cnt << endl;
-    DELTAKV_NAMESPACE::StatsRecorder::DestroyInstance();
+    KDSEP_NAMESPACE::StatsRecorder::DestroyInstance();
     exit(1);
 }
 
@@ -129,8 +129,8 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             output_base = 200;
         }
 
-        DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
-                DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION, tv);
+        KDSEP_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
+                KDSEP_NAMESPACE::StatsType::YCSB_OPERATION, tv);
         double duration = timer.End();
         while (histogram_lock.test_and_set())
             ;
@@ -181,7 +181,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     std::cerr << "[Running Status] 100%, " << num_ops << "/" << num_ops;
     std::cerr << std::endl;
 
-    std::cout << "resident " << DELTAKV_NAMESPACE::getRss() / 1024.0 / 1024.0 << " GiB" << std::endl;
+    std::cout << "resident " << KDSEP_NAMESPACE::getRss() / 1024.0 / 1024.0 << " GiB" << std::endl;
     if (duration_scan_start > 0.0) {
         duration_scan_start = timerStart.End() - duration_scan_start;
         std::cout << "\nscan throughput: " <<
@@ -192,57 +192,12 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     return oks;
 }
 
-void simpleTest() {
-    DELTAKV_NAMESPACE::KvHeader header, header2;
-    header.mergeFlag_ = true;
-    header.valueSeparatedFlag_ = false;
-    header.rawValueSize_ = 511;
-
-    char buf[15];
-    size_t sz = DELTAKV_NAMESPACE::PutKVHeaderVarint(buf, header, true, true);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    size_t offset = 0;
-    header2 = DELTAKV_NAMESPACE::GetKVHeaderVarint(buf, offset); 
-    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
-            (int)header2.valueSeparatedFlag_,
-           header2.rawValueSize_, offset); 
-    sz = DELTAKV_NAMESPACE::PutKVHeaderVarint(buf, header, true, false);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    offset = 0;
-    header2 = DELTAKV_NAMESPACE::GetKVHeaderVarint(buf, offset); 
-    fprintf(stderr, "header2: %d %d %u offset %lu\n", (int)header2.mergeFlag_,
-            (int)header2.valueSeparatedFlag_,
-           header2.rawValueSize_, offset); 
-
-    DELTAKV_NAMESPACE::externalIndexInfo index, index2;
-    index.externalFileID_ = 1;
-    index.externalFileOffset_ = 2;
-    index.externalContentSize_ = 3; 
-    offset = 0;
-    sz = DELTAKV_NAMESPACE::PutVlogIndexVarint(buf, index);
-    for (int i = 0; i < sz; i++) {
-        fprintf(stderr, "%d ", (int)(buf[i]) & 255);
-    }
-    fprintf(stderr, "\n");
-    index2 = DELTAKV_NAMESPACE::GetVlogIndexVarint(buf, offset);
-    fprintf(stderr, "index2: %d %d %d\n", 
-            index2.externalFileID_, index2.externalFileOffset_, 
-            index2.externalContentSize_);
-}
-
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
     setbuf(stderr, nullptr);
 
     utils::Timer timerStart;
     timerStart.Start();
-//    simpleTest();
 
     struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;
@@ -267,6 +222,7 @@ int main(const int argc, const char *argv[]) {
 	printf("recovery total time: %.7lf\n", duration_recovery / 1000000.0); 
 	fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery /
 		1000000.0); 
+	KDSEP_NAMESPACE::StatsRecorder::DestroyInstance();
 	exit(0);
     }
 

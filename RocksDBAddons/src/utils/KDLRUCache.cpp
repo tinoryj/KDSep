@@ -2,7 +2,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 lru_cache_str_t::~lru_cache_str_t() {
 //        debug_error("deconstruct %lu, data size %lu\n", m_map.size(), data_size);
@@ -44,4 +44,4 @@ KDLRUCache::~KDLRUCache() {
            (rss_before - rss_after) / 1024.0 / 1024.0); 
 }
 
-} // DELTAKV_NAMESPACE
+} // KDSEP_NAMESPACE

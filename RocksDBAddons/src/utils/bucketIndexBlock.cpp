@@ -1,6 +1,6 @@
 #include "utils/bucketIndexBlock.hpp"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 BucketIndexBlock::BucketIndexBlock() {
     key_buf_ = new char[buf_size_];

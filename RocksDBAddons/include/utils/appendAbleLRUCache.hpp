@@ -4,7 +4,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 template <class Key, class Value>
 class lru_cache {
@@ -322,4 +322,4 @@ valueType& AppendAbleLRUCacheKey<keyType, valueType, hashKey, equalKey>::getFrom
     return newValue;
 }
 
-} // DELTAKV_NAMESPACE
+} // KDSEP_NAMESPACE

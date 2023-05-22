@@ -1,6 +1,6 @@
 #include "utils/prefixTreeForHashStore.hpp"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 PrefixTreeForHashStore::~PrefixTreeForHashStore() {
     size_t rss_before = getRss();
@@ -45,8 +45,8 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
 
     for (long unsigned int i = 0; i < targetDeleteVec.size(); i++) {
         if (targetDeleteVec[i] != nullptr) {
-            if (targetDeleteVec[i]->file_op_ptr != nullptr) {
-                delete targetDeleteVec[i]->file_op_ptr;
+            if (targetDeleteVec[i]->io_ptr != nullptr) {
+                delete targetDeleteVec[i]->io_ptr;
             }
             delete targetDeleteVec[i];
         }
@@ -63,4 +63,4 @@ PrefixTreeForHashStore::~PrefixTreeForHashStore() {
            (rss_before - rss_after) / 1024.0 / 1024.0); 
 }
 
-} // DELTAKV_NAMESPACE
+} // KDSEP_NAMESPACE

@@ -13,7 +13,7 @@
 
 #define DIM(x) (sizeof(x) / sizeof(*(x)))
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 static const std::string sizes[] = { "EB", "PB", "TB", "GB", "MB", "KB", "B" };
 static const uint64_t exbibytes = 1024ULL * 1024ULL * 1024ULL * 1024ULL

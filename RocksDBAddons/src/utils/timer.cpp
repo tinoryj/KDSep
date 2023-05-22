@@ -1,7 +1,7 @@
 
 #include "utils/timer.hpp"
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 Timer::Timer()
 {
@@ -44,4 +44,4 @@ void Timer::pauseTimer()
     _prev += chrono::duration_cast<chrono::microseconds>(endTime - _startTime).count();
 }
 
-} // namespace DELTAKV_NAMESPACE
+} // namespace KDSEP_NAMESPACE

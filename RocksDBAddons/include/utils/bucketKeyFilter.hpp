@@ -1,11 +1,11 @@
 #pragma once
 
-#include "indexBasedStore/ds/bitmap.hh"
+#include "vlog/ds/bitmap.hh"
 #include <unordered_set>
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 class BucketKeyFilter {
     public:

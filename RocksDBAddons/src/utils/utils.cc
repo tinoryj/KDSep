@@ -2,7 +2,7 @@
 
 using namespace std;
 
-namespace DELTAKV_NAMESPACE {
+namespace KDSEP_NAMESPACE {
 
 size_t getRss() {
     bool dump_memory_usage = true;
