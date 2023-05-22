@@ -3,6 +3,7 @@
 #include "hashBasedStore/hashStoreFileManager.hpp"
 #include "hashBasedStore/hashStoreFileOperator.hpp"
 #include "interface/deltaKVOptions.hpp"
+#include "utils/mempool.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -16,9 +17,12 @@ public:
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(const string& keyStr, const string& valueStr, uint32_t sequenceNumber, bool isAnchor);
-    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<uint32_t> sequenceNumberVec, vector<bool> isAnchorVec);
+    bool put(mempoolHandler_t objectPairMemPoolHandler);
+    bool multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec);
     bool get(const string& keyStr, vector<string>*& valueStrVecPtr);
+    bool get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec);
+    bool get(const string& keyStr, vector<string>*& valueStrVec, vector<hashStoreRecordHeader>*& recordVec);
+    bool get(const string& keyStr, vector<str_cpy_t>*& valueStrCpyVec, vector<hashStoreRecordHeader>*& recordVec);
     bool multiGet(vector<string> keyStrVec, vector<vector<string>*>*& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();
     bool setJobDone();

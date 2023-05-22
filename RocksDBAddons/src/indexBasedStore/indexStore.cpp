@@ -71,8 +71,8 @@ bool KvServer::checkKeySize(len_t& keySize)
 
 bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, externalIndexInfo& indexInfo, bool sync)
 {
-    static int putCount = 0;
-    putCount++;
+    // static int putCount = 0;
+    // putCount++;
     bool ret = false;
     ValueLocation oldValueLoc, curValueLoc;
     char* ckey = new char[KEY_REC_SIZE + 1];

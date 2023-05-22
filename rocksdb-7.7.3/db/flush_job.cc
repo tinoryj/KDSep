@@ -148,6 +148,7 @@ void FlushJob::ReportStartedFlush() {
       ThreadStatus::COMPACTION_JOB_ID,
       job_context_->job_id);
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 
 void FlushJob::ReportFlushInputSize(const autovector<MemTable*>& mems) {
@@ -162,9 +163,11 @@ void FlushJob::ReportFlushInputSize(const autovector<MemTable*>& mems) {
 
 void FlushJob::RecordFlushIOStats() {
   RecordTick(stats_, FLUSH_WRITE_BYTES, IOSTATS(bytes_written));
+  RecordTick(stats_, FLUSH_WRITE_COUNT, IOSTATS(counts_written));
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::FLUSH_BYTES_WRITTEN, IOSTATS(bytes_written));
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 void FlushJob::PickMemTable() {
   db_mutex_->AssertHeld();
@@ -236,6 +239,7 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   uint64_t prev_prepare_write_nanos = 0;
   uint64_t prev_cpu_write_nanos = 0;
   uint64_t prev_cpu_read_nanos = 0;
+  uint64_t prev_read_nanos = 0;
   if (measure_io_stats_) {
     prev_perf_level = GetPerfLevel();
     SetPerfLevel(PerfLevel::kEnableTime);
@@ -245,6 +249,7 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
     prev_prepare_write_nanos = IOSTATS(prepare_write_nanos);
     prev_cpu_write_nanos = IOSTATS(cpu_write_nanos);
     prev_cpu_read_nanos = IOSTATS(cpu_read_nanos);
+    prev_read_nanos = IOSTATS(read_nanos);
   }
   Status mempurge_s = Status::NotFound("No MemPurge.");
   if ((mempurge_threshold > 0.0) &&
@@ -342,6 +347,13 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
     if (prev_perf_level != PerfLevel::kEnableTime) {
       SetPerfLevel(prev_perf_level);
     }
+    RecordTick(stats_, FLUSH_READ_NANOS, IOSTATS(read_nanos) - prev_read_nanos); 
+    RecordTick(stats_, FLUSH_WRITE_NANOS, IOSTATS(write_nanos) - prev_write_nanos); 
+    RecordTick(stats_, FLUSH_FSYNC_NANOS, IOSTATS(fsync_nanos) - prev_fsync_nanos); 
+    RecordTick(stats_, FLUSH_CPU_READ_NANOS, 
+	    IOSTATS(cpu_write_nanos) - prev_cpu_write_nanos); 
+    RecordTick(stats_, FLUSH_CPU_WRITE_NANOS, 
+	    IOSTATS(cpu_read_nanos) - prev_cpu_read_nanos); 
     stream << "file_write_nanos" << (IOSTATS(write_nanos) - prev_write_nanos);
     stream << "file_range_sync_nanos"
            << (IOSTATS(range_sync_nanos) - prev_range_sync_nanos);

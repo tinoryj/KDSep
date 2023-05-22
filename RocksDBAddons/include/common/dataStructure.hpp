@@ -2,6 +2,7 @@
 
 #include "boost/thread.hpp"
 #include "utils/fileOperation.hpp"
+#include "utils/mempool.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
 #include <shared_mutex>
@@ -9,6 +10,76 @@
 using namespace std;
 
 namespace DELTAKV_NAMESPACE {
+
+typedef struct str_t {
+    char* data_;
+    uint32_t size_;
+    str_t() { }
+    str_t(char* data, uint32_t size)
+        : data_(data)
+        , size_(size)
+    {
+    }
+} str_t;
+
+typedef struct str_cpy_t {
+    char* data_;
+    uint32_t size_;
+    str_cpy_t() { }
+    str_cpy_t(char* data, uint32_t size)
+    {
+        data_ = new char[size];
+        memcpy(data_, data, size);
+        size_ = size;
+    }
+    ~str_cpy_t()
+    {
+        if (data_ != nullptr) {
+            delete[] data_;
+        }
+    }
+} str_cpy_t;
+
+static unsigned int charBasedHashFunc(char* data, uint32_t n)
+{
+    unsigned int hash = 388650013;
+    unsigned int scale = 388650179;
+    unsigned int hardener = 1176845762;
+    for (uint32_t i = 0; i < n; i++) {
+        hash *= scale;
+        hash += (data[i]);
+    }
+    return hash ^ hardener;
+}
+
+struct mapEqualKeForStr_t {
+    bool operator()(str_t const& a, str_t const& b) const
+    {
+        return (memcmp(a.data_, b.data_, a.size_) == 0);
+    }
+};
+
+struct mapHashKeyForStr_t {
+    size_t operator()(str_t const& s) const
+    {
+        return charBasedHashFunc(s.data_, s.size_);
+    }
+};
+
+struct mapEqualKeForMemPoolHandler_t {
+    bool operator()(mempoolHandler_t const& a, mempoolHandler_t const& b) const
+    {
+        return (memcmp(a.keyPtr_, b.keyPtr_, a.keySize_) == 0);
+    }
+};
+
+struct mapHashKeyForMemPoolHandler_t {
+    size_t operator()(mempoolHandler_t const& s) const
+    {
+        return charBasedHashFunc(s.keyPtr_, s.keySize_);
+    }
+};
+
 typedef struct internalValueType {
     bool mergeFlag_; // true if the value request merge.
     bool valueSeparatedFlag_; // true if the value is stored outside LSM-tree
@@ -20,6 +91,17 @@ typedef struct externalIndexInfo {
     uint32_t externalFileID_;
     uint32_t externalFileOffset_;
     uint32_t externalContentSize_;
+    externalIndexInfo()
+    {
+    }
+    externalIndexInfo(uint32_t externalFileID,
+        uint32_t externalFileOffset,
+        uint32_t externalContentSize)
+        : externalFileID_(externalFileID)
+        , externalFileOffset_(externalFileOffset)
+        , externalContentSize_(externalContentSize)
+    {
+    }
 } externalIndexInfo;
 
 enum DBOperationType { kPutOp = 0,
@@ -56,21 +138,14 @@ typedef struct hashStoreFileMetaDataHandler {
     int8_t file_ownership_flag_ = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* file_operation_func_ptr_;
     std::shared_mutex fileOperationMutex_;
-    unordered_map<string, uint32_t> bufferedUnFlushedAnchorsVec_;
 } hashStoreFileMetaDataHandler;
 
 typedef struct hashStoreWriteOperationHandler {
-    string* key_str_;
-    string* value_str_;
-    uint32_t sequence_number_;
-    bool is_anchor = false;
+    mempoolHandler_t* mempoolHandler_ptr_;
 } hashStoreWriteOperationHandler;
 
 typedef struct hashStoreBatchedWriteOperationHandler {
-    vector<string>* key_str_vec_ptr_;
-    vector<string>* value_str_vec_ptr_;
-    vector<uint32_t>* sequence_number_vec_ptr_;
-    vector<bool>* is_anchor_vec_ptr_;
+    vector<mempoolHandler_t>* mempool_handler_vec_ptr_;
 } hashStoreBatchedWriteOperationHandler;
 
 typedef struct hashStoreReadOperationHandler {
@@ -91,7 +166,8 @@ typedef struct hashStoreOperationHandler {
     hashStoreBatchedWriteOperationHandler batched_write_operation_;
     hashStoreFileOperationType opType_;
     operationStatus jobDone_ = kNotDone;
-    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler) { file_handler_ = file_handler; };
+    hashStoreOperationHandler(hashStoreFileMetaDataHandler* file_handler)
+        : file_handler_(file_handler) {};
 } hashStoreOperationHandler;
 
 typedef struct hashStoreFileHeader {
@@ -124,36 +200,10 @@ typedef struct writeBackObjectStruct {
 } writeBackObjectStruct; // key to value pair fpr write back
 
 // following enums are used for indexStore only
-enum CodingScheme {
-    RAID0,
-    REPLICATION,
-    RAID5,
-    RDP,
-    EVENODD,
-    CAUCHY,
-    DEFAULT
-};
-
 enum DataType {
     KEY,
     VALUE,
     META
-};
-
-enum DiskType {
-    DATA,
-    LOG,
-    MIXED
-};
-
-enum RequestType {
-    READ = 0x00,
-    WRITE = 0x01,
-    FLUSH = 0x10,
-    COMMIT = 0x20,
-    WIRTE_KEY = 0x03,
-    READ_VALUE = 0x04,
-    WIRTE_VALUE = 0x05,
 };
 
 enum class DebugLevel : int {

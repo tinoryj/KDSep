@@ -123,7 +123,7 @@ ValueManager::~ValueManager()
     // allow the bg thread to finish its job first
     cerr << "[valueManager] Try delete threads" << endl;
     _started = false;
-    //pthread_cond_signal(&_needBgFlush);
+    // pthread_cond_signal(&_needBgFlush);
     for (auto thIt : thList_) {
         thIt->join();
         delete thIt;
@@ -183,7 +183,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 {
     ValueLocation valueLoc;
 
-    segment_id_t segmentId = oldValueLoc.segmentId;
+    // segment_id_t segmentId = oldValueLoc.segmentId;
 
     // debug message for deleting key
     if (valueSize == INVALID_LEN) {
@@ -217,7 +217,7 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     // check if in-place update is possible
     bool inPlaceUpdate = false;
     bool inPool = false;
-    int segment_start = 0;
+    // int segment_start = 0;
     len_t oldValueSize = INVALID_LEN;
 
     std::unordered_map<unsigned char*, segment_len_t, hashKey, equalKey>::iterator keyIt = _centralizedReservedPool[poolIndex].keysInPool.find(key);
@@ -785,7 +785,7 @@ void ValueManager::scanAllRecords()
     readPool = (char*)Segment::getData(seg);
 
     // For scanKeyValue()
-    len_t nextKeySizeOffset;
+    // len_t nextKeySizeOffset;
     char *key, *value;
     len_t compactedBytes;
 

@@ -56,6 +56,7 @@
 #include "env/unique_id_gen.h"
 #include "file/file_util.h"
 #include "file/filename.h"
+#include "file/writable_file_writer.h"
 #include "file/random_access_file_reader.h"
 #include "file/sst_file_manager_impl.h"
 #include "logging/auto_roll_logger.h"
@@ -758,6 +759,7 @@ DBImpl::~DBImpl() {
     s.PermitUncheckedError();
   }
 
+  WritableFileWriter::PrintMicros();
   closing_status_ = CloseImpl();
   closing_status_.PermitUncheckedError();
 }
@@ -4556,6 +4558,7 @@ Status DBImpl::Close() {
   }
 
   closing_status_ = CloseImpl();
+  WritableFileWriter::PrintMicros();
   closed_ = true;
   return closing_status_;
 }

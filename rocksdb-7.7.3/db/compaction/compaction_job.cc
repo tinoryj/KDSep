@@ -211,6 +211,8 @@ void CompactionJob::ReportStartedCompaction(Compaction* compaction) {
 
   IOSTATS_RESET(bytes_written);
   IOSTATS_RESET(bytes_read);
+  IOSTATS_RESET(counts_written);
+  IOSTATS_RESET(counts_read);
   ThreadStatusUtil::SetThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_WRITTEN, 0);
   ThreadStatusUtil::SetThreadOperationProperty(
@@ -1153,6 +1155,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   uint64_t prev_prepare_write_nanos = 0;
   uint64_t prev_cpu_write_nanos = 0;
   uint64_t prev_cpu_read_nanos = 0;
+  uint64_t prev_read_nanos = 0;
   if (measure_io_stats_) {
     prev_perf_level = GetPerfLevel();
     SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
@@ -1162,6 +1165,7 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     prev_prepare_write_nanos = IOSTATS(prepare_write_nanos);
     prev_cpu_write_nanos = IOSTATS(cpu_write_nanos);
     prev_cpu_read_nanos = IOSTATS(cpu_read_nanos);
+    prev_read_nanos = IOSTATS(read_nanos);
   }
 
   MergeHelper merge(
@@ -1355,6 +1359,13 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
         (IOSTATS(cpu_write_nanos) - prev_cpu_write_nanos +
          IOSTATS(cpu_read_nanos) - prev_cpu_read_nanos) /
         1000;
+    RecordTick(stats_, COMPACT_READ_NANOS, IOSTATS(read_nanos) - prev_read_nanos); 
+    RecordTick(stats_, COMPACT_WRITE_NANOS, IOSTATS(write_nanos) - prev_write_nanos); 
+    RecordTick(stats_, COMPACT_FSYNC_NANOS, IOSTATS(fsync_nanos) - prev_fsync_nanos); 
+    RecordTick(stats_, COMPACT_CPU_READ_NANOS, 
+	    IOSTATS(cpu_write_nanos) - prev_cpu_write_nanos); 
+    RecordTick(stats_, COMPACT_CPU_WRITE_NANOS, 
+	    IOSTATS(cpu_read_nanos) - prev_cpu_read_nanos); 
     if (prev_perf_level != PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
       SetPerfLevel(prev_perf_level);
     }
@@ -1680,6 +1691,8 @@ Status CompactionJob::InstallCompactionResults(
 void CompactionJob::RecordCompactionIOStats() {
   RecordTick(stats_, COMPACT_READ_BYTES, IOSTATS(bytes_read));
   RecordTick(stats_, COMPACT_WRITE_BYTES, IOSTATS(bytes_written));
+  RecordTick(stats_, COMPACT_READ_COUNT, IOSTATS(counts_read));
+  RecordTick(stats_, COMPACT_WRITE_COUNT, IOSTATS(counts_written));
   CompactionReason compaction_reason =
       compact_->compaction->compaction_reason();
   if (compaction_reason == CompactionReason::kFilesMarkedForCompaction) {
@@ -1695,9 +1708,11 @@ void CompactionJob::RecordCompactionIOStats() {
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_READ, IOSTATS(bytes_read));
   IOSTATS_RESET(bytes_read);
+  IOSTATS_RESET(counts_read);
   ThreadStatusUtil::IncreaseThreadOperationProperty(
       ThreadStatus::COMPACTION_BYTES_WRITTEN, IOSTATS(bytes_written));
   IOSTATS_RESET(bytes_written);
+  IOSTATS_RESET(counts_written);
 }
 
 Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,

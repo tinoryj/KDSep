@@ -248,6 +248,7 @@ class PosixSequentialFile : public FSSequentialFile {
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
   virtual bool use_direct_io() const override { return use_direct_io_; }
   virtual size_t GetRequiredBufferAlignment() const override {
+    return 4096;
     return logical_sector_size_;
   }
 };
@@ -311,6 +312,7 @@ class PosixRandomAccessFile : public FSRandomAccessFile {
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
   virtual bool use_direct_io() const override { return use_direct_io_; }
   virtual size_t GetRequiredBufferAlignment() const override {
+    return 4096;
     return logical_sector_size_;
   }
   // EXPERIMENTAL
@@ -374,6 +376,7 @@ class PosixWritableFile : public FSWritableFile {
                                IODebugContext* dbg) override;
   virtual IOStatus InvalidateCache(size_t offset, size_t length) override;
   virtual size_t GetRequiredBufferAlignment() const override {
+    return 4096;
     return logical_sector_size_;
   }
 #ifdef ROCKSDB_FALLOCATE_PRESENT

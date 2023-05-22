@@ -140,6 +140,7 @@ IOStatus SequentialFileReader::Read(size_t n, Slice* result, char* scratch,
     *result = Slice(scratch, read);
   }
   IOSTATS_ADD(bytes_read, result->size());
+  IOSTATS_ADD(counts_read, 1);
   return io_s;
 }
 

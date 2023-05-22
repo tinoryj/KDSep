@@ -7,6 +7,7 @@
 #include "counter_generator.h"
 #include "db.h"
 #include "discrete_generator.h"
+#include "dist_to_key_generator.h"
 #include "generator.h"
 #include "properties.h"
 #include "utils.h"
@@ -154,6 +155,8 @@ class CoreWorkload {
 
     virtual void BuildValues(std::vector<ycsbc::YCSBDB::KVPair>& values);
     virtual void BuildUpdate(std::vector<ycsbc::YCSBDB::KVPair>& update);
+    virtual void BuildValuesWithKey(const std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& values);
+    virtual void BuildUpdateWithKey(const std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& update);
 
     virtual std::string NextTable() { return table_name_; }
     virtual std::string NextSequenceKey();     /// Used for loading data
@@ -166,12 +169,14 @@ class CoreWorkload {
     bool write_all_fields() const { return write_all_fields_; }
 
     CoreWorkload()
-        : field_count_(0), read_all_fields_(false), write_all_fields_(false), field_len_generator_(NULL), key_generator_(NULL), key_chooser_(NULL), field_chooser_(NULL), scan_len_chooser_(NULL), insert_key_sequence_(3), ordered_inserts_(true), record_count_(0), is_run_phase_(false) {
+        : field_count_(0), read_all_fields_(false), write_all_fields_(false), field_len_generator_(NULL), field_len_with_key_generator_(NULL), field_len_follow_key_(false), key_generator_(NULL), key_chooser_(NULL), field_chooser_(NULL), scan_len_chooser_(NULL), insert_key_sequence_(3), ordered_inserts_(true), record_count_(0), is_run_phase_(false) {
     }
 
     virtual ~CoreWorkload() {
         if (field_len_generator_)
             delete field_len_generator_;
+        if (field_len_with_key_generator_) 
+            delete field_len_with_key_generator_;
         if (key_generator_)
             delete key_generator_;
         if (key_chooser_)
@@ -191,6 +196,8 @@ class CoreWorkload {
     bool read_all_fields_;
     bool write_all_fields_;
     Generator<uint64_t>* field_len_generator_;
+    DistToKeyGenerator* field_len_with_key_generator_;
+    bool field_len_follow_key_;
     Generator<uint64_t>* key_generator_;
     DiscreteGenerator<Operation> op_chooser_;
     Generator<uint64_t>* key_chooser_;

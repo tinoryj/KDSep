@@ -63,6 +63,7 @@ private:
     char* globalWriteBuffer_ = nullptr;
     uint64_t bufferUsedSize_ = 0;
     uint64_t globalBufferSize_ = 0;
+    char* readWriteBuffer_;
 };
 
 } // namespace DELTAKV_NAMESPACE

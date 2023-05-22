@@ -1,38 +1,38 @@
 #ifndef __LOG_MOD_HH__
 #define __LOG_MOD_HH__
 
-#include <map>
-#include <vector>
 #include "common/indexStorePreDefines.hpp"
-#include "ds/segment.hh"
-#include "ds/keyvalue.hh"
 #include "configManager.hh"
 #include "deviceManager.hh"
+#include "ds/keyvalue.hh"
+#include "ds/segment.hh"
+#include <map>
+#include <vector>
 
 namespace DELTAKV_NAMESPACE {
 
 class LogManager {
 public:
-    LogManager(DeviceManager *deviceManager);
+    LogManager(DeviceManager* deviceManager);
     ~LogManager();
 
-    bool setBatchUpdateKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
-    bool setBatchGCKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
+    bool setBatchUpdateKeyValue(std::vector<char*>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups);
+    bool setBatchGCKeyValue(std::vector<char*>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups);
     bool setLogHeadTail(offset_t gcFront, offset_t flushFront);
 
-    bool readBatchUpdateKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups);
-    bool readBatchGCKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool removeIfCorrupted = true);
-    bool getLogHeadTail(offset_t &gcFront, offset_t &flushFront);
+    bool readBatchUpdateKeyValue(std::vector<std::string>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups);
+    bool readBatchGCKeyValue(std::vector<std::string>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups, bool removeIfCorrupted = true);
+    bool getLogHeadTail(offset_t& gcFront, offset_t& flushFront);
 
     bool ackBatchUpdateKeyValue();
     bool ackBatchGCKeyValue();
 
-    void print(FILE *out = stdout);
+    void print(FILE* out = stdout);
 
-    static const char *LOG_MAGIC;
+    static const char* LOG_MAGIC;
 
 private:
-    DeviceManager *_deviceManager;
+    DeviceManager* _deviceManager;
 
     struct {
         bool update;
@@ -47,11 +47,10 @@ private:
 
     bool _enabled;
 
-    FILE* logLengthFd;
+    // FILE* logLengthFd;
 
-    bool setBatchKeyValue(std::vector<char *> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool isUpdate);
-    bool readBatchKeyValue(std::vector<std::string> &keys, std::vector<ValueLocation> &values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t> > > &groups, bool isUpdate, bool removeIfCorrupted = true);
-
+    bool setBatchKeyValue(std::vector<char*>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups, bool isUpdate);
+    bool readBatchKeyValue(std::vector<std::string>& keys, std::vector<ValueLocation>& values, std::map<group_id_t, std::pair<offset_t, std::vector<segment_id_t>>>& groups, bool isUpdate, bool removeIfCorrupted = true);
 };
 
 }

@@ -22,6 +22,7 @@
 #include "core/timer.h"
 #include "core/utils.h"
 #include "db/db_factory.h"
+#include "malloc.h"  // malloc_trim(0)
 #include "unistd.h"
 
 using namespace std;
@@ -89,7 +90,9 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
     utils::Timer timer, timerStart;
     timerStart.Start();
     int processLabel_base = num_ops / 100;
+    struct timeval tv;
     for (int i = 0; i < num_ops; ++i) {
+        gettimeofday(&tv, 0);
         timer.Start();
         // if(i%10000==0){
         //   cerr << "finished ops: "<<i<<"\r";
@@ -101,19 +104,68 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
             operation_type = client.DoTransaction();
             oks += 1;
         }
+        DELTAKV_NAMESPACE::StatsRecorder::getInstance()->timeProcess(
+                DELTAKV_NAMESPACE::StatsType::YCSB_OPERATION, tv);
         double duration = timer.End();
         while (histogram_lock.test_and_set())
             ;
         histogram[operation_type]->Add_Fast(duration);
         histogram_lock.clear();
         // if (i % processLabel_base == 0) {
-        std::cerr << "\r";
-        std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i * 1000000.0 / timerStart.End() << " op/s)";
-        // }
+        if (i % 200 == 0) {
+            std::cerr << "\r";
+            double tot_duration = timerStart.End() / 1000000.0;
+            double estimate_duration = (i < num_ops - 1) ? tot_duration / (i+1) * (num_ops - i - 1) : 0;
+            int est_minutes = int(estimate_duration) / 60;
+            int est_seconds = int(estimate_duration) % 60;
+            std::cerr << "[Running Status] Operation process: " << (float)i / processLabel_base << "%, " << i << "/" << num_ops << "   (" << (float)i / tot_duration << " op/s)    estimate ";
+            if (est_minutes > 0) {
+                std::cerr << est_minutes << " min";
+            }
+            if (est_seconds > 0) {
+                std::cerr << est_seconds << " s    ";
+            }
+        }
+	// }
     }
     std::cerr << "\r";
     std::cerr << "[Running Status] Operation process: 100%, " << num_ops << "/" << num_ops;
     std::cerr << std::endl;
+
+    bool dump_memory_usage = true;
+    if (dump_memory_usage) {
+        malloc_trim(0);
+        double vm_usage = 0.0;
+        double resident_set = 0.0;
+
+        // 'file' stat seems to give the most reliable results
+        //
+        ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+        // dummy vars for leading entries in stat that we don't care about
+        //
+        string pid, comm, state, ppid, pgrp, session, tty_nr;
+        string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+        string utime, stime, cutime, cstime, priority, nice;
+        string O, itrealvalue, starttime;
+
+        // the two fields we want
+        //
+        unsigned long vsize;
+        long rss;
+
+        stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >> tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >> stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >> starttime >> vsize >> rss;  // don't care about the rest
+
+        stat_stream.close();
+
+        long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024;  // in case x86-64 is configured to use 2MB pages
+        vm_usage = vsize / 1024.0;
+        resident_set = rss * page_size_kb;
+        std::cerr << "vm_usage " << vm_usage << std::endl;
+        std::cerr << "resident " << resident_set << std::endl;
+        std::cout << "resident " << resident_set / 1024.0 / 1024.0 << " GiB" << std::endl;
+    }
+
     db->Close();
     return oks;
 }
@@ -121,7 +173,7 @@ int DelegateClient(ycsbc::YCSBDB *db, ycsbc::CoreWorkload *wl, const int num_ops
 int main(const int argc, const char *argv[]) {
     setbuf(stdout, nullptr);
 
-    struct sigaction sa = {0};
+    struct sigaction sa = {};
     sa.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sa, 0);
 
@@ -241,6 +293,7 @@ int main(const int argc, const char *argv[]) {
             sum += n.get();
         }
         double duration = timer.End();
+        cout << "# Running operations:\t" << sum << endl;
         cout << "# Transaction throughput (KTPS)" << endl;
         cout << props["dbname"] << '\t' << file_name << '\t' << num_threads << '\t';
         cout << total_ops / (duration / 1000000) / 1000 << endl;
@@ -314,6 +367,7 @@ int main(const int argc, const char *argv[]) {
     std::cerr << "Start delete db" << std::endl;
     delete db;
     std::cerr << "Deleted db success" << std::endl;
+    return 0;
 }
 
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {

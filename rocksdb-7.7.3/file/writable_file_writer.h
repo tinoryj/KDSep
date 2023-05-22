@@ -169,6 +169,8 @@ class WritableFileWriter {
   bool perform_data_verification_;
   uint32_t buffered_data_crc32c_checksum_;
   bool buffered_data_with_checksum_;
+
+
 #ifndef ROCKSDB_LITE
   Temperature temperature_;
 #endif  // ROCKSDB_LITE
@@ -230,6 +232,18 @@ class WritableFileWriter {
           file_checksum_gen_factory->CreateFileChecksumGenerator(
               checksum_gen_context);
     }
+  }
+
+  static void SetMicrosZero() {
+      file_write_micros = 0;
+      file_fsync_micros = 0;
+      file_range_sync_micros = 0;
+  }
+
+  static void PrintMicros() {
+      printf("file_write_micros = %lu\n", file_write_micros);
+      printf("file_fsync_micros = %lu\n", file_fsync_micros);
+      printf("file_range_sync_micros = %lu\n", file_range_sync_micros);
   }
 
   static IOStatus Create(const std::shared_ptr<FileSystem>& fs,
@@ -312,6 +326,10 @@ class WritableFileWriter {
     assert(sync_without_flush_called_);
     return IOStatus::IOError("Writer has previous error.");
   }
+
+  static uint64_t file_write_micros;
+  static uint64_t file_fsync_micros;
+  static uint64_t file_range_sync_micros;
 
  private:
   // Decide the Rate Limiter priority.

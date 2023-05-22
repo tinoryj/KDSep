@@ -26,6 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 inline void RecordIOStats(Statistics* stats, Temperature file_temperature,
                           bool is_last_level, size_t size) {
   IOSTATS_ADD(bytes_read, size);
+  IOSTATS_ADD(counts_read, 1);
   // record for last/non-last level
   if (is_last_level) {
     RecordTick(stats, LAST_LEVEL_READ_BYTES, size);
@@ -80,6 +81,8 @@ IOStatus RandomAccessFileReader::Read(
     Env::IOPriority rate_limiter_priority) const {
   (void)aligned_buf;
 
+  static int print_cnt = 0;
+
   TEST_SYNC_POINT_CALLBACK("RandomAccessFileReader::Read", nullptr);
 
   // To be paranoid: modify scratch a little bit, so in case underlying
@@ -92,11 +95,16 @@ IOStatus RandomAccessFileReader::Read(
 
   IOStatus io_s;
   uint64_t elapsed = 0;
+  size_t total_read_size = 0;
+  uint64_t prev_read_nanos = IOSTATS(read_nanos);
   {
     StopWatch sw(clock_, stats_, hist_type_,
                  (stats_ != nullptr) ? &elapsed : nullptr, true /*overwrite*/,
                  true /*delay_enabled*/);
     auto prev_perf_level = GetPerfLevel();
+    if ((int)prev_perf_level < PerfLevel::kEnableTimeAndCPUTimeExceptForMutex) {
+	SetPerfLevel(PerfLevel::kEnableTimeAndCPUTimeExceptForMutex);
+    }
     IOSTATS_TIMER_GUARD(read_nanos);
     if (use_direct_io()) {
 #ifndef ROCKSDB_LITE
@@ -127,6 +135,19 @@ IOStatus RandomAccessFileReader::Read(
         if (ShouldNotifyListeners()) {
           start_ts = FileOperationInfo::StartNow();
           orig_offset = aligned_offset + buf.CurrentSize();
+        }
+
+        if (print_cnt < 5) {
+            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu perf_level = %d, met = %lu\n", 
+                    aligned_offset, offset, n, aligned_offset + read_size,
+                    read_size, (int)prev_perf_level, 
+		    iostats_context.read_nanos);
+            print_cnt++;
+        } else if (print_cnt < 10 && (n % alignment > 0 || offset % alignment > 0)) {
+            fprintf(stderr, "[%lu (%lu + %lu) %lu] len = %lu\n", 
+                    aligned_offset, offset, n, aligned_offset + read_size,
+                    read_size);
+            print_cnt++;
         }
 
         {
@@ -164,6 +185,7 @@ IOStatus RandomAccessFileReader::Read(
           aligned_buf->reset(buf.Release());
         }
       }
+      total_read_size = read_size;
       *result = Slice(scratch, res_len);
 #endif  // !ROCKSDB_LITE
     } else {
@@ -230,9 +252,29 @@ IOStatus RandomAccessFileReader::Read(
         }
       }
       *result = Slice(res_scratch, io_s.ok() ? pos : 0);
+      total_read_size = result->size();
     }
     RecordIOStats(stats_, file_temperature_, is_last_level_, result->size());
+    RecordTick(stats_, ACTUAL_READ_BYTES, total_read_size);
+    if (file_name().find("blob") != std::string::npos) {
+        if (total_read_size >= 32 * 1024) {
+            RecordTick(stats_, ACTUAL_BLOB_READ_LARGE_BYTES, total_read_size);
+            RecordTick(stats_, BLOB_READ_LARGE_COUNT, 1);
+        } else {
+            RecordTick(stats_, ACTUAL_BLOB_READ_BYTES, total_read_size);
+            RecordTick(stats_, BLOB_READ_COUNT, 1);
+        }
+    } 
     SetPerfLevel(prev_perf_level);
+  }
+  RecordTick(stats_, FILE_READER_READ_MICROS, 
+	  (IOSTATS(read_nanos) - prev_read_nanos) / 1000) ; 
+  if (is_last_level_) {
+      RecordTick(stats_, FILE_READER_LAST_LEVEL_READ_MICROS, 
+	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
+  } else {
+      RecordTick(stats_, FILE_READER_NON_LAST_LEVEL_READ_MICROS, 
+	      (IOSTATS(read_nanos) - prev_read_nanos) / 1000); 
   }
   if (stats_ != nullptr && file_read_hist_ != nullptr) {
     file_read_hist_->Add(elapsed);

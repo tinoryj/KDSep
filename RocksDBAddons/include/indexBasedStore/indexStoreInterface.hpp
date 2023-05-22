@@ -11,9 +11,8 @@ public:
     ~IndexStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr, uint32_t seqNumber = 0, bool sync = true);
-    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr);
-    bool multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr, vector<uint32_t> seqNumberVec);
+    bool put(mempoolHandler_t objectPairMemPoolHandler, bool sync);
+    bool multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec);
     bool get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr, uint32_t* seqNumberPtr = nullptr);
     bool multiGet(vector<string> keyStrVec, vector<externalIndexInfo> storageInfoVec, vector<string*> valueStrPtrVec);
     bool forcedManualGarbageCollection();

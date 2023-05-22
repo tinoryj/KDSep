@@ -96,6 +96,7 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase) {
     operation_count_ = std::stoul(p.GetProperty(OPERATION_COUNT_PROPERTY));
 
     field_len_generator_ = GetFieldLenGenerator(p);
+    field_len_with_key_generator_ = new DistToKeyGenerator(field_count_);
 
     double read_proportion = std::stod(
         p.GetProperty(READ_PROPORTION_PROPERTY, READ_PROPORTION_DEFAULT));
@@ -231,6 +232,13 @@ ycsbc::Generator<uint64_t>* CoreWorkload::GetFieldLenGenerator(
             num = record_count_;
         }
         return new ParetoGenerator(num, theta, k, sigma);
+    } else if (field_len_dist == "paretokey") {
+        // TODO
+//        double k = std::stod(p.GetProperty(PARETO_K));
+//        double theta = std::stod(p.GetProperty(PARETO_THETA));
+//        double sigma = std::stod(p.GetProperty(PARETO_SIGMA));
+        field_len_follow_key_ = true;
+        return nullptr;
     } else {
         throw utils::Exception("Unknown field length distribution: " +
                                field_len_dist);
@@ -259,4 +267,49 @@ void CoreWorkload::BuildUpdate(std::vector<ycsbc::YCSBDB::KVPair>& update) {
     // std::cout << "Update->Next field content p.second = " << pair.second <<
     // std::endl;
     update.push_back(pair);
+}
+
+void CoreWorkload::BuildValuesWithKey(const std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& values) {
+    static uint64_t cnt = 0;
+    static uint64_t lens = 0;
+    int len; 
+    if (!field_len_follow_key_) {
+        BuildValues(values);
+        return;
+    }
+    len = field_len_with_key_generator_->Next(key);
+    lens += len;
+    cnt++;
+
+    for (int i = 0; i < field_count_; ++i) {
+        ycsbc::YCSBDB::KVPair pair;
+        pair.first.append("field").append(std::to_string(i));
+        pair.second.append(len, utils::RandomPrintChar());
+        values.push_back(pair);
+    }
+
+    if (cnt % 1000000 == 0) {
+        fprintf(stderr, "line %d cnt %lu avglen %.2lf\n", __LINE__, cnt, (double)lens / cnt);
+    }
+}
+
+void CoreWorkload::BuildUpdateWithKey(const std::string& key, std::vector<ycsbc::YCSBDB::KVPair>& update) {
+    static uint64_t cnt = 0;
+    static uint64_t lens = 0;
+    int len; 
+    len = field_len_with_key_generator_->Next(key);
+    if (!field_len_follow_key_) {
+        BuildUpdate(update);
+        return;
+    }
+    lens += len;
+    cnt++;
+    ycsbc::YCSBDB::KVPair pair;
+    pair.first.append(NextFieldName());
+    pair.second.append(pair.first.substr(5) + ",");
+    pair.second.append(len, utils::RandomPrintChar());
+    update.push_back(pair);
+    if (cnt % 100000 == 0) {
+        fprintf(stderr, "line %d cnt %lu avglen %.2lf\n", __LINE__, cnt, (double)lens / cnt);
+    }
 }

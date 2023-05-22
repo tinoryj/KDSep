@@ -57,6 +57,7 @@ bool LineFileReader::ReadLine(std::string* out,
     io_status_ =
         sfr_.Read(buf_.size(), &result, buf_.data(), rate_limiter_priority);
     IOSTATS_ADD(bytes_read, result.size());
+    IOSTATS_ADD(counts_read, 1);
     if (!io_status_.ok()) {
       io_status_.MustCheck();
       return false;

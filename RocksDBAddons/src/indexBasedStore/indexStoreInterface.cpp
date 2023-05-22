@@ -32,33 +32,20 @@ uint64_t IndexStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
-bool IndexStoreInterface::put(string keyStr, string valueStr, externalIndexInfo* storageInfoPtr, uint32_t seqNumber, bool sync)
+bool IndexStoreInterface::put(mempoolHandler_t objectPairMemPoolHandler, bool sync)
 {
     externalIndexInfo valueLoc;
-
-    char buffer[sizeof(uint32_t)];
-    memcpy(buffer, &seqNumber, sizeof(uint32_t));
-    std::string str(buffer, sizeof(uint32_t));
-    str.append(valueStr);
-    STAT_PROCESS(kvServer_->putValue(keyStr.c_str(), keyStr.length(), str.c_str(), str.length(), valueLoc, sync), StatsType::UPDATE);
-
-    // *storageInfoPtr = valueLoc;
+    char buffer[sizeof(uint32_t) + objectPairMemPoolHandler.valueSize_];
+    memcpy(buffer, &objectPairMemPoolHandler.sequenceNumber_, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), objectPairMemPoolHandler.valuePtr_, objectPairMemPoolHandler.valueSize_);
+    STAT_PROCESS(kvServer_->putValue(objectPairMemPoolHandler.keyPtr_, objectPairMemPoolHandler.keySize_, buffer, objectPairMemPoolHandler.valueSize_ + sizeof(uint32_t), valueLoc, sync), StatsType::UPDATE);
     return true;
 }
 
-bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr)
+bool IndexStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
 {
-    for (int i = 0; i < (int)keyStrVec.size(); i++) {
-        put(keyStrVec[i], valueStrPtrVec[i], storageInfoVecPtr[i], 0, false);
-    }
-    kvServer_->flushBuffer();
-    return true;
-}
-
-bool IndexStoreInterface::multiPut(vector<string> keyStrVec, vector<string> valueStrPtrVec, vector<externalIndexInfo*> storageInfoVecPtr, vector<uint32_t> seqNumberVec)
-{
-    for (int i = 0; i < (int)keyStrVec.size(); i++) {
-        put(keyStrVec[i], valueStrPtrVec[i], storageInfoVecPtr[i], seqNumberVec[i], false);
+    for (auto i = 0; i < objectPairMemPoolHandlerVec.size(); i++) {
+        put(objectPairMemPoolHandlerVec[i], false);
     }
     kvServer_->flushBuffer();
     return true;

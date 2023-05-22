@@ -2,29 +2,33 @@
 
 namespace DELTAKV_NAMESPACE {
 
-LruList::LruList() {
+LruList::LruList()
+{
     this->init(DEFAULT_LRU_SIZE);
 }
 
-LruList::LruList(size_t listSize) {
+LruList::LruList(size_t listSize)
+{
     this->init(listSize);
 }
 
-LruList::~LruList() {
-    if (_slots) { 
+LruList::~LruList()
+{
+    if (_slots) {
         for (size_t i = 0; i < _listSize; i++) {
-            if (_slots[i].key) 
+            if (_slots[i].key)
                 free(_slots[i].key);
             if (_slots[i].value)
                 free(_slots[i].value);
         }
-        delete [] _slots;
+        delete[] _slots;
     }
 }
 
-void LruList::insert(unsigned char *key, unsigned char *value, len_t valueSize) {
-    struct LruListRecord *target = 0;
-    key_len_t keySize;
+void LruList::insert(unsigned char* key, unsigned char* value, len_t valueSize)
+{
+    struct LruListRecord* target = 0;
+    // key_len_t keySize;
 
     if (key == 0) {
         assert(key != 0);
@@ -64,7 +68,8 @@ void LruList::insert(unsigned char *key, unsigned char *value, len_t valueSize) 
     _lock.unlock();
 }
 
-std::string LruList::get (unsigned char *key) {
+std::string LruList::get(unsigned char* key)
+{
     std::string ret = "";
 
     _lock.lock_shared();
@@ -81,7 +86,8 @@ std::string LruList::get (unsigned char *key) {
     return ret;
 }
 
-bool LruList::update (unsigned char *key, unsigned char* value, len_t valueSize) {
+bool LruList::update(unsigned char* key, unsigned char* value, len_t valueSize)
+{
     bool found = false;
 
     if (key == 0) {
@@ -101,16 +107,18 @@ bool LruList::update (unsigned char *key, unsigned char* value, len_t valueSize)
     return found;
 }
 
-std::vector<std::string> LruList::getItems() {
+std::vector<std::string> LruList::getItems()
+{
     std::vector<std::string> list;
 
     _lock.lock_shared();
 
-    struct list_head *rec;
+    struct list_head* rec;
     unsigned char* key;
     key_len_t keySize;
-    printf("Items %d\n", (int)_existingRecords.size()); 
-    list_for_each(rec, &_lruList) {
+    printf("Items %d\n", (int)_existingRecords.size());
+    list_for_each(rec, &_lruList)
+    {
         key = segment_of(rec, LruListRecord, listPtr)->key;
         memcpy(&keySize, key, sizeof(key_len_t));
 
@@ -122,16 +130,18 @@ std::vector<std::string> LruList::getItems() {
     return list;
 }
 
-std::vector<std::string> LruList::getTopNItems(size_t n) {
+std::vector<std::string> LruList::getTopNItems(size_t n)
+{
     std::vector<std::string> list;
 
     _lock.lock();
 
-    struct list_head *rec;
+    struct list_head* rec;
     unsigned char* key;
     key_len_t keySize;
 
-    list_for_each(rec, &_lruList) {
+    list_for_each(rec, &_lruList)
+    {
         key = segment_of(rec, LruListRecord, listPtr)->key;
         memcpy(&keySize, key, sizeof(key_len_t));
 
@@ -145,7 +155,8 @@ std::vector<std::string> LruList::getTopNItems(size_t n) {
     return list;
 }
 
-bool LruList::removeItem(unsigned char *key) {
+bool LruList::removeItem(unsigned char* key)
+{
     bool exist = false;
     _lock.lock();
 
@@ -165,7 +176,8 @@ bool LruList::removeItem(unsigned char *key) {
     return exist;
 }
 
-size_t LruList::getItemCount() {
+size_t LruList::getItemCount()
+{
     size_t count = 0;
 
     _lock.lock_shared();
@@ -177,7 +189,8 @@ size_t LruList::getItemCount() {
     return count;
 }
 
-size_t LruList::getFreeItemCount() {
+size_t LruList::getFreeItemCount()
+{
     size_t count = 0;
 
     _lock.lock_shared();
@@ -189,12 +202,14 @@ size_t LruList::getFreeItemCount() {
     return count;
 }
 
-size_t LruList::getAndReset(std::vector<std::string>& dest, size_t n) {
+size_t LruList::getAndReset(std::vector<std::string>& dest, size_t n)
+{
 
     _lock.lock();
 
     struct list_head *rec, *savePtr;
-    list_for_each_safe(rec, savePtr, &_lruList) {
+    list_for_each_safe(rec, savePtr, &_lruList)
+    {
         unsigned char* key = segment_of(rec, LruListRecord, listPtr)->key;
         key_len_t keySize;
         memcpy(&keySize, key, sizeof(key_len_t));
@@ -212,12 +227,14 @@ size_t LruList::getAndReset(std::vector<std::string>& dest, size_t n) {
     return dest.size();
 }
 
-void LruList::reset() {
+void LruList::reset()
+{
     _lock.lock();
 
     struct list_head *rec, *savePtr;
 
-    list_for_each_safe(rec, savePtr, &_lruList) {
+    list_for_each_safe(rec, savePtr, &_lruList)
+    {
         _existingRecords.erase(segment_of(rec, LruListRecord, listPtr)->key);
         list_move(rec, &_freeRecords);
     }
@@ -225,23 +242,24 @@ void LruList::reset() {
     _lock.unlock();
 }
 
-void LruList::init(size_t listSize) {
+void LruList::init(size_t listSize)
+{
     _listSize = listSize;
 
     // init record
     INIT_LIST_HEAD(&_freeRecords);
     INIT_LIST_HEAD(&_lruList);
-    _slots = new struct LruListRecord[ _listSize ];
+    _slots = new struct LruListRecord[_listSize];
     for (size_t i = 0; i < _listSize; i++) {
         _slots[i].key = _slots[i].value = nullptr;
         _slots[i].keySize = _slots[i].valueSize = 0;
-        INIT_LIST_HEAD(&_slots[ i ].listPtr);
-        list_add(&_slots[ i ].listPtr, &_freeRecords);
+        INIT_LIST_HEAD(&_slots[i].listPtr);
+        list_add(&_slots[i].listPtr, &_freeRecords);
     }
-
 }
 
-bool LruList::updateKey(LruListRecord* rec, unsigned char* key) {
+bool LruList::updateKey(LruListRecord* rec, unsigned char* key)
+{
     key_len_t keySize;
     memcpy(&keySize, key, sizeof(key_len_t));
 
@@ -264,7 +282,8 @@ bool LruList::updateKey(LruListRecord* rec, unsigned char* key) {
     return true;
 }
 
-bool LruList::updateValue(LruListRecord* rec, unsigned char* value, len_t valueSize) {
+bool LruList::updateValue(LruListRecord* rec, unsigned char* value, len_t valueSize)
+{
     if (valueSize == 0) {
         assert(0);
         exit(-1);
@@ -282,30 +301,34 @@ bool LruList::updateValue(LruListRecord* rec, unsigned char* value, len_t valueS
     return true;
 }
 
-std::string LruList::getValue(LruListRecord* rec) {
+std::string LruList::getValue(LruListRecord* rec)
+{
     return std::string((char*)rec->value, rec->valueSize);
 }
 
-void LruList::print(FILE *output, bool countOnly) {
-    struct list_head *rec;
+void LruList::print(FILE* output, bool countOnly)
+{
+    struct list_head* rec;
     size_t i = 0;
-    unsigned char *key;
+    unsigned char* key;
 
-    if (countOnly) 
+    if (countOnly)
         fprintf(output, "    ");
 
     fprintf(output, "Free: %lu; Used: %lu\n", this->getFreeItemCount(), this->getItemCount());
 
-    if (countOnly) return;
+    if (countOnly)
+        return;
 
     _lock.lock();
 
     key_len_t keySize;
 
-    list_for_each(rec, &_lruList) {
+    list_for_each(rec, &_lruList)
+    {
         key = segment_of(rec, LruListRecord, listPtr)->key;
         memcpy(&keySize, key, sizeof(key_len_t));
-        
+
         fprintf(output, "Record [%lu]: key = %.*s\n",
             i, keySize, (char*)key + sizeof(key_len_t));
         i++;
@@ -315,4 +338,3 @@ void LruList::print(FILE *output, bool countOnly) {
 }
 
 }
-

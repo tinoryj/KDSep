@@ -118,6 +118,23 @@ enum Tickers : uint32_t {
   GET_HIT_L6,
   GET_HIT_L7_AND_UP,
 
+  COMPACT_READ_NANOS,
+  COMPACT_WRITE_NANOS,
+  COMPACT_FSYNC_NANOS,
+  COMPACT_CPU_READ_NANOS,
+  COMPACT_CPU_WRITE_NANOS,
+  FLUSH_READ_NANOS,
+  FLUSH_WRITE_NANOS,
+  FLUSH_FSYNC_NANOS,
+  FLUSH_CPU_READ_NANOS,
+  FLUSH_CPU_WRITE_NANOS,
+  FILE_READER_READ_MICROS,
+  FILE_READER_LAST_LEVEL_READ_MICROS,
+  FILE_READER_NON_LAST_LEVEL_READ_MICROS,
+  FILE_WRITER_WRITE_MICROS,
+  FILE_WRITER_FSYNC_MICROS,
+  FILE_WRITER_RANGE_SYNC_MICROS,
+
   /**
    * COMPACTION_KEY_DROP_* count the reasons for key drop during compaction
    * There are 4 reasons currently.
@@ -217,6 +234,9 @@ enum Tickers : uint32_t {
   COMPACT_READ_BYTES,   // Bytes read during compaction
   COMPACT_WRITE_BYTES,  // Bytes written during compaction
   FLUSH_WRITE_BYTES,    // Bytes written during flush
+  COMPACT_READ_COUNT,   
+  COMPACT_WRITE_COUNT, 
+  FLUSH_WRITE_COUNT,  
 
   // Compaction read and write statistics broken down by CompactionReason
   COMPACT_READ_BYTES_MARKED,
@@ -301,6 +321,8 @@ enum Tickers : uint32_t {
   BLOB_DB_BLOB_FILE_BYTES_WRITTEN,
   // # of bytes read from blob file.
   BLOB_DB_BLOB_FILE_BYTES_READ,
+  // # of times read from blob file.
+  BLOB_DB_BLOB_FILE_BYTES_READ_COUNT,
   // # of times a blob files being synced.
   BLOB_DB_BLOB_FILE_SYNCED,
   // # of blob index evicted from base DB by BlobDB compaction filter because
@@ -441,6 +463,11 @@ enum Tickers : uint32_t {
   LAST_LEVEL_READ_COUNT,
   NON_LAST_LEVEL_READ_BYTES,
   NON_LAST_LEVEL_READ_COUNT,
+  BLOB_READ_COUNT,
+  BLOB_READ_LARGE_COUNT,
+  ACTUAL_READ_BYTES,
+  ACTUAL_BLOB_READ_BYTES,
+  ACTUAL_BLOB_READ_LARGE_BYTES,
 
   BLOCK_CHECKSUM_COMPUTE_COUNT,
   MULTIGET_COROUTINE_COUNT,

@@ -21,9 +21,9 @@ public:
     HashStoreFileManager& operator=(const HashStoreFileManager&) = delete;
 
     // file operations
-    bool getHashStoreFileHandlerByInputKeyStr(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
-    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(string keyStr, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
-    bool generateHashBasedPrefix(const string rawStr, string& prefixStr);
+    bool getHashStoreFileHandlerByInputKeyStr(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, bool getForAnchorWriting = false);
+    bool getHashStoreFileHandlerByInputKeyStrForMultiPut(char* keyBuffer, uint32_t keySize, hashStoreFileOperationType opType, hashStoreFileMetaDataHandler*& fileHandlerPtr, string& prefixStr, bool getForAnchorWriting);
+    bool generateHashBasedPrefix(char* rawStr, uint32_t strSize, string& prefixStr);
 
     // GC manager
     void processSingleFileGCRequestWorker(int threadID);
@@ -79,7 +79,7 @@ private:
     // user-side operations
     bool getHashStoreFileHandlerExistFlag(const string prefixStr);
     bool getHashStoreFileHandlerByPrefix(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr);
-    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t prefixBitNumber); // previousFileID only used when createByGCFlag == true
+    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr); // previousFileID only used when createByGCFlag == true
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management
@@ -90,11 +90,11 @@ private:
     // recovery
     uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, uint32_t>& savedAnchors, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& resultMap);
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap);
     bool createHashStoreFileHandlerByPrefixStrForGC(string prefixStr, hashStoreFileMetaDataHandler*& fileHandlerPtr, uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2, hashStoreFileHeader& newFileHeader);
 
-    bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
-    bool singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<string, pair<vector<string>, vector<hashStoreRecordHeader>>>& gcResultMap, uint64_t prefixBitNumber, bool fileContainsReWriteKeysFlag);
+    bool singleFileRewrite(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
+    bool singleFileSplit(hashStoreFileMetaDataHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<hashStoreRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t prefixBitNumber, bool fileContainsReWriteKeysFlag);
     bool twoAdjacentFileMerge(hashStoreFileMetaDataHandler* currentHandlerPtr1, hashStoreFileMetaDataHandler* currentHandlerPtr2, string targetPrefixStr);
     bool selectFileForMerge(uint64_t targetFileIDForSplit, hashStoreFileMetaDataHandler*& currentHandlerPtr1, hashStoreFileMetaDataHandler*& currentHandlerPtr2, string& targetPrefixStr);
     // message management
