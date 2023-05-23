@@ -6,6 +6,13 @@ ManifestManager::ManifestManager(const string& working_dir) {
     working_dir_ = working_dir;
 }
 
+ManifestManager::~ManifestManager() {
+    if (manifest_fs_.is_open()) {
+	manifest_fs_.flush();
+	manifest_fs_.close();
+    }
+}
+
 bool ManifestManager::CreateManifestIfNotExist() {
 
     if (enable_pointer_) {

@@ -887,91 +887,93 @@ BucketManager::prepareForUpdatingMetadata(
 
 bool BucketManager::CloseHashStoreFileMetaDataList()
 {
-    fstream pointer_fs;
-    pointer_fs.open(
-        working_dir_ + "/hashStoreFileManifest.pointer", ios::in);
-    uint64_t currentPointerInt = 0;
-    if (pointer_fs.is_open()) {
-        pointer_fs >> currentPointerInt;
-        currentPointerInt++;
-    } else {
-        debug_error("[ERROR] Could not open hashStore file metadata list pointer file currentDeltaPointer = %lu\n", currentPointerInt);
-        return false;
-    }
-    pointer_fs.close();
-    ofstream manifest_fs;
-    manifest_fs.open(working_dir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt), ios::out);
-    manifest_fs << targetNewFileID_ << endl; // flush nextFileIDInfo
-    vector<uint64_t> targetDeleteFileIDVec;
-    vector<pair<string, BucketHandler*>> validObjectVec;
-    prefix_tree_.getCurrentValidNodes(validObjectVec);
-    debug_info("Final commit metadata, current valid trie size = %lu\n", validObjectVec.size());
-    if (validObjectVec.size() != 0) {
-        for (auto it : validObjectVec) {
-            if (it.second->io_ptr->isFileOpen() == true) {
-                FileOpStatus flushedSizePair = it.second->io_ptr->flushFile();
-                StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
-                it.second->total_on_disk_bytes += flushedSizePair.physicalSize_;
-                it.second->io_ptr->closeFile();
-                manifest_fs << it.first << endl;
-                manifest_fs << it.second->file_id << endl;
-                manifest_fs << it.second->prefix << endl;
-                manifest_fs << it.second->total_object_cnt << endl;
-                manifest_fs << it.second->total_object_bytes << endl;
-                manifest_fs << it.second->total_on_disk_bytes << endl;
-            }
-        }
-        manifest_fs.flush();
-        manifest_fs.close();
-    }
-    // Update manifest pointer
-    fstream hashStoreFileManifestPointerUpdateStream;
-    hashStoreFileManifestPointerUpdateStream.open(
-        working_dir_ + "/hashStoreFileManifest.pointer", ios::out);
-    if (hashStoreFileManifestPointerUpdateStream.is_open()) {
-        hashStoreFileManifestPointerUpdateStream << currentPointerInt << endl;
-        bool closedSuccessFlag = true;
-        hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
-        hashStoreFileManifestPointerUpdateStream.flush();
-        hashStoreFileManifestPointerUpdateStream.close();
-        string targetRemoveFileName = working_dir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt - 1);
-        if (filesystem::exists(targetRemoveFileName) != false) {
-            auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
-            if (removeOldManifestStatus == -1) {
-                debug_error("[ERROR] Could not delete the obsolete file, file path = %s\n", targetRemoveFileName.c_str());
-            }
-        }
-        vector<pair<string, BucketHandler*>> possibleValidObjectVec;
-        prefix_tree_.getPossibleValidNodes(possibleValidObjectVec);
-        for (auto it : possibleValidObjectVec) {
-            if (it.second) {
-                if (it.second->io_ptr->isFileOpen() == true) {
-                    it.second->io_ptr->closeFile();
-                }
-		deleteFileHandler(it.second);
-            }
-        }
-        bucket_delete_mtx_.lock();
-        for (auto it : bucket_id_to_delete_) {
-            deleteObslateFileWithFileIDAsInput(it);
-        }
-        bucket_id_to_delete_.clear();
-        bucket_delete_mtx_.unlock();
-        return true;
-    } else {
-        debug_error("[ERROR] could not update hashStore file metadata list pointer file currentDeltaPointer = %lu\n", currentPointerInt);
-        vector<pair<string, BucketHandler*>> possibleValidObjectVec;
-        prefix_tree_.getPossibleValidNodes(possibleValidObjectVec);
-        for (auto it : possibleValidObjectVec) {
-            if (it.second) {
-                if (it.second->io_ptr->isFileOpen() == true) {
-                    it.second->io_ptr->closeFile();
-                }
-		deleteFileHandler(it.second);
-            }
-        }
-        return false;
-    }
+    delete manifest_;
+//    fstream pointer_fs;
+//    pointer_fs.open(
+//        working_dir_ + "/hashStoreFileManifest.pointer", ios::in);
+//    uint64_t currentPointerInt = 0;
+//    if (pointer_fs.is_open()) {
+//        pointer_fs >> currentPointerInt;
+//        currentPointerInt++;
+//    } else {
+//        debug_error("[ERROR] Could not open hashStore file metadata list pointer file currentDeltaPointer = %lu\n", currentPointerInt);
+//        return false;
+//    }
+//    pointer_fs.close();
+//    ofstream manifest_fs;
+//    manifest_fs.open(working_dir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt), ios::out);
+//    manifest_fs << targetNewFileID_ << endl; // flush nextFileIDInfo
+//    vector<uint64_t> targetDeleteFileIDVec;
+//    vector<pair<string, BucketHandler*>> validObjectVec;
+//    prefix_tree_.getCurrentValidNodes(validObjectVec);
+//    debug_info("Final commit metadata, current valid trie size = %lu\n", validObjectVec.size());
+//    if (validObjectVec.size() != 0) {
+//        for (auto it : validObjectVec) {
+//            if (it.second->io_ptr->isFileOpen() == true) {
+//                FileOpStatus flushedSizePair = it.second->io_ptr->flushFile();
+//                StatsRecorder::getInstance()->DeltaOPBytesWrite(flushedSizePair.physicalSize_, flushedSizePair.logicalSize_, syncStatistics_);
+//                it.second->total_on_disk_bytes += flushedSizePair.physicalSize_;
+//                it.second->io_ptr->closeFile();
+//                manifest_fs << it.first << endl;
+//                manifest_fs << it.second->file_id << endl;
+//                manifest_fs << it.second->prefix << endl;
+//                manifest_fs << it.second->total_object_cnt << endl;
+//                manifest_fs << it.second->total_object_bytes << endl;
+//                manifest_fs << it.second->total_on_disk_bytes << endl;
+//            }
+//        }
+//        manifest_fs.flush();
+//        manifest_fs.close();
+//    }
+//    // Update manifest pointer
+//    fstream hashStoreFileManifestPointerUpdateStream;
+//    hashStoreFileManifestPointerUpdateStream.open(
+//        working_dir_ + "/hashStoreFileManifest.pointer", ios::out);
+//    if (hashStoreFileManifestPointerUpdateStream.is_open()) {
+//        hashStoreFileManifestPointerUpdateStream << currentPointerInt << endl;
+//        bool closedSuccessFlag = true;
+//        hashStoreFileManifestPointerUpdateStream << closedSuccessFlag << endl;
+//        hashStoreFileManifestPointerUpdateStream.flush();
+//        hashStoreFileManifestPointerUpdateStream.close();
+//        string targetRemoveFileName = working_dir_ + "/hashStoreFileManifestFile." + to_string(currentPointerInt - 1);
+//        if (filesystem::exists(targetRemoveFileName) != false) {
+//            auto removeOldManifestStatus = remove(targetRemoveFileName.c_str());
+//            if (removeOldManifestStatus == -1) {
+//                debug_error("[ERROR] Could not delete the obsolete file, file path = %s\n", targetRemoveFileName.c_str());
+//            }
+//        }
+//        vector<pair<string, BucketHandler*>> possibleValidObjectVec;
+//        prefix_tree_.getPossibleValidNodes(possibleValidObjectVec);
+//        for (auto it : possibleValidObjectVec) {
+//            if (it.second) {
+//                if (it.second->io_ptr->isFileOpen() == true) {
+//                    it.second->io_ptr->closeFile();
+//                }
+//		deleteFileHandler(it.second);
+//            }
+//        }
+//        bucket_delete_mtx_.lock();
+//        for (auto it : bucket_id_to_delete_) {
+//            deleteObslateFileWithFileIDAsInput(it);
+//        }
+//        bucket_id_to_delete_.clear();
+//        bucket_delete_mtx_.unlock();
+//        return true;
+//    } else {
+//        debug_error("[ERROR] could not update hashStore file metadata list pointer file currentDeltaPointer = %lu\n", currentPointerInt);
+//        vector<pair<string, BucketHandler*>> possibleValidObjectVec;
+//        prefix_tree_.getPossibleValidNodes(possibleValidObjectVec);
+//        for (auto it : possibleValidObjectVec) {
+//            if (it.second) {
+//                if (it.second->io_ptr->isFileOpen() == true) {
+//                    it.second->io_ptr->closeFile();
+//                }
+//		deleteFileHandler(it.second);
+//            }
+//        }
+//        return false;
+//    }
+    return true;
 }
 
 // file operations - public
@@ -1237,7 +1239,7 @@ bool BucketManager::createFileHandlerForGC(
 	targetPrefixLen, uint64_t previousFileID1, uint64_t previousFileID2)
 {
     auto bucket = createFileHandler();
-    bucket->prefix = targetPrefixLen;
+    bucket->prefix = prefixConcat(0, targetPrefixLen);
     bucket->file_id = generateNewFileID();
     bucket->ownership = -1;
     bucket->gc_status = kNew;
@@ -1733,6 +1735,7 @@ bool BucketManager::singleFileSplit(BucketHandler*
         BucketHandler* new_bucket;
         bool getFileHandlerStatus = createFileHandlerForGC(new_bucket,
                 prefix_len, bucket->file_id, 0);
+	new_bucket->prefix = prefixConcat(prefixIt.first, prefix_len);
         if (getFileHandlerStatus == false) {
             debug_error("[ERROR] Failed to create hash store file handler by"
                     " prefix %lx when split GC\n", prefixIt.first);
@@ -2003,6 +2006,7 @@ bool BucketManager::twoAdjacentFileMerge(
     debug_info("Perform merge GC for file ID 1 = %lu, ID 2 = %lu\n",
             bucket1->file_id, bucket2->file_id);
     BucketHandler* bucket;
+    // prefix_len is the new prefix length
     bool generateFileHandlerStatus = createFileHandlerForGC(
             bucket, prefix_len, 
             bucket1->file_id, bucket2->file_id);
@@ -2014,6 +2018,8 @@ bool BucketManager::twoAdjacentFileMerge(
         bucket2->ownership = 0;
         return false;
     }
+    bucket->prefix = prefixConcat(target_prefix, prefix_len)
+
     std::scoped_lock<std::shared_mutex> w_lock3(bucket->op_mtx);
     StatsRecorder::staticProcess(StatsType::MERGE_WAIT_LOCK3, tv);
     gettimeofday(&tv, 0);
@@ -2424,7 +2430,7 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 
 	// Another should be '1'
 	if ((prefix1 & (1 << (prefix_len1 - 1))) == 0) { 
-	    prefix2 |= 1 << prefix_len1;
+	    prefix2 |= (1 << (prefix_len1 - 1);
 	} 
 	debug_info("original prefix = %lx, pair prefix = %lx\n", 
 		prefixSubstr(prefix1, prefix_len1),

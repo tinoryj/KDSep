@@ -31,17 +31,17 @@ KDLRUCache::~KDLRUCache() {
         delete shards_[i];
     }
     delete[] shards_;
-    debug_error("total_data_size: %lu\n", total_data_size);
-    debug_error("total_items: %lu\n", num_items);
-    size_t rss_after = getRss();
-    debug_error("rss from %lu to %lu (diff: %.4lf)\n", 
-           rss_before, rss_after, 
-           (rss_before - rss_after) / 1024.0 / 1024.0); 
-    printf("total_data_size: %lu\n", total_data_size);
-    printf("total_items: %lu\n", num_items);
-    printf("rss from %lu to %lu (diff: %.4lf)\n", 
-           rss_before, rss_after, 
-           (rss_before - rss_after) / 1024.0 / 1024.0); 
+//    debug_error("total_data_size: %lu\n", total_data_size);
+//    debug_error("total_items: %lu\n", num_items);
+//    size_t rss_after = getRss();
+//    debug_error("rss from %lu to %lu (diff: %.4lf)\n", 
+//           rss_before, rss_after, 
+//           (rss_before - rss_after) / 1024.0 / 1024.0); 
+//    printf("total_data_size: %lu\n", total_data_size);
+//    printf("total_items: %lu\n", num_items);
+//    printf("rss from %lu to %lu (diff: %.4lf)\n", 
+//           rss_before, rss_after, 
+//           (rss_before - rss_after) / 1024.0 / 1024.0); 
 }
 
 } // KDSEP_NAMESPACE

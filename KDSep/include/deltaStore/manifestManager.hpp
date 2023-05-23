@@ -7,6 +7,7 @@ namespace KDSEP_NAMESPACE {
 class ManifestManager {
 public:
     ManifestManager();
+    ~ManifestManager();
     ManifestManager(const string& working_dir);
     bool RetrieveFileMetadata(bool& should_recover, 
 	unordered_map<uint64_t, uint64_t>& id2prefixes); 
