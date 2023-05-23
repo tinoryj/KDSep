@@ -2018,7 +2018,7 @@ bool BucketManager::twoAdjacentFileMerge(
         bucket2->ownership = 0;
         return false;
     }
-    bucket->prefix = prefixConcat(target_prefix, prefix_len)
+    bucket->prefix = prefixConcat(target_prefix, prefix_len);
 
     std::scoped_lock<std::shared_mutex> w_lock3(bucket->op_mtx);
     StatsRecorder::staticProcess(StatsType::MERGE_WAIT_LOCK3, tv);
@@ -2430,7 +2430,7 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 
 	// Another should be '1'
 	if ((prefix1 & (1 << (prefix_len1 - 1))) == 0) { 
-	    prefix2 |= (1 << (prefix_len1 - 1);
+	    prefix2 |= (1 << (prefix_len1 - 1));
 	} 
 	debug_info("original prefix = %lx, pair prefix = %lx\n", 
 		prefixSubstr(prefix1, prefix_len1),
