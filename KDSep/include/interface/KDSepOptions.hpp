@@ -78,7 +78,7 @@ public:
     uint64_t deltaStore_max_bucket_number_ = 16;
     shared_ptr<KDSepMergeOperator> KDSep_merge_operation_ptr;
     fileOperationType fileOperationMethod_ = kDirectIO;
-    bool enable_write_back_optimization_ = false;
+    bool enable_write_back_optimization_ = true;
     bool enable_parallel_lsm_interface_ = false;
     bool enable_crash_consistency = false;
     bool enable_bucket_merge = true;
