@@ -8,7 +8,7 @@ namespace KDSEP_NAMESPACE {
 
 BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, BucketManager* bucketManager)
 {
-    perFileFlushBufferSizeLimit_ = options->deltaStore_file_flush_buffer_size_limit_;
+    perFileFlushBufferSizeLimit_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
@@ -31,7 +31,6 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
         workingThreadExitFlagVec_ = 0;
     }
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
-    unsorted_part_size_threshold_ = options->unsorted_part_size_threshold;
     write_stall_ = options->write_stall;
     fprintf(stdout, "read use partial merged delta in the KD cache!\n");
     fprintf(stdout, "put use partial merged delta in the KD cache!\n");
@@ -983,19 +982,7 @@ bool BucketOperator::putFileHandlerIntoGCJobQueueIfNeeded(BucketHandler* bucket)
         }
     }
     // insert into GC job queue if exceed the threshold
-    if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_) || 
-            bucket->UnsortedPartExceeds(unsorted_part_size_threshold_)) {
-        if (bucket->UnsortedPartExceeds(unsorted_part_size_threshold_) &&
-                bucket->unsorted_part_offset != 0) {
-            debug_error("unsorted_part_size_threshold_ %lu %lu %lu %lu\n",
-                    unsorted_part_size_threshold_, bucket->total_on_disk_bytes,
-                    bucket->io_ptr->getFileBufferedSize(),
-                    bucket->unsorted_part_offset);
-            cnt++;
-            if (cnt > 100) {
-                exit(1);
-            }
-        }
+    if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
         if (bucket->gc_status == kNoGC) {
             bucket->no_gc_wait_operation_number_++;
             if (bucket->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_ ||

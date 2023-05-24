@@ -32,7 +32,7 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options, const string& work
     if (!bucketOperator) {
         debug_error("[ERROR] Create BucketOperator error, file path = %s\n", workingDirStr.c_str());
     }
-    fileFlushThreshold_ = options->deltaStore_file_flush_buffer_size_limit_;
+    fileFlushThreshold_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     enable_crash_consistency_ = options->enable_crash_consistency;
 
     file_manager_ = bucketManager;

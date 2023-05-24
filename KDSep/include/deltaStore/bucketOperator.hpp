@@ -38,7 +38,6 @@ private:
     uint64_t perFileGCSizeLimit_;
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
-    uint64_t unsorted_part_size_threshold_;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     bool enableGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;

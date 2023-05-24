@@ -131,7 +131,6 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     bool directIO = config.getDirectIO();
     bool directReads = config.getDirectReads();
     bool useMmap = config.getUseMmap();
-    bool fakeDirectIO = config.getFakeDirectIO();  // for testing
     bool keyValueSeparation = config.getKeyValueSeparation();
     bool keyDeltaSeparation = config.getKeyDeltaSeparation();
     bool blobDbKeyValueSeparation = config.getBlobDbKeyValueSeparation();
@@ -180,7 +179,7 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
         }
     }
     bbto.block_size = config.getBlockSize();
-    bbto.cache_index_and_filter_blocks = config.cacheIndexAndFilterBlocks();
+    bbto.cache_index_and_filter_blocks = true;
 
     if (keyValueSeparation == true) {
         options_.enable_valueStore = true;
@@ -194,34 +193,19 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
             options_.deltaStore_KDCache_item_number_ = ds_kdcache_size;
         }
         options_.deltaStore_init_k_ = config.getPrefixTreeBitNumber();
-        options_.deltaStore_operationNumberForMetadataCommitThreshold_ = config.getDelteLogMetadataCommitLatency();
-        options_.deltaStore_bucket_size_ = config.getDeltaLogFileSize();
-        options_.deltaStore_file_flush_buffer_size_limit_ = config.getDeltaLogFileFlushSize();
-        options_.deltaStore_op_worker_thread_number_limit_ = config.getDeltaLogOpWorkerThreadNumber();
-        options_.deltaStore_gc_worker_thread_number_limit_ = config.getDeltaLogGCWorkerThreadNumber();
-        options_.deltaStore_max_bucket_number_ = config.getDeltaLogMaxFileNumber();
-        options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogMetadataCommitLatency();
+        options_.deltaStore_bucket_size_ = config.getDeltaStoreBucketSize();
+        options_.deltaStore_bucket_flush_buffer_size_limit_ = config.getDeltaStoreBucketFlushSize();
+        options_.deltaStore_op_worker_thread_number_limit_ = config.getDeltaStoreOpWorkerThreadNumber();
+        options_.deltaStore_gc_worker_thread_number_limit_ = config.getDeltaStoreGCWorkerThreadNumber();
+        options_.deltaStore_max_bucket_number_ = config.getDeltaStoreMaxBucketNumber();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
-        options_.deltaStore_write_back_during_reads_threshold = config.getDeltaStoreWriteBackDuringReadsThreshold();
-        options_.deltaStore_write_back_during_reads_size_threshold = config.getDeltaStoreWriteBackDuringReadsSizeThreshold();
-        options_.deltaStore_gc_write_back_delta_num = config.getDeltaStoreGcWriteBackDeltaNumThreshold();
-        options_.deltaStore_gc_write_back_delta_size = config.getDeltaStoreGcWriteBackDeltaSizeThreshold();
-        options_.unsorted_part_size_threshold = config.getUnsortedPartSizeThreshold();
-        if (options_.deltaStore_write_back_during_reads_threshold == 0 && options_.deltaStore_gc_write_back_delta_num == 0) {
-            options_.enable_write_back_optimization_ = false;
-        } else {
-            options_.enable_write_back_optimization_ = true;
-        }
         if (enable_gc_flag == true) {
             options_.enable_deltaStore_garbage_collection = true;
-            options_.deltaStore_operationNumberForForcedSingleFileGCThreshold_ = config.getDelteLogForcedGCLatency();
-            options_.deltaStore_gc_split_threshold_ = config.getDeltaLogSplitGCThreshold();
-            options_.deltaStore_garbage_collection_start_single_file_minimum_occupancy = config.getDeltaLogGCThreshold();
+            options_.deltaStore_gc_split_threshold_ = config.getDeltaStoreSplitGCThreshold();
         } else {
             options_.enable_deltaStore_garbage_collection = false;
         }
     }
-    options_.deltaStore_KDLevel_cache_use_str_t = config.getDeltaStoreKDLevelCacheUseStrT();
     options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.write_buffer_size = config.getKDSepWriteBufferSize();
 
@@ -233,26 +217,10 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
             (config.getMaxKeyValueSize() + pagesize - 1) / pagesize * pagesize;
     }
 
-    if (fakeDirectIO) {
-        cerr << "Enabled fake I/O, do not sync" << endl;
-        options_.rocks_opt.use_direct_reads = false;
-        options_.rocks_opt.use_direct_io_for_flush_and_compaction = false;
-        options_.rocks_opt.allow_mmap_reads = useMmap;
-        options_.rocks_opt.allow_mmap_writes = useMmap;
-        options_.fileOperationMethod_ = KDSEP_NAMESPACE::kAlignLinuxIO;
-        options_.rocksdb_sync_put = false;
-        options_.rocksdb_sync_merge = false;
-    } else {
-        options_.rocksdb_sync_put = !keyValueSeparation;
-        options_.rocksdb_sync_merge = !keyDeltaSeparation;
-    }
-    options_.enable_key_value_cache_ = config.getKDSepCacheEnableStatus();
-    options_.enable_lsm_tree_delta_meta = config.getEnableLsmTreeDeltaMeta();
+    options_.rocksdb_sync_put = !keyValueSeparation;
+    options_.rocksdb_sync_merge = !keyDeltaSeparation;
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
     options_.enable_crash_consistency = config.getEnableCrashConsistency();
-    options_.enable_bucket_merge = config.getEnableBucketMerge();
-    options_.enable_index_block = config.getEnableIndexBlock();
-    options_.key_value_cache_object_number_ = config.getKDSepCacheSize();
 
     options_.KDSep_merge_operation_ptr.reset(new KDSEP_NAMESPACE::KDSepFieldUpdateMergeOperator);
     options_.rocks_opt.merge_operator.reset(new FieldUpdateMergeOperator);
@@ -268,11 +236,6 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     options_.rocks_opt.level_compaction_dynamic_level_bytes = true;
     options_.rocks_opt.target_file_size_base = config.getSSTSize();
     options_.rocks_opt.max_bytes_for_level_base = config.getL1Size();
-    options_.rocks_opt.max_open_files = config.getMaxOpenFiles();
-    //    options_.rocks_opt.max_write_buffer_number =
-    //        options_.rocks_opt.max_bytes_for_level_base /
-    //        options_.rocks_opt.write_buffer_size;
-    //    // Make L0 size similar to L1 size
 
     cerr << "write buffer size " << options_.rocks_opt.write_buffer_size << endl;
     cerr << "write buffer number " << options_.rocks_opt.max_write_buffer_number << endl;

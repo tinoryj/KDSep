@@ -28,7 +28,6 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     enableBatchedOperations_ = options->enable_batched_operations_;
     enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
-    globalGCTriggerSize_ = options->deltaStore_garbage_collection_start_total_storage_minimum_occupancy * options->deltaStore_total_storage_maximum_size;
     working_dir_ = workingDirStr;
     manifest_ = new ManifestManager(workingDirStr);
     notifyGCMQ_ = notifyGCMQ;
@@ -46,7 +45,7 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
     workingThreadExitFlagVec_ = 0;
     syncStatistics_ = true;
-    singleFileFlushSize_ = options->deltaStore_file_flush_buffer_size_limit_;
+    singleFileFlushSize_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
     enable_index_block_ = options->enable_index_block;
     write_stall_ = options->write_stall;

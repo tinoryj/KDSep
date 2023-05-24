@@ -30,9 +30,6 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "\tdeltaStore_worker_thread_number_limit = " << deltaStore_op_worker_thread_number_limit_ << endl;
         dumpOptionsOutStream << "\tdeltaStore_gc_thread_number_limit = " << deltaStore_gc_worker_thread_number_limit_ << endl;
         dumpOptionsOutStream << "\tdeltaStore_garbage_collection_start_single_file_minimum_occupancy = " << deltaStore_garbage_collection_start_single_file_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tdeltaStore_garbage_collection_start_total_storage_minimum_occupancy = " << deltaStore_garbage_collection_start_total_storage_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tdeltaStore_garbage_collection_force_single_file_minimum_occupancy = " << deltaStore_garbage_collection_force_single_file_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tdeltaStore_garbage_collection_force_total_storage_minimum_occupancy = " << deltaStore_garbage_collection_force_total_storage_minimum_occupancy << endl;
     }
     if (enable_valueStore == true) {
         dumpOptionsOutStream << "ValueStore options:" << endl;
@@ -42,17 +39,11 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "\tenable_valueStore_garbage_collection = " << enable_valueStore_garbage_collection << endl;
         dumpOptionsOutStream << "\tvalueStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(valueStore_base_cache_mode) << endl;
         dumpOptionsOutStream << "\tvalueStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(valueStore_base_store_mode) << endl;
-        dumpOptionsOutStream << "\tvalueStore_fileLvel_cache_size = " << valueStore_fileLvel_cache_size << endl;
-        dumpOptionsOutStream << "\tvalueStore_KDLevel_cache_size = " << valueStore_KDLevel_cache_size << endl;
         dumpOptionsOutStream << "\textract_to_valueStore_size_lower_bound = " << extract_to_valueStore_size_lower_bound << endl;
         dumpOptionsOutStream << "\textract_to_valueStore_size_upper_bound = " << extract_to_valueStore_size_upper_bound << endl;
         dumpOptionsOutStream << "\tvalueStore_single_file_maximum_size = " << valueStore_single_file_maximum_size << endl;
         dumpOptionsOutStream << "\tvalueStore_total_storage_maximum_size = " << valueStore_total_storage_maximum_size << endl;
         dumpOptionsOutStream << "\tvalueStore_thread_number_limit = " << valueStore_thread_number_limit << endl;
-        dumpOptionsOutStream << "\tvalueStore_garbage_collection_start_single_file_minimum_occupancy = " << valueStore_garbage_collection_start_single_file_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tvalueStore_garbage_collection_start_total_storage_minimum_occupancy = " << valueStore_garbage_collection_start_total_storage_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tvalueStore_garbage_collection_force_single_file_minimum_occupancy = " << valueStore_garbage_collection_force_single_file_minimum_occupancy << endl;
-        dumpOptionsOutStream << "\tvalueStore_garbage_collection_force_total_storage_minimum_occupancy = " << valueStore_garbage_collection_force_total_storage_minimum_occupancy << endl;
     }
 
     dumpOptionsOutStream.flush();

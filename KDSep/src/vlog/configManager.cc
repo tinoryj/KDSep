@@ -34,7 +34,7 @@ void ConfigManager::setConfigPath(const char* path)
         _buffer.numPipelinedBuffer = 1;
     }
     _buffer.directIO = readBool("config.directReads"); // TODO
-    _buffer.testDirectIO = readBool("config.fakeDirectIO");
+    _buffer.testDirectIO = false;
     _buffer.testIODelayUs = readULL("valueStore.testIODelayUs");
     _buffer.valueCacheSize = readULL("valueStore.valueCacheSize");
 
@@ -133,7 +133,7 @@ void ConfigManager::setConfigPath(const char* path)
     if (_debug.level < DebugLevel::NONE) {
         _debug.level = DebugLevel::NONE;
     }
-    _debug.scanAllRecordsUponStop = readBool("debug.scanAllRecordsUponStop");
+    _debug.scanAllRecordsUponStop = false;
 
     printConfig();
 }

@@ -67,7 +67,6 @@ private:
     uint64_t singleFileMergeGCUpperBoundSize_ = 0;
     uint64_t maxBucketSize_ = 0;
     uint64_t singleFileSplitGCTriggerSize_ = 0;
-    uint64_t globalGCTriggerSize_ = 0;
     std::string working_dir_;
     fileOperationType fileOperationMethod_ = kFstream;
     uint64_t operationCounterForMetadataCommit_ = 0;
