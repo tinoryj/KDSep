@@ -88,7 +88,7 @@ private:
     bool enableDeltaStoreWithBackgroundGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool enableParallelLsmInterface = true;
-    bool enable_crash_consistency = false;
+    bool enable_crash_consistency_ = false;
     bool enable_bucket_merge_ = true;
 
     int writeBackWhenReadDeltaNumerThreshold_ = 4;
@@ -121,9 +121,9 @@ private:
             vector<KvHeader>& mergeOperatorsRecordVec);
     // Storage component for delta store
 
-    HashStoreInterface* HashStoreInterfaceObjPtr_ = nullptr;
-    BucketManager* hashStoreFileManagerPtr_ = nullptr;
-    BucketOperator* hashStoreFileOperatorPtr_ = nullptr;
+    HashStoreInterface* delta_store_ = nullptr;
+    BucketManager* bucket_manager_ = nullptr;
+    BucketOperator* bucket_operator_ = nullptr;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
 

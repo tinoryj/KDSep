@@ -9,6 +9,7 @@ namespace KDSEP_NAMESPACE {
 BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ, messageQueue<writeBackObject*>* writeBackOperationsQueue)
 {
     maxBucketNumber_ = options->deltaStore_max_bucket_number_;
+    bucket_bitmap_ = new BitMap(maxBucketNumber_ + 16);
     uint64_t k = 0;
     while (pow((double)2, (double)k) <= maxBucketNumber_) {
         k++;
@@ -110,11 +111,8 @@ void BucketManager::deleteFileHandler(
 }
 
 bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
-        bool& need_flush) {
-    if (objects.size() == 0) {
-        return true;
-    }
-    uint64_t write_buf_sz = 0;
+        bool& need_flush, bool add_commit_message) {
+    uint64_t write_buf_sz = sizeof(KDRecordHeader);
     for (auto i = 0; i < objects.size(); i++) {
         // reserve more space
         write_buf_sz += sizeof(KDRecordHeader) + 
@@ -142,12 +140,33 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
         }
     }
 
+    // when there are no values to write
+    if (add_commit_message == true) { 
+        rec_header.is_anchor_ = false;
+        rec_header.is_gc_done_ = true;
+        rec_header.key_size_ = 0;
+        rec_header.value_size_ = 0;
+        rec_header.seq_num = 0;
+        if (use_varint_d_header == false) {
+            copyInc(write_buf, write_i, &rec_header, header_sz);
+        } else {
+            write_i += PutDeltaHeaderVarint(write_buf + write_i, rec_header);
+        }
+    }
+
+    if (write_i == 0) {
+        return true;
+    }
+
     if (commit_log_fop_ == nullptr) {
 	commit_log_fop_ = new FileOperation(kDirectIO,
 		commit_log_maximum_size_, 0);
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
+    debug_error("write: %lu (data %lu disk %lu)\n", write_i,
+            commit_log_fop_->getCachedFileDataSize(),
+            commit_log_fop_->getCachedFileSize()); 
     FileOpStatus status;
     STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
                 write_i),
@@ -161,6 +180,46 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     if (commit_log_fop_->getCachedFileSize() > commit_log_next_threshold_) {
         need_flush = true;
         commit_log_next_threshold_ += commit_log_maximum_size_;
+    }
+
+    return status.success_;
+}
+
+bool BucketManager::commitToCommitLog() {
+    uint64_t write_buf_sz = sizeof(KDRecordHeader);
+    char write_buf[write_buf_sz];
+    uint64_t write_i = 0;
+    size_t header_sz = sizeof(KDRecordHeader);
+    KDRecordHeader rec_header;
+    rec_header.is_anchor_ = false;
+    rec_header.is_gc_done_ = true;
+    rec_header.key_size_ = 0;
+    rec_header.value_size_ = 0;
+    rec_header.seq_num = 0;
+    if (use_varint_d_header == false) {
+        copyInc(write_buf, write_i, &rec_header, header_sz);
+    } else {
+        write_i += PutDeltaHeaderVarint(write_buf + write_i, rec_header);
+    }
+
+    if (commit_log_fop_ == nullptr) {
+	commit_log_fop_ = new FileOperation(kDirectIO,
+		commit_log_maximum_size_, 0);
+        commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
+    }
+
+    debug_error("commit: %lu (data %lu disk %lu)\n", write_i,
+            commit_log_fop_->getCachedFileDataSize(),
+            commit_log_fop_->getCachedFileSize()); 
+
+    FileOpStatus status;
+    STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
+                write_i),
+           StatsType::DS_PUT_COMMIT_LOG); 
+
+    if (status.success_ == false) {
+        debug_error("[ERROR] Commit to commit log failed: buf size %lu\n", 
+                write_i);
     }
 
     return status.success_;
@@ -1273,6 +1332,10 @@ uint64_t BucketManager::generateNewFileID()
     fileIDGeneratorMtx_.lock();
     targetNewFileID_ += 1;
     uint64_t tempIDForReturn = targetNewFileID_;
+//    uint64_t tempIDForReturn = bucket_bitmap_->getFirstZeroAndFlip(); 
+//    if (tempIDForReturn == -1) {
+//        debug_error("generate error: -1 %s\n", "")
+//    }
     fileIDGeneratorMtx_.unlock();
     return tempIDForReturn;
 }

@@ -17,14 +17,24 @@ public:
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(mempoolHandler_t objectPairMemPoolHandler);
-    bool multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec);
+    bool put(mempoolHandler_t object);
+
+    // not enable consistency: false & false 
+    // consistency + has value: (false (not full) / true (full)) & false 
+    //                         need_flush determined by bm->putCommitLog()
+    // consistency + no value: arbitrary & true 
+    bool multiPut(vector<mempoolHandler_t>& objects,
+            bool need_flush, bool need_commit);
+    bool putCommitLog(vector<mempoolHandler_t>& objects, bool& need_flush);
+    bool commitToCommitLog();
+
     bool get(const string& keyStr, vector<string>& valueStrVecPtr);
     bool get(const string& keyStr, vector<string>& valueStrVec, vector<KDRecordHeader>& recordVec);
     bool multiGet(const vector<string>& keyStrVec, vector<vector<string>>& valueStrVecVecPtr);
     bool forcedManualGarbageCollection();
     bool setJobDone();
     bool Recovery();
+
 
 private:
     bool anyBucketInitedFlag_ = false;

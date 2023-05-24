@@ -236,14 +236,16 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
     }
 
     // flush before write, if no more place for updates
-    if (!Segment::canFit(_centralizedReservedPool[poolIndex].pool, RECORD_SIZE) && !inPlaceUpdate) {
+    if (!Segment::canFit(_centralizedReservedPool[poolIndex].pool, RECORD_SIZE)
+	    && !inPlaceUpdate) {
         //        _GCLock.unlock();
         group_id_t prevGroupId = groupId;
         // printf("Flush before write\n");
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), StatsType::POOL_FLUSH);
+	    STAT_PROCESS(flushCentralizedReservedPoolVLog(true, poolIndex),
+		    StatsType::POOL_FLUSH);
         } else {
             debug_error("settings wrong: no pipelined buffer and no vlog %s\n", "");
         }
@@ -304,8 +306,6 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     if (groupId != LSM_GROUP && !vlog)
         _segmentGroupManager->releaseGroupLock(groupId);
-    offset_t logOffset = _segmentGroupManager->getLogWriteOffset();
-    offset_t newOffset = INVALID_OFFSET;
 
     // flush after write, if the pool is (too) full
     if (!Segment::canFit(pool, 1) || (ConfigManager::getInstance().getUpdateKVBufferSize() <= 0 || sync)) {
@@ -313,7 +313,8 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
         if (ConfigManager::getInstance().usePipelinedBuffer()) {
             flushCentralizedReservedPoolBg(StatsType::POOL_FLUSH);
         } else if (vlog) {
-            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex, &newOffset), StatsType::POOL_FLUSH);
+	    STAT_PROCESS(flushCentralizedReservedPoolVLog(true, poolIndex),
+		    StatsType::POOL_FLUSH);
         } else {
             debug_error("settings wrong: no pipelined buffer and no vlog %s\n", "");
         }
@@ -323,11 +324,6 @@ ValueLocation ValueManager::putValue(char* keyStr, key_len_t keySize, char* valu
 
     _GCLock.unlock();
 
-    if (newOffset != INVALID_OFFSET) {
-        logOffset = newOffset;
-    }
-
-    valueLoc.offset = logOffset + poolOffset;
     valueLoc.segmentId = oldValueLoc.segmentId;
     valueLoc.length = valueSize + (groupId != LSM_GROUP ? sizeof(len_t) : 0);
 
@@ -517,9 +513,9 @@ bool ValueManager::outOfReservedSpaceForObject(offset_t flushFront, len_t object
     return false;
 }
 
-void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* logOffsetPtr)
+void ValueManager::flushCentralizedReservedPoolVLog(bool update_lsm, 
+	int poolIndex)
 {
-    static int flushTimes = 0;
     // directly write the pool out
     _centralizedReservedPool[poolIndex].lock.lock();
 
@@ -528,14 +524,37 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
     offset_t logOffset = INVALID_OFFSET;
     std::tie(logOffset, writeLength) = flushSegmentToWriteFront(pool, false);
 
-    if (logOffsetPtr) {
-        *logOffsetPtr = logOffset;
+    // store the status of flushing the segment
+    last_log_offset = logOffset;
+    last_write_length = writeLength;
+    last_pool_index = poolIndex;
+
+    debug_error("flush to vlog %lu\n", logOffset);
+
+    if (update_lsm) {
+        debug_error("built in update lsm tree %lu\n", logOffset);
+	updateLSMtreeInflushVLog(false);
     }
+}
+
+bool ValueManager::forceFlushBufferToVlog() {
+    std::lock_guard<std::mutex> gcLock(_GCLock);
+    flushCentralizedReservedPoolVLog(false);
+    return true;
+}
+
+bool ValueManager::updateLSMtreeInflushVLog(bool flush) {
+    debug_error("inside: update lsm tree %d\n", (int)flush);
+    int poolIndex = last_pool_index;
+    Segment& pool = _centralizedReservedPool[poolIndex].pool;
+    offset_t logOffset = last_log_offset;
+    len_t writeLength = last_write_length;
+    static int flushTimes = 0;
 
     // nonthing to flush
     if (writeLength == 0) {
         _centralizedReservedPool[poolIndex].lock.unlock();
-        return;
+        return true;
     }
     ConfigManager& cm = ConfigManager::getInstance();
     // update metadata in LSM
@@ -564,7 +583,9 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
 
     // different from HashKV implementation. We write meta before writing values, so write the previous logOffset.
     if (ConfigManager::getInstance().persistLogMeta()) {
-        if (ConfigManager::getInstance().getUpdateKVBufferSize() > 0 || flushTimes >= 512) {
+	if (flush || 
+		ConfigManager::getInstance().getUpdateKVBufferSize() > 0 ||
+		flushTimes >= 512) {
             _keyManager->writeMeta(SegmentGroupManager::LogTailString, strlen(SegmentGroupManager::LogTailString), to_string(logOffset));
             flushTimes = 0;
         } else {
@@ -582,6 +603,7 @@ void ValueManager::flushCentralizedReservedPoolVLog(int poolIndex, offset_t* log
     Segment::resetFronts(_centralizedReservedPool[poolIndex].pool);
 
     _centralizedReservedPool[poolIndex].lock.unlock();
+    return true;
 }
 
 std::pair<offset_t, len_t> ValueManager::flushSegmentToWriteFront(Segment& segment, bool isGC)
@@ -1080,7 +1102,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker()
             pthread_mutex_unlock(&_centralizedReservedPoolIndex.queueLock);
             // do the flushing as usual
             debug_info("Pull and flush pool %d from queue\n", poolIndex);
-            STAT_PROCESS(flushCentralizedReservedPoolVLog(poolIndex), stats);
+            STAT_PROCESS(flushCentralizedReservedPoolVLog(true, poolIndex), stats);
             _centralizedReservedPoolIndex.flushNext = getNextPoolIndex(_centralizedReservedPoolIndex.flushNext);
             debug_info("Complete processing pool %d next %d \n", poolIndex, _centralizedReservedPoolIndex.flushNext);
             // lock before queue checking
@@ -1095,7 +1117,7 @@ void ValueManager::flushCentralizedReservedPoolBgWorker()
 bool ValueManager::forceSync()
 {
     std::lock_guard<std::mutex> gcLock(_GCLock);
-    flushCentralizedReservedPoolVLog();
+    flushCentralizedReservedPoolVLog(true);
     return true;
 }
 

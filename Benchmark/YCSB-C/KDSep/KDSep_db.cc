@@ -220,7 +220,8 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     options_.rocksdb_sync_put = !keyValueSeparation;
     options_.rocksdb_sync_merge = !keyDeltaSeparation;
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
-    options_.enable_crash_consistency = config.getEnableCrashConsistency();
+    options_.enable_crash_consistency = (keyDeltaSeparation &&
+            config.getEnableCrashConsistency());
 
     options_.KDSep_merge_operation_ptr.reset(new KDSEP_NAMESPACE::KDSepFieldUpdateMergeOperator);
     options_.rocks_opt.merge_operator.reset(new FieldUpdateMergeOperator);

@@ -288,7 +288,48 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
     }
 }
 
-bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
+bool HashStoreInterface::putCommitLog(
+	vector<mempoolHandler_t>& objects, bool& need_flush) {
+    bool allAnchoarsFlag = true;
+    for (auto it : objects) {
+        if (it.isAnchorFlag_ == false) {
+            allAnchoarsFlag = false;
+            break;
+        }
+    }
+    if (allAnchoarsFlag == true && anyBucketInitedFlag_ == false) {
+        return true;
+    } else {
+        anyBucketInitedFlag_ = true;
+    }
+
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    unordered_map<BucketHandler*, vector<int>> fileHandlerToIndexMap;
+
+    need_flush = false;
+    if (enable_crash_consistency_ == false) {
+	return true;
+    }
+
+    // write to the commit log
+    bool write_commit_log_status = 
+	file_manager_->writeToCommitLog(objects, need_flush, false);
+    if (write_commit_log_status == false) {
+	debug_error("[ERROR] write to commit log failed: %lu objects\n",
+		objects.size());
+	exit(1);
+    }
+
+    return true;
+}
+
+bool HashStoreInterface::commitToCommitLog() {
+    return file_manager_->commitToCommitLog();
+}
+
+bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
+	bool need_flush, bool need_commit)
 {
     bool allAnchoarsFlag = true;
     for (auto it : objects) {
@@ -307,20 +348,23 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t> objects)
     gettimeofday(&tv, 0);
     unordered_map<BucketHandler*, vector<int>> fileHandlerToIndexMap;
 
-    bool need_flush = false;
-    if (enable_crash_consistency_ == true) {
-        // write to the commit log
+    // already written by the previous function
+    // come here because there are no values written by the interface
+    if (enable_crash_consistency_ == true && need_commit == true) {
+        // directly write to the commit log
+	need_flush = false;
         bool write_commit_log_status = 
-            file_manager_->writeToCommitLog(objects, need_flush);
+            file_manager_->writeToCommitLog(objects, need_flush, true);
         if (write_commit_log_status == false) {
             debug_error("[ERROR] write to commit log failed: %lu objects\n",
                     objects.size());
             exit(1);
         }
     }
+    // otherwise don't need to touch the commit message. The commit log has
+    // been well written. does not change the need_flush variable
 
     // get all the file handlers 
-
     if (enable_parallel_get_hdl_) { 
 	gettimeofday(&tv, 0);
 	hashStoreOperationHandler hdls[objects.size()];

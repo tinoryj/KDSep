@@ -37,8 +37,11 @@ public:
     bool Get(const string& key, string* value);
     bool Scan(const string& key, int len, vector<string>& keys, vector<string>& values);
     bool MultiGet(const vector<string>& key, vector<string>& values);
-    bool MultiWriteWithBatch(const vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch);
-    rocksdb::Iterator* NewIterator();
+    bool MultiWriteWithBatch(
+	    const vector<mempoolHandler_t>& memPoolHandlersPut,
+	    rocksdb::WriteBatch* mergeBatch,
+	    bool& need_post_update);
+    bool updateVlogLsmTree();
 
     void GetRocksDBProperty(const string& property, string* str);
 //    bool RangeScan(const string& startKey, uint64_t targetScanNumber, vector<string*> valueVec);
@@ -63,6 +66,8 @@ private:
     MergeOperator* mergeOperator_ = nullptr; 
     uint64_t valueExtractSize_ = 0;
     bool isValueStoreInUseFlag_ = false;
+    bool enable_crash_consistency_ = false;
+    bool vlog_lsm_not_updated_ = false;
 };
 
 } // namespace KDSEP_NAMESPACE

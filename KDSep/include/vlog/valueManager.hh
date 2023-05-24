@@ -68,6 +68,9 @@ public:
 
     std::set<std::string>* getStoredKeys();
 
+    bool forceFlushBufferToVlog();
+    bool updateLSMtreeInflushVLog(bool flush);
+
 protected:
     std::mutex _GCLock;
 
@@ -132,6 +135,11 @@ private:
 
     bool _started;
 
+    // for crash consistency in KDSep
+    offset_t last_log_offset;
+    len_t last_write_length;
+    int last_pool_index;
+
     // coding_parm_t inline findSegmentInGroup(const GroupMetaData *smd, segment_id_t segmentId, device_id_t &deviceId, lba_t &lba);
 
     //@parm groupMetaOutDate indicate the flush fronts in group metadata are no longer valid (due to batch metadata update)
@@ -148,7 +156,7 @@ private:
 
     void flushCentralizedReservedPoolBg(StatsType stats);
     void flushCentralizedReservedPoolBgWorker();
-    void flushCentralizedReservedPoolVLog(int poolIndex = 0, offset_t* logOffsetPtr = nullptr);
+    void flushCentralizedReservedPoolVLog(bool update_lsm, int poolIndex = 0);
 
     std::pair<offset_t, len_t> flushSegmentToWriteFront(Segment& segment, bool isGC = false);
 

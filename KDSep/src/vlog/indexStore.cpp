@@ -111,7 +111,8 @@ bool KvServer::checkKeySize(len_t& keySize)
     return (keySize != 0);
 }
 
-bool KvServer::putValue(const char* key, len_t keySize, const char* value, len_t valueSize, bool sync)
+bool KvServer::putValue(const char* key, len_t keySize, const char* value,
+	len_t valueSize, bool sync)
 {
     // static int putCount = 0;
     // putCount++;
@@ -166,7 +167,8 @@ retry_update:
     bool inLSM = oldValueLoc.segmentId == LSM_SEGMENT;
     StatsRecorder::getInstance()->timeProcess(StatsType::UPDATE_KEY_LOOKUP, keyLookupStartTime);
     // update the value of the key, get the new location of value
-    STAT_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue, valueSize, oldValueLoc, sync), StatsType::UPDATE_VALUE);
+    STAT_PROCESS(curValueLoc = _valueManager->putValue(ckey, keySize, cvalue,
+		valueSize, oldValueLoc, sync), StatsType::UPDATE_VALUE);
 
     debug_trace("Update key [%d-%x%x] to segment id=%lu,ofs=%lu,len=%lu\n", (int)ckey[0], ckey[sizeof(key_len_t) + 1], ckey[sizeof(key_len_t) + keySize - 1], curValueLoc.segmentId, curValueLoc.offset, curValueLoc.length);
     // retry for UPDATE if failed (due to GC)
@@ -454,6 +456,15 @@ bool KvServer::restoreVLog(std::map<std::string, externalIndexInfo>& keyValues)
 {
     _valueManager->restoreVLog(keyValues);
     return true;
+}
+
+bool KvServer::flushBufferToVlog() {
+    return _valueManager->forceFlushBufferToVlog();
+}
+
+// divide the flush buffer to two steps
+bool KvServer::updateLSMtreeInflushVLog() {
+    return _valueManager->updateLSMtreeInflushVLog(true);
 }
 
 bool KvServer::flushBuffer()

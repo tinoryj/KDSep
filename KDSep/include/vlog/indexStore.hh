@@ -47,6 +47,8 @@ public:
 
     bool restoreVLog(std::map<std::string, externalIndexInfo>& keyValues);
     bool flushBuffer();
+    bool flushBufferToVlog();
+    bool updateLSMtreeInflushVLog();
     size_t gc(bool all = false);
 
     void printStorageUsage(FILE* out = stdout);

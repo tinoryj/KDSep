@@ -4,6 +4,7 @@ namespace KDSEP_NAMESPACE {
 
 bool LsmTreeInterface::Open(KDSepOptions& options, const string& name) {
     mergeOperator_ = new RocksDBInternalMergeOperator;
+    enable_crash_consistency_ = options.enable_crash_consistency;
 //    if (options.enable_deltaStore == true || options.enable_valueStore == true) {
         options.rocks_opt.merge_operator.reset(mergeOperator_); // reset
 //    }
@@ -249,9 +250,13 @@ bool LsmTreeInterface::Get(const string& key, string* value)
 }
 
 // Start from initial batch. It will let the caller deal with the merge batches first in initialBatch. 
-bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPoolHandlersPut, rocksdb::WriteBatch* mergeBatch) {
+bool LsmTreeInterface::MultiWriteWithBatch(
+	const vector<mempoolHandler_t>& memPoolHandlersPut,
+	rocksdb::WriteBatch* mergeBatch, 
+	bool& need_post_update) {
     rocksdb::WriteOptions batchedWriteOperation;
     batchedWriteOperation.sync = false;
+    need_post_update = false;
 
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -301,8 +306,15 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         }
 
         if (!objects_for_vlog_put.empty()) {
-            STAT_PROCESS(vlog_->multiPut(memPoolHandlersPut),
-                    StatsType::LSM_FLUSH_VLOG);
+	    if (enable_crash_consistency_) {
+		// don't update the LSM-tree now
+		STAT_PROCESS(vlog_->multiPut(memPoolHandlersPut, false),
+			StatsType::LSM_FLUSH_VLOG);
+		need_post_update = true;
+	    } else {
+		STAT_PROCESS(vlog_->multiPut(memPoolHandlersPut),
+			StatsType::LSM_FLUSH_VLOG);
+	    }
         }
     }
 
@@ -329,6 +341,18 @@ bool LsmTreeInterface::MultiWriteWithBatch(const vector<mempoolHandler_t>& memPo
         }
 //    }
     return true;
+}
+
+// LsmTreeInterface::updateVlogLsmTree()
+// - IndexStoreInterface::multiPutPostUpdate()
+// - - KvServer::updateLSMtreeInflushVLog()
+// - - - ValueManager::updateLSMtreeInflushVLog(); 
+bool LsmTreeInterface::updateVlogLsmTree() {
+    if (lsmTreeRunningMode_ == kNoValueLog) {
+	return true;
+    }
+
+    return vlog_->multiPutPostUpdate();
 }
 
 bool LsmTreeInterface::Scan(const string& targetStartKey, 

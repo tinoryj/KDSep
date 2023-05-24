@@ -3,6 +3,7 @@
 #include "common/dataStructure.hpp"
 #include "interface/KDSepOptions.hpp"
 #include "deltaStore/manifestManager.hpp"
+#include "vlog/ds/bitmap.hh"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
 #include "utils/prefixTreeForHashStore.hpp"
@@ -39,9 +40,12 @@ public:
     uint64_t getTrieAccessNum();
 
     // Consistency
-    bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag);
+    bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag, 
+            bool add_commit_message);
     bool cleanCommitLog();
     bool readCommitLog(char*& read_buf, uint64_t& data_size);
+    bool commitToCommitLog();
+
 //    bool flushAllBuffers();
     bool UpdateHashStoreFileMetaDataList(); // online update metadata list to mainifest, and delete obsolete files
     bool RemoveObsoleteFiles();
@@ -161,6 +165,8 @@ private:
     std::condition_variable metaCommitCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
+
+    BitMap* bucket_bitmap_ = nullptr; 
 
     boost::atomic<uint64_t> num_buckets_;
 

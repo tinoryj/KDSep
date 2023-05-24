@@ -49,13 +49,23 @@ bool IndexStoreInterface::put(mempoolHandler_t pool_obj, bool sync)
     return true;
 }
 
-bool IndexStoreInterface::multiPut(vector<mempoolHandler_t> objectPairMemPoolHandlerVec)
+bool IndexStoreInterface::multiPut(
+	vector<mempoolHandler_t> objectPairMemPoolHandlerVec,
+	bool update_lsm)
 {
     for (auto i = 0; i < objectPairMemPoolHandlerVec.size(); i++) {
         put(objectPairMemPoolHandlerVec[i], false);
     }
-    kvServer_->flushBuffer();
+    if (update_lsm) {
+	kvServer_->flushBuffer();
+    } else {
+	kvServer_->flushBufferToVlog();
+    }
     return true;
+}
+
+bool IndexStoreInterface::multiPutPostUpdate() {
+    return kvServer_->updateLSMtreeInflushVLog();
 }
 
 bool IndexStoreInterface::get(const string keyStr, externalIndexInfo storageInfo, string* valueStrPtr, uint32_t* seqNumberPtr)
