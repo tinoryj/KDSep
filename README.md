@@ -1,6 +1,6 @@
-# KDSep: Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation
+# Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation
 
-**This is the code repository for the submission of Eurosys'24 paper (ID: ): "Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation".**
+**This is the code repository for the submission of Eurosys'24 paper (ID: 560): "Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation".**
 
 ## Introduction
 
