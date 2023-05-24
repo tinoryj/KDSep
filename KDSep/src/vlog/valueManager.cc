@@ -529,10 +529,7 @@ void ValueManager::flushCentralizedReservedPoolVLog(bool update_lsm,
     last_write_length = writeLength;
     last_pool_index = poolIndex;
 
-    debug_error("flush to vlog %lu\n", logOffset);
-
     if (update_lsm) {
-        debug_error("built in update lsm tree %lu\n", logOffset);
 	updateLSMtreeInflushVLog(false);
     }
 }
@@ -544,7 +541,6 @@ bool ValueManager::forceFlushBufferToVlog() {
 }
 
 bool ValueManager::updateLSMtreeInflushVLog(bool flush) {
-    debug_error("inside: update lsm tree %d\n", (int)flush);
     int poolIndex = last_pool_index;
     Segment& pool = _centralizedReservedPool[poolIndex].pool;
     offset_t logOffset = last_log_offset;

@@ -164,9 +164,6 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
-    debug_error("write: %lu (data %lu disk %lu)\n", write_i,
-            commit_log_fop_->getCachedFileDataSize(),
-            commit_log_fop_->getCachedFileSize()); 
     FileOpStatus status;
     STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
                 write_i),
@@ -207,10 +204,6 @@ bool BucketManager::commitToCommitLog() {
 		commit_log_maximum_size_, 0);
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
-
-    debug_error("commit: %lu (data %lu disk %lu)\n", write_i,
-            commit_log_fop_->getCachedFileDataSize(),
-            commit_log_fop_->getCachedFileSize()); 
 
     FileOpStatus status;
     STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
