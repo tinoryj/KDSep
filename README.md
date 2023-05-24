@@ -19,6 +19,8 @@ This repo mainly includes the following three components:
     * We use [YCSB-C](https://github.com/basicthinker/YCSB-C) as the benchmark tool, which is the `C++` version of [YCSB](https://github.com/brianfrankcooper/YCSB). The source code of YCSB-C is stored in the `./Benchmark/YCSB-C` directory.
     * We add support to RocksDB+KDSep, BlobDB+KDSep, and vLogDB+KDSep and corresponding baselines in YCSB-C.
 
+**Note that we put a tarball (KDSep.zip) in this repo for download, which contains all the components.**
+
 ## Dependencies
 
 KDSep is tested on a single machine running Ubuntu 22.04 LTS with Linux kernel 5.15. The machine is equipped with a 16-core Intel Xeon Silver 4215 CPU, 96 GiB DDR4 memory, and a 3.84 TiB Western Digital Ultrastar DC SN640 NVMe SSD.
