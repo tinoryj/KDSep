@@ -223,11 +223,33 @@ You can run the experiments as follows:
 
 ```shell
 cd Benchmark/YCSB-C
-$ scripts/test.sh
+$ scripts/exp.sh
 ```
 
-These logs include the analysis results of YCSB-C and the breakdown analysis of KDSep. The example of the logs is as follows:
+These logs include the performance results of YCSB-C. The example of the logs is as follows:
 
 ```text
-...
+# Running operations:	100000000
+# Transaction throughput (KTPS)
+rocksdb	workload-temp.spec	1	26.6144	
+run time: 3.75736e+09us
+
+Read ops： 9997694
+	Total read time: 3388.3 s
+	Time per read: 0.338908 ms
+Insert ops: 0
+	Total insert time: 0 s
+	Time per insert: -nan ms
+Scan ops: 0
+	Total scan time: 0 s
+	Time per scan: -nan ms
+Update ops: 90002306
+	Total update time: 345.809 s
+	Time per update: 0.00384223 ms
+OverWrite ops: 0
+	Total OverWrite time: 0 s
+	Time per OverWrite: -nan ms
+Read-Modify-Write ops: 0
+	Total R-M-W time: 0 s
+	Time per R-M-W: -nan ms
 ```

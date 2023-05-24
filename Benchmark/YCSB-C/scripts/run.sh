@@ -68,10 +68,6 @@ config_workload() {
         sed -i "/insertproportion/c\\insertproportion=0.05" $SPEC
         ReadProportion=0
         UpdateProportion=0
-    elif [[ "$workloadg" == "true" ]]; then
-        sed -i "/scanproportion/c\\scanproportion=1" $SPEC
-        ReadProportion=0
-        UpdateProportion=0
     elif [[ "$workload2" == "true" ]]; then
         ReadProportion=0
         UpdateProportion=1
@@ -153,7 +149,7 @@ echo "PID = $PIDC"
 # ReadRatioSet=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
 ReadProportion=0.1
 OverWriteRatio=0.0
-bn=4000
+bn=32768
 KVPairsNumber=10000000    #"300000000"
 OperationsNumber=10000000 #"300000000"
 fieldlength=400
@@ -172,7 +168,7 @@ ResultLogFolder="Exp2/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
 Thread_number=1
-RocksDBThreadNumber=16
+RocksDBThreadNumber=8
 rawConfigPath="configDir/KDSep.ini"
 bucketSize="$((256 * 1024))"
 cacheSize="$((1024 * 1024 * 1024))"
@@ -193,7 +189,7 @@ nogc="false"
 bloomBits=10
 maxOpenFiles=1048576
 gcWriteBackSize=100000
-enableParallel="false"
+enableParallel="true"
 enableIndexBlock="true"
 enableCrashConsistency="false"
 disableMerge="false"
@@ -224,12 +220,9 @@ workloadc="false"
 workloadd="false"
 workloade="false"
 workloadf="false"
-workloadg="false"
 workload2="false"
 workload3="false"
 workload4="false"
-gc="true"
-shortprepare="false"
 blockSize=65536
 fake="false"
 nodirect="false"
@@ -244,12 +237,10 @@ crash="false"
 crashTime=3600
 
 flushSize=4092
-sstsz=64
+sstsz=16
 l1sz=256
 memtable=64
-memSize=""
-initBit=20
-unsort=1024
+initBit=10
 
 havekd="false"
 
@@ -315,12 +306,6 @@ for param in $*; do
         tmp=$(echo $param | sed 's/initBit//g')
         if [[ $tmp -ne $initBit && "$havekd" == "true" ]]; then
             initBit=$tmp
-            run_suffix=${run_suffix}_${param}
-        fi
-    elif [[ "$param" =~ ^unsort[0-9]+$ ]]; then
-        tmp=$(echo $param | sed 's/unsort//g')
-        if [[ $tmp -ne $unsort && "$havekd" == "true" ]]; then
-            unsort=$tmp
             run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^Exp[0-9a-zA-Z_]+$ ]]; then
@@ -443,8 +428,9 @@ for param in $*; do
             run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
-        sstsz=$(echo $param | sed 's/sst//g')
-        if [[ $sstsz -ne 64 ]]; then
+        tmp=$(echo $param | sed 's/sst//g')
+        if [[ $sstsz -ne $tmp ]]; then
+	    sstsz=$tmp
             suffix=${suffix}_$param
         fi
     elif [[ "$param" =~ ^l1sz[0-9]+$ ]]; then
@@ -457,9 +443,6 @@ for param in $*; do
         if [[ $memtable -ne 64 ]]; then
             suffix=${suffix}_$param
         fi
-    elif [[ "$param" =~ ^mem[0-9gGmM]+$ ]]; then
-        memSize=$(echo $param | sed 's/mem//g')
-        run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^bf[0-9]+$ ]]; then
         bloomBits=$(echo $param | sed 's/bf//g')
         if [[ $bloomBits -ne 10 ]]; then
@@ -511,8 +494,6 @@ for param in $*; do
             workloade="true"
         elif [[ "$param" == "workloadf" ]]; then
             workloadf="true"
-        elif [[ "$param" == "workloadg" ]]; then
-            workloadg="true"
         elif [[ "$param" == "workload2" ]]; then
             workload2="true"
         elif [[ "$param" == "workload3" ]]; then
@@ -521,19 +502,12 @@ for param in $*; do
             workload4="true"
         fi
         run_suffix=${run_suffix}_$param
-    elif [[ "$param" == "shortprepare" ]]; then
-        shortprepare="true"
     elif [[ "$param" == "nocif" ]]; then
         cacheIndexFilter="false"
         run_suffix=${run_suffix}_nocif
     elif [[ "$param" == "fake" ]]; then
         fake="true"
         run_suffix=${run_suffix}_fake
-    elif [[ "$param" == "ep" ]]; then
-        if [[ "$havekd" == "true" ]]; then
-            enableParallel="true"
-            run_suffix=${run_suffix}_ep
-        fi
     elif [[ "$param" == "di" ]]; then
         if [[ "$havekd" == "true" ]]; then
             enableIndexBlock="false"
@@ -611,15 +585,8 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/ds_worker_thread_number_limit/c\\ds_worker_thread_number_limit = $workerThreadNumber" temp.ini
     sed -i "/ds_gc_thread_number_limit/c\\ds_gc_thread_number_limit = $gcThreadNumber" temp.ini
 
-    sed -i "/ds_gc_thres/c\\ds_gc_thres = $ds_gc_thres" temp.ini
     sed -i "/ds_split_thres/c\\ds_split_thres = $ds_split_thres" temp.ini
     sed -i "/ds_bucket_size/c\\ds_bucket_size = $bucketSize" temp.ini
-    sed -i "/ds_gc_write_back_size/c\\ds_gc_write_back_size = $gcWriteBackSize" temp.ini
-    sed -i "/unsorted_part_size_threshold/c\\unsorted_part_size_threshold = $((${unsort} * 1024))" temp.ini
-    if [[ $wbread -ne 10 ]]; then
-        sed -i "/ds_read_write_back_num/c\\ds_read_write_back_num = $wbread" temp.ini
-        sed -i "/ds_read_write_back_size/c\\ds_read_write_back_size = $wbread" temp.ini
-    fi
 fi
 
 sed -i "/write_buffer_size/c\\write_buffer_size = $(($batchSize * 1024 * 1024))" temp.ini
@@ -738,13 +705,6 @@ loaded="false"
 workingDB=${DB_Working_Path}/workingDB
 loadedDB=${DB_Loaded_Path}/${DB_Name}
 
-if [[ "$memSize" != "" ]]; then
-    set -x
-    sudo cgset -r memory.max=${memSize} zz2
-    sudo cgclassify -g memory:zz2 --sticky $PIDC
-    set +x
-fi
-
 if [[ "$only_load" != "true" ]]; then
     if [[ "$usekd" == "true" ]]; then
         loadedDB="$(echo $loadedDB | sed "s/kd/raw/g")"
@@ -810,11 +770,7 @@ if [[ ! -d $loadedDB || "$only_load" == "true" ]]; then
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC
     config_workload $SPEC
-    if [[ "$shortprepare" == "true" ]]; then
-        sed -i "/operationcount/c\\operationcount=10000" $SPEC
-    else
-        sed -i "/operationcount/c\\operationcount=3000000" $SPEC
-    fi
+    sed -i "/operationcount/c\\operationcount=3000000" $SPEC
     sed -i "/readproportion/c\\readproportion=1" $SPEC
     sed -i "/updateproportion/c\\updateproportion=0" $SPEC
     echo "<===================== Prepare =====================>"

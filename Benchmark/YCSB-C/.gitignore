@@ -65,3 +65,6 @@ countSSTInfo
 countSSTInfoLevel
 tmpappend
 tmpappend-prepare
+
+test.sh
+debug.sh
