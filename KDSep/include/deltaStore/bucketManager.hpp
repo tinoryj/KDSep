@@ -171,8 +171,8 @@ private:
     boost::atomic<uint64_t> num_buckets_;
 
     FileOperation* commit_log_fop_ = nullptr;
-    uint64_t commit_log_maximum_size_ = 1024 * 1024 * 1024; // 1024 * 1024 * 1024;
-    uint64_t commit_log_next_threshold_ = 1024 * 1024 * 1024; //1024 * 1024 * 1024;
+    uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
+    uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 1024 * 3; //1024 * 1024 * 1024;
 
     unordered_map<uint64_t, uint64_t> id2prefixes_;
     unordered_map<uint64_t, BucketHandler*> id2buckets_;

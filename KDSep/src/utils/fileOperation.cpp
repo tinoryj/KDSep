@@ -138,11 +138,23 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
         }
-        auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
-        if (rReturn != readBufferSize) {
+
+
+        uint64_t left = readBufferSize, p = 0;
+        while (left > 0) {
+            auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
+            if (rReturn > left || rReturn == 0 || rReturn < 0) {
+                debug_error("rReturn %lu err %s\n", 
+                        rReturn, strerror(errno));
+                return false;
+            }
+            p += rReturn;
+            left -= rReturn;
+        }
+
+        if (p != readBufferSize) {
             free(readBuffer);
-            debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", rReturn, strerror(errno), req_page_num, readBufferSize, disk_size_);
-            free(readBuffer);
+            debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", p, strerror(errno), req_page_num, readBufferSize, disk_size_);
             return false;
         }
 

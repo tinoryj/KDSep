@@ -361,6 +361,11 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
             exit(1);
         }
     }
+
+    if (enable_crash_consistency_ == false) {
+        // TODO may still have some bugs
+        need_flush = true; 
+    }
     // otherwise don't need to touch the commit message. The commit log has
     // been well written. does not change the need_flush variable
 

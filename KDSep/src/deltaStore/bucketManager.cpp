@@ -176,6 +176,8 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
 
     if (commit_log_fop_->getCachedFileSize() > commit_log_next_threshold_) {
         need_flush = true;
+        debug_error("commit log next threshold %lu\n",
+                commit_log_next_threshold_);
         commit_log_next_threshold_ += commit_log_maximum_size_;
     }
 

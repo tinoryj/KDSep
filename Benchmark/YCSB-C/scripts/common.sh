@@ -12,7 +12,8 @@ func() {
 	    if [[ "$runMode" == "raw" ]]; then
 		scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
 		    cache$cacheSize \
-		    readRatio$ratio Exp$ExpName batchSize${batchSize} ${bonus} ${bonus5} ${bonus4} ${initBit}
+		    readRatio$ratio Exp$ExpName batchSize${batchSize} ${bonus} ${bonus5} ${bonus4} ${initBit} \
+                    sst${sst} memtable${memtable} l1sz${l1sz}
 	    elif [[ "$runMode" == "bkv" ]]; then
 		scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
 		    cache$cacheSize \

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source scripts/common.sh
+
 works=8
 rounds=1
 bfs=(10)
@@ -11,22 +13,93 @@ gcWriteBackSize=100000
 bucketNumber=32768
 kdcacheSize=512
 flength=100
+req="1500M"
+req="605M"
 req="105M"
+
+sst="16"
+memtable="64"
+l1sz="256"
+
 
 #### 0. Motivation
 
 ExpName="_p34_motivation"
+ExpName="_post2_motivation"
 bonus=""
 readRatios=(1 3 5 7 9)
-op="50M"
-runModeSet=('raw')
-
-readRatios=(1 3 5 7 9)
-runModeSet=('bkv' 'kv')
+op="100M"
+runModeSet=('raw' 'bkv' 'kv')
+readRatios=(1)
 #func
 
 ############################# Experiments start
-ExpName="_p50_exp1_ycsb"
+ExpName="_q1_compaction"
+ExpName="_new_exp1"
+ExpName="_post3_exp_ycsb_zipf0.9"
+ExpName="_post5_addexp4_5"
+ExpName="_post6_addexp6"
+readRatios=(0)
+runModeSet=('raw')
+
+#sst="16"
+#memtable=1024 # "$(( $sst ))"
+#l1sz="$(( $memtable * 4 ))"
+#
+#sstszs=(32 64 128 256 512 1024)
+#sstszs=(16 1024)
+#
+#for ((ri=0; ri<${#sstszs[@]}; ri++)); do
+#    func
+#done
+
+req="105M"
+op="100M"
+#req="1M"
+#op="1M"
+readRatios=(1 3 5 7 9)
+readRatios=(1)
+runModeSet=('raw' 'bkv' 'kv')
+#runModeSet=('kv')
+
+cacheSize=4096
+#func
+
+bonus="ec"
+bonus5="workerT4"
+runModeSet=('kd' 'kvkd' 'bkvkd')
+runModeSet=('kd' 'bkvkd' 'kv')
+runModeSet=('kd')
+cacheSize=3584
+func
+exit
+
+runModeSet=('raw' 'bkv' 'kvkd')
+cacheSize=4096
+func
+runModeSet=('kd' 'bkvkd')
+cacheSize=3584
+#func
+exit
+
+#for ((i=0; i<5; i++)); do
+#    for ((ri=0; ri<${#sstszs[@]}; ri++)); do
+#        sst="${sstszs[$ri]}"
+#        memtable=1024 # "$(( $sst ))"
+#        l1sz="$(( $memtable * 4 ))"
+#        func
+#        exit
+#    done
+#    rm -rf /mnt/sn640/KDSepanonymous/loaded* 
+#    for ((ri=$(( ${#sstszs[@]} - 1 )); ri>=0; ri--)); do
+#        sst="${sstszs[$ri]}"
+#        memtable=1024 # "$(( $sst ))"
+#        l1sz="$(( $memtable * 4 ))"
+#        func
+#    done
+#    rm -rf /mnt/sn640/KDSepanonymous/loaded* 
+#done
+#exit
 
 #### 1. YCSB 
 
@@ -87,27 +160,25 @@ wbread="wbread0"
 
 #### 3. UP2X
 
+op="300M"
 ExpName="_p50_exp3_up2x"
-cacheSize=4096
+cacheSize=6144
 runModeSet=('kv' 'raw' 'bkv')
-runModeSet=('bkv')
 req="1000M"
 fcl=1
 bonus4="up2x"
-bonus5=""
-wbread="wbread1"
+bonus5="ec"
 #func
-wbread="wbread0"
 
-cacheSize=3584
+cacheSize=5632
 runModeSet=('kvkd' 'kd' 'bkvkd')
-runModeSet=('kvkd' 'kd' 'bkvkd')
-bonus5="bucketSize131072"
-wbread="wbread1"
+func
+op="3000M"
 #func
-wbread="wbread0"
+
 bonus4=""
-bonus5=""
+#bonus5=""
+exit
 
 ############### 5. Read ratio
 
