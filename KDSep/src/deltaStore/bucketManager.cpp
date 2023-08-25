@@ -59,6 +59,10 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     printf("retrieve metadata list time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
+
+    // for asio
+    gc_threads_ = new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_);
+    num_threads_ = 0;
 }
 
 BucketManager::~BucketManager()
@@ -80,8 +84,12 @@ bool BucketManager::setJobDone()
 }
 
 void BucketManager::pushToGCQueue(BucketHandler* bucket) {
-    notifyGCMQ_->push(bucket);
-    operationNotifyCV_.notify_one();
+    boost::asio::post(*gc_threads_, [this, bucket]() {
+            asioSingleFileGC(bucket);
+            });
+
+//    notifyGCMQ_->push(bucket);
+//    operationNotifyCV_.notify_one();
 }
 
 uint64_t BucketManager::getTrieAccessNum() {
@@ -2752,6 +2760,191 @@ void BucketManager::processMergeGCRequestWorker()
     return;
 }
 
+void BucketManager::asioSingleFileGC(BucketHandler* bucket) {
+    num_threads_++;
+    singleFileGC(bucket);
+    num_threads_--;
+}
+
+void BucketManager::singleFileGC(BucketHandler* bucket) {
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    debug_warn("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, wait for lock\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
+    std::scoped_lock<std::shared_mutex> w_lock(bucket->op_mtx);
+    debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
+    // read contents
+    char readWriteBuffer[bucket->total_object_bytes];
+    FileOpStatus readFileStatus;
+    STAT_PROCESS(readFileStatus = bucket->io_ptr->readFile(readWriteBuffer, bucket->total_object_bytes), StatsType::KDSep_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(bucket->total_on_disk_bytes, bucket->total_object_bytes, syncStatistics_);
+    if (readFileStatus.success_ == false || readFileStatus.logicalSize_ != bucket->total_object_bytes) {
+        debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
+        bucket->gc_status = kNoGC;
+        bucket->ownership = 0;
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+        return;
+    }
+    // process GC contents
+    unordered_map<str_t, pair<vector<str_t>,
+        vector<KDRecordHeader>>, mapHashKeyForStr_t,
+        mapEqualKeForStr_t> gcResultMap;
+    pair<uint64_t, uint64_t> remainObjectNumberPair;
+    STAT_PROCESS(remainObjectNumberPair =
+            deconstructAndGetValidContentsFromFile(readWriteBuffer,
+                bucket->total_object_bytes, gcResultMap),
+            StatsType::KDSep_GC_PROCESS);
+    unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
+
+    if (enableLsmTreeDeltaMeta_ == false) {
+        STAT_PROCESS(
+                remainObjectNumberPair.first -=
+                partialMergeGcResultMap(gcResultMap, shouldDelete),
+                StatsType::KDSep_GC_PARTIAL_MERGE);
+    }
+
+    bool fileContainsReWriteKeysFlag = false;
+    // calculate target file size
+    vector<writeBackObject*> targetWriteBackVec;
+    uint64_t target_size = 0;
+    size_t header_sz = sizeof(KDRecordHeader);
+
+    // select keys for building index block
+    for (auto keyIt : gcResultMap) {
+        size_t total_kd_size = 0;
+        auto& key = keyIt.first;
+
+        for (auto i = 0; i < keyIt.second.first.size(); i++) {
+            auto& value = keyIt.second.first[i];
+            //                    auto& header = keyIt.second.second[i];
+            //                    if (use_varint_d_header == true) {
+            //                        header_sz = GetDeltaHeaderVarintSize(headerIt); 
+            //                    }
+
+            target_size += header_sz + key.size_ + value.size_;
+            total_kd_size += header_sz + key.size_ + value.size_;
+        }
+
+        if (enableWriteBackDuringGCFlag_ == true) {
+            debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
+            if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
+                    (total_kd_size > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
+                fileContainsReWriteKeysFlag = true;
+                if (kd_cache_ != nullptr) {
+                    putKDToCache(keyIt.first, keyIt.second.first);
+                }
+                string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
+                writeBackObject* newWriteBackObject = new writeBackObject(currentKeyForWriteBack, "", 0);
+                targetWriteBackVec.push_back(newWriteBackObject);
+            } 
+        }
+    }
+
+    uint64_t targetFileSizeWoIndexBlock = target_size +
+        sizeof(KDRecordHeader);
+
+
+    // count valid object size to determine GC method;
+    if (remainObjectNumberPair.second == 0) {
+        debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
+        singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag);
+        bucket->ownership = 0;
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+        pushObjectsToWriteBackQueue(targetWriteBackVec);
+
+        return;
+    }
+
+    if (remainObjectNumberPair.first == 0 && gcResultMap.size() == 0) {
+        debug_info("File ID = %lu total disk size %lu have no valid objects\n", bucket->file_id, bucket->total_on_disk_bytes);
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+        STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
+        bucket->ownership = 0;
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+        pushObjectsToWriteBackQueue(targetWriteBackVec);
+        return;
+    }
+
+    if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 1) {
+        // No invalid objects, cannot save space
+        if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
+            if (bucket->gc_status == kNew) {
+                // keep tracking until forced gc threshold;
+                bucket->gc_status = kMayGC;
+                bucket->ownership = 0;
+                debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", bucket->file_id, gcResultMap.size());
+                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+                pushObjectsToWriteBackQueue(targetWriteBackVec);
+            } else if (bucket->gc_status == kMayGC) {
+                // Mark this file as could not GC;
+                bucket->gc_status = kNoGC;
+                bucket->ownership = 0;
+                debug_error("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
+                //                        debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
+                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+                pushObjectsToWriteBackQueue(targetWriteBackVec);
+            }
+        } else {
+            // single file rewrite
+            debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
+            StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+            STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
+            bucket->ownership = 0;
+            StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+            pushObjectsToWriteBackQueue(targetWriteBackVec);
+        }
+        clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
+        return;
+    }
+
+    // perform split into two buckets via extend prefix bit (+1)
+    if (targetFileSizeWoIndexBlock <= singleFileSplitGCTriggerSize_) {
+        debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first, targetFileSizeWoIndexBlock, singleFileSplitGCTriggerSize_);
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+        STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
+        bucket->ownership = 0;
+        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+        pushObjectsToWriteBackQueue(targetWriteBackVec);
+    } else {
+        debug_info("try split for key number = %lu\n", gcResultMap.size());
+        // use a longer prefix
+        uint64_t prefix_len = prefixLenExtract(bucket->prefix) + 1;
+
+        uint64_t remainEmptyFileNumber = 
+            prefix_tree_.getRemainFileNumber();
+        if (remainEmptyFileNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
+            // cerr << "Perform split " << endl;
+            debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
+            debug_info("Perform split GC for file ID (without merge) = %lu\n", bucket->file_id);
+            bool singleFileGCStatus;
+            STAT_PROCESS(singleFileGCStatus = singleFileSplit(bucket, gcResultMap, prefix_len, fileContainsReWriteKeysFlag), StatsType::SPLIT);
+            if (singleFileGCStatus == false) {
+                debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", bucket->file_id);
+                bucket->gc_status = kNoGC;
+                bucket->ownership = 0;
+                exit(1);
+                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+                pushObjectsToWriteBackQueue(targetWriteBackVec);
+            } else {
+                debug_info("Perform split GC for file ID (without merge) = %lu done\n", bucket->file_id);
+                bucket->gc_status = kShouldDelete;
+                bucket->ownership = 0;
+                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+                pushObjectsToWriteBackQueue(targetWriteBackVec);
+            }
+        } else {
+            // Case 3 in the paper: push all KD pairs in the bucket to the queue 
+            if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
+                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+                STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
+            }
+            bucket->ownership = 0;
+            StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
+            pushObjectsToWriteBackQueue(targetWriteBackVec);
+        }
+    }
+    clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
+}
+
 // threads workers
 void BucketManager::processSingleFileGCRequestWorker(int threadID)
 {
@@ -2769,193 +2962,7 @@ void BucketManager::processSingleFileGCRequestWorker(int threadID)
         }
         BucketHandler* bucket;
         if (notifyGCMQ_->pop(bucket)) {
-            counter--;
-//            bool flag = false;
-
-//            if (bucket->file_id >= 0 && bucket->file_id <= 140) {
-//                flag = true;
-//                debug_error("start gc on file %u, owner %d, gc status %d\n", 
-//                        (int)bucket->file_id,
-//                        (int)bucket->ownership,
-//                        (int)bucket->gc_status);
-//            }
-
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            debug_warn("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, wait for lock\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
-            std::scoped_lock<std::shared_mutex> w_lock(bucket->op_mtx);
-            debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
-            // read contents
-            char readWriteBuffer[bucket->total_object_bytes];
-            FileOpStatus readFileStatus;
-            STAT_PROCESS(readFileStatus = bucket->io_ptr->readFile(readWriteBuffer, bucket->total_object_bytes), StatsType::KDSep_GC_READ);
-            StatsRecorder::getInstance()->DeltaGcBytesRead(bucket->total_on_disk_bytes, bucket->total_object_bytes, syncStatistics_);
-            if (readFileStatus.success_ == false || readFileStatus.logicalSize_ != bucket->total_object_bytes) {
-                debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
-                bucket->gc_status = kNoGC;
-                bucket->ownership = 0;
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                continue;
-            }
-            // process GC contents
-            unordered_map<str_t, pair<vector<str_t>,
-                vector<KDRecordHeader>>, mapHashKeyForStr_t,
-                mapEqualKeForStr_t> gcResultMap;
-            pair<uint64_t, uint64_t> remainObjectNumberPair;
-            STAT_PROCESS(remainObjectNumberPair =
-                    deconstructAndGetValidContentsFromFile(readWriteBuffer,
-                        bucket->total_object_bytes, gcResultMap),
-                    StatsType::KDSep_GC_PROCESS);
-            unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
-
-            if (enableLsmTreeDeltaMeta_ == false) {
-                STAT_PROCESS(
-                        remainObjectNumberPair.first -=
-                        partialMergeGcResultMap(gcResultMap, shouldDelete),
-                        StatsType::KDSep_GC_PARTIAL_MERGE);
-            }
-
-            bool fileContainsReWriteKeysFlag = false;
-            // calculate target file size
-            vector<writeBackObject*> targetWriteBackVec;
-            uint64_t target_size = 0;
-            size_t header_sz = sizeof(KDRecordHeader);
-
-            // select keys for building index block
-            for (auto keyIt : gcResultMap) {
-                size_t total_kd_size = 0;
-                auto& key = keyIt.first;
-
-                for (auto i = 0; i < keyIt.second.first.size(); i++) {
-                    auto& value = keyIt.second.first[i];
-//                    auto& header = keyIt.second.second[i];
-//                    if (use_varint_d_header == true) {
-//                        header_sz = GetDeltaHeaderVarintSize(headerIt); 
-//                    }
-
-                    target_size += header_sz + key.size_ + value.size_;
-                    total_kd_size += header_sz + key.size_ + value.size_;
-                }
-
-                if (enableWriteBackDuringGCFlag_ == true) {
-                    debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
-                    if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
-                            (total_kd_size > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
-                        fileContainsReWriteKeysFlag = true;
-                        if (kd_cache_ != nullptr) {
-                            putKDToCache(keyIt.first, keyIt.second.first);
-                        }
-                        string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
-                        writeBackObject* newWriteBackObject = new writeBackObject(currentKeyForWriteBack, "", 0);
-                        targetWriteBackVec.push_back(newWriteBackObject);
-                    } 
-                }
-            }
-
-	    uint64_t targetFileSizeWoIndexBlock = target_size +
-		sizeof(KDRecordHeader);
-
-
-            // count valid object size to determine GC method;
-            if (remainObjectNumberPair.second == 0) {
-                debug_error("[ERROR] File ID = %lu contains no object, should just delete, total contains object number = %lu, should keep object number = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag);
-                bucket->ownership = 0;
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
-
-                continue;
-            }
-
-            if (remainObjectNumberPair.first == 0 && gcResultMap.size() == 0) {
-                debug_info("File ID = %lu total disk size %lu have no valid objects\n", bucket->file_id, bucket->total_on_disk_bytes);
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                bucket->ownership = 0;
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
-                continue;
-            }
-
-            if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 1) {
-                // No invalid objects, cannot save space
-                if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
-                    if (bucket->gc_status == kNew) {
-                        // keep tracking until forced gc threshold;
-                        bucket->gc_status = kMayGC;
-                        bucket->ownership = 0;
-                        debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", bucket->file_id, gcResultMap.size());
-                        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                        pushObjectsToWriteBackQueue(targetWriteBackVec);
-                    } else if (bucket->gc_status == kMayGC) {
-                        // Mark this file as could not GC;
-                        bucket->gc_status = kNoGC;
-                        bucket->ownership = 0;
-                        debug_error("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
-//                        debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
-                        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                        pushObjectsToWriteBackQueue(targetWriteBackVec);
-                    }
-                } else {
-                    // single file rewrite
-                    debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
-                    StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                    STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                    bucket->ownership = 0;
-                    StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                    pushObjectsToWriteBackQueue(targetWriteBackVec);
-                }
-                clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
-                continue;
-            }
-
-            // perform split into two buckets via extend prefix bit (+1)
-            if (targetFileSizeWoIndexBlock <= singleFileSplitGCTriggerSize_) {
-                debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first, targetFileSizeWoIndexBlock, singleFileSplitGCTriggerSize_);
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                bucket->ownership = 0;
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
-            } else {
-                debug_info("try split for key number = %lu\n", gcResultMap.size());
-		// use a longer prefix
-		uint64_t prefix_len = prefixLenExtract(bucket->prefix) + 1;
-
-                uint64_t remainEmptyFileNumber = 
-		    prefix_tree_.getRemainFileNumber();
-                if (remainEmptyFileNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
-                    // cerr << "Perform split " << endl;
-                    debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
-                    debug_info("Perform split GC for file ID (without merge) = %lu\n", bucket->file_id);
-                    bool singleFileGCStatus;
-                    STAT_PROCESS(singleFileGCStatus = singleFileSplit(bucket, gcResultMap, prefix_len, fileContainsReWriteKeysFlag), StatsType::SPLIT);
-                    if (singleFileGCStatus == false) {
-                        debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", bucket->file_id);
-                        bucket->gc_status = kNoGC;
-                        bucket->ownership = 0;
-			exit(1);
-                        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                        pushObjectsToWriteBackQueue(targetWriteBackVec);
-                    } else {
-                        debug_info("Perform split GC for file ID (without merge) = %lu done\n", bucket->file_id);
-                        bucket->gc_status = kShouldDelete;
-                        bucket->ownership = 0;
-                        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                        pushObjectsToWriteBackQueue(targetWriteBackVec);
-                    }
-                } else {
-                    // Case 3 in the paper: push all KD pairs in the bucket to the queue 
-                    if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
-                        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                        STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetFileSizeWoIndexBlock, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-                    }
-                    bucket->ownership = 0;
-                    StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                    pushObjectsToWriteBackQueue(targetWriteBackVec);
-                }
-            }
-            clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
+            singleFileGC(bucket);
         }
     }
     workingThreadExitFlagVec_ += 1;

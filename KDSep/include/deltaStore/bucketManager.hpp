@@ -29,6 +29,8 @@ public:
     bool generateHashBasedPrefix(const char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
+    void asioSingleFileGC(BucketHandler* bucket);
+    void singleFileGC(BucketHandler* bucket);
     void processSingleFileGCRequestWorker(int threadID);
     void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
@@ -170,6 +172,9 @@ private:
 
     boost::atomic<uint64_t> num_buckets_;
 
+    // for asio 
+    boost::atomic<uint64_t> num_threads_;
+
     FileOperation* commit_log_fop_ = nullptr;
     uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
     uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 1024 * 3; //1024 * 1024 * 1024;
@@ -177,6 +182,7 @@ private:
     unordered_map<uint64_t, uint64_t> id2prefixes_;
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
+    boost::asio::thread_pool* gc_threads_ = nullptr;
 };
 
 } // namespace KDSEP_NAMESPACE

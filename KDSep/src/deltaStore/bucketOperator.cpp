@@ -1937,6 +1937,70 @@ void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hd
     }
 }
 
+void BucketOperator::singleOperation(hashStoreOperationHandler* op_hdl) {
+    empty_started = false;
+    bool operationsStatus = true;
+    bool bucket_is_input = true;
+    auto bucket = op_hdl->bucket;
+
+    std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
+    if (bucket != nullptr) {
+        w_lock = new
+            std::scoped_lock<std::shared_mutex>(bucket->op_mtx);
+    }
+
+    switch (op_hdl->op_type) {
+        case kMultiGet:
+            STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
+            break;
+        case kMultiPut:
+            debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", bucket->file_id, op_hdl->multiput_op.size);
+            STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
+            break;
+        case kPut:
+            debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
+            STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
+            break;
+        case kFlush:
+            STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
+            break;
+        case kFind:
+            STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
+            bucket_is_input = false;
+            break;
+        default:
+            debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
+            break;
+    }
+
+    if (operationsStatus == false) {
+        bucket->ownership = 0;
+        debug_trace("Process file ID = %lu error\n", bucket->file_id);
+        op_hdl->job_done = kError;
+    } else if (bucket_is_input == true) {
+        if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
+                && enableGCFlag_ == true) {
+            bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
+            if (putIntoGCJobQueueStatus == false) {
+                bucket->ownership = 0;
+                op_hdl->job_done = kDone;
+            } else {
+                op_hdl->job_done = kDone;
+            }
+        } else {
+            op_hdl->bucket->ownership = 0;
+            op_hdl->job_done = kDone;
+        }
+    } else {
+        op_hdl->job_done = kDone;
+    }
+
+    if (w_lock) {
+        delete w_lock;
+    }
+
+}
+
 void BucketOperator::operationWorker(int threadID)
 {
     struct timeval tvs, tve;
@@ -1959,66 +2023,7 @@ void BucketOperator::operationWorker(int threadID)
         }
         hashStoreOperationHandler* op_hdl;
         if (operationToWorkerMQ_->pop(op_hdl)) {
-            empty_started = false;
-            bool operationsStatus = true;
-            bool bucket_is_input = true;
-            auto bucket = op_hdl->bucket;
-
-            std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
-            if (bucket != nullptr) {
-                w_lock = new
-                    std::scoped_lock<std::shared_mutex>(bucket->op_mtx);
-            }
-
-            switch (op_hdl->op_type) {
-            case kMultiGet:
-                STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
-                break;
-            case kMultiPut:
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", bucket->file_id, op_hdl->multiput_op.size);
-                STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
-                break;
-            case kPut:
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
-                STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
-                break;
-            case kFlush:
-                STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
-                break;
-            case kFind:
-                STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
-                bucket_is_input = false;
-                break;
-            default:
-                debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
-                break;
-            }
-
-            if (operationsStatus == false) {
-                bucket->ownership = 0;
-                debug_trace("Process file ID = %lu error\n", bucket->file_id);
-                op_hdl->job_done = kError;
-            } else if (bucket_is_input == true) {
-                if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
-                        && enableGCFlag_ == true) {
-                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
-                    if (putIntoGCJobQueueStatus == false) {
-                        bucket->ownership = 0;
-                        op_hdl->job_done = kDone;
-                    } else {
-                        op_hdl->job_done = kDone;
-                    }
-                } else {
-                    op_hdl->bucket->ownership = 0;
-                    op_hdl->job_done = kDone;
-                }
-            } else {
-                op_hdl->job_done = kDone;
-            }
-
-            if (w_lock) {
-                delete w_lock;
-            }
+            singleOperation(op_hdl);
         } else {
             if (empty_started == false) {
                 empty_started = true;
