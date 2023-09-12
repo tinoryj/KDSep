@@ -85,6 +85,15 @@ struct mapHashKeyForStr_t {
     }
 };
 
+struct mapSmallerKeyForStr_t {
+    bool operator()(const str_t& a, const str_t& b) const
+    {
+        string_view sva(a.data_, a.size_);
+        string_view svb(b.data_, b.size_);
+        return (sva < svb);
+    }
+};
+
 struct mapEqualKeyForSlice {
     bool operator()(rocksdb::Slice const& a, rocksdb::Slice const& b) const
     {
@@ -179,7 +188,8 @@ struct BucketHandler {
     uint64_t file_id = 0;
     uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
     uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
-    uint64_t prefix = 0;
+//    uint64_t prefix = 0;
+    string key;
     uint64_t max_seq_num = 0;
     uint64_t total_object_cnt = 0;
     uint64_t total_object_bytes = 0;

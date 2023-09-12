@@ -739,9 +739,8 @@ bool BucketOperator::operationWorkerPutFunction(hashStoreOperationHandler* op_hd
         }
 
         // open target file
-	debug_info("First open newly created file ID = %lu, target prefix "
-		"bit number = %lu\n", op_hdl->bucket->file_id,
-		op_hdl->bucket->prefix);
+        debug_info("First open newly created file ID = %lu\n",
+                op_hdl->bucket->file_id);
         string targetFilePathStr = working_dir_ + "/" + to_string(op_hdl->bucket->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePathStr) != true) {
             op_hdl->bucket->io_ptr->createThenOpenFile(targetFilePathStr);
@@ -1153,8 +1152,8 @@ bool BucketOperator::directlyWriteOperation(BucketHandler* bucket, mempoolHandle
         }
 
         // open target file
-	debug_info("First open newly created file ID = %lu, target prefix "
-		"bit number = %lu\n", bucket->file_id, bucket->prefix);
+        debug_info("First open newly created file ID = %lu\n",
+                bucket->file_id);
         string targetFilePathStr = working_dir_ + "/" + to_string(bucket->file_id) + ".delta";
         if (std::filesystem::exists(targetFilePathStr) != true) {
             bucket->io_ptr->createThenOpenFile(targetFilePathStr);

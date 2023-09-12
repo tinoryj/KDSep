@@ -35,6 +35,7 @@ config_workload() {
     sed -i "/operationcount/c\\operationcount=$OperationsNumber" $SPEC
     sed -i "/fieldcount/c\\fieldcount=$fieldcount" $SPEC
     sed -i "/fieldlength/c\\fieldlength=$fieldlength" $SPEC
+    sed -i "/zipfianconstant/c\\zipfianconstant=${zipfianconstant}" $SPEC
     if [[ $up2x == true ]]; then
         sed -i "/field_len_dist/c\\field_len_dist=up2x" $SPEC
         ReadProportion=0.0746
@@ -116,7 +117,9 @@ log_db_status() {
     echo "---------- total size ------------" >>$output_file
     du -d1 $DBPath | tail -n 1 | awk '{print $1 / 1024 " MiB all";}' >>$output_file
     echo "----------------------------------" >>$output_file
-    grep "CPU" $CPU_FILE | awk 'BEGIN {s=0; n=0;} {s+=$(NF-1); n++;} END {print s/n " % CPU Load";}' >>$output_file
+    if [[ -f $CPU_FILE ]]; then
+        grep "CPU" $CPU_FILE | awk 'BEGIN {s=0; n=0;} {s+=$(NF-1); n++;} END {print s/n " % CPU Load";}' >>$output_file
+    fi
 
     lines=$(wc -l $output_file | awk '{print $1;}')
     cat $output_file >>$ResultLogFile
@@ -221,6 +224,7 @@ memtable=64
 l1sz=256
 
 initBit=10
+zipfianconstant=0.9
 
 havekd="false"
 
@@ -370,21 +374,17 @@ for param in $*; do
         fi
     elif [[ "$param" =~ ^zipf[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/zipf//g')
-        sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = ${tmp};" core/zipfian_generator.h
-#scripts/make_release.sh
-        ../../buildAllComponents.sh
-        if [[ $tmp != "0.9" ]]; then
-            sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = 0.9;" core/zipfian_generator.h
-            run_suffix=${run_suffix}_$param
-            if (($(echo "$tmp >= 1.0" | bc -l))); then
-                filename="zipf${tmp}_$(($KVPairsNumber / 1000000))M_$(($OperationsNumber / 1000000))M.data"
-                echo $filename
-                if [[ ! -f $filename ]]; then
-                    Rscript scripts/gen.r $tmp $KVPairsNumber $OperationsNumber
-                    cp out.data $filename
-                fi
-                cp $filename out.data
+        zipfianconstant=$tmp
+        run_suffix=${run_suffix}_$param
+
+        if (($(echo "$tmp >= 1.0" | bc -l))); then
+            filename="zipf${tmp}_$(($KVPairsNumber / 1000000))M_$(($OperationsNumber / 1000000))M.data"
+            echo $filename
+            if [[ ! -f $filename ]]; then
+                Rscript scripts/gen.r $tmp $KVPairsNumber $OperationsNumber
+                cp out.data $filename
             fi
+            cp $filename out.data
         fi
     elif [[ "$param" =~ ^workload[a-g2-9]$ ]]; then
         if [[ "$param" == "workloada" ]]; then
@@ -583,7 +583,7 @@ if [[ ! -d $loadedDB ]]; then
     SPEC="./workload-temp-prepare.spec"
     cp workloads/workloadTemplate.spec $SPEC
     config_workload $SPEC
-    sed -i "/operationcount/c\\operationcount=3000000" $SPEC
+    sed -i "/operationcount/c\\operationcount=1000000" $SPEC
     sed -i "/readproportion/c\\readproportion=1" $SPEC
     sed -i "/updateproportion/c\\updateproportion=0" $SPEC
     echo "<===================== Prepare =====================>"

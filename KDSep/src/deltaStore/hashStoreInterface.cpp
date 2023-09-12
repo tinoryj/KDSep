@@ -266,7 +266,7 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
 
     BucketHandler* tempFileHandler;
     bool ret;
-    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKey(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DS_PUT_GET_HANDLER);
+    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKeySimplified(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DS_PUT_GET_HANDLER);
     if (ret != true) {
         debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", objectPairMempoolHandler.keyPtr_);
         return false;
@@ -402,7 +402,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
             BucketHandler* currentFileHandlerPtr = nullptr;
             bool getFileHandlerStatus;
             STAT_PROCESS(getFileHandlerStatus =
-                    file_manager_->getFileHandlerWithKey(
+                    file_manager_->getFileHandlerWithKeySimplified(
                         objects[i].keyPtr_, objects[i].keySize_, kMultiPut,
                         currentFileHandlerPtr, objects[i].isAnchorFlag_),
                     StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
@@ -570,7 +570,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
 	}
     }
 
-    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKey((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
+    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKeySimplified((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
         valueStrVec.clear();
         return false;
@@ -646,7 +646,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
         if (get_result[i] == false) {
 	    // get the file handlers in parallel
             STAT_PROCESS(ret = 
-                    file_manager_->getFileHandlerWithKey(keys[i].data(),
+                    file_manager_->getFileHandlerWithKeySimplified(keys[i].data(),
                         keys[i].size(), kMultiGet, buckets[i], false),
                     StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
             if (ret == false) {

@@ -6,10 +6,12 @@
 #include "vlog/ds/bitmap.hh"
 #include "utils/messageQueue.hpp"
 #include "utils/murmurHash.hpp"
-#include "utils/prefixTreeForHashStore.hpp"
+//#include "utils/prefixTreeForHashStore.hpp"
+#include "utils/skipListForHashStore.hpp"
 #include <bits/stdc++.h>
 #include <boost/atomic.hpp>
 #include <filesystem>
+#include <shared_mutex>
 
 using namespace std;
 
@@ -26,6 +28,9 @@ public:
 	    deltaStoreOperationType opType, 
 	    BucketHandler*& fileHandlerPtr, 
 	    bool getForAnchorWriting = false);
+    bool getFileHandlerWithKeySimplified(const char* keyBuffer, 
+            uint32_t keySize, deltaStoreOperationType op_type,
+            BucketHandler*& bucket, bool getForAnchorWriting = false); 
     bool generateHashBasedPrefix(const char* rawStr, uint32_t strSize, uint64_t& prefixU64);
 
     // GC manager
@@ -39,7 +44,6 @@ public:
     bool setJobDone();
 
     void pushToGCQueue(BucketHandler* fileHandlerPtr);
-    uint64_t getTrieAccessNum();
 
     // Consistency
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag, 
@@ -98,7 +102,8 @@ private:
     uint64_t singleFileFlushSize_ = 4096;
 
     // data structures
-    PrefixTreeForHashStore prefix_tree_; // prefix-hash to object file metadata.
+//    PrefixTreeForHashStore prefix_tree_; // prefix-hash to object file metadata.
+    SkipListForBuckets prefix_tree_; // prefix-hash to object file metadata.
     ManifestManager* manifest_ = nullptr;
     deque<uint64_t> targetDelteFileQueue_; // collect need delete files during GC
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
@@ -115,11 +120,14 @@ private:
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
-    bool getHashStoreFileHandlerByPrefix(const uint64_t& prefixU64,
-            BucketHandler*& fileHandlerPtr);
+    bool getHashStoreFileHandlerByPrefix(const string& prefixU64, BucketHandler*& fileHandlerPtr);
     BucketHandler* createFileHandler();
-    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(const uint64_t&
-            prefixU64, BucketHandler*& fileHandlerPtr);
+    bool createNewInitialBucket(BucketHandler*& bucket);
+    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(BucketHandler*& fileHandlerPtr);
+    bool getBucketHandlerNoCreate(const string& key, 
+            deltaStoreOperationType op_type, BucketHandler*& bucket);
+    bool getBucketHandlerOrCreate(const string& key, 
+            deltaStoreOperationType op_type, BucketHandler*& bucket); 
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management
@@ -127,32 +135,31 @@ private:
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
     // recovery
-    uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, unordered_map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
+    uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, unordered_map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap);
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap);
     // GC partial merge
-    uint64_t partialMergeGcResultMap(unordered_map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete); 
-    void clearMemoryForTemporaryMergedDeltas(unordered_map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete);
+    uint64_t partialMergeGcResultMap(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete); 
+    void clearMemoryForTemporaryMergedDeltas(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete);
 
-    bool createFileHandlerForGC(BucketHandler*& fileHandlerPtr,
-            uint64_t targetPrefixLen, uint64_t previousFileID1, uint64_t
-            previousFileID2);
+    bool createFileHandlerForGC(const string& key, BucketHandler*& fileHandlerPtr);
 
     void putKeyValueListToAppendableCache(const str_t& currentKeyStr, vector<str_t>& values); 
     void putKDToCache(const str_t& currentKeyStr, vector<str_t>& values); 
     bool singleFileRewrite(BucketHandler* currentHandlerPtr,
-            unordered_map<str_t, pair<vector<str_t>,
-            vector<KDRecordHeader>>, mapHashKeyForStr_t,
-            mapEqualKeForStr_t>& gcResultMap, 
+            map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
+            mapSmallerKeyForStr_t>& gcResultMap, 
             uint64_t targetFileSize, bool fileContainsReWriteKeysFlag);
-    bool singleFileSplit(BucketHandler* currentHandlerPtr, unordered_map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapHashKeyForStr_t, mapEqualKeForStr_t>& gcResultMap, uint64_t prefixBitNumber, bool fileContainsReWriteKeysFlag);
+    bool singleFileSplit(BucketHandler* currentHandlerPtr, 
+            map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
+            mapSmallerKeyForStr_t>& gcResultMap, 
+            bool fileContainsReWriteKeysFlag, uint64_t targetSize);
     bool twoAdjacentFileMerge(BucketHandler* currentHandlerPtr1,
-            BucketHandler* currentHandlerPtr2, 
-            uint64_t target_prefix, uint64_t prefix_len);
+            BucketHandler* currentHandlerPtr2);
+    void TryMerge();
     bool selectFileForMerge(uint64_t targetFileIDForSplit,
             BucketHandler*& currentHandlerPtr1,
-            BucketHandler*& currentHandlerPtr2, 
-            uint64_t& target_prefix, uint64_t& prefix_len);
+            BucketHandler*& currentHandlerPtr2);
     bool pushObjectsToWriteBackQueue(vector<writeBackObject*>& targetWriteBackVec);
 
     void deleteFileHandler(BucketHandler* bucket);

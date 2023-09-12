@@ -213,7 +213,8 @@ void ManifestManager::InitialSnapshot(BucketHandler* bucket) {
     if (!(manifest_fs_ << "add" << endl)) {
 	debug_error("output error: %d\n", __LINE__);
     }	
-    manifest_fs_ << bucket->prefix << endl;
+    manifest_fs_ << bucket->key.size() << " ";
+    manifest_fs_ << bucket->key << endl;
     manifest_fs_ << bucket->file_id << endl;
     manifest_fs_ << "add_end" << endl;
 }
@@ -229,14 +230,16 @@ void ManifestManager::UpdateGCMetadata(
     }	
     // write old file handlers
     for (auto& bucket : old_buckets) {
-	manifest_fs_ << bucket->prefix << endl;
+        manifest_fs_ << bucket->key.size() << " ";
+	manifest_fs_ << bucket->key << endl;
 	manifest_fs_ << bucket->file_id << endl;
     }
 
     manifest_fs_ << "gc_new" << endl;
     // write new file handlers
     for (auto& bucket : new_buckets) {
-	manifest_fs_ << bucket->prefix << endl;
+        manifest_fs_ << bucket->key.size() << " ";
+	manifest_fs_ << bucket->key << endl;
 	manifest_fs_ << bucket->file_id << endl;
     }
     manifest_fs_ << "gc_end" << endl;

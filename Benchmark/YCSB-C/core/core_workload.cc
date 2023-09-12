@@ -88,6 +88,9 @@ const string CoreWorkload::INSERT_START_DEFAULT = "0";
 const string CoreWorkload::RECORD_COUNT_PROPERTY = "recordcount";
 const string CoreWorkload::OPERATION_COUNT_PROPERTY = "operationcount";
 
+const string CoreWorkload::ZIPFIAN_CONSTANT_PROPERTY = "zipfianconstant";
+const string CoreWorkload::ZIPFIAN_CONSTANT_DEFAULT = "0.9";
+
 void CoreWorkload::Init(const utils::Properties& p, bool run_phase) {
     if (run_phase) is_run_phase_ = true;
     table_name_ = p.GetProperty(TABLENAME_PROPERTY, TABLENAME_DEFAULT);
@@ -168,7 +171,10 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase) {
         // and pick another key.
         int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
         int new_keys = (int)(op_count * insert_proportion * 2);  // a fudge factor
-        key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys);
+        key_chooser_ = new ScrambledZipfianGenerator(0, 
+                record_count_ + new_keys - 1, 
+                std::stod(p.GetProperty(ZIPFIAN_CONSTANT_PROPERTY,
+                        ZIPFIAN_CONSTANT_DEFAULT)));
 
     } else if (request_dist == "latest") {
         key_chooser_ = new SkewedLatestGenerator(insert_key_sequence_);
@@ -183,7 +189,7 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase) {
         scan_len_chooser_ = new UniformGenerator(1, max_scan_len);
     } else if (scan_len_dist == "zipfian") {
         scan_len_chooser_ = new ZipfianGenerator(1, max_scan_len);
-    } else if (scan_len_dist == "constant") {
+    } else if (scan_len_dist == "CONStant") {
         scan_len_chooser_ = new UniformGenerator(max_scan_len, max_scan_len);
     } else {
         throw utils::Exception("Distribution not allowed for scan length: " +

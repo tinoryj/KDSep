@@ -160,13 +160,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
 bool KDSep::Close()
 {
-    cerr << "[KDSep Close DB] Force GC" << endl;
-    if (isDeltaStoreInUseFlag_ == true) {
-        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
-            delta_store_->forcedManualGarbageCollection();
-            cerr << "\tDeltaStore forced GC done" << endl;
-        }
-    }
     cerr << "[KDSep Close DB] Wait write back" << endl;
     if (enable_write_back_ == true) {
         writeBackOperationsQueue_->done = true;
@@ -174,6 +167,14 @@ bool KDSep::Close()
             asm volatile("");
         }
         cerr << "\tWrite back done" << endl;
+    }
+    cerr << "[KDSep Close DB] Force GC" << endl;
+    usleep(100000);
+    if (isDeltaStoreInUseFlag_ == true) {
+        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
+            delta_store_->forcedManualGarbageCollection();
+            cerr << "\tDeltaStore forced GC done" << endl;
+        }
     }
     cerr << "[KDSep Close DB] Flush write buffer" << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
