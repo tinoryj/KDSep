@@ -371,7 +371,8 @@ for param in $*; do
     elif [[ "$param" =~ ^zipf[0-9.]+$ ]]; then
         tmp=$(echo $param | sed 's/zipf//g')
         sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = ${tmp};" core/zipfian_generator.h
-        scripts/make_release.sh
+#scripts/make_release.sh
+        ../../buildAllComponents.sh
         if [[ $tmp != "0.9" ]]; then
             sed -i "/const double kZipfianConst/c\\    constexpr static const double kZipfianConst = 0.9;" core/zipfian_generator.h
             run_suffix=${run_suffix}_$param

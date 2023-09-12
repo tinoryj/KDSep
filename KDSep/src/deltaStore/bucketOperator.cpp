@@ -14,6 +14,7 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
         workerThreads_ = new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_);
+        num_threads_ = 0;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
     if (options->kd_cache != nullptr) {
@@ -45,6 +46,13 @@ BucketOperator::~BucketOperator()
     if (operationToWorkerMQ_ != nullptr) {
         delete operationToWorkerMQ_;
     }
+    if (num_threads_ > 0) {
+        cerr << "Warning: " << num_threads_ << " threads are still running" <<
+            endl;
+        while (num_threads_ > 0) {
+            asm volatile("");
+        }
+    }
     if (workerThreads_ != nullptr) {
         delete workerThreads_;
     }
@@ -64,16 +72,18 @@ bool BucketOperator::setJobDone()
 
 bool BucketOperator::putIntoJobQueue(hashStoreOperationHandler* op_hdl)
 {
-    bool ret = operationToWorkerMQ_->push(op_hdl);
-    operationNotifyCV_.notify_all();
-    return ret;
+    startJob(op_hdl);
+//    bool ret = operationToWorkerMQ_->push(op_hdl);
+//    operationNotifyCV_.notify_all();
+//    return ret;
+    return true;
 }
 
 bool BucketOperator::startJob(hashStoreOperationHandler* op_hdl)
 {
     boost::asio::post(*workerThreads_, 
             boost::bind(
-                &BucketOperator::operationBoostThreadWorker,
+                &BucketOperator::singleOperation,
                 this,
                 op_hdl));
     return true;
@@ -1874,71 +1884,13 @@ bool BucketOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* 
     return true;
 }
 
-void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hdl)
-{
-    bool operationsStatus = true;
-    bool bucket_is_input = true;
-    auto bucket = op_hdl->bucket;
-
-    std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
-    if (bucket != nullptr) {
-        w_lock = new
-            std::scoped_lock<std::shared_mutex>(bucket->op_mtx);
-    }
-
-    switch (op_hdl->op_type) {
-        case kMultiGet:
-            STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
-            break;
-        case kMultiPut:
-            debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", bucket->file_id, op_hdl->multiput_op.size);
-            STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
-            break;
-        case kPut:
-            debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
-            STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
-            break;
-        case kFlush:
-            STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
-            break;
-        case kFind:
-            STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
-            bucket_is_input = false;
-            break;
-        default:
-            debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
-            break;
-    }
-
-    if (operationsStatus == false) {
-        bucket->ownership = 0;
-        debug_trace("Process file ID = %lu error\n", bucket->file_id);
-        op_hdl->job_done = kError;
-    } else if (bucket_is_input == true) {
-        if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
-                && enableGCFlag_ == true) {
-            bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
-            if (putIntoGCJobQueueStatus == false) {
-                bucket->ownership = 0;
-                op_hdl->job_done = kDone;
-            } else {
-                op_hdl->job_done = kDone;
-            }
-        } else {
-            op_hdl->bucket->ownership = 0;
-            op_hdl->job_done = kDone;
-        }
-    } else {
-        op_hdl->job_done = kDone;
-    }
-
-    if (w_lock) {
-        delete w_lock;
-    }
+void BucketOperator::asioSingleOperation(hashStoreOperationHandler* op_hdl) {
+    num_threads_++;
+    singleOperation(op_hdl);
+    num_threads_--;
 }
 
 void BucketOperator::singleOperation(hashStoreOperationHandler* op_hdl) {
-    empty_started = false;
     bool operationsStatus = true;
     bool bucket_is_input = true;
     auto bucket = op_hdl->bucket;
@@ -2023,6 +1975,7 @@ void BucketOperator::operationWorker(int threadID)
         }
         hashStoreOperationHandler* op_hdl;
         if (operationToWorkerMQ_->pop(op_hdl)) {
+            empty_started = false;
             singleOperation(op_hdl);
         } else {
             if (empty_started == false) {

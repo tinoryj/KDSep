@@ -38,7 +38,7 @@ ExpName="_q1_compaction"
 ExpName="_new_exp1"
 ExpName="_post3_exp_ycsb_zipf0.9"
 ExpName="_post5_addexp4_5"
-ExpName="_post6_addexp6"
+ExpName="_post6_cpu"
 readRatios=(0)
 runModeSet=('raw')
 
@@ -66,20 +66,35 @@ cacheSize=4096
 #func
 
 bonus="ec"
-bonus5="workerT4"
+#bonus5="workerT4"
 runModeSet=('kd' 'kvkd' 'bkvkd')
-runModeSet=('kd' 'bkvkd' 'kv')
-runModeSet=('kd')
+#runModeSet=('kd' 'bkvkd')
 cacheSize=3584
-func
-exit
+#func
 
 runModeSet=('raw' 'bkv' 'kvkd')
 cacheSize=4096
-func
+#func
 runModeSet=('kd' 'bkvkd')
 cacheSize=3584
 #func
+
+ExpName="Exp_post7_zipf"
+sts=(0.8 1.0 1.1 1.2 0.9)
+#sts=(0.7 0.8 1.0 1.1 1.2)
+readRatios=(1)
+bucketNumber=32768
+for ((i=0; i<${#sts[@]}; i++)); do
+    runModeSet=('bkv' 'raw')
+    runModeSet=('kv')
+    cacheSize=4096
+    bonus5="zipf${sts[$i]}"
+    func
+    runModeSet=('bkvkd' 'kd')
+    runModeSet=('kvkd')
+    cacheSize=3584
+    func
+done
 exit
 
 #for ((i=0; i<5; i++)); do

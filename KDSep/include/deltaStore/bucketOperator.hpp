@@ -42,6 +42,9 @@ private:
     bool enableGCFlag_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
+
+    void asioSingleOperation(hashStoreOperationHandler* op_hdl);
+    void singleOperation(hashStoreOperationHandler* op_hdl);
     bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
     bool operationWorkerMultiGetFunction(hashStoreOperationHandler* currentHandlerPtr);
@@ -95,6 +98,7 @@ private:
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
+    boost::atomic<uint64_t> num_threads_;
     uint64_t workerThreadNumber_ = 0;
     bool syncStatistics_;
 //    boost::atomic<bool>* write_stall_;
