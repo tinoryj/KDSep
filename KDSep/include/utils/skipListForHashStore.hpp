@@ -127,7 +127,7 @@ public:
         st.clear();
     }
 
-    bool insert(const string& key, BucketHandler*& newData) {
+    bool insert(const string& key, BucketHandler* newData) {
 //        std::scoped_lock<std::shared_mutex> w_lock(mtx_);
         st[key] = newData;
         return true;
@@ -257,19 +257,18 @@ public:
         return max_file_num_ - current_file_num;
     }
 
-    bool insert(const string& key, BucketHandler*& newData)
+    bool insert(const string& key, BucketHandler* newData)
     {
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
 
         int current_file_num = list_.size();
 
         if (current_file_num >= max_file_num_) {
-//            debug_error("[ERROR] Could note insert new node, since there are "
-//                    "too many files, number = %lu, threshold = %lu\n",
-//                    current_file_num, max_file_num_);
+            fprintf(stderr, 
+                    "[ERROR] Could note insert new node, since there are "
+                    "too many files, number = %u, threshold = %lu\n",
+                    current_file_num, max_file_num_);
 	    exit(1);
-            printNodeMap();
-            return 0;
         }
         bool status = list_.insert(key, newData); 
         if (status == true) {
@@ -282,22 +281,59 @@ public:
         }
     }
 
+    bool batchInsertAndUpdate(
+            const vector<pair<string, BucketHandler*>>& insertList,
+          const string& updateKey, BucketHandler* updateData) {
+        std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
+
+        int current_file_num = list_.size();
+        if (current_file_num + insertList.size() >= max_file_num_) {
+            fprintf(stderr, 
+                    "[ERROR] Could note insert new node, since there are "
+                    "too many files, number = %u, threshold = %lu\n",
+                    current_file_num, max_file_num_);
+            exit(1);
+        }
+
+        for (auto& it : insertList) {
+            bool status = list_.insert(it.first, it.second); 
+            if (status == false) {
+                fprintf(stderr, 
+                        "[ERROR] Insert new node fail for prefix = %s\n",
+                        it.first.c_str());
+                printNodeMap();
+                return false;
+            }
+        }
+
+        bool status = list_.updateNoLargerThan(updateKey, updateData);
+        if (status == false) {
+            fprintf(stderr, 
+                    "[ERROR] Update node fail for prefix = %s\n",
+                    updateKey.c_str());
+            printNodeMap();
+            return false;
+        }
+
+        return true;
+    }
+
     bool get(const string& key, BucketHandler*& newData)
     {
-        std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         newData = list_.findNoLargerThan(key);
         return (newData != nullptr);
     }
 
     bool find(const string& key)
     {
-        std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         BucketHandler* newData = list_.findNoLargerThan(key);
         return (newData != nullptr);
     }
 
     bool getNext(const string& key, BucketHandler*& newData) {
-        std::scoped_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
         newData = list_.findNext(key);
         return (newData != nullptr);
     }

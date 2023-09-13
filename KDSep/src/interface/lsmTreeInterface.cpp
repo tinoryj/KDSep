@@ -51,6 +51,7 @@ bool LsmTreeInterface::Open(KDSepOptions& options, const string& name) {
         lsmTreeRunningMode_ = kNoValueLog;
     }
 
+    multiget_threads_ = new boost::asio::thread_pool(8);
     return true;
 }
 
@@ -58,6 +59,7 @@ LsmTreeInterface::LsmTreeInterface() {
 }
 
 LsmTreeInterface::~LsmTreeInterface() {
+    delete multiget_threads_;
 }
 
 bool LsmTreeInterface::Close() {
@@ -389,7 +391,31 @@ bool LsmTreeInterface::MultiGet(const vector<string>& keys,
     values_lsm.resize(keys.size());
 
     rocksdb::Status rocksDBStatus;
-    for (int i = 0; i < keys.size(); i++) {
+
+    int step = 8;
+    boost::atomic<int> waiting(step - 1);
+
+    // parallel part
+    for (int start = 1; start < step; start++) {
+        boost::asio::post(*multiget_threads_, [this, &keys, &values_lsm, start,
+                step, &waiting]() {
+            rocksdb::Status s;
+            for (int i = start; i < keys.size(); i+=step) {
+                s = rocksdb_->Get(rocksdb::ReadOptions(), keys[i],
+                        &(values_lsm[i]));
+                if (!s.ok()) {
+                    debug_error("[ERROR] Read underlying rocksdb with raw value "
+                            "fault, key = %s, status = %s\n", keys[i].c_str(),
+                            s.ToString().c_str());
+                    exit(1);
+                }
+            }
+            waiting--;
+        });
+    }
+
+    // this thread
+    for (int i = 0; i < keys.size(); i+=step) {
 	STAT_PROCESS(
 		rocksDBStatus =
 		rocksdb_->Get(rocksdb::ReadOptions(), keys[i], 
@@ -401,6 +427,10 @@ bool LsmTreeInterface::MultiGet(const vector<string>& keys,
 		    rocksDBStatus.ToString().c_str());
 	    return false;
 	}
+    }
+
+    while (waiting > 0) {
+        usleep(1);
     }
 
     if (lsmTreeRunningMode_ == kNoValueLog) {

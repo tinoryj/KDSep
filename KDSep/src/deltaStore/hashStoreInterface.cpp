@@ -725,6 +725,8 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     for (int i = 0; i < needed_i; i++) {
         auto& op_hdl = handlers[i];
 	// do not delete the handler
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
         file_operator_->waitOperationHandlerDone(op_hdl, false);
 	auto& values = *(op_hdl->multiget_op.values);
 
@@ -744,6 +746,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
 	delete op_hdl->multiget_op.keys;
 	delete op_hdl->multiget_op.values;
 	delete op_hdl;
+        StatsRecorder::staticProcess(StatsType::DS_MULTIGET_ONE_FILE, tv);
     }
 
     return true;

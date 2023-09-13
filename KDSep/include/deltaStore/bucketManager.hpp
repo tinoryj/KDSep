@@ -154,6 +154,12 @@ private:
             map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
             mapSmallerKeyForStr_t>& gcResultMap, 
             bool fileContainsReWriteKeysFlag, uint64_t targetSize);
+    void writeSingleSplitFile(BucketHandler* new_bucket, 
+            vector<pair<map<str_t, uint64_t, mapSmallerKeyForStr_t>, uint64_t>>&
+            tmpGcResult, 
+            map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
+            mapSmallerKeyForStr_t>& gcResultMap, 
+            int bi, boost::atomic<int>& write_fin_number);
     bool twoAdjacentFileMerge(BucketHandler* currentHandlerPtr1,
             BucketHandler* currentHandlerPtr2);
     void TryMerge();
@@ -190,6 +196,7 @@ private:
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
     boost::asio::thread_pool* gc_threads_ = nullptr;
+    boost::asio::thread_pool* extra_threads_ = nullptr;
 };
 
 } // namespace KDSEP_NAMESPACE

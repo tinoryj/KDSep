@@ -758,7 +758,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<s
     return true;
 }
 
-bool KDSep::MultiGetInternal(const vector<string>& keys, 
+bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys, 
 	vector<string>& values) 
 {
 //    scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
@@ -766,18 +766,28 @@ bool KDSep::MultiGetInternal(const vector<string>& keys,
     gettimeofday(&tv, 0);
     vector<string> lsm_values;
 
-    // 1. Scan the RocksDB/vLog for keys and values
-    STAT_PROCESS(lsmTreeInterface_.MultiGet(keys, lsm_values),
-            StatsType::KDS_MULTIGET_LSM);
-
     if (KDSepRunningMode_ == kWithNoDeltaStore || 
 	    KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
         StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
 	return true;
     }
 
-    // 2. Scan the delta store
 
+    // 1. Scan the RocksDB/vLog for keys and values
+    lsmInterfaceOperationStruct* op = nullptr;
+    if (enableParallelLsmInterface == true) {
+        op = new lsmInterfaceOperationStruct;
+        op->keysPtr = &keys;
+        op->valuesPtr = &lsm_values;
+        op->is_write = false;
+        op->job_done = kNotDone;
+        lsmInterfaceOperationsQueue_->push(op);
+    } else {
+        STAT_PROCESS(lsmTreeInterface_.MultiGet(keys, lsm_values),
+                StatsType::KDS_WRITE_BACK_GET_LSM);
+    }
+
+    // 2. Scan the delta store
     if (enableLsmTreeDeltaMeta_ == true) {
 	debug_error("not implemented: key %lu\n", keys.size());
     }
@@ -787,15 +797,26 @@ bool KDSep::MultiGetInternal(const vector<string>& keys,
 //    debug_error("Start key %s len %d\n", startKey.c_str(), len);
     STAT_PROCESS(
     ret = delta_store_->multiGet(keys, key_deltas),
-    StatsType::KDS_MULTIGET_DS);
+    StatsType::KDS_WRITE_BACK_GET_DS);
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
     }
 
+    if (op != nullptr) {
+        while (op->job_done == kNotDone) {
+            asm volatile("");
+        }
+        if (op->job_done == kError) {
+            debug_e("lsmInterfaceOperationsQueue_ failed");
+            exit(1);
+        }
+        delete op;
+    }
+
     STAT_PROCESS(
     MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
-    StatsType::KDS_MULTIGET_FULL_MERGE);
+    StatsType::KDS_WRITE_BACK_FULLMERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
 //    fprintf(stderr, "keys.size() %lu values.size() %lu\n", keys.size(),
@@ -1014,11 +1035,13 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     bool needMergeWithInBufferOperationsFlag[keys.size()];
     bool any_no_need = false;
 
-    struct timeval tvAll;
+    struct timeval tvAll, tv;
     gettimeofday(&tvAll, 0);
+    tv = tvAll;
 
     // read from buffer
     for (int i = 0; i < keys.size(); i++) {
+        gettimeofday(&tv, 0);
 	auto& key = keys[i];
 	need_write_back[i] = true;
 	needMergeWithInBufferOperationsFlag[i] = false;
@@ -1035,8 +1058,9 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 	    }
 	}
 	batchedBufferOperationMtx_.lock();
-	StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER, tvAll);
-	struct timeval tv;
+        StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER,
+                tv);
+
 	gettimeofday(&tv, 0);
 	debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
 	char keyBuffer[key.size()];
@@ -1078,7 +1102,8 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     bool mergeStatus;
 
     if (any_no_need == false) {
-	MultiGetInternal(keys, persist_values);
+        STAT_PROCESS(MultiGetInternalForWriteBack(keys, persist_values),
+                KDSep_WRITE_BACK_GET);
 	for (int i = 0; i < keys.size(); i++) {
 	    auto& key = keys[i];
 	    string& tempRawValueStr = persist_values[i];
@@ -1113,7 +1138,8 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 		new_keys.push_back(keys[i]);
 	    }
 	}
-	MultiGetInternal(new_keys, persist_values);
+        STAT_PROCESS(MultiGetInternalForWriteBack(new_keys, persist_values),
+                KDSep_WRITE_BACK_GET);
 	int new_ki = 0;
 	for (int i = 0; i < keys.size(); i++) {
 	    if (need_write_back[i] == false) {
@@ -1747,7 +1773,7 @@ void KDSep::processWriteBackOperationsWorker()
 {
     uint64_t total_written_pairs = 0;
     int written_pairs = 0;
-    int write_back_batch_size = 100;
+    int write_back_batch_size = 1000;
     vector<writeBackObject*> pairs;
     vector<string> keys;
     while (true) {
@@ -1756,9 +1782,9 @@ void KDSep::processWriteBackOperationsWorker()
         }
         writeBackObject* currentProcessPair;
         written_pairs = 0;
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         while (writeBackOperationsQueue_->pop(currentProcessPair)) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
             debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
 	    pairs.push_back(currentProcessPair);
 	    while (pairs.size() <= write_back_batch_size &&
@@ -1778,7 +1804,6 @@ void KDSep::processWriteBackOperationsWorker()
                 debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
             }
             written_pairs += keys.size();
-            StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK, tv);
 
 	    for (auto& op : pairs) {
 		delete op;
@@ -1833,6 +1858,7 @@ void KDSep::processWriteBackOperationsWorker()
             if (write_stall_ != nullptr) {
                 *write_stall_ = false;
             }
+            StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK, tv);
         }
     }
     return;
@@ -1851,8 +1877,14 @@ void KDSep::processLsmInterfaceOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (op->is_write == false) {
-		STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value),
-			StatsType::KDS_LSM_INTERFACE_GET); 
+                if (op->keysPtr == nullptr) {
+                    STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value),
+                            StatsType::KDS_LSM_INTERFACE_GET); 
+                } else {
+                    STAT_PROCESS(lsmTreeInterface_.MultiGet(*op->keysPtr,
+                                *op->valuesPtr),
+                            StatsType::KDS_WRITE_BACK_GET_LSM);
+                }
             } else {
 		STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
 			    *(op->handlerToValueStoreVecPtr),

@@ -290,6 +290,8 @@ struct lsmInterfaceOperationStruct {
     string* value;
     rocksdb::WriteBatch* mergeBatch;
     vector<mempoolHandler_t>* handlerToValueStoreVecPtr;
+    vector<string> const* keysPtr = nullptr;
+    vector<string>* valuesPtr = nullptr;
     bool is_write;
     bool* need_post_update_ptr = nullptr;
     operationStatus job_done = kNotDone;

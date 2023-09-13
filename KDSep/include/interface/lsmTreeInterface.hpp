@@ -68,6 +68,7 @@ private:
     bool isValueStoreInUseFlag_ = false;
     bool enable_crash_consistency_ = false;
     bool vlog_lsm_not_updated_ = false;
+    boost::asio::thread_pool* multiget_threads_ = nullptr;
 };
 
 } // namespace KDSEP_NAMESPACE
