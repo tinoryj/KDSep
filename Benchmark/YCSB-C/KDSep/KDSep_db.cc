@@ -181,6 +181,8 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     bbto.block_size = config.getBlockSize();
     bbto.cache_index_and_filter_blocks = true;
 
+    options_.rocks_block_cache = bbto.block_cache;
+
     if (keyValueSeparation == true) {
         options_.enable_valueStore = true;
     }

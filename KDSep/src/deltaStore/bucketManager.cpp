@@ -2726,7 +2726,7 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
     StatsRecorder::staticProcess(StatsType::GC_SELECT_MERGE_SELECT_MERGE, tv);
     gettimeofday(&tv, 0);
 
-    uint64_t sel_threshold = singleFileSplitGCTriggerSize_; // singleFileGCTriggerSize_;
+    uint64_t sel_threshold = singleFileGCTriggerSize_;
     BucketHandler* sel_hdl1, *sel_hdl2;
     sel_hdl1 = sel_hdl2 = nullptr;
 

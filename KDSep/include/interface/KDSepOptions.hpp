@@ -20,6 +20,7 @@ public:
     ~KDSepOptions() = default;
 
     rocksdb::Options rocks_opt;
+    shared_ptr<rocksdb::Cache> rocks_block_cache = nullptr;
 
     enum class contentStoreMode {
         kAppendOnlyLogWithIndex = 0,
@@ -98,8 +99,8 @@ public:
     KDLRUCache* kd_cache = nullptr;
     //    boost::atomic<bool>* write_stall = nullptr;
     bool* write_stall = nullptr;
-    std::queue<string>* wb_keys = nullptr;
-    std::mutex* wb_keys_mutex = nullptr;
+    queue<string>* wb_keys = nullptr;
+    mutex* wb_keys_mutex = nullptr;
 
     // dump options
     bool dumpOptions(string dumpPath);
