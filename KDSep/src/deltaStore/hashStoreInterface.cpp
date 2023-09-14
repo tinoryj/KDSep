@@ -17,7 +17,7 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options, const string& work
     }
 
     if (options->enable_deltaStore_KDLevel_cache == true) {
-        options->kd_cache = new KDLRUCache(options->deltaStore_KDCache_item_number_);
+        options->kd_cache.reset(new KDLRUCache(options->deltaStore_KDCache_item_number_));
         kd_cache_ = options->kd_cache;
     }
     if (options->enable_write_back_optimization_ == true) {

@@ -94,7 +94,7 @@ private:
     messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
     BucketManager* hashStoreFileManager_ = nullptr;
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    KDLRUCache* kd_cache_ = nullptr;
+    std::shared_ptr<KDLRUCache> kd_cache_;
     std::mutex operationNotifyMtx_;
     std::condition_variable operationNotifyCV_;
     boost::atomic<uint64_t> workingThreadExitFlagVec_;

@@ -100,7 +100,7 @@ public:
     uint64_t memory_budget;
 
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    KDLRUCache* kd_cache = nullptr;
+    std::shared_ptr<KDLRUCache> kd_cache;
     //    boost::atomic<bool>* write_stall = nullptr;
     bool* write_stall = nullptr;
     queue<string>* wb_keys = nullptr;

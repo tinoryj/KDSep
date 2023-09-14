@@ -12,7 +12,7 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
-        operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
+//        operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
         workerThreads_ = new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_);
         num_threads_ = 0;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
@@ -40,12 +40,13 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
 
 BucketOperator::~BucketOperator()
 {
-    if (kd_cache_ != nullptr) {
-        delete kd_cache_;
-    }
-    if (operationToWorkerMQ_ != nullptr) {
-        delete operationToWorkerMQ_;
-    }
+    // now becomes shared pointer
+//    if (kd_cache_ != nullptr) {
+//        delete kd_cache_;
+//    }
+//    if (operationToWorkerMQ_ != nullptr) {
+//        delete operationToWorkerMQ_;
+//    }
     if (num_threads_ > 0) {
         cerr << "Warning: " << num_threads_ << " threads are still running" <<
             endl;
@@ -60,22 +61,19 @@ BucketOperator::~BucketOperator()
 
 bool BucketOperator::setJobDone()
 {
-    if (operationToWorkerMQ_ != nullptr) {
-        operationToWorkerMQ_->done = true;
-        operationNotifyCV_.notify_all();
-        while (workingThreadExitFlagVec_ != workerThreadNumber_) {
-            asm volatile("");
-        }
-    }
+//    if (operationToWorkerMQ_ != nullptr) {
+//        operationToWorkerMQ_->done = true;
+//        operationNotifyCV_.notify_all();
+//        while (workingThreadExitFlagVec_ != workerThreadNumber_) {
+//            asm volatile("");
+//        }
+//    }
     return true;
 }
 
 bool BucketOperator::putIntoJobQueue(hashStoreOperationHandler* op_hdl)
 {
     startJob(op_hdl);
-//    bool ret = operationToWorkerMQ_->push(op_hdl);
-//    operationNotifyCV_.notify_all();
-//    return ret;
     return true;
 }
 

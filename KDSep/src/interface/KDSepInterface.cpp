@@ -143,10 +143,10 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
             }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
-            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&BucketOperator::operationWorker, bucket_operator_, threadID));
-                thList_.push_back(th);
-            }
+//            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
+//                th = new boost::thread(attrs, boost::bind(&BucketOperator::operationWorker, bucket_operator_, threadID));
+//                thList_.push_back(th);
+//            }
         } else {
             debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
         }
@@ -159,6 +159,8 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
         KDSepRunningMode_ = options.enable_batched_operations_ ? kBatchedWithNoDeltaStore : kWithNoDeltaStore;
     }
 
+    // assign the kd cache at the end
+    kd_cache_ = options.kd_cache;
     Recovery();
 
     return true;

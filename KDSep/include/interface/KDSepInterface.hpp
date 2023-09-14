@@ -131,7 +131,7 @@ private:
     uint64_t max_kd_cache_size_ = 0;
     uint64_t min_block_cache_size_ = 0;
     uint64_t memory_budget_ = 4ull * 1024 * 1024 * 1024;
-    KDLRUCache* kd_cache_ = nullptr;
+    std::shared_ptr<KDLRUCache> kd_cache_;
 
     HashStoreInterface* delta_store_ = nullptr;
     BucketManager* bucket_manager_ = nullptr;

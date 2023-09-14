@@ -52,7 +52,7 @@ private:
     // get function pointers
     BucketManager* file_manager_ = nullptr;
     BucketOperator* file_operator_ = nullptr;
-    KDLRUCache* kd_cache_ = nullptr;
+    std::shared_ptr<KDLRUCache> kd_cache_;
     // message queues for internal usage
     messageQueue<BucketHandler*>* notifyGCMQ_ = nullptr;
 };

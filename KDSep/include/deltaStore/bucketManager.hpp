@@ -175,7 +175,7 @@ private:
     messageQueue<BucketHandler*>* notifyGCMQ_;
     messageQueue<writeBackObject*>* write_back_queue_;
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    KDLRUCache* kd_cache_ = nullptr;
+    std::shared_ptr<KDLRUCache> kd_cache_;
     std::mutex operationNotifyMtx_;
     std::mutex metaCommitMtx_;
     std::condition_variable operationNotifyCV_;
