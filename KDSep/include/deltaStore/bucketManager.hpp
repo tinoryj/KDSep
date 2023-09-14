@@ -32,6 +32,7 @@ public:
             uint32_t keySize, deltaStoreOperationType op_type,
             BucketHandler*& bucket, bool getForAnchorWriting = false); 
     bool generateHashBasedPrefix(const char* rawStr, uint32_t strSize, uint64_t& prefixU64);
+    uint64_t getNumOfBuckets();
 
     // GC manager
     void asioSingleFileGC(BucketHandler* bucket);
@@ -137,7 +138,7 @@ private:
     // recovery
     uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap);
+    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes);
     // GC partial merge
     uint64_t partialMergeGcResultMap(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete); 
     void clearMemoryForTemporaryMergedDeltas(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete);
@@ -153,6 +154,7 @@ private:
     bool singleFileSplit(BucketHandler* currentHandlerPtr, 
             map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
             mapSmallerKeyForStr_t>& gcResultMap, 
+            map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes,
             bool fileContainsReWriteKeysFlag, uint64_t targetSize);
     void writeSingleSplitFile(BucketHandler* new_bucket, 
             vector<pair<map<str_t, uint64_t, mapSmallerKeyForStr_t>, uint64_t>>&

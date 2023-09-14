@@ -95,6 +95,10 @@ public:
     bool enable_index_block = true;
     bool test_recovery = false;
 
+    // tune the block cache size
+    uint64_t min_block_cache_size = 0;
+    uint64_t memory_budget;
+
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     KDLRUCache* kd_cache = nullptr;
     //    boost::atomic<bool>* write_stall = nullptr;

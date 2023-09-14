@@ -68,6 +68,12 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     lsmTreeInterface_.Open(options, name);
     gettimeofday(&tv2, 0);
 
+    tv_tune_cache_ = tv2;
+    rocks_block_cache_ = options.rocks_block_cache;
+    max_kd_cache_size_ = options.deltaStore_KDCache_item_number_;
+    min_block_cache_size_ = options.min_block_cache_size; 
+    memory_budget_ = options.memory_budget;
+
     printf("restore lsmTree interface time: %.6lf\n", 
 	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
 	    tv.tv_usec / 1000000.0);
@@ -290,6 +296,8 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
         value->assign(lsm_value.substr(header_sz));
         return true;
     }
+
+    tryTuneCache();
 
     if (enableLsmTreeDeltaMeta_ == true) {
         // Use deltaStore
@@ -1949,6 +1957,33 @@ bool KDSep::extractDeltas(string lsm_value, uint64_t skipSize,
         }
     }
     return true;
+}
+
+void KDSep::tryTuneCache() {
+    if (kd_cache_ == nullptr || delta_store_ == nullptr || 
+            extra_mem_threshold_ > memory_budget_ - min_block_cache_size_) {
+        return;
+    }
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    if (tv.tv_sec - tv_tune_cache_.tv_sec >= 1) {
+        tv_tune_cache_ = tv;
+        // kd cache
+        uint64_t kdcache_mem = min(kd_cache_->getUsage(), max_kd_cache_size_);
+        // bucket table
+        uint64_t bucket_mem = delta_store_->getNumOfBuckets() * 10 * 1024;
+
+        if (kdcache_mem + bucket_mem > extra_mem_threshold_) {
+            rocks_block_cache_->SetCapacity(memory_budget_ - extra_mem_threshold_);
+            extra_mem_threshold_ += extra_mem_step_;
+            debug_error("set rocksdb block cache capacity = %.2lf MiB, "
+                    "extra %.2lf MiB (cache %.2lf + bucket table %.2lf)\n", 
+                    (memory_budget_ - extra_mem_threshold_) / 1024.0 / 1024, 
+                    (kdcache_mem + bucket_mem) / 1024.0 / 1024, 
+                    kdcache_mem / 1024.0 / 1024, 
+                    bucket_mem / 1024.0 / 1024);
+        }
+    }
 }
 
 void KDSep::GetRocksDBProperty(const string& property, string* str) {

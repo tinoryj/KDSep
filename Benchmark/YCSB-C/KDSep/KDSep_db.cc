@@ -137,6 +137,10 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     size_t memtableSize = config.getMemtable();
     uint64_t debugLevel = config.getDebugLevel();
     DebugManager::getInstance().setDebugLevel(debugLevel);
+    size_t memory_budget = config.getMemoryBudget();
+
+    options_.memory_budget = memory_budget;
+    options_.min_block_cache_size = blockCacheSize;
 
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -173,7 +177,7 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
         options_.rocks_opt.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;                  // Default kDisable
         assert(!keyValueSeparation);
     } else {
-        bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(blockCacheSize);
+        bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(memory_budget);
         if (blockCacheSize == 0) {
             bbto.no_block_cache = true;
         }

@@ -35,6 +35,7 @@ public:
     bool setJobDone();
     bool Recovery();
 
+    uint64_t getNumOfBuckets();
 
 private:
     bool anyBucketInitedFlag_ = false;

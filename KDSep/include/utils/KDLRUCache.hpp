@@ -365,6 +365,14 @@ public:
     vtype getFromCache(str_t& cache_key) {
         return shards_[hash(cache_key)]->getFromCache(cache_key);
     }
+
+    uint64_t getUsage() {
+        uint64_t ans = 0;
+        for (int i = 0; i < shard_num_; i++) {
+            ans += shards_[i]->getDataSize();
+        }
+        return ans;
+    }
 };
 
 } // KDSEP_NAMESPACE

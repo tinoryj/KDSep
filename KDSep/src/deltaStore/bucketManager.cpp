@@ -96,6 +96,10 @@ void BucketManager::pushToGCQueue(BucketHandler* bucket) {
 //    operationNotifyCV_.notify_one();
 }
 
+uint64_t BucketManager::getNumOfBuckets() {
+    return maxBucketNumber_ - prefix_tree_.getRemainFileNumber();
+}
+
 BucketHandler* BucketManager::createFileHandler() {
     BucketHandler* bucket = new BucketHandler; 
     bucket->io_ptr = new FileOperation(fileOperationMethod_,
@@ -1535,7 +1539,8 @@ pair<uint64_t, uint64_t>
 BucketManager::deconstructAndGetValidContentsFromFile(
         char* read_buf, uint64_t buf_size, 
         map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
-        mapSmallerKeyForStr_t>& resultMap)
+        mapSmallerKeyForStr_t>& resultMap,
+        map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes)
 {
     uint64_t valid_obj_num = 0;
     uint64_t obj_num = 0;
@@ -1543,6 +1548,8 @@ BucketManager::deconstructAndGetValidContentsFromFile(
     uint64_t read_i = 0;
     size_t header_sz = sizeof(KDRecordHeader);
     // skip file header
+
+    gc_orig_sizes.clear();
 
     while (read_i < buf_size) {
         obj_num++;
@@ -1583,6 +1590,8 @@ BucketManager::deconstructAndGetValidContentsFromFile(
                 resultMap.insert(make_pair(currentKey, make_pair(newValuesRelatedToCurrentKeyVec, newRecorderHeaderVec)));
             }
             read_i += header.value_size_;
+            gc_orig_sizes[currentKey] += header.key_size_ +
+                header.value_size_ + header_sz;
         }
     }
 
@@ -1943,7 +1952,7 @@ void BucketManager::writeSingleSplitFile(BucketHandler* new_bucket,
         }
 
         new_bucket->index_block->Build();
-        //            new_bucket->index_block->IndicesClear();
+        new_bucket->index_block->IndicesClear();
     }
 
     char write_buf[targetFileSize];
@@ -2088,6 +2097,7 @@ void BucketManager::writeSingleSplitFile(BucketHandler* new_bucket,
 bool BucketManager::singleFileSplit(BucketHandler* bucket, 
         map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
         mapSmallerKeyForStr_t>& gcResultMap, 
+        map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes,
 	bool fileContainsReWriteKeysFlag, uint64_t target_size)
 {
     struct timeval tv;
@@ -2106,14 +2116,16 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     startKeys.push_back(string(it->first.data_, it->first.size_));
 
     int size_ratio = (int)ceil((double)target_size / maxBucketSize_);
-    if (size_ratio > 5) {
+    if (size_ratio > 10) {
+        // split to 5% of capacity
         debug_error("target_size %lu, maxBucketSize_ %lu, size_ratio %d\n", 
                 target_size, maxBucketSize_, size_ratio);   
-        size_ratio = 5;
+        size_ratio = 10;
     }
 
     int gc_result_map_size = gcResultMap.size();
     int key_cnt = 0;
+    int tmp_orig_sizes = 0;
     
     // fill the keys to two buckets
     for (auto keyIt : gcResultMap) {
@@ -2121,11 +2133,14 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         key_cnt++;
 
         // switch to the second bucket
-        if (tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio && 
+//        if (tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio && 
+//                key_cnt < gc_result_map_size) 
+        if (tmp_orig_sizes > maxBucketSize_ / 2 / size_ratio && 
                 key_cnt < gc_result_map_size) {
             bi++;
             tmpGcResult.push_back({{}, 0});
             startKeys.push_back(string(key.data_, key.size_));
+            tmp_orig_sizes = 0;
         }
 
         // calculate space
@@ -2143,6 +2158,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         // update the space needed for this key
         tmpGcResult[bi].first.insert(make_pair(keyIt.first, kd_pair_sz));
         tmpGcResult[bi].second += kd_pair_sz;
+        tmp_orig_sizes += gc_orig_sizes[key];
     }
 
     StatsRecorder::staticProcess(StatsType::SPLIT_IN_MEMORY, tv);
@@ -2354,9 +2370,10 @@ bool BucketManager::twoAdjacentFileMerge(
         StatsRecorder::getInstance()->DeltaGcBytesRead(bucket1->total_on_disk_bytes,
                 bucket1->total_object_bytes, syncStatistics_);
         // process GC contents
+        map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
         pair<uint64_t, uint64_t> remainObjectNumberPair1 =
             deconstructAndGetValidContentsFromFile(readWriteBuffer1Ptr,
-                    bucket1->total_object_bytes, gcResultMap1);
+                    bucket1->total_object_bytes, gcResultMap1, gc_orig_sizes);
         if (remainObjectNumberPair1.first == 0 &&
                 remainObjectNumberPair1.second == 0) {
             debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
@@ -2391,7 +2408,10 @@ bool BucketManager::twoAdjacentFileMerge(
     // process GC contents
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap2;
-    pair<uint64_t, uint64_t> remainObjectNumberPair2 = deconstructAndGetValidContentsFromFile(readWriteBuffer2, bucket2->total_object_bytes, gcResultMap2);
+    map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes_2;
+    pair<uint64_t, uint64_t> remainObjectNumberPair2 =
+        deconstructAndGetValidContentsFromFile(readWriteBuffer2,
+                bucket2->total_object_bytes, gcResultMap2, gc_orig_sizes_2);
 
     StatsRecorder::staticProcess(StatsType::MERGE_FILE2, tv);
     gettimeofday(&tv, 0);
@@ -2938,12 +2958,14 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
         return;
     }
     // process GC contents
-    map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>
-        gcResultMap;
+    map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
+        mapSmallerKeyForStr_t> gcResultMap;
+    // for split
+    map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
     pair<uint64_t, uint64_t> remainObjectNumberPair;
     STAT_PROCESS(remainObjectNumberPair =
             deconstructAndGetValidContentsFromFile(readWriteBuffer,
-                bucket->total_object_bytes, gcResultMap),
+                bucket->total_object_bytes, gcResultMap, gc_orig_sizes),
             StatsType::KDSep_GC_PROCESS);
     unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
 
@@ -3074,7 +3096,10 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
             debug_info("Still not reach max file number, split directly, current remain empty file numebr = %lu\n", remainEmptyFileNumber);
             debug_info("Perform split GC for file ID (without merge) = %lu\n", bucket->file_id);
             bool singleFileGCStatus;
-            STAT_PROCESS(singleFileGCStatus = singleFileSplit(bucket, gcResultMap, fileContainsReWriteKeysFlag, target_size), StatsType::SPLIT);
+            STAT_PROCESS(singleFileGCStatus = singleFileSplit(bucket,
+                        gcResultMap, gc_orig_sizes, 
+                        fileContainsReWriteKeysFlag, target_size),
+                    StatsType::SPLIT);
             if (singleFileGCStatus == false) {
                 debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", bucket->file_id);
                 bucket->gc_status = kNoGC;

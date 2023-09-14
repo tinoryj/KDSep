@@ -85,6 +85,10 @@ uint64_t HashStoreInterface::getExtractSizeThreshold()
     return extractValueSizeThreshold_;
 }
 
+uint64_t HashStoreInterface::getNumOfBuckets() {
+    return file_manager_->getNumOfBuckets();
+}
+
 bool HashStoreInterface::Recovery() {
     uint64_t min_seq_num = file_manager_->GetMinSequenceNumber();
 

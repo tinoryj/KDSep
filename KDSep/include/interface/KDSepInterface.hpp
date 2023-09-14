@@ -122,6 +122,17 @@ private:
             vector<KvHeader>& mergeOperatorsRecordVec);
     // Storage component for delta store
 
+    // tune the block cache size
+    std::shared_ptr<rocksdb::Cache> rocks_block_cache_;
+    struct timeval tv_tune_cache_;
+    void tryTuneCache();
+    uint64_t extra_mem_step_ = 16 * 1024 * 1024;
+    uint64_t extra_mem_threshold_ = extra_mem_step_;
+    uint64_t max_kd_cache_size_ = 0;
+    uint64_t min_block_cache_size_ = 0;
+    uint64_t memory_budget_ = 4ull * 1024 * 1024 * 1024;
+    KDLRUCache* kd_cache_ = nullptr;
+
     HashStoreInterface* delta_store_ = nullptr;
     BucketManager* bucket_manager_ = nullptr;
     BucketOperator* bucket_operator_ = nullptr;
