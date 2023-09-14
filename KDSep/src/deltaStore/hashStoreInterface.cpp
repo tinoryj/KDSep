@@ -4,7 +4,9 @@
 
 namespace KDSEP_NAMESPACE {
 
-HashStoreInterface::HashStoreInterface(KDSepOptions* options, const string& workingDirStr, BucketManager*& bucketManager, BucketOperator*& bucketOperator, messageQueue<writeBackObject*>* writeBackOperationsQueue)
+HashStoreInterface::HashStoreInterface(KDSepOptions* options, 
+    const string& workingDirStr, BucketManager*& bucketManager,
+    BucketOperator*& bucketOperator)
 {
     if (options->deltaStore_max_bucket_number_ == 0) {
         options->deltaStore_max_bucket_number_ = 1;
@@ -20,11 +22,7 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options, const string& work
         options->kd_cache.reset(new KDLRUCache(options->deltaStore_KDCache_item_number_));
         kd_cache_ = options->kd_cache;
     }
-    if (options->enable_write_back_optimization_ == true) {
-        bucketManager = new BucketManager(options, workingDirStr, notifyGCMQ_, writeBackOperationsQueue);
-    } else {
-        bucketManager = new BucketManager(options, workingDirStr, notifyGCMQ_, nullptr);
-    }
+    bucketManager = new BucketManager(options, workingDirStr, notifyGCMQ_);
     bucketOperator = new BucketOperator(options, workingDirStr, bucketManager);
     if (!bucketManager) {
         debug_error("[ERROR] Create BucketManager error,  file path = %s\n", workingDirStr.c_str());
@@ -100,7 +98,6 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     char* read_buf;
     uint64_t read_buf_size;
     file_manager_->readCommitLog(read_buf, read_buf_size);
-    debug_error("read_buf_size %lu\n", read_buf_size);
 
     if (read_buf == nullptr) {
 	return true;
@@ -254,6 +251,8 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
 	file_operator_->waitOperationHandlerDone(it);
     }
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_WAIT_HANDLERS, tv);
+
+    delete[] read_buf;
 
     return processed_delta_num > 0;
 }

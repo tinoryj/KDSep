@@ -19,7 +19,7 @@ namespace KDSEP_NAMESPACE {
 
 class BucketManager {
 public:
-    BucketManager(KDSepOptions* options, std::string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ, messageQueue<writeBackObject*>* writeBackOperationsQueue);
+    BucketManager(KDSepOptions* options, std::string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ);
     ~BucketManager();
     BucketManager& operator=(const BucketManager&) = delete;
 
@@ -96,8 +96,8 @@ private:
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
 //    boost::atomic<bool>* write_stall_ = nullptr;
     bool* write_stall_ = nullptr;
-    std::queue<string>* wb_keys = nullptr;
-    std::mutex* wb_keys_mutex = nullptr;
+    std::shared_ptr<std::queue<string>> wb_keys;
+    std::shared_ptr<std::mutex> wb_keys_mutex;
 
     uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
     uint64_t singleFileFlushSize_ = 4096;
@@ -173,13 +173,18 @@ private:
     void deleteFileHandler(BucketHandler* bucket);
     // message management
     messageQueue<BucketHandler*>* notifyGCMQ_;
-    messageQueue<writeBackObject*>* write_back_queue_;
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     std::shared_ptr<KDLRUCache> kd_cache_;
     std::mutex operationNotifyMtx_;
     std::mutex metaCommitMtx_;
     std::condition_variable operationNotifyCV_;
     std::condition_variable metaCommitCV_;
+
+    // write back
+    std::shared_ptr<messageQueue<writeBackObject*>> write_back_queue_;
+    std::shared_ptr<std::condition_variable> write_back_cv_;
+    std::shared_ptr<std::mutex> write_back_mutex_;
+
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
 

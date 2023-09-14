@@ -112,8 +112,10 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
             operationType_ == kAlignLinuxIO) {
         auto flag = O_RDWR | (operationType_ == kDirectIO ? O_DIRECT : 0);
         fd_ = open(path.c_str(), flag, 0644);
+        read_buf = nullptr;
         if (fd_ == -1) {
-            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fd_, strerror(errno));
+            debug_error("[ERROR] fd (open) = %d, err = %s, path %s\n", fd_,
+                strerror(errno), path.c_str());
             return false;
         } 
 
@@ -132,20 +134,26 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
         char* readBuffer;
         auto readBufferSize = page_size_ * req_page_num;
         auto ret = posix_memalign((void**)&readBuffer, page_size_, readBufferSize);
+//        debug_error("rss %lu disk_size_ %lu readBufferSize %lu req_page_num "
+//            "%lu\n", getRss(), disk_size_, readBufferSize, req_page_num);
         read_buf = new char[readBufferSize];
 
         if (ret) {
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+            delete[] read_buf;
+            read_buf = nullptr;
             return false;
         }
 
 
         uint64_t left = readBufferSize, p = 0;
         while (left > 0) {
-            auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
+            auto rReturn = pread(fd_, readBuffer, left, p);
             if (rReturn > left || rReturn == 0 || rReturn < 0) {
-                debug_error("rReturn %lu err %s\n", 
-                        rReturn, strerror(errno));
+                debug_error("rReturn %ld %lx err %s left %lu\n", 
+                        rReturn, rReturn, strerror(errno), left);
+                delete[] read_buf;
+                read_buf = nullptr;
                 return false;
             }
             p += rReturn;
@@ -154,6 +162,8 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
 
         if (p != readBufferSize) {
             free(readBuffer);
+            delete[] read_buf;
+            read_buf = nullptr;
             debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", p, strerror(errno), req_page_num, readBufferSize, disk_size_);
             return false;
         }
@@ -266,8 +276,9 @@ bool FileOperation::createThenOpenFile(string path)
             (operationType_ == kDirectIO ? O_DIRECT : 0);
         fd_ = open(path.c_str(), flag, 0644);
         if (fd_ == -1) {
-            debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fd_, strerror(errno));
-            exit(1);
+            debug_error("[ERROR] File descriptor (open) = %d, err = %s,"
+                " operationType %d path %s\n", fd_, strerror(errno),
+                operationType_, path.c_str());
             return false;
         } else {
             int allocateStatus = fallocate(fd_, 0, 0, preAllocateFileSize_);

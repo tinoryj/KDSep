@@ -172,6 +172,8 @@ DB_Working_Path="./working"
 DB_Loaded_Path="./loaded"
     DB_Working_Path="/mnt/sn640/KDSepanonymous/working"
     DB_Loaded_Path="/mnt/sn640/KDSepanonymous"
+    DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
+    DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
 ResultLogFolder="Exp/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
@@ -213,6 +215,7 @@ workload4="false"
 fake="false"
 nodirect="false"
 nodirectreads="false"
+nommap="false"
 rmw="false"
 up2x="false"
 crash="false"
@@ -421,6 +424,9 @@ for param in $*; do
     elif [[ "$param" == "nodirectreads" ]]; then
         nodirectreads="true"
         run_suffix=${run_suffix}_nodirectreads
+    elif [[ "$param" == "nommap" ]]; then
+        nommap="true"
+        run_suffix=${run_suffix}_nommap
     elif [[ "$param" == "up2x" ]]; then
         up2x="true"
         fieldlength=48
@@ -470,6 +476,10 @@ fi
 
 if [[ "$nodirectreads" == "true" ]]; then
     sed -i "/directReads/c\\directReads = false" temp.ini
+fi
+
+if [[ "$nommap" == "true" ]]; then
+    sed -i "/useMmap/c\\useMmap = false" temp.ini
 fi
 
 if [[ "$enableCrashConsistency" == "true" ]]; then
@@ -670,7 +680,7 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
     fi
     if [[ $roundIndex -eq $MAXRunTimes ]]; then
         if [ -f temp.ini ]; then
-            rm -rf temp.ini
+#            rm -rf temp.ini
             echo "Deleted old workload config"
         fi
     fi

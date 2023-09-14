@@ -6,7 +6,7 @@
 
 namespace KDSEP_NAMESPACE {
 
-BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ, messageQueue<writeBackObject*>* writeBackOperationsQueue)
+BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ)
 {
     maxBucketNumber_ = options->deltaStore_max_bucket_number_;
     bucket_bitmap_ = new BitMap(maxBucketNumber_ + 16);
@@ -32,8 +32,12 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     working_dir_ = workingDirStr;
     manifest_ = new ManifestManager(workingDirStr);
     notifyGCMQ_ = notifyGCMQ;
-    enableWriteBackDuringGCFlag_ = (writeBackOperationsQueue != nullptr);
-    write_back_queue_ = writeBackOperationsQueue;
+    enableWriteBackDuringGCFlag_ = (options->write_back_queue.get() != nullptr);
+    if (enableWriteBackDuringGCFlag_) {
+      write_back_queue_ = options->write_back_queue;
+      write_back_cv_ = options->write_back_cv;
+      write_back_mutex_ = options->write_back_mutex;
+    }
     gcWriteBackDeltaNum_ = options->deltaStore_gc_write_back_delta_num;
     gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
     fileOperationMethod_ = options->fileOperationMethod_;
@@ -171,8 +175,7 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_ = new FileOperation(kDirectIO,
-		commit_log_maximum_size_, 0);
+	commit_log_fop_ = new FileOperation(fileOperationMethod_, 4096, 0);
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -186,11 +189,8 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
                 write_i);
     }
 
-    if (commit_log_fop_->getCachedFileSize() > commit_log_next_threshold_) {
+    if (commit_log_fop_->getCachedFileSize() >= commit_log_next_threshold_) {
         need_flush = true;
-        debug_error("commit log next threshold %lu\n",
-                commit_log_next_threshold_);
-        commit_log_next_threshold_ += commit_log_maximum_size_;
     }
 
     return status.success_;
@@ -214,8 +214,7 @@ bool BucketManager::commitToCommitLog() {
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_ = new FileOperation(kDirectIO,
-		commit_log_maximum_size_, 0);
+	commit_log_fop_ = new FileOperation(fileOperationMethod_, 4096, 0);
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -557,7 +556,6 @@ bool BucketManager::recoverBucketTable() {
     // read all 
     struct timeval tv, tv2;
     gettimeofday(&tv, 0);
-    debug_error("start recovery %s\n", "");
     vector<uint64_t> scannedOnDiskFileIDList;
     int cnt_f = 0;
     uint64_t success_read_size = 0;
@@ -628,8 +626,8 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 
     string commit_log_path = working_dir_ + "/commit.log";
 
-    commit_log_fop_ = new FileOperation(kDirectIO, commit_log_maximum_size_,
-	    0);
+    commit_log_fop_ = new FileOperation(fileOperationMethod_,
+        commit_log_maximum_size_, 0);
     bool ret;
     STAT_PROCESS(
     ret = commit_log_fop_->openAndReadFile(commit_log_path, read_buf,
@@ -638,6 +636,9 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 
     if (ret == false) {
         commit_log_fop_->createThenOpenFile(commit_log_path);
+        if (read_buf != nullptr) {
+            delete[] read_buf;
+        }
 	read_buf = nullptr;
 	data_size = 0;
 	return true;
@@ -2165,11 +2166,6 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     gettimeofday(&tv, 0);
     vector<pair<string, BucketHandler*>> new_prefix_and_hdls;
 
-    if (tmpGcResult.size() > 2) {
-        debug_error("Split to more than 2 files, current file number = %lu\n",
-                tmpGcResult.size());
-    }
-
     for (int bi = 0; bi < tmpGcResult.size(); bi++) {
         BucketHandler* new_bucket;
         bool getFileHandlerStatus = createFileHandlerForGC(startKeys[bi],
@@ -2872,6 +2868,7 @@ bool BucketManager::pushObjectsToWriteBackQueue(
             StatsRecorder::staticProcess(
                     StatsType::KDSep_GC_WRITE_BACK, tv);
         }
+        write_back_cv_->notify_one();
     }
     return true;
 }

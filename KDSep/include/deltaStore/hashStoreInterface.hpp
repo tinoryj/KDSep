@@ -13,7 +13,7 @@ namespace KDSEP_NAMESPACE {
 class HashStoreInterface {
 public:
     HashStoreInterface(KDSepOptions* options, const string& workingDirStr, BucketManager*& bucketManager,
-        BucketOperator*& bucketOperator, messageQueue<writeBackObject*>* writeBackOperationsQueue);
+        BucketOperator*& bucketOperator);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();

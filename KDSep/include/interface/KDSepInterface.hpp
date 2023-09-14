@@ -6,6 +6,7 @@ using namespace std;
 
 namespace KDSEP_NAMESPACE {
 
+
 class KDSep {
 public:
     KDSep();
@@ -39,8 +40,8 @@ private:
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
 //    boost::atomic<bool>* write_stall_ = nullptr;
     bool* write_stall_ = nullptr;
-    std::queue<string>* wb_keys = nullptr;
-    std::mutex* wb_keys_mutex = nullptr;
+    shared_ptr<queue<string>> wb_keys;
+    shared_ptr<mutex> wb_keys_mutex;
 
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
@@ -103,7 +104,11 @@ private:
 
     std::shared_mutex batchedBufferOperationMtx_;
 
-    messageQueue<writeBackObject*>* writeBackOperationsQueue_ = nullptr;
+    //
+    std::shared_ptr<messageQueue<writeBackObject*>> write_back_queue_;
+    std::shared_ptr<std::condition_variable> write_back_cv_;
+    std::shared_ptr<std::mutex> write_back_mutex_;
+
     // useless
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
     std::mutex lsm_interface_mutex;

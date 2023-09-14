@@ -8,6 +8,7 @@
 #include "utils/appendAbleLRUCacheStrVector.hpp"
 #include "utils/debug.hpp"
 #include "utils/fileOperation.hpp"
+#include "utils/messageQueue.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -100,12 +101,16 @@ public:
     uint64_t memory_budget;
 
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    std::shared_ptr<KDLRUCache> kd_cache;
+    shared_ptr<KDLRUCache> kd_cache;
+
+    shared_ptr<messageQueue<writeBackObject*>> write_back_queue;
+    shared_ptr<condition_variable> write_back_cv;
+    shared_ptr<mutex> write_back_mutex;
+    shared_ptr<queue<string>> wb_keys;
+    shared_ptr<mutex> wb_keys_mutex;
+
     //    boost::atomic<bool>* write_stall = nullptr;
     bool* write_stall = nullptr;
-    queue<string>* wb_keys = nullptr;
-    mutex* wb_keys_mutex = nullptr;
-
     // dump options
     bool dumpOptions(string dumpPath);
     bool dumpDataStructureInfo(string dumpPath);
