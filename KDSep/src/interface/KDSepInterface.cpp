@@ -8,20 +8,17 @@ KDSep::KDSep()
 
 KDSep::~KDSep()
 {
-    size_t rss = getRss();
-    cerr << "[KDSep Interface] Try delete write batch: " << rss << endl;
+    cerr << "[KDSep Interface] Try delete write batch: " << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         delete notifyWriteBatchMQ_;
         delete batch_map_[0];
         delete batch_map_[1];
     }
-    rss = getRss();
-    cerr << "[KDSep Interface] Try delete lsm interface " << rss << endl;
+    cerr << "[KDSep Interface] Try delete lsm interface " << endl;
     if (enableParallelLsmInterface == true) {
         delete lsmInterfaceOperationsQueue_;
     }
-    rss = getRss();
-    cerr << "[KDSep Interface] Try delete Read Cache " << rss << endl;
+    cerr << "[KDSep Interface] Try delete Read Cache " << endl;
 //    if (wb_keys != nullptr) {
 //	delete wb_keys;
 //	delete wb_keys_mutex;
@@ -29,23 +26,18 @@ KDSep::~KDSep()
     if (write_stall_ != nullptr) {
 	delete write_stall_;
     }
-    cerr << "[KDSep Interface] Try delete HashStore " << rss << endl;
+    cerr << "[KDSep Interface] Try delete HashStore " << endl;
     if (delta_store_ != nullptr) {
-        rss = getRss();
-        cerr << "interface " << rss << endl;
+        cerr << "interface " << endl;
         delete delta_store_;
-        rss = getRss();
-        cerr << "file manager " << rss << endl;
+        cerr << "file manager " << endl;
         delete bucket_manager_;
-        rss = getRss();
-        cerr << "file operator " << rss << endl;
+        cerr << "file operator " << endl;
         delete bucket_operator_;
     }
-    rss = getRss();
-    cerr << "[KDSep Interface] Try delete mempool " << rss << endl;
+    cerr << "[KDSep Interface] Try delete mempool " << endl;
     delete objectPairMemPool_;
-    rss = getRss();
-    cerr << "[KDSep Interface] Try delete RocksDB " << rss << endl;
+    cerr << "[KDSep Interface] Try delete RocksDB " << endl;
 }
 
 bool KDSep::Open(KDSepOptions& options, const string& name)
@@ -170,23 +162,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
 bool KDSep::Close()
 {
-    cerr << "[KDSep Close DB] Wait write back" << endl;
-    if (enable_write_back_ == true) {
-        write_back_queue_->done = true;
-        write_back_cv_->notify_one();
-        while (write_back_queue_->isEmpty() == false) {
-            asm volatile("");
-        }
-        cerr << "\tWrite back done" << endl;
-    }
-    cerr << "[KDSep Close DB] Force GC" << endl;
-    usleep(100000);
-    if (isDeltaStoreInUseFlag_ == true) {
-        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
-            delta_store_->forcedManualGarbageCollection();
-            cerr << "\tDeltaStore forced GC done" << endl;
-        }
-    }
     cerr << "[KDSep Close DB] Flush write buffer" << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
         for (auto i = 0; i < 2; i++) {
@@ -199,6 +174,26 @@ bool KDSep::Close()
             asm volatile("");
         }
         cerr << "\tFlush write batch done" << endl;
+    }
+    usleep(100000);
+    cerr << "[KDSep Close DB] Force GC" << endl;
+    if (isDeltaStoreInUseFlag_ == true) {
+        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
+            delta_store_->forcedManualGarbageCollection();
+            cerr << "\tDeltaStore forced GC done" << endl;
+        }
+    }
+    cerr << "[KDSep Close DB] Wait write back" << endl;
+    if (enable_write_back_ == true) {
+        write_back_queue_->done = true;
+        write_back_cv_->notify_one();
+        while (wb_keys->size() > 0) {
+            usleep(10);
+        }
+        while (write_back_queue_->isEmpty() == false) {
+            usleep(10);
+        }
+        cerr << "\tWrite back done" << endl;
     }
     cerr << "[KDSep Close DB] Set job done" << endl;
     if (enableParallelLsmInterface == true) {
@@ -1508,7 +1503,6 @@ bool KDSep::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair
 
 void KDSep::processBatchedOperationsWorker()
 {
-    int tstatic = 10; // 50;
     while (true) {
         if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
@@ -1710,15 +1704,6 @@ void KDSep::processBatchedOperationsWorker()
                     }
 		} else {
                     // directly multiput
-                    if (tstatic) {
-                        uint64_t block_cache_usage =
-                          rocks_block_cache_->GetUsage();
-                        debug_error("block: %.2lf, rss - block: %.2lf\n", 
-                            block_cache_usage / 1024.0 / 1024.0, 
-                            (getRssNoTrim() * 1024 - block_cache_usage) 
-                            / 1024.0 / 1024.0);
-                        tstatic--;
-                    }
 		    STAT_PROCESS(
 		    putToDeltaStoreStatus =
 		    delta_store_->multiPut(pending_kds, 
@@ -1757,11 +1742,6 @@ void KDSep::processBatchedOperationsWorker()
                 // Step 5. update the delta stop
                 if (two_phase_write) {
                     bool s;
-                    if (tstatic) {
-                        debug_error("block cache: %.2lf\n", 
-                            rocks_block_cache_->GetUsage() / 1024.0);
-                        tstatic--;
-                    }
 		    STAT_PROCESS(
                     s = delta_store_->multiPut(pending_kds, ds_need_flush,
                             false),

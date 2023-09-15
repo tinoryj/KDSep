@@ -9,113 +9,9 @@
 using namespace std;
 
 namespace KDSEP_NAMESPACE {
-//#define SKIPLIST_P 0.5f
-//#define MAX_LEVEL 32
+#define SKIPLIST_P 0.5f
+#define MAX_LEVEL 32
 
-//class SkipList {
-//
-//
-//    public Node find(int value) {
-//        Node p = head;
-//        for (int i = levelCount - 1; i >= 0; --i) {
-//            while (p.forwards[i] != null && p.forwards[i].data < value) {
-//                p = p.forwards[i];
-//            }
-//        }
-//
-//        if (p.forwards[0] != null && p.forwards[0].data == value) {
-//            return p.forwards[0];
-//        } else {
-//            return null;
-//        }
-//    }
-//
-//    public void insert(int value) {
-//        int level = randomLevel();
-//        Node newNode = new Node();
-//        newNode.data = value;
-//        newNode.maxLevel = level;
-//        Node update[] = new Node[level];
-//        for (int i = 0; i < level; ++i) {
-//            update[i] = head;
-//        }
-//
-//        // record every level largest value which smaller than insert value in update[]
-//        Node p = head;
-//        for (int i = level - 1; i >= 0; --i) {
-//            while (p.forwards[i] != null && p.forwards[i].data < value) {
-//                p = p.forwards[i];
-//            }
-//            update[i] = p;// use update save node in search path
-//        }
-//
-//        // in search path node next node become new node forwords(next)
-//        for (int i = 0; i < level; ++i) {
-//            newNode.forwards[i] = update[i].forwards[i];
-//            update[i].forwards[i] = newNode;
-//        }
-//
-//        // update node hight
-//        if (levelCount < level) levelCount = level;
-//    }
-//
-//    public void delete(int value) {
-//        Node[] update = new Node[levelCount];
-//        Node p = head;
-//        for (int i = levelCount - 1; i >= 0; --i) {
-//            while (p.forwards[i] != null && p.forwards[i].data < value) {
-//                p = p.forwards[i];
-//            }
-//            update[i] = p;
-//        }
-//
-//        if (p.forwards[0] != null && p.forwards[0].data == value) {
-//            for (int i = levelCount - 1; i >= 0; --i) {
-//                if (update[i].forwards[i] != null && update[i].forwards[i].data == value) {
-//                    update[i].forwards[i] = update[i].forwards[i].forwards[i];
-//                }
-//            }
-//        }
-//
-//        while (levelCount>1&&head.forwards[levelCount]==null){
-//            levelCount--;
-//        }
-//
-//    }
-//
-//    // 理论来讲，一级索引中元素个数应该占原始数据的 50%，二级索引中元素个数占 25%，三级索引12.5% ，一直到最顶层。
-//    // 因为这里每一层的晋升概率是 50%。对于每一个新插入的节点，都需要调用 randomLevel 生成一个合理的层数。
-//    // 该 randomLevel 方法会随机生成 1~MAX_LEVEL 之间的数，且 ：
-//    //        50%的概率返回 1
-//    //        25%的概率返回 2
-//    //      12.5%的概率返回 3 ...
-//    private int randomLevel() {
-//        int level = 1;
-//
-//        while (Math.random() < SKIPLIST_P && level < MAX_LEVEL)
-//            level += 1;
-//        return level;
-//    }
-//
-//    public void printAll() {
-//        Node p = head;
-//        while (p.forwards[0] != null) {
-//            System.out.print(p.forwards[0] + " ");
-//            p = p.forwards[0];
-//        }
-//        System.out.println();
-//    }
-//
-//    public class Node {
-//        private: 
-//        string key = -1;
-//        forwards[] = new Node[MAX_LEVEL];
-//        int maxLevel = 0;
-//    }
-//    private int levelCount = 1;
-//
-//    private Node head = new Node();  // 带头链表
-//};
 
 //struct BucketHandler {
 //    uint64_t file_id = 0;
@@ -123,17 +19,18 @@ namespace KDSEP_NAMESPACE {
 
 class SkipListWithMap {
 public:
-    void init() {
+    virtual void init() {
         st.clear();
     }
 
-    bool insert(const string& key, BucketHandler* newData) {
+    virtual bool insert(const string& key, BucketHandler* newData) {
 //        std::scoped_lock<std::shared_mutex> w_lock(mtx_);
+
         st[key] = newData;
         return true;
     }
 
-    bool updateNoLargerThan(const string& key, BucketHandler* newData) {
+    virtual bool updateNoLargerThan(const string& key, BucketHandler* newData) {
 //        std::scoped_lock<std::shared_mutex> w_lock(mtx_);
         auto it = st.upper_bound(key);
         if (it != st.begin()) {
@@ -146,7 +43,7 @@ public:
         }
     }
 
-    bool deleteNoLargerThan(const string& key) {
+    virtual bool deleteNoLargerThan(const string& key) {
 //        std::scoped_lock<std::shared_mutex> w_lock(mtx_);
         auto it = st.upper_bound(key);
         if (it != st.begin()) {
@@ -158,17 +55,7 @@ public:
         }
     }
 
-    // useless
-    BucketHandler* find(const string& key) {
-//        std::shared_lock<std::shared_mutex> r_lock(mtx_);
-        auto it = st.find(key);
-        if (it != st.end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
-
-    BucketHandler* findNoLargerThan(const string& key) {
+    virtual BucketHandler* findNoLargerThan(const string& key) {
         // find the largest key that is not larger than key
 //        std::shared_lock<std::shared_mutex> r_lock(mtx_);
         auto it = st.upper_bound(key);
@@ -179,7 +66,7 @@ public:
     }
 
     // for merge 
-    BucketHandler* findNext(const string& key) {
+    virtual BucketHandler* findNext(const string& key) {
 //        std::shared_lock<std::shared_mutex> r_lock(mtx_);
         auto it = st.upper_bound(key);
         if (it != st.end()) {
@@ -188,33 +75,21 @@ public:
         return nullptr;
     }
 
-    // for merge
-    bool deleteNext(const string& key) {
-//        std::scoped_lock<std::shared_mutex> w_lock(mtx_);
-        
-        auto it = st.upper_bound(key);
-        if (it != st.end()) {
-            st.erase(it);
-            return true;
-        }
-        return false;
-    }
-
-    void getAllNodes(vector<pair<string, BucketHandler*>>& validObjectList)
+    virtual void getAllNodes(vector<pair<string, BucketHandler*>>& validObjectList)
     {
         for (auto& it : st) {
             validObjectList.push_back(it);
         }
     }
 
-    void getAllValues(vector<BucketHandler*>& validList)
+    virtual void getAllValues(vector<BucketHandler*>& validList)
     {
         for (auto& it : st) {
             validList.push_back(it.second);
         }
     }
 
-    int size() {
+    virtual int size() {
 //        std::shared_lock<std::shared_mutex> r_lock(mtx_);
         return st.size();
     }
@@ -222,6 +97,215 @@ public:
 private:
     std::map<string, BucketHandler*> st;
     std::shared_mutex mtx_;
+};
+
+class SkipList : public SkipListWithMap {
+public: 
+    ~SkipList() {
+        Node* p = head;
+        while (p->forwards[0] != nullptr) {
+            Node* tmp = p;
+            p = p->forwards[0];
+            delete[] tmp->forwards;
+            delete tmp;
+        }
+        delete[] p->forwards;
+        delete p;
+    }
+
+    virtual void init() {
+        head = new Node(MAX_LEVEL);
+        srand(time(nullptr));
+    }
+
+    virtual bool insert(const string& key, BucketHandler* newData) {
+        int level = randomLevel();
+        for (int i = 0; i < level; ++i) {
+            update[i] = head;
+        }
+
+        // record every level largest value which smaller than insert value in update[]
+        Node* p = head;
+        for (int i = level - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && p->forwards[i]->key < key) {
+                p = p->forwards[i];
+            }
+            update[i] = p;// use update save node in search path
+        }
+
+        // insert the new node in this level 
+        // update[i] -> newNode -> update[i]->forwards[i] (original)
+        if (p->forwards[0] != nullptr && p->forwards[0]->key == key) {
+            // check if the key already exists
+//            newData = p->forwards[0]->data;
+            fprintf(stderr, "Error: key %s already exists!\n", key.c_str());
+            exit(1);
+        } else {
+            Node* newNode = new Node(level);
+            newNode->key = key;
+            newNode->data = newData;
+            newNode->maxLevel = level;
+            for (int i = 0; i < level; ++i) {
+                newNode->forwards[i] = update[i]->forwards[i];
+                update[i]->forwards[i] = newNode;
+            }
+
+            // update node hight
+            if (num_levels_ < level) num_levels_ = level;
+            size_++;
+        }
+
+        return true;
+    }
+
+    virtual bool updateNoLargerThan(const string& key, BucketHandler* newData) {
+        Node* p = head;
+        for (int i = num_levels_ - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && key >= p->forwards[i]->key) {
+                p = p->forwards[i];
+            }
+        }
+
+        if (p == head) {
+            return false;
+        } else {
+            p->data = newData;
+            return true;
+        }
+    }
+
+    virtual bool deleteNoLargerThan(const string& key) {
+        Node* p = head;
+        Node* target = nullptr;
+
+        // search for the first time, find the target
+        for (int i = num_levels_ - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && key >= p->forwards[i]->key) {
+                p = p->forwards[i];
+            }
+        }
+
+        target = p;
+        if (target == head) {
+            return false;
+        }
+
+        p = head;
+        // update: the nodes that are before the target node
+        // search for the second time, find the update nodes
+        for (int i = num_levels_ - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && p->forwards[i]->key < target->key) {
+                p = p->forwards[i];
+            }
+            update[i] = p;
+        }
+
+        // the next one is the target node
+        if (p->forwards[0] != nullptr) {
+            target = p->forwards[0];
+            for (int i = num_levels_ - 1; i >= 0; --i) {
+                if (update[i]->forwards[i] != nullptr) {
+                    update[i]->forwards[i] =
+                        update[i]->forwards[i]->forwards[i];
+                }
+            }
+        }
+
+        while (num_levels_ > 1 && head->forwards[num_levels_] == nullptr){
+            num_levels_--;
+        }
+
+        delete[] target->forwards;
+        delete target; 
+        size_--;
+        return true;
+    }
+
+    virtual BucketHandler* findNoLargerThan(const string& key) {
+        Node* p = head;
+        for (int i = num_levels_ - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && p->forwards[i]->key <= key) {
+                p = p->forwards[i];
+            }
+        }
+
+        // now the key of p is the largest that are no larger than the key 
+        if (p == head) {
+            return nullptr;
+        } else {
+            return p->data;
+        }
+    }
+
+    virtual BucketHandler* findNext(const string& key) {
+        Node* p = head;
+        for (int i = num_levels_ - 1; i >= 0; --i) {
+            while (p->forwards[i] != nullptr && p->forwards[i]->key <= key) {
+                p = p->forwards[i];
+            }
+        }
+
+        Node* iter = head;
+        fprintf(stdout, "find next: key = %s\n", key.c_str());
+        while (iter->forwards[0] != nullptr) {
+            iter = iter->forwards[0];
+            fprintf(stdout, "iter->key = %s\n", iter->key.c_str());
+        }
+
+        if (p->forwards[0] != nullptr) {
+            return p->forwards[0]->data;
+        } else {
+            return nullptr;
+        }
+    }
+
+    int randomLevel() {
+        int level = 1;
+        while (((double)rand() / RAND_MAX) < SKIPLIST_P && level < MAX_LEVEL) {
+            level += 1;
+        }
+        return level;
+    }
+
+    virtual void getAllNodes(vector<pair<string, BucketHandler*>>& list) {
+        Node* p = head;
+        while (p->forwards[0]) {
+            list.push_back(make_pair(p->forwards[0]->key,
+                        p->forwards[0]->data));
+            p = p->forwards[0];
+        }
+    }
+
+    virtual void getAllValues(vector<BucketHandler*>& valid_list) {
+        Node* p = head;
+        while (p->forwards[0]) {
+            valid_list.push_back(p->forwards[0]->data);
+            p = p->forwards[0];
+        }
+    }
+
+    virtual int size() {
+        return size_;
+    }
+
+private:
+    struct Node {
+        string key = "";
+        BucketHandler* data = nullptr;
+        Node** forwards = nullptr;
+        int maxLevel = 0;
+
+        Node(int level) {
+            maxLevel = level;
+            forwards = new Node*[level];
+            memset(forwards, 0, sizeof(Node*) * level);
+        }
+    };
+
+    Node* head = nullptr;
+    Node* update[MAX_LEVEL]; // temp array for iterating
+    int num_levels_ = 1;
+    int size_ = 0;
 };
 
 class SkipListForBuckets {
@@ -263,7 +347,7 @@ public:
 
         int current_file_num = list_.size();
 
-        if (current_file_num >= max_file_num_) {
+        if (current_file_num >= max_file_num_ + 10) {
             fprintf(stderr, 
                     "[ERROR] Could note insert new node, since there are "
                     "too many files, number = %u, threshold = %lu\n",
@@ -287,7 +371,7 @@ public:
         std::scoped_lock<std::shared_mutex> w_lock(nodeOperationMtx_);
 
         int current_file_num = list_.size();
-        if (current_file_num + insertList.size() >= max_file_num_) {
+        if (current_file_num + insertList.size() >= max_file_num_ + 10) {
             fprintf(stderr, 
                     "[ERROR] Could note insert new node, since there are "
                     "too many files, number = %u, threshold = %lu\n",
@@ -378,6 +462,7 @@ private:
 //    vector<BucketHandler*> targetDeleteVec;
     uint64_t max_file_num_ = 0;
     SkipListWithMap list_;
+//    SkipList list_;
     std::shared_mutex nodeOperationMtx_;
 };
 

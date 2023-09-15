@@ -981,7 +981,6 @@ bool BucketOperator::operationWorkerFind(hashStoreOperationHandler* op_hdl) {
 
 bool BucketOperator::putFileHandlerIntoGCJobQueueIfNeeded(BucketHandler* bucket)
 {
-    static int cnt = 0;
     if (write_stall_ != nullptr) {
         if (*write_stall_ == true) {
             // performing write-back, does not do GC now

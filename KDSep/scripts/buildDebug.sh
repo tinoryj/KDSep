@@ -30,7 +30,7 @@ else
     fi
 fi
 
-./scripts/cleanup.sh
+#./scripts/cleanup.sh
 
 cd ./build || exit
 cmake .. -DCMAKE_BUILD_TYPE=Debug

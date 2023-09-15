@@ -1118,7 +1118,7 @@ bool FileOperation::removeAndReopen() {
 	debug_error("[ERROR] could not delete %s\n", path_.c_str());
 	return false;
     }
-    bool r = createThenOpenFile(path_);
+    createThenOpenFile(path_);
     return true;
 }
 

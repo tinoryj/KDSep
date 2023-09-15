@@ -68,6 +68,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     // for asio
     gc_threads_ = new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_);
     extra_threads_ = new boost::asio::thread_pool(4);  // for split/merge in parallel
+    BucketHandler* bucket;
+    createNewInitialBucket(bucket); // the first bucket
     num_threads_ = 0;
 }
 
@@ -75,7 +77,18 @@ BucketManager::~BucketManager()
 {
     delete gc_threads_;
     delete extra_threads_;
+    commit_log_fop_->flushFile();
+    commit_log_fop_->closeFile();
+    delete commit_log_fop_;
+    delete bucket_bitmap_;
     CloseHashStoreFileMetaDataList();
+
+    // release all buckets
+    vector<BucketHandler*> vec;
+    prefix_tree_.getCurrentValidNodesNoKey(vec);
+    for (auto& it : vec) {
+        deleteFileHandler(it);
+    }
 }
 
 bool BucketManager::setJobDone()
@@ -124,6 +137,7 @@ void BucketManager::deleteFileHandler(
     }
     delete bucket->sorted_filter;
     delete bucket->filter;
+    delete bucket;
 }
 
 bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
@@ -558,7 +572,6 @@ bool BucketManager::recoverBucketTable() {
     gettimeofday(&tv, 0);
     vector<uint64_t> scannedOnDiskFileIDList;
     int cnt_f = 0;
-    uint64_t success_read_size = 0;
 
     boost::asio::thread_pool* recovery_thread_ = new
 	boost::asio::thread_pool(8);
@@ -793,37 +806,37 @@ bool BucketManager::RetriveHashStoreFileMetaDataList()
     bool should_recover;
     bool ret = manifest_->RetrieveFileMetadata(should_recover, id2prefixes_);
     if (ret == false) {
-	debug_error("[ERROR] read metadata failed: ids %lu\n",
-		id2prefixes_.size());
+        debug_error("[ERROR] read metadata failed: ids %lu\n",
+                id2prefixes_.size());
     }
 
     if (should_recover == false) {
-	manifest_->CreateManifestIfNotExist();
-	return true;
+        manifest_->CreateManifestIfNotExist();
+        return true;
     }
 
     id2buckets_.clear();
 
-    for (auto& it : id2prefixes_) {
-	auto& file_id = it.first;
-	auto& prefix = it.second;
-	BucketHandler* old_hdl = nullptr;
-	BucketHandler* bucket = createFileHandler();
+//    for (auto& it : id2prefixes_) {
+//        auto& file_id = it.first;
+        //	auto& prefix = it.second;
+//        BucketHandler* old_hdl = nullptr;
+//        BucketHandler* bucket = createFileHandler();
 
-	id2buckets_[file_id] = bucket;
-        // TODO fix this
-	bucket->key = "";
-	bucket->file_id = file_id;
+//        id2buckets_[file_id] = bucket;
+//        // TODO fix this
+//        bucket->key = "";
+//        bucket->file_id = file_id;
 
-	uint64_t ret_lvl;
+        //      uint64_t ret_lvl;
         // TODO for recovery
 //	ret_lvl = prefix_tree_.insertWithFixedBitNumber(prefixExtract(prefix),
-//		prefixLenExtract(prefix), bucket, old_hdl);
+//      prefixLenExtract(prefix), bucket, old_hdl);
 
-	if (ret_lvl == 0) {
-	    debug_error("ret failed: old_hdl %p\n", old_hdl);
-	}
-    }
+//        if (ret_lvl == 0) {
+//            debug_error("ret failed: old_hdl %p\n", old_hdl);
+//        }
+//    }
 
     return true;
 }
@@ -939,6 +952,16 @@ bool BucketManager::RemoveObsoleteFiles() {
     bucket_delete_mtx_.lock();
     for (auto it : bucket_id_to_delete_) {
         deleteObslateFileWithFileIDAsInput(it);
+    }
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    while (!bucket_to_delete_.empty()) {
+        auto p = bucket_to_delete_.front();
+        if (!metadataUpdateShouldExit_ && p.first + 10 > tv.tv_sec) {
+            break;
+        }
+        bucket_to_delete_.pop();
+        deleteFileHandler(p.second);
     }
     bucket_id_to_delete_.clear();
     bucket_delete_mtx_.unlock();
@@ -1091,7 +1114,7 @@ bool BucketManager::getFileHandlerWithKey(const char* keyBuffer,
         // TODO there may be some sync problems
         // solution: For get, use "get"; For put, use "getOrCreate".
         STAT_PROCESS(createNewFileHandlerStatus =
-                createAndGetNewHashStoreFileHandlerByPrefixForUser(bucket),
+                createNewInitialBucket(bucket),
                 StatsType::KDSep_HASHSTORE_CREATE_NEW_BUCKET);
         if (!createNewFileHandlerStatus || bucket == nullptr) {
             debug_error("[ERROR] create new bucket, key %.*s\n", 
@@ -1133,7 +1156,7 @@ bool BucketManager::getFileHandlerWithKey(const char* keyBuffer,
             debug_error("come here %d\n", 1);
             bool createNewFileHandlerStatus;
             STAT_PROCESS(createNewFileHandlerStatus =
-                    createAndGetNewHashStoreFileHandlerByPrefixForUser(bucket),
+                    createNewInitialBucket(bucket),
                     StatsType::KDSep_HASHSTORE_CREATE_NEW_BUCKET);
             if (!createNewFileHandlerStatus) {
                 debug_error("[ERROR] Previous file may deleted during GC,"
@@ -1371,12 +1394,12 @@ bool BucketManager::getBucketHandlerOrCreate(const string& key,
         std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
         s = prefix_tree_.get(key, bucket);
         if (s == false) {
-            s = createNewInitialBucket(bucket);
-            if (s == false) {
-                debug_error("create initial bucket failed, key %s\n",
-                        key.c_str());
-                return false;
-            }
+//            s = createNewInitialBucket(bucket);
+//            if (s == false) {
+//                debug_error("create initial bucket failed, key %s\n",
+//                        key.c_str());
+//                return false;
+//            }
         }
     }
 
@@ -1440,37 +1463,14 @@ bool
 BucketManager::createNewInitialBucket(BucketHandler*& bucket)
 {
     BucketHandler* tmp_bucket = createFileHandler();
-    bool status = prefix_tree_.insert("", tmp_bucket);
+    BucketHandler* tmp = tmp_bucket;
+    bool status = prefix_tree_.insert("", tmp);
     if (status == false) {
-        debug_e("Insert failed!\n");
-	return false;
-    }
-
-    // initialize the file handler
-    tmp_bucket->file_id = generateNewFileID();
-    tmp_bucket->ownership = 0;
-    tmp_bucket->gc_status = kNew;
-    tmp_bucket->total_object_bytes = 0;
-    tmp_bucket->total_on_disk_bytes = 0;
-    tmp_bucket->total_object_cnt = 0;
-//    tmp_bucket->prefix = prefixConcat(prefix_u64, finalInsertLevel);
-    tmp_bucket->key = "";
-
-    bucket = tmp_bucket;
-    if (enable_crash_consistency_) {
-        // TODO modify manifest
-	manifest_->InitialSnapshot(bucket);
-    }
-    return true;
-}
-
-bool
-BucketManager::createAndGetNewHashStoreFileHandlerByPrefixForUser(BucketHandler*& bucket)
-{
-    BucketHandler* tmp_bucket = createFileHandler();
-    // move pointer for return
-    bool status = prefix_tree_.insert("", tmp_bucket);
-    if (status == false) {
+        if (tmp != tmp_bucket) {
+            // 
+            deleteFileHandler(tmp_bucket);
+            tmp_bucket = tmp;
+        }
         debug_e("Insert failed!\n");
 	return false;
     }
@@ -1823,6 +1823,7 @@ bool BucketManager::singleFileRewrite(
 		"ID = %lu for single file rewrite\n", new_id, old_id);
         bucket_delete_mtx_.lock();
         bucket_id_to_delete_.push_back(new_id);
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
         bucket_delete_mtx_.unlock();
         return false;
     }
@@ -1931,7 +1932,6 @@ void BucketManager::writeSingleSplitFile(BucketHandler* new_bucket,
 
     char write_buf[targetFileSize];
     uint64_t write_i = 0;
-    uint64_t tot_size = 0;
 
     // Iterate all the keys
     size_t header_sz = sizeof(KDRecordHeader);
@@ -1966,35 +1966,6 @@ void BucketManager::writeSingleSplitFile(BucketHandler* new_bucket,
             }
         }
     }
-    //        for (auto keyToSizeIt : keyToSizeMap) {
-    //            tot_size += keyToSizeIt.second;
-    //            auto keyIt = gcResultMap.find(keyToSizeIt.first);
-    //            auto& key = keyToSizeIt.first;
-    //            auto& values = keyIt->second.first;
-    //            for (auto vec_i = 0; vec_i < keyIt->second.first.size();
-    //                    vec_i++) {
-    //                auto& value = keyIt->second.first[vec_i]; 
-    //                auto& header = keyIt->second.second[vec_i];
-    //
-    //                if (use_varint_d_header == false) {
-    //                    copyInc(write_buf, write_i, &header, header_sz);
-    //                } else {
-    //                    write_i += PutDeltaHeaderVarint(write_buf + write_i,
-    //                            header);
-    //                }
-    //                copyInc(write_buf, write_i, key.data_, key.size_);
-    //                copyInc(write_buf, write_i, value.data_, value.size_);
-    //            }
-    //            new_bucket->total_object_cnt += values.size();
-    //            if (keyIt->second.first.size() > 0) {
-    //                new_bucket->filter->Insert(key);
-    //            }
-    //
-    //            if (write_i > tot_size) {
-    //                debug_error("[ERROR] write_i %lu > tot_size %lu\n", write_i, tot_size);
-    //                exit(1);
-    //            }
-    //        }
     KDRecordHeader gc_fin_header;
     gc_fin_header.is_anchor_ = false;
     gc_fin_header.is_gc_done_ = true;
@@ -2215,15 +2186,20 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         }
 
         bool s = prefix_tree_.batchInsertAndUpdate(insertList, key1, bucket1);
+//        debug_error("split key %s to %s and %s\n", key1.c_str(),
+//                new_prefix_and_hdls[0].first.c_str(),
+//                new_prefix_and_hdls[1].first.c_str());
         if (s == false) {
             debug_e("batch insert failed");
+            struct timeval tv;
+            gettimeofday(&tv, 0);
             for (int i = 0; i < new_prefix_and_hdls.size(); i++) {
                 auto& bucket = new_prefix_and_hdls[i].second;
                 bucket->io_ptr->closeFile();
                 bucket_delete_mtx_.lock();
                 bucket_id_to_delete_.push_back(bucket->file_id);
+                bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
                 bucket_delete_mtx_.unlock();
-                deleteFileHandler(bucket);
             }
             return false;
         }
@@ -2250,8 +2226,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
                     StatsType::DS_MANIFEST_GC_SPLIT);
         }
 
+        struct timeval tv;
+        gettimeofday(&tv, 0);
         bucket_delete_mtx_.lock();
         bucket_id_to_delete_.push_back(bucket->file_id);
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
         bucket_delete_mtx_.unlock();
         return true;
     }
@@ -2347,9 +2326,8 @@ bool BucketManager::twoAdjacentFileMerge(
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap2;
     map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes_2;
-    pair<uint64_t, uint64_t> remainObjectNumberPair2 =
-        deconstructAndGetValidContentsFromFile(readWriteBuffer2,
-                bucket2->total_object_bytes, gcResultMap2, gc_orig_sizes_2);
+    deconstructAndGetValidContentsFromFile(readWriteBuffer2,
+            bucket2->total_object_bytes, gcResultMap2, gc_orig_sizes_2);
 
     StatsRecorder::staticProcess(StatsType::MERGE_FILE2, tv);
     gettimeofday(&tv, 0);
@@ -2560,9 +2538,6 @@ bool BucketManager::twoAdjacentFileMerge(
     debug_info("Flushed new file to filesystem since merge gc, the new file ID = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n", bucket->file_id, bucket1->file_id, bucket2->file_id);
 
     // update metadata
-    uint64_t newLeafNodeBitNumber = 0;
-//    bool mergeNodeStatus = prefix_tree_.mergeNodesToNewLeafNode(target_prefix,
-//            prefix_len, newLeafNodeBitNumber);
     bool mergeNodeStatus = prefix_tree_.remove(bucket2->key);
 
     if (mergeNodeStatus == false) {
@@ -2575,7 +2550,7 @@ bool BucketManager::twoAdjacentFileMerge(
         bucket_delete_mtx_.unlock();
         bucket1->ownership = 0;
         bucket2->ownership = 0;
-	deleteFileHandler(bucket);
+	deleteFileHandler(bucket); // roll back, can directly delete
         StatsRecorder::staticProcess(StatsType::MERGE_METADATA, tv);
         return false;
     }
@@ -2603,12 +2578,18 @@ bool BucketManager::twoAdjacentFileMerge(
 //    }
     debug_info("Start update metadata for merged file ID = %lu\n", bucket->file_id);
 
-    bucket_delete_mtx_.lock();
-    bucket_id_to_delete_.push_back(bucket1->file_id);
-    bucket_id_to_delete_.push_back(bucket2->file_id);
-    bucket_delete_mtx_.unlock();
     bucket1->gc_status = kShouldDelete;
     bucket2->gc_status = kShouldDelete;
+    bucket_delete_mtx_.lock();
+    {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        bucket_id_to_delete_.push_back(bucket1->file_id);
+        bucket_id_to_delete_.push_back(bucket2->file_id);
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket1));
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket2));
+    }
+    bucket_delete_mtx_.unlock();
     bucket1->ownership = 0;
     bucket2->ownership = 0;
 
@@ -2630,10 +2611,6 @@ bool BucketManager::twoAdjacentFileMerge(
     if (bucket2->io_ptr->isFileOpen() == true) {
 	bucket2->io_ptr->closeFile();
     }
-    bucket_delete_mtx_.lock();
-    bucket_id_to_delete_.push_back(bucket1->file_id);
-    bucket_id_to_delete_.push_back(bucket2->file_id);
-    bucket_delete_mtx_.unlock();
 
     bucket->ownership = 0;
     StatsRecorder::staticProcess(StatsType::MERGE_METADATA, tv);
@@ -2764,8 +2741,10 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
             BucketHandler* tmpBucket;
             prefix_tree_.getNext(bucket1->key, tmpBucket);
             if (tmpBucket != bucket2) {
-                debug_error("Bucket is split during merge. Stop (key %s)\n",
-                        bucket1->key.c_str());
+                debug_error("Bucket is split during merge. Stop (key %s "
+                        "and key %s)\n",
+                        bucket1->key.c_str(), bucket2->key.c_str());
+                exit(1);
                 bucket1->ownership = 0;
                 bucket2->ownership = 0;
                 continue;
@@ -2891,10 +2870,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     StatsRecorder::getInstance()->DeltaGcBytesRead(bucket->total_on_disk_bytes, bucket->total_object_bytes, syncStatistics_);
     if (readFileStatus.success_ == false || readFileStatus.logicalSize_ != bucket->total_object_bytes) {
         debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
-        bucket->gc_status = kNoGC;
-        bucket->ownership = 0;
-        StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-        return;
+        exit(1);
     }
     // process GC contents
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
@@ -3041,8 +3017,6 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
                     StatsType::SPLIT);
             if (singleFileGCStatus == false) {
                 debug_error("[ERROR] Could not perform split GC for file ID = %lu\n", bucket->file_id);
-                bucket->gc_status = kNoGC;
-                bucket->ownership = 0;
                 exit(1);
                 StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
                 pushObjectsToWriteBackQueue(targetWriteBackVec);
@@ -3094,12 +3068,11 @@ void BucketManager::processSingleFileGCRequestWorker(int threadID)
 void BucketManager::scheduleMetadataUpdateWorker()
 {
     while (true) {
-	bool status; 
-	usleep(100000);
-//	    STAT_PROCESS(status = UpdateHashStoreFileMetaDataList(),
-//		    StatsType::FM_UPDATE_META);
-	STAT_PROCESS(status = RemoveObsoleteFiles(),
-		StatsType::FM_UPDATE_META);
+        usleep(100000);
+//      STAT_PROCESS(status = UpdateHashStoreFileMetaDataList(),
+//	StatsType::FM_UPDATE_META);
+        STAT_PROCESS(RemoveObsoleteFiles(),
+                StatsType::FM_UPDATE_META);
         if (metadataUpdateShouldExit_ == true) {
             break;
         }
@@ -3109,6 +3082,11 @@ void BucketManager::scheduleMetadataUpdateWorker()
 
 bool BucketManager::forcedManualGCAllFiles()
 {
+    // wait until ongoing GC finishes
+    while (num_threads_ > 0) {
+        usleep(10);
+    }
+
     vector<BucketHandler*> validFilesVec;
     prefix_tree_.getCurrentValidNodesNoKey(validFilesVec);
     for (auto bucket : validFilesVec) {
@@ -3134,14 +3112,6 @@ bool BucketManager::forcedManualGCAllFiles()
                 continue;
             }
         } else if (bucket->gc_status == kShouldDelete) {
-	    debug_error("[ERROR] During forced GC, should not find file "
-		    " marked as kShouldDelete, file ID = %lu, "
-		    " file size = %lu\n",
-		    bucket->file_id, bucket->total_on_disk_bytes);
-            bucket_delete_mtx_.lock();
-            bucket_id_to_delete_.push_back(bucket->file_id);
-            bucket_delete_mtx_.unlock();
-            // cerr << "Delete file ID = " << bucket->file_id << endl;
             continue;
         } else {
             if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
@@ -3151,13 +3121,9 @@ bool BucketManager::forcedManualGCAllFiles()
             }
         }
     }
-    if (notifyGCMQ_->isEmpty() != true) {
-        debug_trace("Wait for gc job done in forced GC%s\n", "");
-        while (notifyGCMQ_->isEmpty() != true) {
-            usleep(10);
-            // wait for gc job done
-        }
-        debug_trace("Wait for gc job done in forced GC%s over\n", "");
+    // wait until ongoing GC finishes
+    while (num_threads_ > 0) {
+        usleep(10);
     }
     return true;
 }

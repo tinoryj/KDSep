@@ -105,7 +105,6 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
 
     uint64_t i = 0;
     uint64_t processed_delta_num = 0;
-    uint64_t skipped_delta_num = 0;
     size_t header_sz = sizeof(KDRecordHeader);
     KDRecordHeader header;
 

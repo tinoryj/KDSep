@@ -91,6 +91,7 @@ private:
     bool enable_index_block_ = true;
     bool enable_crash_consistency_ = false;
     vector<uint64_t> bucket_id_to_delete_;
+    queue<pair<uint64_t, BucketHandler*>> bucket_to_delete_;
     std::shared_mutex bucket_delete_mtx_;
     boost::atomic<bool> metadataUpdateShouldExit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
@@ -124,7 +125,6 @@ private:
     bool getHashStoreFileHandlerByPrefix(const string& prefixU64, BucketHandler*& fileHandlerPtr);
     BucketHandler* createFileHandler();
     bool createNewInitialBucket(BucketHandler*& bucket);
-    bool createAndGetNewHashStoreFileHandlerByPrefixForUser(BucketHandler*& fileHandlerPtr);
     bool getBucketHandlerNoCreate(const string& key, 
             deltaStoreOperationType op_type, BucketHandler*& bucket);
     bool getBucketHandlerOrCreate(const string& key, 
