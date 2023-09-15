@@ -1743,6 +1743,7 @@ bool BucketManager::singleFileRewrite(
         }
 
         bucket->index_block->Build();
+        bucket->index_block->IndicesClear();
         // do not write the index block to the file
     }
 
@@ -1758,55 +1759,27 @@ bool BucketManager::singleFileRewrite(
     bucket->sorted_filter->Clear();
     bucket->filter->Clear();
 
-    if (enable_index_block_) {
-        for (auto& sorted_it : bucket->index_block->indices) {
-            // can optimize
-            auto keyIt =
-                gcResultMap.find(str_t(const_cast<char*>(sorted_it.first.data()),
-                            sorted_it.first.size()));
-            auto& key = keyIt->first;
-            if (keyIt == gcResultMap.end()) {
-                debug_error("data not found! key %.*s\n", 
-                        (int)sorted_it.first.size(), sorted_it.first.data());
-                exit(1);
+    // insert filter block
+    for (auto& keyIt : gcResultMap) {
+        auto& key = keyIt.first;
+        auto& values = keyIt.second.first;
+        for (auto vec_i = 0; vec_i < values.size(); vec_i++) {
+            newObjectNumber++;
+            auto& value = keyIt.second.first[vec_i];
+            auto& header = keyIt.second.second[vec_i];
+            if (use_varint_d_header == false) {
+                copyInc(write_buf, write_i, &header, header_sz);
+            } else {
+                write_i += PutDeltaHeaderVarint(write_buf + write_i,
+                        header);
             }
-
-            for (auto vec_i = 0; vec_i < keyIt->second.first.size(); vec_i++) {
-                auto& value = keyIt->second.first[vec_i];
-                auto& header = keyIt->second.second[vec_i];
-                newObjectNumber++;
-                if (use_varint_d_header == false) {
-                    copyInc(write_buf, write_i, &header, header_sz);
-                } else {
-                    write_i += PutDeltaHeaderVarint(write_buf + write_i,
-                            header);
-                }
-                copyInc(write_buf, write_i, key.data_, key.size_);
-                copyInc(write_buf, write_i, value.data_, value.size_);
-            }
-            if (keyIt->second.first.size() > 0) {
-                bucket->sorted_filter->Insert(key);
-            }
+            copyInc(write_buf, write_i, key.data_, key.size_);
+            copyInc(write_buf, write_i, value.data_, value.size_);
         }
-        bucket->index_block->IndicesClear();
-    } else {
-        for (auto& keyIt : gcResultMap) {
-            auto& key = keyIt.first;
-            auto& values = keyIt.second.first;
-            for (auto vec_i = 0; vec_i < values.size(); vec_i++) {
-                newObjectNumber++;
-                auto& value = keyIt.second.first[vec_i];
-                auto& header = keyIt.second.second[vec_i];
-                if (use_varint_d_header == false) {
-                    copyInc(write_buf, write_i, &header, header_sz);
-                } else {
-                    write_i += PutDeltaHeaderVarint(write_buf + write_i,
-                            header);
-                }
-                copyInc(write_buf, write_i, key.data_, key.size_);
-                copyInc(write_buf, write_i, value.data_, value.size_);
-            }
-            if (keyIt.second.first.size() > 0) {
+        if (keyIt.second.first.size() > 0) {
+            if (enable_index_block_) {
+                bucket->sorted_filter->Insert(key);
+            } else {
                 bucket->filter->Insert(key);
             }
         }
@@ -1964,38 +1937,6 @@ void BucketManager::writeSingleSplitFile(BucketHandler* new_bucket,
     size_t header_sz = sizeof(KDRecordHeader);
     // Can further optimize. No need to iterate twice
 
-    //        if (enable_index_block_) {
-    //            // write KD pairs in sorted manner
-    //            // TODO Can optimize. Don't need to find in the gcResultMap
-    //            for (auto& sorted_it : new_bucket->index_block->indices) {
-    //                auto keyIt = gcResultMap.find(str_t(const_cast<char*>(sorted_it.first.data()),
-    //                            sorted_it.first.size()));
-    //                if (keyIt == gcResultMap.end()) {
-    //                    debug_error("data not found! key %.*s\n",
-    //                            (int)sorted_it.first.size(), sorted_it.first.data());
-    //                    exit(1);
-    //                }
-    //
-    //                auto& key = keyIt->first;
-    //                auto& values = keyIt->second.first;
-    //                for (auto vec_i = 0; vec_i < values.size(); vec_i++) {
-    //                    auto& value = keyIt->second.first[vec_i];
-    //                    auto& header = keyIt->second.second[vec_i];
-    //                    if (use_varint_d_header == false) {
-    //                        copyInc(write_buf, write_i, &header, header_sz);
-    //                    } else {
-    //                        write_i += PutDeltaHeaderVarint(write_buf + write_i, header);
-    //                    }
-    //                    copyInc(write_buf, write_i, key.data_, key.size_);
-    //                    copyInc(write_buf, write_i, value.data_, value.size_);
-    //                }
-    //                new_bucket->total_object_cnt += values.size();
-    //                if (keyIt->second.first.size() > 0) {
-    //                    new_bucket->sorted_filter->Insert(key);
-    //                }
-    //            }
-    //            new_bucket->index_block->IndicesClear();
-    //        } else 
     {
         for (auto keyToSizeIt : keyToSizeMap) {
             auto keyIt = gcResultMap.find(keyToSizeIt.first);
@@ -2264,7 +2205,8 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
             // test
             int tree_size = maxBucketNumber_ - prefix_tree_.getRemainFileNumber();
             if (t == 0 && tree_size == (tree_size & (-tree_size))) {
-                debug_error("bucket num %d\n", tree_size);
+                debug_error("bucket num %d, rss %.2lf\n", tree_size, getRss() /
+                    1024.0);
                 t++;
                 //            fprintf(stderr, "--- start ---\n");
                 //            prefix_tree_.printNodeMap();

@@ -1508,6 +1508,7 @@ bool KDSep::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair
 
 void KDSep::processBatchedOperationsWorker()
 {
+    int tstatic = 10; // 50;
     while (true) {
         if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
             break;
@@ -1709,6 +1710,15 @@ void KDSep::processBatchedOperationsWorker()
                     }
 		} else {
                     // directly multiput
+                    if (tstatic) {
+                        uint64_t block_cache_usage =
+                          rocks_block_cache_->GetUsage();
+                        debug_error("block: %.2lf, rss - block: %.2lf\n", 
+                            block_cache_usage / 1024.0 / 1024.0, 
+                            (getRssNoTrim() * 1024 - block_cache_usage) 
+                            / 1024.0 / 1024.0);
+                        tstatic--;
+                    }
 		    STAT_PROCESS(
 		    putToDeltaStoreStatus =
 		    delta_store_->multiPut(pending_kds, 
@@ -1747,6 +1757,11 @@ void KDSep::processBatchedOperationsWorker()
                 // Step 5. update the delta stop
                 if (two_phase_write) {
                     bool s;
+                    if (tstatic) {
+                        debug_error("block cache: %.2lf\n", 
+                            rocks_block_cache_->GetUsage() / 1024.0);
+                        tstatic--;
+                    }
 		    STAT_PROCESS(
                     s = delta_store_->multiPut(pending_kds, ds_need_flush,
                             false),
@@ -1995,8 +2010,11 @@ void KDSep::tryTuneCache() {
                     (kdcache_mem + bucket_mem) / 1024.0 / 1024, 
                     kdcache_mem / 1024.0 / 1024, 
                     bucket_mem / 1024.0 / 1024);
-            debug_error("rss = %.2lf MiB, bucket num %lu\n", 
-                getRss() / 1024.0 / 1024, bucket_mem / 10 / 1024);
+            uint64_t rss = getRss();
+            debug_error("rss = %.2lf (-block: %.2lf) MiB, bucket num %lu\n", 
+                rss / 1024.0 / 1024, 
+                (rss * 1024 - rocks_block_cache_->GetUsage()) / 1024.0 / 1024,
+                bucket_mem / 10 / 1024);
         }
     }
 }

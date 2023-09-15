@@ -51,5 +51,6 @@ unsigned long long inline timevalToMicros(struct timeval& res) {
 }
 
 size_t getRss(); 
+size_t getRssNoTrim(); 
 // should add "inline" unless there are link errors
 }

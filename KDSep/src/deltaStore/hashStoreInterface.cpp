@@ -334,6 +334,13 @@ bool HashStoreInterface::commitToCommitLog() {
 bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 	bool need_flush, bool need_commit)
 {
+    static int tstatic = 0; //50;
+    int rssBefore;
+    if (tstatic) {
+        rssBefore = getRssNoTrim();
+        debug_error("rss no trim before multiput: %.2lf, num buc %lu\n",
+            rssBefore / 1024.0, getNumOfBuckets());
+    }
     bool allAnchoarsFlag = true;
     for (auto it : objects) {
         if (it.isAnchorFlag_ == false) {
@@ -548,6 +555,13 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
         StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_SYNC, tv);
 
 	file_manager_->cleanCommitLog();
+    }
+
+    if (tstatic) {
+        auto tmp = getRssNoTrim();
+        debug_error("rss no trim after multiput: %.2lf (diff: %.2lf)\n",
+            tmp / 1024.0, (tmp - rssBefore) / 1024.0);
+        tstatic--;
     }
 
     return true;
