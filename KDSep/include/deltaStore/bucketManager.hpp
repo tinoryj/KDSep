@@ -40,9 +40,10 @@ public:
     void processSingleFileGCRequestWorker(int threadID);
     void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
-    bool forcedManualGCAllFiles();
+    bool wrapUpGC(uint64_t& num_bucket_pushed);
     bool forcedManualDelteAllObsoleteFiles();
     bool setJobDone();
+    bool isGCFinished();
 
     void pushToGCQueue(BucketHandler* fileHandlerPtr);
 

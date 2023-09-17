@@ -186,36 +186,33 @@ enum deltaStoreGCType { kNew = 0, // newly created files (or only gc internal fi
 
 struct BucketHandler {
     uint64_t file_id = 0;
-    uint64_t previous_file_id_first_; // for merge, should contain two different previous file id
-    uint64_t previous_file_id_second_; // for merge, should contain two different previous file id
-//    uint64_t prefix = 0;
     string key;
     uint64_t max_seq_num = 0;
     uint64_t total_object_cnt = 0;
     uint64_t total_object_bytes = 0;
     uint64_t total_on_disk_bytes = 0;
-    uint64_t no_gc_wait_operation_number_ = 0;
     deltaStoreGCType gc_status = kNew;
     bool markedByMultiPut = false;
     bool markedByMultiGet = false;
-    uint64_t num_anchors = 0;
 
     int8_t ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* io_ptr;
     std::shared_mutex op_mtx;
-//    std::unordered_set<string> storedKeysSet_;
     BucketKeyFilter* filter = nullptr;
     BucketKeyFilter* sorted_filter = nullptr;
     BucketIndexBlock* index_block = nullptr;
     uint64_t unsorted_part_offset = 0;
 
+    char* extra_wb = nullptr;
+    uint64_t extra_wb_size = 0;
+
     bool DiskAndBufferSizeExceeds(uint64_t threshold) {
-        return total_on_disk_bytes + io_ptr->getFileBufferedSize() >
-            threshold;
+        return total_on_disk_bytes + io_ptr->getFileBufferedSize() +
+           extra_wb_size > threshold;
     }
     bool UnsortedPartExceeds(uint64_t threshold) {
-        return total_on_disk_bytes + io_ptr->getFileBufferedSize() 
-           - unsorted_part_offset > threshold;
+        return total_on_disk_bytes + io_ptr->getFileBufferedSize() + 
+           extra_wb_size - unsorted_part_offset > threshold;
     }
 };
 
@@ -240,7 +237,7 @@ enum operationStatus {
     kError = 3
 };
 
-struct hashStoreOperationHandler {
+struct deltaStoreOpHandler {
     deltaStoreOperationType op_type;
     BucketHandler* bucket;
 
@@ -258,9 +255,8 @@ struct hashStoreOperationHandler {
     mempoolHandler_t* object;
     operationStatus job_done = kNotDone;
 
-    hashStoreOperationHandler(BucketHandler* bucket)
-        : bucket(bucket) {};
-    hashStoreOperationHandler() : bucket(nullptr) {};
+    deltaStoreOpHandler(BucketHandler* bucket) : bucket(bucket) {};
+    deltaStoreOpHandler() : bucket(nullptr) {};
 };
 
 // header size: 16 bytes

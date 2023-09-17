@@ -18,14 +18,14 @@ public:
     ~BucketOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(BucketHandler* bucket, mempoolHandler_t* memPoolHandler);
-    bool putIntoJobQueue(hashStoreOperationHandler* op_hdl); 
-    bool startJob(hashStoreOperationHandler* op_hdl);
+    bool putIntoJobQueue(deltaStoreOpHandler* op_hdl); 
+    bool startJob(deltaStoreOpHandler* op_hdl);
 
     // file operations without job queue support-> only support single operation
-    bool directlyWriteOperation(BucketHandler* bucket, mempoolHandler_t* memPoolHandler);
-    bool directlyMultiWriteOperation(unordered_map<BucketHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap);
-    bool directlyReadOperation(BucketHandler* bucket, string key, vector<string>& valueVec);
-    bool waitOperationHandlerDone(hashStoreOperationHandler* op_hdl, bool need_delete = true);
+    bool directlyReadOperation(BucketHandler* bucket, string key,
+            vector<string>& valueVec);
+    bool waitOperationHandlerDone(deltaStoreOpHandler* op_hdl, 
+            bool need_delete = true);
     // threads with job queue support
     void operationWorker(int threadID);
     bool setJobDone();
@@ -43,14 +43,14 @@ private:
     bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
 
-    void asioSingleOperation(hashStoreOperationHandler* op_hdl);
-    void singleOperation(hashStoreOperationHandler* op_hdl);
-    bool operationWorkerPutFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerGetFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerMultiGetFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerMultiPutFunction(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerFlush(hashStoreOperationHandler* currentHandlerPtr);
-    bool operationWorkerFind(hashStoreOperationHandler* currentHandlerPtr);
+    void asioSingleOperation(deltaStoreOpHandler* op_hdl);
+    void singleOperation(deltaStoreOpHandler* op_hdl);
+    bool operationPut(deltaStoreOpHandler* op_hdl);
+    bool operationGet(deltaStoreOpHandler* op_hdl);
+    bool operationMultiGet(deltaStoreOpHandler* op_hdl);
+    bool operationMultiPut(deltaStoreOpHandler* op_hdl, bool& gc_pushed);
+    bool operationFlush(deltaStoreOpHandler* op_hdl);
+    bool operationFind(deltaStoreOpHandler* op_hdl);
 
     uint64_t readWholeFile(BucketHandler* bucket, char** buf);
     uint64_t readUnsortedPart(BucketHandler* bucket, char** buf);
@@ -86,13 +86,13 @@ private:
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
     void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);
     void updateKDCache(char* keyPtr, size_t keySize, str_t delta); 
-    bool putFileHandlerIntoGCJobQueueIfNeeded(BucketHandler* bucket);
-    void operationBoostThreadWorker(hashStoreOperationHandler* op_hdl);
+    bool pushGcIfNeeded(BucketHandler* bucket, bool stall_check);
+    void operationBoostThreadWorker(deltaStoreOpHandler* op_hdl);
     // boost thread
     boost::asio::thread_pool*  workerThreads_ = nullptr;
     // message management
-    messageQueue<hashStoreOperationHandler*>* operationToWorkerMQ_ = nullptr;
-    BucketManager* hashStoreFileManager_ = nullptr;
+    messageQueue<deltaStoreOpHandler*>* operationToWorkerMQ_ = nullptr;
+    BucketManager* bucket_manager_ = nullptr;
     AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     std::shared_ptr<KDLRUCache> kd_cache_;
     std::mutex operationNotifyMtx_;

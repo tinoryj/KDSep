@@ -65,7 +65,7 @@ bool KDSepOptions::dumpDataStructureInfo(string dumpPath)
     dumpStructureSizeOutStream << "Size of BucketHandler = " << sizeof(BucketHandler) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreWriteOperationHandler = " << sizeof(hashStoreWriteOperationHandler) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreReadOperationHandler = " << sizeof(hashStoreMultiGetOperationHandler) << endl;
-    dumpStructureSizeOutStream << "Size of hashStoreOperationHandler = " << sizeof(hashStoreOperationHandler) << endl;
+    dumpStructureSizeOutStream << "Size of deltaStoreOpHandler = " << sizeof(deltaStoreOpHandler) << endl;
     dumpStructureSizeOutStream << "Size of KDRecordHeader = " << sizeof(KDRecordHeader) << endl;
 
     dumpStructureSizeOutStream.flush();

@@ -97,8 +97,11 @@ bool BucketManager::setJobDone()
     metaCommitCV_.notify_all();
     if (enableGCFlag_ == true) {
         notifyGCMQ_->done = true;
-        while (workingThreadExitFlagVec_ != singleFileGCWorkerThreadsNumebr_) {
-            operationNotifyCV_.notify_all();
+//        while (workingThreadExitFlagVec_ != singleFileGCWorkerThreadsNumebr_) {
+//            operationNotifyCV_.notify_all();
+//        }
+        while (num_threads_ > 0) {
+            usleep(10);
         }
     }
     return true;
@@ -1203,7 +1206,7 @@ bool BucketManager::getFileHandlerWithKey(const char* keyBuffer,
                 tv3 = tv;// for recording wait
                 int own = bucket->ownership;
                 while (bucket->ownership == -1 ||
-                        (bucket->ownership == 1 && 
+                        (bucket->ownership >= 1 && 
                          (!(op_type == kMultiPut && bucket->markedByMultiPut)
                           &&
                          !(op_type == kMultiGet &&
@@ -1259,37 +1262,27 @@ bool BucketManager::getFileHandlerWithKeySimplified(const char* keyBuffer,
     struct timeval tv;
     string key(keyBuffer, keySize);
 
-    // 1. Generate prefix
-    gettimeofday(&tv, 0);
-    if (op_type == kMultiPut) {
-        StatsRecorder::staticProcess(
-                StatsType::DSTORE_MULTIPUT_PREFIX, tv);
-    } else {
-        StatsRecorder::staticProcess(
-                StatsType::DSTORE_PREFIX, tv);
-    }
-
-    // 2. Search the prefix tree 
     bool s;
-    gettimeofday(&tv, 0);
-    if (op_type == kGet || op_type == kMultiGet || 
-            ((op_type == kPut || op_type == kMultiPut) 
-             && getForAnchorWriting)) {
+//    if (op_type == kGet || op_type == kMultiGet || 
+//            ((op_type == kPut || op_type == kMultiPut) 
+//             && getForAnchorWriting)) 
+    {
          s = getBucketHandlerNoCreate(key, op_type, bucket);
          // What ever, return true 
 //         if (s == false) {
 //             return true;
 //         }
 //         return true;
-    } else {
-        // Need to create
-        s = getBucketHandlerOrCreate(key, op_type, bucket);
-        if (s == false) {
-            debug_error("Cannot get or create buckets for key %.*s\n",
-                    (int)keySize, keyBuffer);
-            return false; // different from get!
-        }
-    }
+    } 
+//    else {
+//        // Need to create
+//        s = getBucketHandlerOrCreate(key, op_type, bucket);
+//        if (s == false) {
+//            debug_error("Cannot get or create buckets for key %.*s\n",
+//                    (int)keySize, keyBuffer);
+//            return false; // different from get!
+//        }
+//    }
     return true;
 }
 
@@ -1321,11 +1314,13 @@ bool BucketManager::getBucketHandlerNoCreate(const string& key,
     bool s;
     s = prefix_tree_.get(key, bucket);
     if (s == false) {
+        debug_e("cannot get from the prefix tree");
         return s;
     }
 
     while (true) {
         if (s == false) {
+            debug_e("cannot get from the prefix tree");
             // impossible
             return s;
         }
@@ -1390,6 +1385,7 @@ bool BucketManager::getBucketHandlerNoCreate(const string& key,
 bool BucketManager::getBucketHandlerOrCreate(const string& key,
         deltaStoreOperationType op_type, BucketHandler*& bucket) {
     bool s;
+    debug_e("get bucket handler or create\n");
     {
         std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
         s = prefix_tree_.get(key, bucket);
@@ -1857,15 +1853,12 @@ bool BucketManager::singleFileRewrite(
     bucket_delete_mtx_.unlock();
     // check if after rewrite, file size still exceed threshold, mark as no GC.
     if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-	bucket->gc_status = kNoGC;
-
 	if (write_stall_ != nullptr) {
 	    //                debug_error("Start to rewrite, key number %lu\n",
 	    //                        gcResultMap.size());
 	    vector<writeBackObject*> objs;
 	    objs.resize(gcResultMap.size());
 	    int obji = 0;
-	    bucket->num_anchors = 0;
 	    for (auto& it : gcResultMap) {
 		string k(it.first.data_, it.first.size_);
 		writeBackObject* obj = new writeBackObject(k, "", 0);
@@ -2835,11 +2828,11 @@ void BucketManager::TryMerge() {
 void BucketManager::processMergeGCRequestWorker()
 {
     while (true) {
+        usleep(10000);
         if (notifyGCMQ_->done == true && notifyGCMQ_->isEmpty() == true) {
             break;
         }
         uint64_t remainEmptyBucketNumber = prefix_tree_.getRemainFileNumber();
-        usleep(10000);
         if (remainEmptyBucketNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
             continue;
         }
@@ -2847,6 +2840,7 @@ void BucketManager::processMergeGCRequestWorker()
         // perfrom merge before split, keep the total file number not changed
         TryMerge();
     }
+    debug_e("Merge worker thread exit\n");
     return;
 }
 
@@ -2864,14 +2858,34 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
 //    debug_error("total object bytes = %lu, total on disk bytes = %lu\n", bucket->total_object_bytes, bucket->total_on_disk_bytes);
     // read contents
-    char readWriteBuffer[bucket->total_object_bytes];
+    uint64_t read_buf_size = bucket->total_object_bytes +
+        bucket->extra_wb_size;
+    char read_buf[read_buf_size];
     FileOpStatus readFileStatus;
-    STAT_PROCESS(readFileStatus = bucket->io_ptr->readFile(readWriteBuffer, bucket->total_object_bytes), StatsType::KDSep_GC_READ);
-    StatsRecorder::getInstance()->DeltaGcBytesRead(bucket->total_on_disk_bytes, bucket->total_object_bytes, syncStatistics_);
-    if (readFileStatus.success_ == false || readFileStatus.logicalSize_ != bucket->total_object_bytes) {
-        debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
-        exit(1);
+
+    if (bucket->total_object_bytes > 0) {
+        STAT_PROCESS(readFileStatus = bucket->io_ptr->readFile(read_buf,
+                    bucket->total_object_bytes), StatsType::KDSep_GC_READ);
+        StatsRecorder::getInstance()->DeltaGcBytesRead(
+                bucket->total_on_disk_bytes, bucket->total_object_bytes,
+                syncStatistics_);
+
+        if (!readFileStatus.success_ || readFileStatus.logicalSize_ !=
+                bucket->total_object_bytes) {
+            debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
+            exit(1);
+        }
     }
+
+    // extra buffer
+    if (bucket->extra_wb_size > 0) {
+        memcpy(read_buf + bucket->total_object_bytes,
+                bucket->extra_wb, bucket->extra_wb_size);
+        delete[] bucket->extra_wb;
+        bucket->extra_wb = nullptr;
+        bucket->extra_wb_size = 0;
+    }
+
     // process GC contents
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap;
@@ -2879,10 +2893,11 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
     pair<uint64_t, uint64_t> remainObjectNumberPair;
     STAT_PROCESS(remainObjectNumberPair =
-            deconstructAndGetValidContentsFromFile(readWriteBuffer,
-                bucket->total_object_bytes, gcResultMap, gc_orig_sizes),
+            deconstructAndGetValidContentsFromFile(read_buf,
+                read_buf_size, gcResultMap, gc_orig_sizes),
             StatsType::KDSep_GC_PROCESS);
     unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
+
 
     if (enableLsmTreeDeltaMeta_ == false) {
         STAT_PROCESS(
@@ -2929,15 +2944,12 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     }
 
     uint64_t targetSizeWithHeader = target_size + sizeof(KDRecordHeader);
-//    debug_error("totalObjectSize %lu targetSizeWithHeader %lu targetSize %lu\n",
-//            bucket->total_object_bytes,
-//            targetSizeWithHeader, target_size);
-//
-//    if (bucket->total_object_bytes < target_size) {
-//        debug_error("[ERROR] File ID = %lu total object size %lu is smaller than target size %lu\n", bucket->file_id, bucket->total_object_bytes, target_size);
-////        exit(1);
-//    }
 
+    if (bucket->total_object_bytes > maxBucketSize_) {
+        debug_error("[ERROR] File ID = %lu total object size %lu is larger"
+                " than max bucket size %lu, valid size %lu\n", bucket->file_id,
+                bucket->total_object_bytes, maxBucketSize_, target_size);
+    }
 
     // count valid object size to determine GC method;
     if (remainObjectNumberPair.second == 0) {
@@ -2963,22 +2975,8 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     if (remainObjectNumberPair.first > 0 && gcResultMap.size() == 1) {
         // No invalid objects, cannot save space
         if (remainObjectNumberPair.first == remainObjectNumberPair.second) {
-            if (bucket->gc_status == kNew) {
-                // keep tracking until forced gc threshold;
-                bucket->gc_status = kMayGC;
-                bucket->ownership = 0;
-                debug_info("File ID = %lu contains only %lu different keys, marked as kMayGC\n", bucket->file_id, gcResultMap.size());
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
-            } else if (bucket->gc_status == kMayGC) {
-                // Mark this file as could not GC;
-                bucket->gc_status = kNoGC;
-                bucket->ownership = 0;
-                debug_error("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
-                //                        debug_info("File ID = %lu contains only %lu different keys, marked as kNoGC\n", bucket->file_id, gcResultMap.size());
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
-            }
+            debug_error("bucket very empty but cannot save space, file ID = %lu, total contains object number = %lu, should keep object number = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
+            exit(1);
         } else {
             // single file rewrite
             debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first);
@@ -3020,12 +3018,23 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
                 exit(1);
                 StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
                 pushObjectsToWriteBackQueue(targetWriteBackVec);
-            } else {
-                debug_info("Perform split GC for file ID (without merge) = %lu done\n", bucket->file_id);
-                bucket->gc_status = kShouldDelete;
-                bucket->ownership = 0;
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
-                pushObjectsToWriteBackQueue(targetWriteBackVec);
+            }
+
+            debug_info("Perform split GC for file ID (without merge) = %lu "
+                    "done\n", bucket->file_id);
+            bucket->gc_status = kShouldDelete;
+            bucket->ownership = 0;
+            StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC,
+                    tv);
+            pushObjectsToWriteBackQueue(targetWriteBackVec);
+
+            // try to merge
+            uint64_t remainEmptyBucketNumber = prefix_tree_.getRemainFileNumber();
+            if (remainEmptyBucketNumber < singleFileGCWorkerThreadsNumebr_ + 2) {
+                debug_info("May reached max file number, need to merge, current"
+                        " remain empty file numebr = %lu\n",
+                        remainEmptyBucketNumber);
+                TryMerge();
             }
         } else {
             // Case 3 in the paper: push all KD pairs in the bucket to the queue 
@@ -3077,15 +3086,18 @@ void BucketManager::scheduleMetadataUpdateWorker()
             break;
         }
     }
+    debug_e("thread finished");
     return;
 }
 
-bool BucketManager::forcedManualGCAllFiles()
+bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
 {
     // wait until ongoing GC finishes
     while (num_threads_ > 0) {
         usleep(10);
     }
+
+    wrap_up_gc_num = 0;
 
     vector<BucketHandler*> validFilesVec;
     prefix_tree_.getCurrentValidNodesNoKey(validFilesVec);
@@ -3097,34 +3109,31 @@ bool BucketManager::forcedManualGCAllFiles()
             usleep(10);
         }
         // cerr << "File ID = " << bucket->file_id << ", file size on disk = " << bucket->total_on_disk_bytes << endl;
-        if (bucket->gc_status == kNoGC) {
-            if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-                debug_info("Current file ID = %lu, file size = %lu, has been"
-                        " marked as kNoGC, but size overflow\n",
-                        bucket->file_id,
-                        bucket->total_on_disk_bytes);
-                notifyGCMQ_->push(bucket);
-                operationNotifyCV_.notify_one();
-                // cerr << "Push file ID = " << bucket->file_id << endl;
-                continue;
-            } else {
-                debug_info("Current file ID = %lu, file size = %lu, has been marked as kNoGC, skip\n", bucket->file_id, bucket->total_on_disk_bytes);
-                continue;
-            }
-        } else if (bucket->gc_status == kShouldDelete) {
+        if (bucket->gc_status == kShouldDelete) {
             continue;
         } else {
             if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-                // cerr << "Push file ID = " << bucket->file_id << endl;
-                notifyGCMQ_->push(bucket);
-                operationNotifyCV_.notify_one();
+                debug_error("Push file ID = %lu, file size = %lu\n",
+                        bucket->file_id,
+                        bucket->total_on_disk_bytes);
+                pushToGCQueue(bucket); 
+                wrap_up_gc_num++;
+//                notifyGCMQ_->push(bucket);
+//                operationNotifyCV_.notify_one();
             }
         }
     }
-    // wait until ongoing GC finishes
+
+    struct timeval tv, tv2;
+    gettimeofday(&tv, 0);
     while (num_threads_ > 0) {
         usleep(10);
     }
+    gettimeofday(&tv2, 0);
+    debug_error("wait for GC threads %lu us\n",
+            (tv2.tv_sec - tv.tv_sec) * 1000000 + tv2.tv_usec - tv.tv_usec);
+    // wait until ongoing GC finishes
     return true;
 }
+
 }

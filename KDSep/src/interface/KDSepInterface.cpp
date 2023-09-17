@@ -86,7 +86,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
         thList_.push_back(th);
         isBatchedOperationsWithBufferInUse_ = true;
         maxBatchOperationBeforeCommitNumber_ = options.write_buffer_num;
-        maxBatchOperationBeforeCommitSize_ = options.write_buffer_size;
+        write_buffer_size_ = options.write_buffer_size;
     }
 
     if (options.enable_write_back_optimization_ == true) {
@@ -123,17 +123,17 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-            if (options.enable_bucket_merge) {
-                enable_bucket_merge_ = true;
-                th = new boost::thread(attrs, boost::bind(&BucketManager::processMergeGCRequestWorker, bucket_manager_));
-                thList_.push_back(th);
-            } else {
-                enable_bucket_merge_ = false;
-            }
-            for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
-                th = new boost::thread(attrs, boost::bind(&BucketManager::processSingleFileGCRequestWorker, bucket_manager_, threadID));
-                thList_.push_back(th);
-            }
+//            if (options.enable_bucket_merge) {
+//                enable_bucket_merge_ = true;
+//                th = new boost::thread(attrs, boost::bind(&BucketManager::processMergeGCRequestWorker, bucket_manager_));
+//                thList_.push_back(th);
+//            } else {
+//                enable_bucket_merge_ = false;
+//            }
+//            for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
+//                th = new boost::thread(attrs, boost::bind(&BucketManager::processSingleFileGCRequestWorker, bucket_manager_, threadID));
+//                thList_.push_back(th);
+//            }
         }
         if (options.deltaStore_op_worker_thread_number_limit_ >= 2) {
 //            for (auto threadID = 0; threadID < options.deltaStore_op_worker_thread_number_limit_; threadID++) {
@@ -162,45 +162,78 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
 bool KDSep::Close()
 {
-    cerr << "[KDSep Close DB] Flush write buffer" << endl;
-    if (isBatchedOperationsWithBufferInUse_ == true) {
-        for (auto i = 0; i < 2; i++) {
-            if (batch_map_[i]->size() != 0) {
-                notifyWriteBatchMQ_->push(batch_map_[i]);
+    // check the buffer, GC, and write back queue
+    // buffer -> GC -> write back -> buffer ...
+    int retry_num = 0;
+    while (true) {
+        bool finished = true;
+
+        cerr << "[KDSep Close DB] Flush write buffer" << endl;
+        if (isBatchedOperationsWithBufferInUse_ == true) {
+            while (batch_map_[batch_in_use_]->size() != 0) {
+                finished = false;
+                pushWriteBuffer();
+                usleep(100000);
             }
         }
-        notifyWriteBatchMQ_->done = true;
-        while (writeBatchOperationWorkExitFlag == false) {
-            asm volatile("");
+        cerr << "[KDSep Close DB] Force GC" << endl;
+        uint64_t wrap_up_gc_num = 0;
+        if (isDeltaStoreInUseFlag_ == true) {
+            if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
+                delta_store_->wrapUpGC(wrap_up_gc_num);
+                if (wrap_up_gc_num > 0) {
+                    usleep(100000);
+                }
+                cerr << "\tDeltaStore forced GC done" << endl;
+            }
         }
-        cerr << "\tFlush write batch done" << endl;
+        if (wrap_up_gc_num) {
+            finished = false;
+        }
+        cerr << "[KDSep Close DB] Wait write back" << endl;
+        if (enable_write_back_ == true) {
+            write_back_cv_->notify_one();
+            cerr << "\tWait large queue" << endl;
+            if (wb_keys->size() > 0) {
+                finished = false;
+                while (wb_keys->size() > 0) {
+                    write_back_cv_->notify_one();
+                    usleep(10);
+                }
+            }
+
+            cerr << "\tWait small queue" << endl;
+            if (write_back_queue_->isEmpty() == false) {
+                finished = false;
+                while (write_back_queue_->isEmpty() == false) {
+                    write_back_cv_->notify_one();
+                    usleep(10);
+                }
+            }
+            cerr << "\tWrite back done" << endl;
+        }
+
+        if (finished) {
+            break;
+        }
+    } 
+
+    cerr << "[KDSep Close DB] Finish write buffer" << endl;
+    notifyWriteBatchMQ_->done = true;
+    while (writeBatchOperationWorkExitFlag == false) {
+        usleep(10);
     }
-    usleep(100000);
-    cerr << "[KDSep Close DB] Force GC" << endl;
-    if (isDeltaStoreInUseFlag_ == true) {
-        if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
-            delta_store_->forcedManualGarbageCollection();
-            cerr << "\tDeltaStore forced GC done" << endl;
-        }
-    }
-    cerr << "[KDSep Close DB] Wait write back" << endl;
-    if (enable_write_back_ == true) {
-        write_back_queue_->done = true;
-        write_back_cv_->notify_one();
-        while (wb_keys->size() > 0) {
-            usleep(10);
-        }
-        while (write_back_queue_->isEmpty() == false) {
-            usleep(10);
-        }
-        cerr << "\tWrite back done" << endl;
-    }
+
+    cerr << "[KDSep Close DB] Finish write back" << endl;
+    write_back_queue_->done = true;
+    write_back_cv_->notify_one();
+
     cerr << "[KDSep Close DB] Set job done" << endl;
     if (enableParallelLsmInterface == true) {
         lsmInterfaceOperationsQueue_->done = true;
         lsm_interface_cv.notify_one();
         while (lsmInterfaceOperationsQueue_->isEmpty() == false) {
-            asm volatile("");
+            usleep(10);
         }
         cerr << "\tLSM tree interface operations done" << endl;
     }
@@ -620,7 +653,7 @@ bool KDSep::Get(const string& key, string* value)
                 asm volatile("");
             }
         }
-        scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
+        scoped_lock<shared_mutex> w_lock(write_buffer_mtx_);
         StatsRecorder::getInstance()->timeProcess(StatsType::KDS_GET_WAIT_BUFFER, tvAll);
         struct timeval tv, tvtmp;
         gettimeofday(&tv, 0);
@@ -972,7 +1005,7 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
                 asm volatile("");
             }
         }
-        batchedBufferOperationMtx_.lock();
+        write_buffer_mtx_.lock();
         StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER, tvAll);
         struct timeval tv;
         gettimeofday(&tv, 0);
@@ -987,7 +1020,7 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
             for (auto queueIt : mapIt->second) {
                 if (queueIt.first == kPutOp) {
                     debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-                    batchedBufferOperationMtx_.unlock();
+                    write_buffer_mtx_.unlock();
                     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
                     return true;
                 } else {
@@ -999,7 +1032,7 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), buf_deltas_str.size());
             }
         }
-        batchedBufferOperationMtx_.unlock();
+        write_buffer_mtx_.unlock();
         StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
@@ -1069,7 +1102,7 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 		asm volatile("");
 	    }
 	}
-	batchedBufferOperationMtx_.lock();
+	write_buffer_mtx_.lock();
         StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER,
                 tv);
 
@@ -1085,7 +1118,7 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 	    for (auto queueIt : mapIt->second) {
 		if (queueIt.first == kPutOp) {
 		    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-		    batchedBufferOperationMtx_.unlock();
+		    write_buffer_mtx_.unlock();
 		    StatsRecorder::getInstance()->timeProcess(
 			    StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
 			    tv);
@@ -1103,7 +1136,7 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 			buf_deltas_strs[i].size());
 	    }
 	}
-	batchedBufferOperationMtx_.unlock();
+	write_buffer_mtx_.unlock();
 	StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
 
@@ -1201,6 +1234,21 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 //    }
 //}
 
+void KDSep::pushWriteBuffer() {
+    // flush old one
+    notifyWriteBatchMQ_->push(batch_map_[batch_in_use_]);
+    debug_info("put batched contents into job worker, current buffer in use = %lu\n", batch_in_use_);
+    // insert to another deque
+    if (batch_in_use_ == 1) {
+        batch_in_use_ = 0;
+    } else {
+        batch_in_use_ = 1;
+    }
+    batch_nums_[batch_in_use_] = 0;
+    batch_sizes_[batch_in_use_] = 0;
+
+}
+
 bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
 {
 //    static uint64_t cnt = 0;
@@ -1213,7 +1261,7 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
     struct timeval tv;
     gettimeofday(&tv, 0);
     if (batch_sizes_[batch_in_use_] >=
-            maxBatchOperationBeforeCommitSize_)
+            write_buffer_size_)
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -1224,24 +1272,12 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
     }
     StatsRecorder::getInstance()->timeProcess(StatsType::KDS_PUT_LOCK_1, tv);
     gettimeofday(&tv, 0);
-    scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
+    scoped_lock<shared_mutex> w_lock(write_buffer_mtx_);
     StatsRecorder::getInstance()->timeProcess(StatsType::KDS_PUT_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", batch_in_use_, batch_nums_[batch_in_use_]);
-    if (batch_sizes_[batch_in_use_] >=
-            maxBatchOperationBeforeCommitSize_)
-    {
-        // flush old one
-        notifyWriteBatchMQ_->push(batch_map_[batch_in_use_]);
-        debug_info("put batched contents into job worker, current buffer in use = %lu\n", batch_in_use_);
-        // insert to another deque
-        if (batch_in_use_ == 1) {
-            batch_in_use_ = 0;
-        } else {
-            batch_in_use_ = 1;
-        }
-        batch_nums_[batch_in_use_] = 0;
-        batch_sizes_[batch_in_use_] = 0;
+    if (batch_sizes_[batch_in_use_] >= write_buffer_size_) {
+        pushWriteBuffer();
     } 
     
     str_t currentKey(obj.keyPtr_, obj.keySize_);
@@ -1278,8 +1314,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
     struct timeval tv;
     gettimeofday(&tv, 0);
 //    if (batch_nums_[batch_in_use_] == ) 
-    if (batch_sizes_[batch_in_use_] >=
-            maxBatchOperationBeforeCommitSize_)
+    if (batch_sizes_[batch_in_use_] >= write_buffer_size_)
     {
         if (oneBufferDuringProcessFlag_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
@@ -1290,26 +1325,13 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
     }
     StatsRecorder::staticProcess(StatsType::KDS_MERGE_LOCK_1, tv);
     gettimeofday(&tv, 0);
-    scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
+    scoped_lock<shared_mutex> w_lock(write_buffer_mtx_);
     StatsRecorder::staticProcess(StatsType::KDS_MERGE_LOCK_2, tv);
     gettimeofday(&tv, 0);
     debug_info("Current buffer id = %lu, used size = %lu\n", batch_in_use_,
             batch_nums_[batch_in_use_]);
-//    if (batch_nums_[batch_in_use_] == ) 
-    if (batch_sizes_[batch_in_use_] >=
-            maxBatchOperationBeforeCommitSize_) {
-        // flush old one
-        notifyWriteBatchMQ_->push(batch_map_[batch_in_use_]);
-        debug_info("put batched contents into job worker, current buffer in use = %lu\n", batch_in_use_);
-        batch_sizes_[batch_in_use_] = 0;
-        // insert to another deque
-        if (batch_in_use_ == 1) {
-            batch_in_use_ = 0;
-        } else {
-            batch_in_use_ = 1;
-        }
-        batch_nums_[batch_in_use_] = 0;
-        batch_sizes_[batch_in_use_] = 0;
+    if (batch_sizes_[batch_in_use_] >= write_buffer_size_) {
+        pushWriteBuffer();
     }
 
     // only insert
@@ -1419,7 +1441,7 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
     return true;
 }
 
-bool KDSep::performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap)
+bool KDSep::writeBufferDedup(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap)
 {
     uint32_t totalObjectNumber = 0;
     uint32_t validObjectNumber = 0;
@@ -1511,11 +1533,11 @@ void KDSep::processBatchedOperationsWorker()
         if (notifyWriteBatchMQ_->pop(currentHandler)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            scoped_lock<shared_mutex> w_lock(batchedBufferOperationMtx_);
+            scoped_lock<shared_mutex> w_lock(write_buffer_mtx_);
             oneBufferDuringProcessFlag_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
 //            if (KDSepRunningMode_ != kBatchedWithNoDeltaStore) {
-                STAT_PROCESS(performInBatchedBufferDeduplication(currentHandler), StatsType::KDS_FLUSH_DEDUP);
+                STAT_PROCESS(writeBufferDedup(currentHandler), StatsType::KDS_FLUSH_DEDUP);
                 StatsRecorder::getInstance()->timeProcess(StatsType::BATCH_PLAIN_ROCKSDB, tv);
 //            }
             vector<mempoolHandler_t> pending_kvs, pending_kds;
@@ -1774,10 +1796,13 @@ void KDSep::processBatchedOperationsWorker()
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
             oneBufferDuringProcessFlag_ = false;
             StatsRecorder::getInstance()->timeProcess(StatsType::KDS_FLUSH, tv);
+        } else {
+            usleep(1);
         }
     }
     writeBatchOperationWorkExitFlag = true;
     debug_info("Process batched operations done, exit thread%s\n", "");
+    debug_error("Process batched operations done, exit thread%s\n", "");
     return;
 }
 
@@ -1792,7 +1817,7 @@ void KDSep::processWriteBackOperationsWorker()
         if (write_back_queue_->done == true && write_back_queue_->isEmpty() == true) {
             break;
         }
-        {
+        if (write_back_queue_->done == false) {
             unique_lock<mutex> lk(*write_back_mutex_);
             write_back_cv_->wait(lk);
         }
@@ -1869,14 +1894,15 @@ void KDSep::processWriteBackOperationsWorker()
 
         if (written_pairs > 0) {
             total_written_pairs += written_pairs;
-            debug_error("Write back: %d KD pairs (total %lu)\n", 
-                    written_pairs, total_written_pairs);
+//            debug_error("Write back: %d KD pairs (total %lu)\n", 
+//                    written_pairs, total_written_pairs);
             if (write_stall_ != nullptr) {
                 *write_stall_ = false;
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK, tv);
         }
     }
+    debug_e("thread finished");
     return;
 }
 
@@ -1911,6 +1937,7 @@ void KDSep::processLsmInterfaceOperationsWorker()
             op->job_done = kDone;
         }
     }
+    debug_e("thread finished");
     return;
 }
 

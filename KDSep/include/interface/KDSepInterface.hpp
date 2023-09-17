@@ -34,7 +34,7 @@ private:
     unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* batch_map_[2]; // key to <operation type, value>
     uint64_t batch_in_use_ = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
-    uint64_t maxBatchOperationBeforeCommitSize_ = 2 * 1024 * 1024;
+    uint64_t write_buffer_size_ = 2 * 1024 * 1024;
     messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
@@ -76,7 +76,9 @@ private:
     bool GetCurrentValuesThenWriteBack(const vector<string>& keys);
 //    bool GetFromBuffer(const string& key, vector<string>& values);
 
-    bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
+    bool writeBufferDedup(unordered_map<str_t, vector<pair<DBOperationType,
+            mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*&
+            operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
@@ -102,7 +104,7 @@ private:
     uint32_t globalSequenceNumber_ = 0;
     std::shared_mutex globalSequenceNumberGeneratorMtx_;
 
-    std::shared_mutex batchedBufferOperationMtx_;
+    std::shared_mutex write_buffer_mtx_;
 
     //
     std::shared_ptr<messageQueue<writeBackObject*>> write_back_queue_;
@@ -125,6 +127,7 @@ private:
     bool extractDeltas(string internalValue, uint64_t skipSize,
             vector<pair<bool, string>>& mergeOperatorsVec, 
             vector<KvHeader>& mergeOperatorsRecordVec);
+    void pushWriteBuffer();
     // Storage component for delta store
 
     // tune the block cache size

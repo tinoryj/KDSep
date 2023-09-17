@@ -39,14 +39,6 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options,
 //    unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
 //    file_manager_->recoveryFromFailureOld(targetListForRedo);
     
-    if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
-        shouldUseDirectOperationsFlag_ = false;
-        debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
-    } else {
-        shouldUseDirectOperationsFlag_ = true;
-        debug_info("Total thread number for operationWorker < 2, use direct operation instead%s\n", "");
-    }
-
     if (enable_parallel_get_hdl_) {
         printf("enable parallel get hdl\n");
     } else {
@@ -114,7 +106,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     struct timeval tv;
     gettimeofday(&tv, 0);
 
-    vector<hashStoreOperationHandler*> find_hdls;
+    vector<deltaStoreOpHandler*> find_hdls;
 
     str_t key;
 
@@ -154,7 +146,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
 	    continue;
 	}
 
-	hashStoreOperationHandler* find_op = new hashStoreOperationHandler;
+	deltaStoreOpHandler* find_op = new deltaStoreOpHandler;
 	find_op->op_type = kFind;
 	find_op->object = new mempoolHandler_t;
 
@@ -180,7 +172,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     }
     debug_error("start retrieve results: %lu\n", find_hdls.size());
 
-    hashStoreOperationHandler* hdls_arr[find_hdls.size()];
+    deltaStoreOpHandler* hdls_arr[find_hdls.size()];
     copy(find_hdls.begin(), find_hdls.end(), hdls_arr);
 
     unordered_map<BucketHandler*, vector<int>> bucket2index;
@@ -218,7 +210,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     uint32_t write_obj_start = 0;
     uint32_t write_op_hdls_i = 0; 
     mempoolHandler_t write_objects[find_hdls.size()];
-    vector<hashStoreOperationHandler*> write_hdls;
+    vector<deltaStoreOpHandler*> write_hdls;
     write_hdls.resize(bucket2index.size());
 
     for (auto mapIt : bucket2index) {
@@ -232,7 +224,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
 
 	mapIt.first->markedByMultiPut = false;
 
-	auto write_op_hdl = new hashStoreOperationHandler(mapIt.first);
+	auto write_op_hdl = new deltaStoreOpHandler(mapIt.first);
 	write_op_hdl->multiput_op.objects = write_objects + write_obj_start;
 	write_op_hdl->multiput_op.size = write_obj_i - write_obj_start;
 	write_op_hdl->op_type = kMultiPut;
@@ -279,7 +271,9 @@ bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
             }
             return true;
         }
-        ret = file_operator_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
+//        ret = file_operator_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
+        debug_e("Not implemented");
+        exit(1);
         tempFileHandler->ownership = 0;
         if (ret != true) {
             debug_error("[ERROR] write to dLog error for key = %s\n", objectPairMempoolHandler.keyPtr_);
@@ -381,7 +375,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
     // get all the file handlers 
     if (enable_parallel_get_hdl_) { 
 	gettimeofday(&tv, 0);
-	hashStoreOperationHandler hdls[objects.size()];
+	deltaStoreOpHandler hdls[objects.size()];
 	for (auto i = 0; i < objects.size(); i++) {
 	    hdls[i].op_type = kFind;
 	    hdls[i].object = &objects[i]; 
@@ -442,31 +436,12 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
     }
 
     gettimeofday(&tv, 0);
-    if (shouldUseDirectOperationsFlag_ == true) {
-        unordered_map<BucketHandler*, vector<mempoolHandler_t>> tempFileHandlerMap;
-        for (auto mapIt : fileHandlerToIndexMap) {
-            vector<mempoolHandler_t> handlerVec;
-            for (auto index = 0; index < mapIt.second.size(); index++) {
-                handlerVec.push_back(objects[mapIt.second[index]]);
-            }
-            mapIt.first->markedByMultiPut = false;
-            tempFileHandlerMap.insert(make_pair(mapIt.first, handlerVec));
-        }
-        debug_info("Current handler map size = %lu\n", tempFileHandlerMap.size());
-        bool putStatus = file_operator_->directlyMultiWriteOperation(tempFileHandlerMap);
-        if (putStatus != true) {
-            debug_error("[ERROR] write to dLog error for keys, number = %lu\n", objects.size());
-            return false;
-        } else {
-            debug_trace("Write to dLog success for keys via direct operations, number = %lu\n", objects.size());
-            return true;
-        }
-    } else {
+    {
         uint32_t handlerVecIndex = 0;
         uint32_t handlerStartVecIndex = 0;
         uint32_t opHandlerIndex = 0;
         mempoolHandler_t handlerVecTemp[objects.size()];
-        vector<hashStoreOperationHandler*> handlers; 
+        vector<deltaStoreOpHandler*> handlers; 
         handlers.resize(fileHandlerToIndexMap.size());
         for (auto mapIt : fileHandlerToIndexMap) {
             struct timeval tv;
@@ -484,7 +459,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 
             StatsRecorder::staticProcess(StatsType::DS_MULTIPUT_PROCESS_HANDLERS, tv);
             mapIt.first->markedByMultiPut = false;
-            hashStoreOperationHandler* op_hdl = new hashStoreOperationHandler(mapIt.first);
+            deltaStoreOpHandler* op_hdl = new deltaStoreOpHandler(mapIt.first);
             op_hdl->multiput_op.objects = handlerVecTemp + handlerStartVecIndex;
             op_hdl->multiput_op.size = handlerVecIndex - handlerStartVecIndex;
             op_hdl->op_type = kMultiPut;
@@ -515,7 +490,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
             exit(1);
         }
 
-        vector<hashStoreOperationHandler*> handlers; 
+        vector<deltaStoreOpHandler*> handlers; 
 
         struct timeval tv;
         gettimeofday(&tv, 0);
@@ -537,8 +512,8 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
                 }
 
                 it->ownership = 1;
-                hashStoreOperationHandler* op_hdl = new
-                    hashStoreOperationHandler(it);
+                deltaStoreOpHandler* op_hdl = new
+                    deltaStoreOpHandler(it);
                 op_hdl->op_type = kFlush;
                 file_operator_->putIntoJobQueue(op_hdl);
                 handlers.push_back(op_hdl);
@@ -708,7 +683,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
 
     // operation handlers
-    vector<hashStoreOperationHandler*> handlers;
+    vector<deltaStoreOpHandler*> handlers;
     handlers.resize(fileHandlerToIndexMap.size());
 
     // map the small array (all needs read) to the large array (some needs)
@@ -717,7 +692,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     for (auto& mapIt : fileHandlerToIndexMap) {
 	auto& bucket = mapIt.first;
 	auto& index_vec = mapIt.second;
-        auto op_hdl = new hashStoreOperationHandler(bucket);
+        auto op_hdl = new deltaStoreOpHandler(bucket);
 	bucket->markedByMultiGet = false;
         op_hdl->multiget_op.keys = new vector<string*>; 
         op_hdl->multiget_op.values = new vector<string*>; 
@@ -768,14 +743,9 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     return true;
 }
 
-bool HashStoreInterface::forcedManualGarbageCollection()
+bool HashStoreInterface::wrapUpGC(uint64_t& wrap_up_gc_num)
 {
-    bool forcedGCStatus = file_manager_->forcedManualGCAllFiles();
-    if (forcedGCStatus == true) {
-        return true;
-    } else {
-        return false;
-    }
+    return file_manager_->wrapUpGC(wrap_up_gc_num);
 }
 
 }
