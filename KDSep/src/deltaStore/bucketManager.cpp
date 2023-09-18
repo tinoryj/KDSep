@@ -32,11 +32,10 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     working_dir_ = workingDirStr;
     manifest_ = new ManifestManager(workingDirStr);
     notifyGCMQ_ = notifyGCMQ;
-    enableWriteBackDuringGCFlag_ = (options->write_back_queue.get() != nullptr);
-    if (enableWriteBackDuringGCFlag_) {
+    enable_write_back_ = (options->write_back_queue.get() != nullptr);
+    if (enable_write_back_) {
       write_back_queue_ = options->write_back_queue;
       write_back_cv_ = options->write_back_cv;
-      write_back_mutex_ = options->write_back_mutex;
     }
     gcWriteBackDeltaNum_ = options->deltaStore_gc_write_back_delta_num;
     gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
@@ -55,8 +54,6 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
     enable_index_block_ = options->enable_index_block;
     write_stall_ = options->write_stall;
-    wb_keys = options->wb_keys;
-    wb_keys_mutex = options->wb_keys_mutex;
     struct timeval tv, tv2;
     gettimeofday(&tv, 0);
     RetriveHashStoreFileMetaDataList();
@@ -71,6 +68,7 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     BucketHandler* bucket;
     createNewInitialBucket(bucket); // the first bucket
     num_threads_ = 0;
+    enable_bucket_merge_ = options->enable_bucket_merge;
 }
 
 BucketManager::~BucketManager()
@@ -1854,20 +1852,16 @@ bool BucketManager::singleFileRewrite(
     // check if after rewrite, file size still exceed threshold, mark as no GC.
     if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
 	if (write_stall_ != nullptr) {
-	    //                debug_error("Start to rewrite, key number %lu\n",
-	    //                        gcResultMap.size());
-	    vector<writeBackObject*> objs;
-	    objs.resize(gcResultMap.size());
+	    auto objs = new vector<writeBackObject*>;
+	    objs->resize(gcResultMap.size());
 	    int obji = 0;
 	    for (auto& it : gcResultMap) {
 		string k(it.first.data_, it.first.size_);
-		writeBackObject* obj = new writeBackObject(k, "", 0);
-		objs[obji++] = obj;
+		writeBackObject* obj = new writeBackObject(k, 0);
+		(*objs)[obji++] = obj;
 	    }
 	    *write_stall_ = true; 
-	    //                debug_error("Start to push %lu\n", gcResultMap.size());
 	    pushObjectsToWriteBackQueue(objs);
-	    //                debug_error("push end %lu\n", gcResultMap.size());
 	}
     }
 
@@ -2756,21 +2750,22 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 }
 
 bool BucketManager::pushObjectsToWriteBackQueue(
-        vector<writeBackObject*>& targetWriteBackVec) 
+        vector<writeBackObject*>* targetWriteBackVec) 
 {
-    if (enableWriteBackDuringGCFlag_ && !write_back_queue_->done) {
-        for (auto writeBackIt : targetWriteBackVec) {
-            struct timeval tv;
-            gettimeofday(&tv, 0);
-            if (!write_back_queue_->tryPush(writeBackIt)) {
-                wb_keys_mutex->lock();
-                wb_keys->push(writeBackIt->key);
-                wb_keys_mutex->unlock();
-                delete writeBackIt;
-            } 
-            StatsRecorder::staticProcess(
-                    StatsType::KDSep_GC_WRITE_BACK, tv);
-        }
+    if (enable_write_back_ && !write_back_queue_->done) {
+        write_back_queue_->push(targetWriteBackVec);  
+//        for (auto writeBackIt : *targetWriteBackVec) {
+//            struct timeval tv;
+//            gettimeofday(&tv, 0);
+//            if (!write_back_queue_->tryPush(writeBackIt)) {
+//                wb_keys_mutex->lock();
+//                wb_keys->push(writeBackIt->key);
+//                wb_keys_mutex->unlock();
+//                delete writeBackIt;
+//            } 
+//            StatsRecorder::staticProcess(
+//                    StatsType::KDSep_GC_WRITE_BACK, tv);
+//        }
         write_back_cv_->notify_one();
     }
     return true;
@@ -2814,25 +2809,6 @@ void BucketManager::TryMerge() {
     StatsRecorder::staticProcess(StatsType::GC_MERGE_SUCCESS, tv);
 }
     
-void BucketManager::processMergeGCRequestWorker()
-{
-    while (true) {
-        usleep(10000);
-        if (notifyGCMQ_->done == true && notifyGCMQ_->isEmpty() == true) {
-            break;
-        }
-        uint64_t remainEmptyBucketNumber = prefix_tree_.getRemainFileNumber();
-        if (remainEmptyBucketNumber >= singleFileGCWorkerThreadsNumebr_ + 2) {
-            continue;
-        }
-        debug_info("May reached max file number, need to merge, current remain empty file numebr = %lu\n", remainEmptyBucketNumber);
-        // perfrom merge before split, keep the total file number not changed
-        TryMerge();
-    }
-    debug_e("Merge worker thread exit\n");
-    return;
-}
-
 void BucketManager::asioSingleFileGC(BucketHandler* bucket) {
     num_threads_++;
     singleFileGC(bucket);
@@ -2903,7 +2879,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
 
     bool fileContainsReWriteKeysFlag = false;
     // calculate target file size
-    vector<writeBackObject*> targetWriteBackVec;
+    auto targetWriteBackVec = new vector<writeBackObject*>;
     uint64_t target_size = 0;
     size_t header_sz = sizeof(KDRecordHeader);
 
@@ -2923,7 +2899,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
             total_kd_size += header_sz + key.size_ + value.size_;
         }
 
-        if (enableWriteBackDuringGCFlag_ == true) {
+        if (enable_write_back_ == true) {
             debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
             if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
                     (total_kd_size > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
@@ -2932,8 +2908,9 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
                     putKDToCache(keyIt.first, keyIt.second.first);
                 }
                 string currentKeyForWriteBack(keyIt.first.data_, keyIt.first.size_);
-                writeBackObject* newWriteBackObject = new writeBackObject(currentKeyForWriteBack, "", 0);
-                targetWriteBackVec.push_back(newWriteBackObject);
+                writeBackObject* newWriteBackObject = new
+                    writeBackObject(currentKeyForWriteBack, 0);
+                targetWriteBackVec->push_back(newWriteBackObject);
             } 
         }
     }
@@ -3025,7 +3002,8 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
 
             // try to merge
             uint64_t remainEmptyBucketNumber = prefix_tree_.getRemainFileNumber();
-            if (remainEmptyBucketNumber < singleFileGCWorkerThreadsNumebr_ + 2) {
+            if (remainEmptyBucketNumber < singleFileGCWorkerThreadsNumebr_ + 2 &&
+                    enable_bucket_merge_) {
                 debug_info("May reached max file number, need to merge, current"
                         " remain empty file numebr = %lu\n",
                         remainEmptyBucketNumber);

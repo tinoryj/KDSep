@@ -87,7 +87,7 @@ private:
     void putKeyValueVectorToAppendableCacheIfNotExist(char* keyPtr, size_t keySize, vector<str_t>& values);
     void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);
     void updateKDCache(char* keyPtr, size_t keySize, str_t delta); 
-    bool pushGcIfNeeded(BucketHandler* bucket, bool stall_check);
+    bool pushGcIfNeeded(BucketHandler* bucket);
     void operationBoostThreadWorker(deltaStoreOpHandler* op_hdl);
     // boost thread
     boost::asio::thread_pool*  workerThreads_ = nullptr;

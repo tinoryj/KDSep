@@ -270,12 +270,10 @@ typedef struct KDRecordHeader {
 
 typedef struct writeBackObject {
     string key;
-    string value;
     uint32_t sequenceNumber;
-    writeBackObject(string keyIn, string valueIn, uint32_t sequenceNumberIn)
+    writeBackObject(string keyIn, uint32_t sequenceNumberIn)
     {
         key = keyIn;
-        value = valueIn;
         sequenceNumber = sequenceNumberIn;
     };
     writeBackObject() {};

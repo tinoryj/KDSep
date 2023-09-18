@@ -56,5 +56,4 @@ bool messageQueue<T>::isEmpty()
 {
     return lockFreeQueue_.empty();
 }
-
 } // namespace KDSEP_NAMESPACE

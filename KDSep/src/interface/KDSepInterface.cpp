@@ -19,10 +19,6 @@ KDSep::~KDSep()
         delete lsmInterfaceOperationsQueue_;
     }
     cerr << "[KDSep Interface] Try delete Read Cache " << endl;
-//    if (wb_keys != nullptr) {
-//	delete wb_keys;
-//	delete wb_keys_mutex;
-//    }
     if (write_stall_ != nullptr) {
 	delete write_stall_;
     }
@@ -67,10 +63,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 	    tv.tv_usec / 1000000.0);
 
     write_stall_ = options.write_stall;
-    options.wb_keys.reset(new queue<string>);
-    options.wb_keys_mutex.reset(new mutex);
-    wb_keys = options.wb_keys; 
-    wb_keys_mutex = options.wb_keys_mutex;
 
     objectPairMemPool_ = new KeyValueMemPool(options.deltaStore_mem_pool_object_number_, options.deltaStore_mem_pool_object_size_);
     // Rest merge function if delta/value separation enabled
@@ -93,12 +85,11 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
         enable_write_back_ = true;
         writeBackWhenReadDeltaNumerThreshold_ = options.deltaStore_write_back_during_reads_threshold;
         writeBackWhenReadDeltaSizeThreshold_ = options.deltaStore_write_back_during_reads_size_threshold;
-        write_back_queue_.reset(new messageQueue<writeBackObject*>);
+        write_back_queue_.reset(new lockQueue<vector<writeBackObject*>*>);
         write_back_cv_.reset(new condition_variable);
         write_back_mutex_.reset(new mutex);
         options.write_back_queue = write_back_queue_;
         options.write_back_cv = write_back_cv_;
-        options.write_back_mutex = write_back_mutex_;
         boost::thread* th = new boost::thread(attrs, boost::bind(&KDSep::processWriteBackOperationsWorker, this));
         thList_.push_back(th);
     }
@@ -133,13 +124,6 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 
         if (options.enable_deltaStore_garbage_collection == true) {
             enableDeltaStoreWithBackgroundGCFlag_ = true;
-//            if (options.enable_bucket_merge) {
-//                enable_bucket_merge_ = true;
-//                th = new boost::thread(attrs, boost::bind(&BucketManager::processMergeGCRequestWorker, bucket_manager_));
-//                thList_.push_back(th);
-//            } else {
-//                enable_bucket_merge_ = false;
-//            }
 //            for (auto threadID = 0; threadID < options.deltaStore_gc_worker_thread_number_limit_; threadID++) {
 //                th = new boost::thread(attrs, boost::bind(&BucketManager::processSingleFileGCRequestWorker, bucket_manager_, threadID));
 //                thList_.push_back(th);
@@ -186,7 +170,11 @@ bool KDSep::Close()
                 usleep(100000);
             }
         }
-        cerr << "[KDSep Close DB] Force GC" << endl;
+        if (!finished) {
+            continue;
+        }
+
+        cerr << "[KDSep Close DB] Wrap up GC" << endl;
         uint64_t wrap_up_gc_num = 0;
         if (isDeltaStoreInUseFlag_ == true) {
             if (enableDeltaStoreWithBackgroundGCFlag_ == true) {
@@ -194,38 +182,26 @@ bool KDSep::Close()
                 if (wrap_up_gc_num > 0) {
                     usleep(100000);
                 }
-                cerr << "\tDeltaStore forced GC done" << endl;
             }
         }
         if (wrap_up_gc_num) {
-            finished = false;
+            continue;
         }
         cerr << "[KDSep Close DB] Wait write back" << endl;
         if (enable_write_back_ == true) {
             write_back_cv_->notify_one();
-            cerr << "\tWait large queue" << endl;
-            if (wb_keys->size() > 0) {
-                finished = false;
-                while (wb_keys->size() > 0) {
-                    write_back_cv_->notify_one();
-                    usleep(10);
-                }
-            }
-
-            cerr << "\tWait small queue" << endl;
+            cerr << "\tWait queue" << endl;
             if (write_back_queue_->isEmpty() == false) {
-                finished = false;
                 while (write_back_queue_->isEmpty() == false) {
                     write_back_cv_->notify_one();
                     usleep(10);
                 }
+                continue;
             }
             cerr << "\tWrite back done" << endl;
         }
 
-        if (finished) {
-            break;
-        }
+        break;
     } 
 
     cerr << "[KDSep Close DB] Finish write buffer" << endl;
@@ -468,8 +444,12 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
                         deltaInfoVec.size() >
                         writeBackWhenReadDeltaNumerThreshold_ &&
                         writeBackWhenReadDeltaNumerThreshold_ != 0) {
-                    writeBackObject* newPair = new writeBackObject(key, "", 0);
-                    write_back_queue_->push(newPair);
+                    // useless
+                    auto writeBackVec = new vector<writeBackObject*>;
+                    writeBackObject* newPair = new writeBackObject(key, 0);
+                    writeBackVec->push_back(newPair);
+
+                    write_back_queue_->push(writeBackVec);
                     write_back_cv_->notify_one();
                 }
                 return true;
@@ -1819,8 +1799,8 @@ void KDSep::processWriteBackOperationsWorker()
 {
     uint64_t total_written_pairs = 0;
     int written_pairs = 0;
-    int write_back_batch_size = 1000;
-    vector<writeBackObject*> pairs;
+    const int write_back_batch_size = 5000;
+    vector<writeBackObject*> objs_to_delete;
     vector<string> keys;
     while (true) {
         if (write_back_queue_->done == true && write_back_queue_->isEmpty() == true) {
@@ -1830,77 +1810,39 @@ void KDSep::processWriteBackOperationsWorker()
             unique_lock<mutex> lk(*write_back_mutex_);
             write_back_cv_->wait(lk);
         }
-        writeBackObject* currentProcessPair;
+        vector<writeBackObject*>* objs;
         written_pairs = 0;
         struct timeval tv;
         gettimeofday(&tv, 0);
-        while (write_back_queue_->pop(currentProcessPair)) {
-            debug_warn("Target Write back key = %s\n", currentProcessPair->key.c_str());
-	    pairs.push_back(currentProcessPair);
-	    while (pairs.size() <= write_back_batch_size &&
-		    write_back_queue_->pop(currentProcessPair)) {
-		pairs.push_back(currentProcessPair);
-		keys.push_back(currentProcessPair->key);
-	    }
-
-            debug_error("(sta) Target Write back key %d\n", keys.size());
-//            bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
-            bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
-
-            debug_error("(fin) Target Write back key %d\n", keys.size());
-
-            if (writeBackStatus == false) {
-                debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
-                exit(1);
-            } else {
-                debug_warn("Write back key = %s success\n", currentProcessPair->key.c_str());
-            }
-            written_pairs += keys.size();
-
-	    for (auto& op : pairs) {
-		delete op;
-	    }
-
-	    pairs.clear();
-	    keys.clear();
-        }
-
-        if (written_pairs > 0) {
-            wb_keys_mutex->lock();
-            if (wb_keys->size() > 0) {
-                uint64_t num_keys = wb_keys->size();
-                debug_error("Use extra queue: size %lu\n", num_keys);
-                std::queue<string> q(*wb_keys);
-                std::queue<string> empty;
-                std::swap(*wb_keys, empty); // clean the queue
-                wb_keys_mutex->unlock();
-
-                while (!q.empty()) {
-//                    auto k = q.front(); // get the first element
-		    keys.push_back(q.front());
-                    q.pop();             // remove the first element
-
-		    while (keys.size() <= write_back_batch_size && !q.empty())
-		    {
-			keys.push_back(q.front());
-			q.pop();
-		    }	
-
-//                    bool wb = GetCurrentValueThenWriteBack(keys[0]);
-                    bool wb = GetCurrentValuesThenWriteBack(keys);
-                    if (wb == false) {
-                        debug_error("Could not write back target keys %lu\n",
-                                keys.size());
-                        exit(1);
-                    } else {
-                    }
-
-		    keys.clear();
+        while (write_back_queue_->pop(objs)) {
+            int i = 0;
+            while (i < objs->size()) {
+                for (; objs_to_delete.size() < write_back_batch_size && 
+                        i < objs->size(); i++) {
+                    objs_to_delete.push_back((*objs)[i]);
+                    keys.push_back((*objs)[i]->key);
                 }
-                written_pairs += num_keys;
-            } else {
-                wb_keys_mutex->unlock();
+
+                debug_error("(sta) Target Write back key %zu\n", keys.size());
+                bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
+                debug_error("(fin) Target Write back key %zu\n", keys.size());
+
+                if (writeBackStatus == false) {
+                    debug_error("Could not write back keys %zu\n", keys.size());
+                    exit(1);
+                }
+
+                written_pairs += keys.size();
+
+                for (auto& op : objs_to_delete) {
+                    delete op;
+                }
+
+                objs_to_delete.clear();
+                keys.clear();
             }
+
+            delete objs;
         }
 
         if (written_pairs > 0) {
@@ -2040,10 +1982,9 @@ void KDSep::tryTuneCache() {
 bool KDSep::probeThread() {
     while (true) {
         sleep(1);
-        debug_error("write back queue %d (%d), lsm queue %d, buffer queue %d "
+        debug_error("write back queue %d, lsm queue %d, buffer queue %d "
                 "(%d)\n", 
                 (int)(!write_back_queue_->isEmpty()),
-                (int)wb_keys->size(),
                 (int)(!lsmInterfaceOperationsQueue_->isEmpty()),
                 (int)(!write_buffer_mq_->isEmpty()),
                 (int)buffer_in_process_); 

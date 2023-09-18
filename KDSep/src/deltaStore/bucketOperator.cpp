@@ -625,7 +625,7 @@ uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
             // skip since it is gc flag, no content.
 	    if (has_gc_done) {
 		debug_error("read error: gc done appeared before"
-			"%lu %lu\n", gc_done_offset, i);
+			" %lu %lu %d\n", gc_done_offset, i);
 		exit(1);
 	    }
 	    has_gc_done = true;
@@ -928,7 +928,7 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
 //                " %lu, total bytes %lu\n",
 //                bucket->file_id, singleFileSizeLimit_, write_i,
 //                bucket->total_object_bytes);
-        pushGcIfNeeded(bucket, false);
+        pushGcIfNeeded(bucket);
         gc_pushed = true;
     } else {
         STAT_PROCESS(writeContentStatus = writeToFile(bucket,
@@ -999,16 +999,8 @@ bool BucketOperator::operationFind(deltaStoreOpHandler* op_hdl) {
     return true;
 }
 
-bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket, bool stall_check)
+bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket)
 {
-//    if (stall_check == true) {
-//        if (write_stall_ != nullptr) {
-//            if (*write_stall_ == true) {
-//                // performing write-back, does not do GC now
-//                return false;
-//            }
-//        }
-//    }
     // insert into GC job queue if exceed the threshold
     if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
         bucket->ownership = -1;
@@ -1725,7 +1717,7 @@ void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
     } else if (bucket_is_input) {
         if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut) &&
                 enableGCFlag_ && !gc_pushed) {
-            bool putIntoGCJobQueueStatus = pushGcIfNeeded(bucket, true);
+            bool putIntoGCJobQueueStatus = pushGcIfNeeded(bucket);
             if (putIntoGCJobQueueStatus == false) {
                 bucket->ownership = 0;
                 op_hdl->job_done = kDone;

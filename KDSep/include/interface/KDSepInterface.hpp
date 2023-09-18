@@ -40,8 +40,6 @@ private:
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
 //    boost::atomic<bool>* write_stall_ = nullptr;
     bool* write_stall_ = nullptr;
-    shared_ptr<queue<string>> wb_keys;
-    shared_ptr<mutex> wb_keys_mutex;
 
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
@@ -106,10 +104,9 @@ private:
 
     std::shared_mutex write_buffer_mtx_;
 
-    //
-    std::shared_ptr<messageQueue<writeBackObject*>> write_back_queue_;
+    std::shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue_;
     std::shared_ptr<std::condition_variable> write_back_cv_;
-    std::shared_ptr<std::mutex> write_back_mutex_;
+    std::shared_ptr<std::mutex> write_back_mutex_; // for cv lock
 
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
     std::mutex lsm_interface_mutex;

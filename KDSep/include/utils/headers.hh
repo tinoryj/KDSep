@@ -289,6 +289,12 @@ inline KDRecordHeader GetDeltaHeaderVarint(const char* buf,
     KDRecordHeader header;
     const char* ptr = buf;
     uint8_t c = ptr[0];
+    // sanity check:
+    if ((c >> 2) >= 26) {
+        fprintf(stderr, "key size too large: %u\n", c >> 2);
+        exit(1);
+    }
+
     header.is_gc_done_ = ((c & 2) > 0);
     header.is_anchor_ = ((c & 1) > 0);
     if (header.is_gc_done_) {

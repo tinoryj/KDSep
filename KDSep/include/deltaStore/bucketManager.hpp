@@ -87,7 +87,8 @@ private:
     uint64_t gcWriteBackDeltaNum_ = 5;
     uint64_t gcWriteBackDeltaSize_ = 0;
     bool enableGCFlag_ = false;
-    bool enableWriteBackDuringGCFlag_ = false;
+    bool enable_bucket_merge_ = false;
+    bool enable_write_back_ = false;
     bool enableBatchedOperations_ = false;
     bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
@@ -176,7 +177,7 @@ private:
     bool selectFileForMerge(uint64_t targetFileIDForSplit,
             BucketHandler*& currentHandlerPtr1,
             BucketHandler*& currentHandlerPtr2);
-    bool pushObjectsToWriteBackQueue(vector<writeBackObject*>& targetWriteBackVec);
+    bool pushObjectsToWriteBackQueue(vector<writeBackObject*>* targetWriteBackVec);
 
     void deleteFileHandler(BucketHandler* bucket);
     // message management
@@ -189,7 +190,7 @@ private:
     std::condition_variable metaCommitCV_;
 
     // write back
-    std::shared_ptr<messageQueue<writeBackObject*>> write_back_queue_;
+    std::shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue_;
     std::shared_ptr<std::condition_variable> write_back_cv_;
     std::shared_ptr<std::mutex> write_back_mutex_;
 
