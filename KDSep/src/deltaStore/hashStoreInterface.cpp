@@ -372,10 +372,13 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
     // otherwise don't need to touch the commit message. The commit log has
     // been well written. does not change the need_flush variable
 
+    multiop_mtx_.lock();
+
     // get all the file handlers 
-    if (enable_parallel_get_hdl_) { 
+    { 
 	gettimeofday(&tv, 0);
 	deltaStoreOpHandler hdls[objects.size()];
+        // push to queue
 	for (auto i = 0; i < objects.size(); i++) {
 	    hdls[i].op_type = kFind;
 	    hdls[i].object = &objects[i]; 
@@ -383,6 +386,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 	}
 	StatsRecorder::staticProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
 
+        // get the results
 	for (auto i = 0; i < objects.size(); i++) {
 	    file_operator_->waitOperationHandlerDone(&hdls[i], false);
 	    auto bucket = hdls[i].bucket;
@@ -399,41 +403,9 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 		fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
 	    }
 	}
-    } else {
-        gettimeofday(&tv, 0);
-        for (auto i = 0; i < objects.size(); i++) {
-            BucketHandler* currentFileHandlerPtr = nullptr;
-            bool getFileHandlerStatus;
-            STAT_PROCESS(getFileHandlerStatus =
-                    file_manager_->getFileHandlerWithKeySimplified(
-                        objects[i].keyPtr_, objects[i].keySize_, kMultiPut,
-                        currentFileHandlerPtr, objects[i].isAnchorFlag_),
-                    StatsType::DS_MULTIPUT_GET_SINGLE_HANDLER);
-            if (getFileHandlerStatus != true) {
-                debug_error("[ERROR] Get file handler for key = %s error "
-                        "during multiput\n", objects[i].keyPtr_);
-                return false;
-            } 
-
-	    if (currentFileHandlerPtr == nullptr) {
-		// should skip current key since it is only an anchor
-		continue;
-	    }
-	    if (fileHandlerToIndexMap.find(currentFileHandlerPtr) !=
-		    fileHandlerToIndexMap.end()) {
-		fileHandlerToIndexMap.at(currentFileHandlerPtr).push_back(i);
-	    } else {
-		vector<int> indexVec;
-		indexVec.push_back(i);
-		fileHandlerToIndexMap.insert(make_pair(currentFileHandlerPtr,
-			    indexVec));
-	    }
-        }
-        if (fileHandlerToIndexMap.size() == 0) {
-            return true;
-        }
-        StatsRecorder::staticProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
     }
+
+    multiop_mtx_.unlock();
 
     gettimeofday(&tv, 0);
     {
@@ -605,7 +577,6 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     int need_read = keys.size();
     int all = keys.size();
 
-
     // Go through the cache one by one
     // TODO parallelize
     for (int i = 0; i < keys.size(); i++) {
@@ -633,6 +604,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     buckets.resize(all);
     unordered_map<BucketHandler*, vector<int>> fileHandlerToIndexMap;
 
+    multiop_mtx_.lock();
     for (int i = 0; i < all; i++) {
         if (get_result[i] == false) {
 	    // get the file handlers in parallel
@@ -679,6 +651,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
             buckets[i] = nullptr;
         }
     }
+    multiop_mtx_.unlock();
 
     StatsRecorder::getInstance()->totalProcess(StatsType::FILTER_READ_TIMES, 1, 1);
 

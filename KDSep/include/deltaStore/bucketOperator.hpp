@@ -30,6 +30,7 @@ public:
     void operationWorker(int threadID);
     bool setJobDone();
     void notifyOperationWorkerThread();
+    bool probeThread();
 
 private:
     // settings
@@ -103,6 +104,7 @@ private:
     bool syncStatistics_;
 //    boost::atomic<bool>* write_stall_;
     bool* write_stall_;
+    bool should_exit_ = false;
 };
 
 } // namespace KDSEP_NAMESPACE

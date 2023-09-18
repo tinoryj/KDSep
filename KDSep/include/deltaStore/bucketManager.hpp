@@ -69,6 +69,7 @@ public:
 
     bool recoverBucketTable(); // return map of key to all related values that need redo, bool flag used for is_anchor check
     uint64_t GetMinSequenceNumber();
+    bool probeThread(); 
 //    bool recoveryFromFailureOld(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
 
 private:
@@ -94,7 +95,7 @@ private:
     vector<uint64_t> bucket_id_to_delete_;
     queue<pair<uint64_t, BucketHandler*>> bucket_to_delete_;
     std::shared_mutex bucket_delete_mtx_;
-    boost::atomic<bool> metadataUpdateShouldExit_ = false;
+    boost::atomic<bool> should_exit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
 //    boost::atomic<bool>* write_stall_ = nullptr;
     bool* write_stall_ = nullptr;
@@ -137,9 +138,15 @@ private:
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
     // recovery
-    uint64_t deconstructAndGetAllContentsFromFile(char* fileContentBuffer, uint64_t fileSize, map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone);
+    uint64_t decodeAllData(char* fileContentBuffer, uint64_t fileSize,
+            map<string, vector<pair<bool, string>>>& resultMap, 
+            bool& isGCFlushDone);
     // GC
-    pair<uint64_t, uint64_t> deconstructAndGetValidContentsFromFile(char* contentBuffer, uint64_t contentSize, map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes);
+    pair<int, int> decodeValidData(char* contentBuffer, 
+            uint64_t contentSize, map<str_t, pair<vector<str_t>,
+            vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap,
+            map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes);
+
     // GC partial merge
     uint64_t partialMergeGcResultMap(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete); 
     void clearMemoryForTemporaryMergedDeltas(map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, mapSmallerKeyForStr_t>& resultMap, unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t>& shouldDelete);

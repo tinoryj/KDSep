@@ -10,7 +10,7 @@ KDSep::~KDSep()
 {
     cerr << "[KDSep Interface] Try delete write batch: " << endl;
     if (isBatchedOperationsWithBufferInUse_ == true) {
-        delete notifyWriteBatchMQ_;
+        delete write_buffer_mq_;
         delete batch_map_[0];
         delete batch_map_[1];
     }
@@ -81,7 +81,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     if (options.enable_batched_operations_ == true) {
         batch_map_[0] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
         batch_map_[1] = new unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>;
-        notifyWriteBatchMQ_ = new messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>;
+        write_buffer_mq_ = new messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&KDSep::processBatchedOperationsWorker, this));
         thList_.push_back(th);
         isBatchedOperationsWithBufferInUse_ = true;
@@ -119,6 +119,16 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
         boost::thread* th;
 	// will not need this later
         th = new boost::thread(attrs, boost::bind(&BucketManager::scheduleMetadataUpdateWorker, bucket_manager_));
+        thList_.push_back(th);
+        th = new boost::thread(attrs, boost::bind(&BucketManager::probeThread,
+                    bucket_manager_));
+        thList_.push_back(th);
+
+        th = new boost::thread(attrs, boost::bind(&BucketOperator::probeThread,
+                    bucket_operator_));
+        thList_.push_back(th);
+
+        th = new boost::thread(attrs, boost::bind(&KDSep::probeThread, this));
         thList_.push_back(th);
 
         if (options.enable_deltaStore_garbage_collection == true) {
@@ -219,7 +229,7 @@ bool KDSep::Close()
     } 
 
     cerr << "[KDSep Close DB] Finish write buffer" << endl;
-    notifyWriteBatchMQ_->done = true;
+    write_buffer_mq_->done = true;
     while (writeBatchOperationWorkExitFlag == false) {
         usleep(10);
     }
@@ -243,6 +253,7 @@ bool KDSep::Close()
         cerr << "\tHashStore set job done" << endl;
     }
     cerr << "[KDSep Close DB] Delete existing threads" << endl;
+    should_exit_ = true;
     deleteExistingThreads();
     if (kd_cache_.get() != nullptr) {
         cerr << "KD cache: " << kd_cache_->getUsage() << "\n";
@@ -647,9 +658,9 @@ bool KDSep::Get(const string& key, string* value)
 
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        if (oneBufferDuringProcessFlag_ == true) {
+        if (buffer_in_process_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
-            while (oneBufferDuringProcessFlag_ == true) {
+            while (buffer_in_process_ == true) {
                 asm volatile("");
             }
         }
@@ -839,10 +850,11 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
 
     bool ret;
     vector<vector<string>> key_deltas;
-//    debug_error("Start key %s len %d\n", startKey.c_str(), len);
+    debug_e("start");
     STAT_PROCESS(
     ret = delta_store_->multiGet(keys, key_deltas),
     StatsType::KDS_WRITE_BACK_GET_DS);
+    debug_e("Finish multiGet");
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
@@ -999,13 +1011,13 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
     gettimeofday(&tvAll, 0);
     if (isBatchedOperationsWithBufferInUse_ == true) {
         // try read from buffer first;
-        if (oneBufferDuringProcessFlag_ == true) {
+        if (buffer_in_process_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
-            while (oneBufferDuringProcessFlag_ == true) {
+            while (buffer_in_process_ == true) {
                 asm volatile("");
             }
         }
-        write_buffer_mtx_.lock();
+        shared_lock<shared_mutex> r_lock(write_buffer_mtx_);
         StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER, tvAll);
         struct timeval tv;
         gettimeofday(&tv, 0);
@@ -1020,7 +1032,6 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
             for (auto queueIt : mapIt->second) {
                 if (queueIt.first == kPutOp) {
                     debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-                    write_buffer_mtx_.unlock();
                     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
                     return true;
                 } else {
@@ -1032,7 +1043,6 @@ bool KDSep::GetCurrentValueThenWriteBack(const string& key)
                 debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), buf_deltas_str.size());
             }
         }
-        write_buffer_mtx_.unlock();
         StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
@@ -1096,13 +1106,13 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 	}
 	
 	// try read from buffer first;
-	if (oneBufferDuringProcessFlag_ == true) {
+	if (buffer_in_process_ == true) {
 	    debug_trace("Wait for batched buffer process%s\n", "");
-	    while (oneBufferDuringProcessFlag_ == true) {
+	    while (buffer_in_process_ == true) {
 		asm volatile("");
 	    }
 	}
-	write_buffer_mtx_.lock();
+        shared_lock<shared_mutex> r_lock(write_buffer_mtx_);
         StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER,
                 tv);
 
@@ -1118,7 +1128,6 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 	    for (auto queueIt : mapIt->second) {
 		if (queueIt.first == kPutOp) {
 		    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-		    write_buffer_mtx_.unlock();
 		    StatsRecorder::getInstance()->timeProcess(
 			    StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
 			    tv);
@@ -1136,7 +1145,6 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 			buf_deltas_strs[i].size());
 	    }
 	}
-	write_buffer_mtx_.unlock();
 	StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
 
@@ -1236,7 +1244,7 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 
 void KDSep::pushWriteBuffer() {
     // flush old one
-    notifyWriteBatchMQ_->push(batch_map_[batch_in_use_]);
+    write_buffer_mq_->push(batch_map_[batch_in_use_]);
     debug_info("put batched contents into job worker, current buffer in use = %lu\n", batch_in_use_);
     // insert to another deque
     if (batch_in_use_ == 1) {
@@ -1263,9 +1271,9 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
     if (batch_sizes_[batch_in_use_] >=
             write_buffer_size_)
     {
-        if (oneBufferDuringProcessFlag_ == true) {
+        if (buffer_in_process_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
-            while (oneBufferDuringProcessFlag_ == true) {
+            while (buffer_in_process_ == true) {
                 asm volatile("");
             }
         }
@@ -1316,9 +1324,9 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
 //    if (batch_nums_[batch_in_use_] == ) 
     if (batch_sizes_[batch_in_use_] >= write_buffer_size_)
     {
-        if (oneBufferDuringProcessFlag_ == true) {
+        if (buffer_in_process_ == true) {
             debug_trace("Wait for batched buffer process%s\n", "");
-            while (oneBufferDuringProcessFlag_ == true) {
+            while (buffer_in_process_ == true) {
                 asm volatile("");
             }
         }
@@ -1526,15 +1534,16 @@ bool KDSep::writeBufferDedup(unordered_map<str_t, vector<pair<DBOperationType, m
 void KDSep::processBatchedOperationsWorker()
 {
     while (true) {
-        if (notifyWriteBatchMQ_->done == true && notifyWriteBatchMQ_->isEmpty() == true) {
+        if (write_buffer_mq_->done && write_buffer_mq_->isEmpty()) {
             break;
         }
-        unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
-        if (notifyWriteBatchMQ_->pop(currentHandler)) {
+        unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>,
+            mapHashKeyForStr_t, mapEqualKeForStr_t>* currentHandler;
+        if (write_buffer_mq_->pop(currentHandler)) {
             struct timeval tv;
             gettimeofday(&tv, 0);
             scoped_lock<shared_mutex> w_lock(write_buffer_mtx_);
-            oneBufferDuringProcessFlag_ = true;
+            buffer_in_process_ = true;
             debug_info("process batched contents for object number = %lu\n", currentHandler->size());
 //            if (KDSepRunningMode_ != kBatchedWithNoDeltaStore) {
                 STAT_PROCESS(writeBufferDedup(currentHandler), StatsType::KDS_FLUSH_DEDUP);
@@ -1794,7 +1803,7 @@ void KDSep::processBatchedOperationsWorker()
             // cerr << "Erased object number = " << erasedObjectCounter << endl;
             currentHandler->clear();
             debug_info("process batched contents done, not cleaned object number = %lu\n", currentHandler->size());
-            oneBufferDuringProcessFlag_ = false;
+            buffer_in_process_ = false;
             StatsRecorder::getInstance()->timeProcess(StatsType::KDS_FLUSH, tv);
         } else {
             usleep(1);
@@ -1834,10 +1843,12 @@ void KDSep::processWriteBackOperationsWorker()
 		keys.push_back(currentProcessPair->key);
 	    }
 
-//            debug_error("(sta) Target Write back key = %s\n", currentProcessPair->key.c_str());
+            debug_error("(sta) Target Write back key %d\n", keys.size());
 //            bool writeBackStatus = GetCurrentValueThenWriteBack(currentProcessPair->key);
             bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
-//            debug_error("(fin) Target Write back key = %s\n", currentProcessPair->key.c_str());
+
+            debug_error("(fin) Target Write back key %d\n", keys.size());
+
             if (writeBackStatus == false) {
                 debug_error("Could not write back target key = %s\n", currentProcessPair->key.c_str());
                 exit(1);
@@ -2024,6 +2035,23 @@ void KDSep::tryTuneCache() {
                 bucket_mem / 10 / 1024);
         }
     }
+}
+
+bool KDSep::probeThread() {
+    while (true) {
+        sleep(1);
+        debug_error("write back queue %d (%d), lsm queue %d, buffer queue %d "
+                "(%d)\n", 
+                (int)(!write_back_queue_->isEmpty()),
+                (int)wb_keys->size(),
+                (int)(!lsmInterfaceOperationsQueue_->isEmpty()),
+                (int)(!write_buffer_mq_->isEmpty()),
+                (int)buffer_in_process_); 
+        if (should_exit_ == true) {
+            break;
+        }
+    }
+    return true;
 }
 
 void KDSep::GetRocksDBProperty(const string& property, string* str) {

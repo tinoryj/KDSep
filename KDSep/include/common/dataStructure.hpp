@@ -197,7 +197,7 @@ struct BucketHandler {
 
     int8_t ownership = 0; // 0-> file not in use, 1->file belongs to write, -1->file belongs to GC
     FileOperation* io_ptr;
-    std::shared_mutex op_mtx;
+    shared_mutex op_mtx;
     BucketKeyFilter* filter = nullptr;
     BucketKeyFilter* sorted_filter = nullptr;
     BucketIndexBlock* index_block = nullptr;

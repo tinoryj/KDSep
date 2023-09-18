@@ -93,7 +93,7 @@ BucketManager::~BucketManager()
 
 bool BucketManager::setJobDone()
 {
-    metadataUpdateShouldExit_ = true;
+    should_exit_ = true;
     metaCommitCV_.notify_all();
     if (enableGCFlag_ == true) {
         notifyGCMQ_->done = true;
@@ -275,7 +275,7 @@ bool BucketManager::cleanCommitLog() {
 read_buf start after file header
 resultMap include key - <is_anchor, value> map
 */
-uint64_t BucketManager::deconstructAndGetAllContentsFromFile(char* read_buf, uint64_t fileSize, map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone)
+uint64_t BucketManager::decodeAllData(char* read_buf, uint64_t fileSize, map<string, vector<pair<bool, string>>>& resultMap, bool& isGCFlushDone)
 {
     uint64_t processedTotalObjectNumber = 0;
     uint64_t read_i = 0;
@@ -738,7 +738,7 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 //                    bool isGCFlushedDoneFlag = false;
 //                    unordered_map<string, vector<pair<bool, string>>> currentFileRecoveryMap;
 //                    uint64_t currentFileObjectNumber = 
-//			deconstructAndGetAllContentsFromFile(readContentBuffer,
+//			decodeAllData(readContentBuffer,
 //				targetFileRemainReadSize,
 //				currentFileRecoveryMap, isGCFlushedDoneFlag);
 //                }
@@ -769,7 +769,7 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 //                currentIDInMetadataFileHandlerPtr->io_ptr->readFile(readBuffer, targetReadSize);
 //                // read done, start process
 //                bool isGCFlushedDoneFlag = false;
-//                uint64_t recoveredObjectNumber = deconstructAndGetAllContentsFromFile(readBuffer + currentIDInMetadataFileHandlerPtr->total_object_bytes, targetReadSize - currentIDInMetadataFileHandlerPtr->total_object_bytes, targetListForRedo, isGCFlushedDoneFlag);
+//                uint64_t recoveredObjectNumber = decodeAllData(readBuffer + currentIDInMetadataFileHandlerPtr->total_object_bytes, targetReadSize - currentIDInMetadataFileHandlerPtr->total_object_bytes, targetListForRedo, isGCFlushedDoneFlag);
 //                // update metadata
 //                currentIDInMetadataFileHandlerPtr->total_object_cnt += recoveredObjectNumber;
 //                currentIDInMetadataFileHandlerPtr->total_object_bytes += targetReadSize;
@@ -960,7 +960,7 @@ bool BucketManager::RemoveObsoleteFiles() {
     gettimeofday(&tv, 0);
     while (!bucket_to_delete_.empty()) {
         auto p = bucket_to_delete_.front();
-        if (!metadataUpdateShouldExit_ && p.first + 10 > tv.tv_sec) {
+        if (!should_exit_ && p.first + 10 > tv.tv_sec) {
             break;
         }
         bucket_to_delete_.pop();
@@ -1532,8 +1532,8 @@ uint64_t BucketManager::generateNewFileID()
     return tempIDForReturn;
 }
 
-pair<uint64_t, uint64_t>
-BucketManager::deconstructAndGetValidContentsFromFile(
+pair<int, int>
+BucketManager::decodeValidData(
         char* read_buf, uint64_t buf_size, 
         map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t>& resultMap,
@@ -1594,7 +1594,7 @@ BucketManager::deconstructAndGetValidContentsFromFile(
 
     if (read_i > buf_size) {
         debug_error("index error: %lu v.s. %lu\n", read_i, buf_size);
-	return make_pair(0, 0);
+	return make_pair(-1, -1);
     }
     debug_info("deconstruct current file done, find different key number = "
             "%lu, total processed object number = %lu, target keep object "
@@ -2281,34 +2281,16 @@ bool BucketManager::twoAdjacentFileMerge(
                 bucket1->total_object_bytes, syncStatistics_);
         // process GC contents
         map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
-        pair<uint64_t, uint64_t> remainObjectNumberPair1 =
-            deconstructAndGetValidContentsFromFile(readWriteBuffer1Ptr,
+        pair<int, int> num_pairs =
+            decodeValidData(readWriteBuffer1Ptr,
                     bucket1->total_object_bytes, gcResultMap1, gc_orig_sizes);
-        if (remainObjectNumberPair1.first == 0 &&
-                remainObjectNumberPair1.second == 0) {
+        if (num_pairs.first < 0 && num_pairs.second < 0) {
             debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
                     bucket1->ownership);
             exit(1);
         }
         finished = true;
     });
-
-//    FileOpStatus readStatus1;
-//    STAT_PROCESS(readStatus1 = bucket1->io_ptr->readFile(readWriteBuffer1, bucket1->total_object_bytes), StatsType::KDSep_GC_READ);
-//    StatsRecorder::getInstance()->DeltaGcBytesRead(bucket1->total_on_disk_bytes, bucket1->total_object_bytes, syncStatistics_);
-//    // process GC contents
-//    pair<uint64_t, uint64_t> remainObjectNumberPair1 =
-//	deconstructAndGetValidContentsFromFile(readWriteBuffer1,
-//		bucket1->total_object_bytes, gcResultMap1);
-//    if (remainObjectNumberPair1.first == 0 &&
-//	    remainObjectNumberPair1.second == 0) {
-//	debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
-//		bucket1->ownership);
-//	exit(1);
-//    }
-//    finished = true;
-//    StatsRecorder::staticProcess(StatsType::MERGE_FILE1, tv);
-//    gettimeofday(&tv, 0);
 
     // process file2
     char readWriteBuffer2[bucket2->total_object_bytes];
@@ -2319,8 +2301,14 @@ bool BucketManager::twoAdjacentFileMerge(
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap2;
     map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes_2;
-    deconstructAndGetValidContentsFromFile(readWriteBuffer2,
+    pair<int, int> num_pairs =
+    decodeValidData(readWriteBuffer2,
             bucket2->total_object_bytes, gcResultMap2, gc_orig_sizes_2);
+    if (num_pairs.first < 0 && num_pairs.second < 0) {
+        debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
+                bucket1->ownership);
+        exit(1);
+    }
 
     StatsRecorder::staticProcess(StatsType::MERGE_FILE2, tv);
     gettimeofday(&tv, 0);
@@ -2571,21 +2559,6 @@ bool BucketManager::twoAdjacentFileMerge(
 //    }
     debug_info("Start update metadata for merged file ID = %lu\n", bucket->file_id);
 
-    bucket1->gc_status = kShouldDelete;
-    bucket2->gc_status = kShouldDelete;
-    bucket_delete_mtx_.lock();
-    {
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        bucket_id_to_delete_.push_back(bucket1->file_id);
-        bucket_id_to_delete_.push_back(bucket2->file_id);
-        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket1));
-        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket2));
-    }
-    bucket_delete_mtx_.unlock();
-    bucket1->ownership = 0;
-    bucket2->ownership = 0;
-
     if (enable_crash_consistency_) {
 	vector<BucketHandler*> old_hdls;
 	vector<BucketHandler*> new_hdls;
@@ -2597,6 +2570,8 @@ bool BucketManager::twoAdjacentFileMerge(
 	StatsType::DS_MANIFEST_GC_MERGE);
     }
 
+    bucket1->gc_status = kShouldDelete;
+    bucket2->gc_status = kShouldDelete;
     if (bucket1->io_ptr->isFileOpen() == true) {
 	bucket1->io_ptr->closeFile();
     }
@@ -2605,7 +2580,21 @@ bool BucketManager::twoAdjacentFileMerge(
 	bucket2->io_ptr->closeFile();
     }
 
+    bucket1->ownership = 0;
+    bucket2->ownership = 0;
     bucket->ownership = 0;
+
+    bucket_delete_mtx_.lock();
+    {
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        bucket_id_to_delete_.push_back(bucket1->file_id);
+        bucket_id_to_delete_.push_back(bucket2->file_id);
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket1));
+        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket2));
+    }
+    bucket_delete_mtx_.unlock();
+
     StatsRecorder::staticProcess(StatsType::MERGE_METADATA, tv);
 
     return true;
@@ -2893,11 +2882,17 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
     pair<uint64_t, uint64_t> remainObjectNumberPair;
     STAT_PROCESS(remainObjectNumberPair =
-            deconstructAndGetValidContentsFromFile(read_buf,
+            decodeValidData(read_buf,
                 read_buf_size, gcResultMap, gc_orig_sizes),
             StatsType::KDSep_GC_PROCESS);
-    unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
 
+    if (remainObjectNumberPair.first < 0) {
+        debug_error("[ERROR] Could not deconstruct file, fileID = %lu\n",
+                bucket->file_id);
+        exit(1);
+    }
+
+    unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
 
     if (enableLsmTreeDeltaMeta_ == false) {
         STAT_PROCESS(
@@ -3082,7 +3077,7 @@ void BucketManager::scheduleMetadataUpdateWorker()
 //	StatsType::FM_UPDATE_META);
         STAT_PROCESS(RemoveObsoleteFiles(),
                 StatsType::FM_UPDATE_META);
-        if (metadataUpdateShouldExit_ == true) {
+        if (should_exit_ == true) {
             break;
         }
     }
@@ -3133,6 +3128,18 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
     debug_error("wait for GC threads %lu us\n",
             (tv2.tv_sec - tv.tv_sec) * 1000000 + tv2.tv_usec - tv.tv_usec);
     // wait until ongoing GC finishes
+    return true;
+}
+
+bool BucketManager::probeThread() {
+    while (true) {
+        sleep(1);
+        int gc_threads = num_threads_;
+        debug_error("gc_threads %d\n", gc_threads); 
+        if (should_exit_ == true) {
+            break;
+        }
+    }
     return true;
 }
 

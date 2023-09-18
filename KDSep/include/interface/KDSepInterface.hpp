@@ -35,7 +35,7 @@ private:
     uint64_t batch_in_use_ = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
     uint64_t write_buffer_size_ = 2 * 1024 * 1024;
-    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
+    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* write_buffer_mq_ = nullptr;
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
 //    boost::atomic<bool>* write_stall_ = nullptr;
@@ -111,7 +111,6 @@ private:
     std::shared_ptr<std::condition_variable> write_back_cv_;
     std::shared_ptr<std::mutex> write_back_mutex_;
 
-    // useless
     messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
     std::mutex lsm_interface_mutex;
     std::condition_variable lsm_interface_cv;
@@ -147,6 +146,9 @@ private:
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
 
+    bool should_exit_ = false;
+    bool buffer_in_process_ = false; 
+    bool probeThread();
 };
 
 } // namespace KDSEP_NAMESPACE

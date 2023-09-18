@@ -61,6 +61,7 @@ BucketOperator::~BucketOperator()
 
 bool BucketOperator::setJobDone()
 {
+    should_exit_ = true;
 //    if (operationToWorkerMQ_ != nullptr) {
 //        operationToWorkerMQ_->done = true;
 //        operationNotifyCV_.notify_all();
@@ -923,10 +924,10 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
         bucket->extra_wb = new char[write_i]; 
         bucket->extra_wb_size = write_i;
         memcpy(bucket->extra_wb, write_buf, write_i);
-        debug_error("target file %lu exceed limit %lu, extra write buffer"
-                " %lu, total bytes %lu\n",
-                bucket->file_id, singleFileSizeLimit_, write_i,
-                bucket->total_object_bytes);
+//        debug_error("target file %lu exceed limit %lu, extra write buffer"
+//                " %lu, total bytes %lu\n",
+//                bucket->file_id, singleFileSizeLimit_, write_i,
+//                bucket->total_object_bytes);
         pushGcIfNeeded(bucket, false);
         gc_pushed = true;
     } else {
@@ -1000,17 +1001,14 @@ bool BucketOperator::operationFind(deltaStoreOpHandler* op_hdl) {
 
 bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket, bool stall_check)
 {
-    if (stall_check == true) {
-        if (write_stall_ != nullptr) {
-            if (*write_stall_ == true) {
-                // performing write-back, does not do GC now
-                return false;
-            }
-        }
-    } else {
-        debug_error("skip stall check, fid = %lu, extra write buffer %lu\n",
-               bucket->file_id, bucket->extra_wb_size); 
-    }
+//    if (stall_check == true) {
+//        if (write_stall_ != nullptr) {
+//            if (*write_stall_ == true) {
+//                // performing write-back, does not do GC now
+//                return false;
+//            }
+//        }
+//    }
     // insert into GC job queue if exceed the threshold
     if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
         bucket->ownership = -1;
@@ -1798,6 +1796,19 @@ void BucketOperator::notifyOperationWorkerThread()
         }
     }
     return;
+}
+
+bool BucketOperator::probeThread() {
+    while (true) {
+        sleep(1);
+        int gc_threads = num_threads_;
+        debug_error("gc_threads %d\n", gc_threads); 
+        if (should_exit_ == true) {
+            break;
+        }
+    }
+    return true;
+
 }
 
 } // namespace KDSEP_NAMESPACE

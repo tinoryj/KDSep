@@ -88,6 +88,7 @@ private:
     uint64_t mark_in_page_offset_ = 0;
 
     bool recovery_state_ = false;
+    bool closed_before_ = false;
     std::vector<uint32_t> page_data_sizes_;
 };
 

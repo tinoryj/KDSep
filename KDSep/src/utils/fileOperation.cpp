@@ -52,6 +52,7 @@ bool FileOperation::createFile(string path)
             debug_error("[ERROR] File descriptor (create) = %d, err = %s\n", fd_, strerror(errno));
             return false;
         } else {
+            closed_before_ = false;
             newlyCreatedFileFlag_ = true;
             return true;
         }
@@ -80,6 +81,7 @@ bool FileOperation::openFile(string path)
             debug_error("[ERROR] File descriptor (open) = %d, err = %s\n", fd_, strerror(errno));
             return false;
         } else {
+            closed_before_ = false;
             if (newlyCreatedFileFlag_ == true) {
                 disk_size_ = 0;
                 data_size_ = 0;
@@ -118,6 +120,7 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
                 strerror(errno), path.c_str());
             return false;
         } 
+        closed_before_ = false;
 
         if (newlyCreatedFileFlag_ == true) {
             disk_size_ = 0;
@@ -315,6 +318,7 @@ bool FileOperation::closeFile()
         int status = close(fd_);
         if (status == 0) {
             debug_info("Close file success, current file fd = %d\n", fd_);
+            closed_before_ = true;
             fd_ = -1;
             return true;
         } else {
@@ -671,7 +675,11 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
         if (rReturn != readBufferSize) {
             free(readBuffer);
-            debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", rReturn, fd_, strerror(errno), req_page_num, readBufferSize, disk_size_);
+            debug_error("[ERROR] Read return value = %lu, file fd = %d, "
+                    "(closed %d) "
+                    "err = %s, req_page_num = %lu, readBuffer size = %lu,"
+                    " disk_size_ = %lu\n", rReturn, fd_, closed_before_,
+                    strerror(errno), req_page_num, readBufferSize, disk_size_);
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
