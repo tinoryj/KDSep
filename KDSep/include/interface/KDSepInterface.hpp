@@ -39,7 +39,7 @@ private:
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
 //    boost::atomic<bool>* write_stall_ = nullptr;
-    bool* write_stall_ = nullptr;
+    shared_ptr<bool> write_stall_;
 
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
@@ -58,8 +58,6 @@ private:
     bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
 
     bool PutImpl(const string& key, const string& value);
-    bool SinglePutInternal(const mempoolHandler_t& mempoolHandler); 
-    bool SingleMergeInternal(const mempoolHandler_t& mempoolHandler);
     bool GetInternal(const string& key, string* value, bool writing_back);
     bool MultiGetFullMergeInternal(const vector<string>& keys,
 	const vector<string>& lsm_values,
@@ -84,11 +82,9 @@ private:
 
     void Recovery();
 
-    bool isDeltaStoreInUseFlag_ = false;
-    bool useInternalRocksDBBatchOperationsFlag_ = false;
-    bool isBatchedOperationsWithBufferInUse_ = false;
-    bool enableDeltaStoreWithBackgroundGCFlag_ = false;
-    bool enableLsmTreeDeltaMeta_ = true;
+    bool enable_delta_store_ = false;
+    bool enable_write_buffer_ = false;
+    bool enable_delta_gc_ = false;
     bool enableParallelLsmInterface = true;
     bool enable_crash_consistency_ = false;
     bool enable_bucket_merge_ = true;
@@ -97,22 +93,22 @@ private:
     int writeBackWhenReadDeltaSizeThreshold_ = 4;
     uint64_t deltaExtractSize_ = 0;
     uint64_t valueExtractSize_ = 0;
-    std::shared_mutex KDSepOperationsMtx_;
+    shared_mutex KDSepOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
-    std::shared_mutex globalSequenceNumberGeneratorMtx_;
+    shared_mutex globalSequenceNumberGeneratorMtx_;
 
-    std::shared_mutex write_buffer_mtx_;
+    shared_mutex write_buffer_mtx_;
 
-    std::shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue_;
-    std::shared_ptr<std::condition_variable> write_back_cv_;
-    std::shared_ptr<std::mutex> write_back_mutex_; // for cv lock
+    shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue_;
+    shared_ptr<condition_variable> write_back_cv_;
+    shared_ptr<mutex> write_back_mutex_; // for cv lock
 
-    messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
-    std::mutex lsm_interface_mutex;
-    std::condition_variable lsm_interface_cv;
+    messageQueue<lsmInterfaceOperationStruct*>* lsm_interface_mq_ = nullptr;
+    mutex lsm_interface_mutex;
+    condition_variable lsm_interface_cv;
     bool enable_write_back_ = false;
-    std::shared_mutex writeBackOperationsMtx_;
+    shared_mutex writeBackOperationsMtx_;
 
     // thread management
     vector<boost::thread*> thList_;
@@ -127,7 +123,7 @@ private:
     // Storage component for delta store
 
     // tune the block cache size
-    std::shared_ptr<rocksdb::Cache> rocks_block_cache_;
+    shared_ptr<rocksdb::Cache> rocks_block_cache_;
     struct timeval tv_tune_cache_;
     void tryTuneCache();
     uint64_t extra_mem_step_ = 16 * 1024 * 1024;
@@ -135,11 +131,11 @@ private:
     uint64_t max_kd_cache_size_ = 0;
     uint64_t min_block_cache_size_ = 0;
     uint64_t memory_budget_ = 4ull * 1024 * 1024 * 1024;
-    std::shared_ptr<KDLRUCache> kd_cache_;
+    shared_ptr<KDLRUCache> kd_cache_;
 
-    HashStoreInterface* delta_store_ = nullptr;
-    BucketManager* bucket_manager_ = nullptr;
-    BucketOperator* bucket_operator_ = nullptr;
+    unique_ptr<HashStoreInterface> delta_store_;
+    shared_ptr<BucketManager> bucket_manager_;
+    shared_ptr<BucketOperator> bucket_operator_;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
 

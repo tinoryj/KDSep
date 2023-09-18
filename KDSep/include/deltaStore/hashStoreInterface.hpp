@@ -12,12 +12,12 @@ namespace KDSEP_NAMESPACE {
 
 class HashStoreInterface {
 public:
-    HashStoreInterface(KDSepOptions* options, const string& workingDirStr, BucketManager*& bucketManager,
-        BucketOperator*& bucketOperator);
+    HashStoreInterface(KDSepOptions* options, const string& workingDirStr,
+            shared_ptr<BucketManager>& bucketManager,
+            shared_ptr<BucketOperator>& bucketOperator);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(mempoolHandler_t object);
 
     // not enable consistency: false & false 
     // consistency + has value: (false (not full) / true (full)) & false 
@@ -50,13 +50,11 @@ private:
 
     bool recoverFromCommitLog(uint64_t min_seq_num);
     // get function pointers
-    BucketManager* file_manager_ = nullptr;
-    BucketOperator* file_operator_ = nullptr;
+    shared_ptr<BucketManager> file_manager_;
+    shared_ptr<BucketOperator> file_operator_;
 
     mutex multiop_mtx_;
     shared_ptr<KDLRUCache> kd_cache_;
-    // message queues for internal usage
-    messageQueue<BucketHandler*>* notifyGCMQ_ = nullptr;
 };
 
 }

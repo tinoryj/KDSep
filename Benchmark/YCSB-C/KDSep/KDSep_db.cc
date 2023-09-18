@@ -212,10 +212,8 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
             options_.enable_deltaStore_garbage_collection = false;
         }
     }
-    options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.write_buffer_size = config.getKDSepWriteBufferSize();
-
-    if (options_.enable_batched_operations_ == true && options_.write_buffer_size > 0) {
+    if (options_.write_buffer_size > 0) {
         options_.deltaStore_mem_pool_object_number_ = 300000;
         // ceil(options_.write_buffer_size * 3);
         long pagesize = sysconf(_SC_PAGE_SIZE);
@@ -253,7 +251,7 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
 
     if (config.getEnableGcWriteStall()) {
-        options_.write_stall = new bool;  // new boost::atomic<bool>;
+        options_.write_stall.reset(new bool);
         *options_.write_stall = false;
     }
 

@@ -6,10 +6,10 @@
 
 namespace KDSEP_NAMESPACE {
 
-BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ)
+BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
 {
     maxBucketNumber_ = options->deltaStore_max_bucket_number_;
-    bucket_bitmap_ = new BitMap(maxBucketNumber_ + 16);
+    bucket_bitmap_.reset(new BitMap(maxBucketNumber_ + 16));
     uint64_t k = 0;
     while (pow((double)2, (double)k) <= maxBucketNumber_) {
         k++;
@@ -26,12 +26,9 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
     singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
     maxBucketSize_ = options->deltaStore_bucket_size_;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
-    enableBatchedOperations_ = options->enable_batched_operations_;
-    enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     working_dir_ = workingDirStr;
     manifest_ = new ManifestManager(workingDirStr);
-    notifyGCMQ_ = notifyGCMQ;
     enable_write_back_ = (options->write_back_queue.get() != nullptr);
     if (enable_write_back_) {
       write_back_queue_ = options->write_back_queue;
@@ -48,7 +45,6 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
 //    prefix_tree_ = new SkipListForBuckets(maxBucketNumber_);
     prefix_tree_.init(maxBucketNumber_);
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
-    workingThreadExitFlagVec_ = 0;
     syncStatistics_ = true;
     singleFileFlushSize_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
@@ -63,8 +59,9 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
 	    tv.tv_usec / 1000000.0);
 
     // for asio
-    gc_threads_ = new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_);
-    extra_threads_ = new boost::asio::thread_pool(4);  // for split/merge in parallel
+    gc_threads_.reset(new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_));
+    // for split/merge in parallel
+    extra_threads_.reset(new boost::asio::thread_pool(4));  
     BucketHandler* bucket;
     createNewInitialBucket(bucket); // the first bucket
     num_threads_ = 0;
@@ -73,12 +70,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr, messag
 
 BucketManager::~BucketManager()
 {
-    delete gc_threads_;
-    delete extra_threads_;
     commit_log_fop_->flushFile();
     commit_log_fop_->closeFile();
-    delete commit_log_fop_;
-    delete bucket_bitmap_;
     CloseHashStoreFileMetaDataList();
 
     // release all buckets
@@ -94,10 +87,6 @@ bool BucketManager::setJobDone()
     should_exit_ = true;
     metaCommitCV_.notify_all();
     if (enableGCFlag_ == true) {
-        notifyGCMQ_->done = true;
-//        while (workingThreadExitFlagVec_ != singleFileGCWorkerThreadsNumebr_) {
-//            operationNotifyCV_.notify_all();
-//        }
         while (num_threads_ > 0) {
             usleep(10);
         }
@@ -109,9 +98,6 @@ void BucketManager::pushToGCQueue(BucketHandler* bucket) {
     boost::asio::post(*gc_threads_, [this, bucket]() {
             asioSingleFileGC(bucket);
             });
-
-//    notifyGCMQ_->push(bucket);
-//    operationNotifyCV_.notify_one();
 }
 
 uint64_t BucketManager::getNumOfBuckets() {
@@ -190,7 +176,7 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_ = new FileOperation(fileOperationMethod_, 4096, 0);
+	commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -229,7 +215,7 @@ bool BucketManager::commitToCommitLog() {
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_ = new FileOperation(fileOperationMethod_, 4096, 0);
+	commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -640,8 +626,8 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 
     string commit_log_path = working_dir_ + "/commit.log";
 
-    commit_log_fop_ = new FileOperation(fileOperationMethod_,
-        commit_log_maximum_size_, 0);
+    commit_log_fop_.reset(new FileOperation(fileOperationMethod_,
+        commit_log_maximum_size_, 0));
     bool ret;
     STAT_PROCESS(
     ret = commit_log_fop_->openAndReadFile(commit_log_path, read_buf,
@@ -1656,20 +1642,6 @@ inline void BucketManager::clearMemoryForTemporaryMergedDeltas(
     }
 }
 
-inline void BucketManager::putKeyValueListToAppendableCache(
-        const str_t& currentKeyStr, vector<str_t>& values) {
-    vector<str_t>* cacheVector = new vector<str_t>;
-    for (auto& it : values) {
-        str_t value_str(new char[it.size_], it.size_);
-        memcpy(value_str.data_, it.data_, it.size_);
-        cacheVector->push_back(value_str);
-    }
-
-    str_t keyStr = currentKeyStr;
-
-    keyToValueListCacheStr_->updateCache(keyStr, cacheVector);
-}
-
 inline void BucketManager::putKDToCache(
         const str_t& currentKeyStr, vector<str_t>& values) {
     if (values.size() != 1) {
@@ -2657,18 +2629,17 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
             pairIt.second->total_object_bytes;
 
         if (total_bytes < sel_threshold) {
-            if (enableBatchedOperations_ == true) {
-                if (tmpBucket1->ownership != 0 || tmpBucket2->ownership != 0) {
-                    continue;
-                    // skip wait if batched op
-                }
-
-                // skip the should delete files
-                if (tmpBucket1->gc_status == kShouldDelete ||
-                        tmpBucket2->gc_status == kShouldDelete) {
-                    continue;
-                }
+            if (tmpBucket1->ownership != 0 || tmpBucket2->ownership != 0) {
+                continue;
+                // skip wait if batched op
             }
+
+            // skip the should delete files
+            if (tmpBucket1->gc_status == kShouldDelete ||
+                    tmpBucket2->gc_status == kShouldDelete) {
+                continue;
+            }
+
             if (tmpBucket1->ownership != 0) {
                 debug_info("Stop this merge for file ID = %lu\n",
                         tmpBucket1->file_id);
@@ -2754,18 +2725,6 @@ bool BucketManager::pushObjectsToWriteBackQueue(
 {
     if (enable_write_back_ && !write_back_queue_->done) {
         write_back_queue_->push(targetWriteBackVec);  
-//        for (auto writeBackIt : *targetWriteBackVec) {
-//            struct timeval tv;
-//            gettimeofday(&tv, 0);
-//            if (!write_back_queue_->tryPush(writeBackIt)) {
-//                wb_keys_mutex->lock();
-//                wb_keys->push(writeBackIt->key);
-//                wb_keys_mutex->unlock();
-//                delete writeBackIt;
-//            } 
-//            StatsRecorder::staticProcess(
-//                    StatsType::KDSep_GC_WRITE_BACK, tv);
-//        }
         write_back_cv_->notify_one();
     }
     return true;
@@ -2870,12 +2829,10 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
 
     unordered_set<str_t, mapHashKeyForStr_t, mapEqualKeForStr_t> shouldDelete;
 
-    if (enableLsmTreeDeltaMeta_ == false) {
-        STAT_PROCESS(
-                remainObjectNumberPair.first -=
-                partialMergeGcResultMap(gcResultMap, shouldDelete),
-                StatsType::KDSep_GC_PARTIAL_MERGE);
-    }
+    STAT_PROCESS(
+            remainObjectNumberPair.first -=
+            partialMergeGcResultMap(gcResultMap, shouldDelete),
+            StatsType::KDSep_GC_PARTIAL_MERGE);
 
     bool fileContainsReWriteKeysFlag = false;
     // calculate target file size
@@ -3023,30 +2980,6 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     clearMemoryForTemporaryMergedDeltas(gcResultMap, shouldDelete);
 }
 
-// threads workers
-void BucketManager::processSingleFileGCRequestWorker(int threadID)
-{
-    int counter = 0;
-    while (true) {
-        {
-            std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            while (counter == 0 && notifyGCMQ_->done == false && notifyGCMQ_->isEmpty() == true) {
-                operationNotifyCV_.wait(lk);
-                counter++;
-            }
-        }
-        if (notifyGCMQ_->done == true && notifyGCMQ_->isEmpty() == true) {
-            break;
-        }
-        BucketHandler* bucket;
-        if (notifyGCMQ_->pop(bucket)) {
-            singleFileGC(bucket);
-        }
-    }
-    workingThreadExitFlagVec_ += 1;
-    return;
-}
-
 void BucketManager::scheduleMetadataUpdateWorker()
 {
     while (true) {
@@ -3091,8 +3024,6 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
                         bucket->total_on_disk_bytes);
                 pushToGCQueue(bucket); 
                 wrap_up_gc_num++;
-//                notifyGCMQ_->push(bucket);
-//                operationNotifyCV_.notify_one();
             }
         }
     }
@@ -3112,8 +3043,8 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
 bool BucketManager::probeThread() {
     while (true) {
         sleep(1);
-        int gc_threads = num_threads_;
-        debug_error("gc_threads %d\n", gc_threads); 
+        int num_gc_threads = num_threads_;
+        debug_error("num_gc_threads %d\n", num_gc_threads); 
         if (should_exit_ == true) {
             break;
         }

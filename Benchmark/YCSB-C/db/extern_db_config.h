@@ -44,7 +44,6 @@ class ExternDBConfig {
     uint64_t ds_worker_thread_number_limit;
     uint64_t ds_gc_thread_number_limit;
     bool ds_enable_gc;
-    bool KDSep_enable_batch;
     uint64_t write_buffer_size_ = 2 * 1024 * 1024;
     uint64_t prefixTreeBitNumber_;
     uint64_t blockSize;
@@ -97,7 +96,6 @@ class ExternDBConfig {
         ds_gc_thread_number_limit = pt_.get<uint64_t>("deltaStore.ds_gc_thread_number_limit");
         debug_.level = pt_.get<uint64_t>("debug.level");
         ds_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC", true);
-        KDSep_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
         write_buffer_size_ = pt_.get<uint64_t>("config.write_buffer_size", 2 * 1024 * 1024);
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.ds_init_bit");
         max_kv_size = pt_.get<uint64_t>("config.max_kv_size", 4096);
@@ -212,10 +210,6 @@ class ExternDBConfig {
 
     bool getDeltaStoreGCEnableStatus() {
         return ds_enable_gc;
-    }
-
-    bool getDeltaStoreBatchEnableStatus() {
-        return KDSep_enable_batch;
     }
 
     uint64_t getKDSepWriteBufferSize() {

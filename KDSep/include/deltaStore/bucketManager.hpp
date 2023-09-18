@@ -19,7 +19,7 @@ namespace KDSEP_NAMESPACE {
 
 class BucketManager {
 public:
-    BucketManager(KDSepOptions* options, std::string workingDirStr, messageQueue<BucketHandler*>* notifyGCMQ);
+    BucketManager(KDSepOptions* options, std::string workingDirStr);
     ~BucketManager();
     BucketManager& operator=(const BucketManager&) = delete;
 
@@ -35,10 +35,7 @@ public:
     uint64_t getNumOfBuckets();
 
     // GC manager
-    void asioSingleFileGC(BucketHandler* bucket);
     void singleFileGC(BucketHandler* bucket);
-    void processSingleFileGCRequestWorker(int threadID);
-    void processMergeGCRequestWorker();
     void scheduleMetadataUpdateWorker();
     bool wrapUpGC(uint64_t& num_bucket_pushed);
     bool forcedManualDelteAllObsoleteFiles();
@@ -90,7 +87,6 @@ private:
     bool enable_bucket_merge_ = false;
     bool enable_write_back_ = false;
     bool enableBatchedOperations_ = false;
-    bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
     bool enable_crash_consistency_ = false;
     vector<uint64_t> bucket_id_to_delete_;
@@ -98,10 +94,7 @@ private:
     std::shared_mutex bucket_delete_mtx_;
     boost::atomic<bool> should_exit_ = false;
     boost::atomic<bool> oneThreadDuringSplitOrMergeGCFlag_ = false;
-//    boost::atomic<bool>* write_stall_ = nullptr;
-    bool* write_stall_ = nullptr;
-    std::shared_ptr<std::queue<string>> wb_keys;
-    std::shared_ptr<std::mutex> wb_keys_mutex;
+    std::shared_ptr<bool> write_stall_;
 
     uint64_t singleFileGCWorkerThreadsNumebr_ = 1;
     uint64_t singleFileFlushSize_ = 4096;
@@ -138,6 +131,8 @@ private:
     bool RetriveHashStoreFileMetaDataList(); // will reopen all existing files
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
+    void asioSingleFileGC(BucketHandler* bucket);
+
     // recovery
     uint64_t decodeAllData(char* fileContentBuffer, uint64_t fileSize,
             map<string, vector<pair<bool, string>>>& resultMap, 
@@ -171,18 +166,16 @@ private:
             map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
             mapSmallerKeyForStr_t>& gcResultMap, 
             int bi, boost::atomic<int>& write_fin_number);
-    bool twoAdjacentFileMerge(BucketHandler* currentHandlerPtr1,
-            BucketHandler* currentHandlerPtr2);
     void TryMerge();
     bool selectFileForMerge(uint64_t targetFileIDForSplit,
             BucketHandler*& currentHandlerPtr1,
             BucketHandler*& currentHandlerPtr2);
+    bool twoAdjacentFileMerge(BucketHandler* currentHandlerPtr1,
+            BucketHandler* currentHandlerPtr2);
     bool pushObjectsToWriteBackQueue(vector<writeBackObject*>* targetWriteBackVec);
 
     void deleteFileHandler(BucketHandler* bucket);
     // message management
-    messageQueue<BucketHandler*>* notifyGCMQ_;
-    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
     std::shared_ptr<KDLRUCache> kd_cache_;
     std::mutex operationNotifyMtx_;
     std::mutex metaCommitMtx_;
@@ -194,25 +187,25 @@ private:
     std::shared_ptr<std::condition_variable> write_back_cv_;
     std::shared_ptr<std::mutex> write_back_mutex_;
 
-    boost::atomic<uint64_t> workingThreadExitFlagVec_;
     bool syncStatistics_;
 
-    BitMap* bucket_bitmap_ = nullptr; 
 
     boost::atomic<uint64_t> num_buckets_;
 
     // for asio 
     boost::atomic<uint64_t> num_threads_;
 
-    FileOperation* commit_log_fop_ = nullptr;
+    unique_ptr<FileOperation> commit_log_fop_;
+    unique_ptr<BitMap> bucket_bitmap_; 
+
     uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
     uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 1024 * 3; //1024 * 1024 * 1024;
 
     unordered_map<uint64_t, uint64_t> id2prefixes_;
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
-    boost::asio::thread_pool* gc_threads_ = nullptr;
-    boost::asio::thread_pool* extra_threads_ = nullptr;
+    unique_ptr<boost::asio::thread_pool> gc_threads_;
+    unique_ptr<boost::asio::thread_pool> extra_threads_;
 };
 
 } // namespace KDSEP_NAMESPACE

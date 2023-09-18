@@ -6,14 +6,14 @@
 
 namespace KDSEP_NAMESPACE {
 
-BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, BucketManager* bucketManager)
+BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr,
+        shared_ptr<BucketManager> bucketManager)
 {
     perFileFlushBufferSizeLimit_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
-//        operationToWorkerMQ_ = new messageQueue<deltaStoreOpHandler*>;
-        workerThreads_ = new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_);
+        workerThreads_.reset(new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_));
         num_threads_ = 0;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
@@ -21,7 +21,6 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
         kd_cache_ = options->kd_cache;
     }
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
-    enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
     enable_index_block_ = options->enable_index_block;
     bucket_manager_ = bucketManager;
     working_dir_ = workingDirStr;
@@ -29,7 +28,6 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         syncStatistics_ = true;
         workerThreadNumber_ = options->deltaStore_op_worker_thread_number_limit_;
-        workingThreadExitFlagVec_ = 0;
     }
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
     write_stall_ = options->write_stall;
@@ -40,13 +38,6 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
 
 BucketOperator::~BucketOperator()
 {
-    // now becomes shared pointer
-//    if (kd_cache_ != nullptr) {
-//        delete kd_cache_;
-//    }
-//    if (operationToWorkerMQ_ != nullptr) {
-//        delete operationToWorkerMQ_;
-//    }
     if (num_threads_ > 0) {
         cerr << "Warning: " << num_threads_ << " threads are still running" <<
             endl;
@@ -54,21 +45,11 @@ BucketOperator::~BucketOperator()
             asm volatile("");
         }
     }
-    if (workerThreads_ != nullptr) {
-        delete workerThreads_;
-    }
 }
 
 bool BucketOperator::setJobDone()
 {
     should_exit_ = true;
-//    if (operationToWorkerMQ_ != nullptr) {
-//        operationToWorkerMQ_->done = true;
-//        operationNotifyCV_.notify_all();
-//        while (workingThreadExitFlagVec_ != workerThreadNumber_) {
-//            asm volatile("");
-//        }
-//    }
     return true;
 }
 
@@ -107,8 +88,7 @@ bool BucketOperator::waitOperationHandlerDone(deltaStoreOpHandler* op_hdl, bool 
     }
 }
 
-uint64_t BucketOperator::readWholeFile(
-        BucketHandler* bucket, char** read_buf)
+uint64_t BucketOperator::readWholeFile(BucketHandler* bucket, char** read_buf)
 {
     auto& file_size = bucket->total_object_bytes;
     debug_trace("Read content from file ID = %lu\n", bucket->file_id);
@@ -255,13 +235,6 @@ bool BucketOperator::readAndProcessWholeFile(
         return false;
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -298,13 +271,6 @@ bool BucketOperator::readAndProcessWholeFileKeyList(
         return false;
     }
 
-    if (kd_lists.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key %lu\n", keys->size());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -342,13 +308,6 @@ bool BucketOperator::readAndProcessSortedPart(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -380,13 +339,6 @@ bool BucketOperator::readAndProcessBothParts(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -417,13 +369,6 @@ bool BucketOperator::readAndProcessUnsortedPart(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -1014,63 +959,6 @@ bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket)
 }
 
 // for put
-inline void BucketOperator::putKeyValueToAppendableCacheIfExist(
-        char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, 
-        bool isAnchor)
-{
-    str_t key(keyPtr, keySize);
-        
-    // insert into cache only if the key has been read
-    if (isAnchor == true) {
-        keyToValueListCacheStr_->cleanCacheIfExist(key);
-    } else {
-        vector<str_t>* vec =
-            keyToValueListCacheStr_->getFromCache(key);
-
-        // TODO a bug here. vec may be evicted and deleted before the
-        // update
-        if (vec != nullptr) {
-            str_t valueStr(valuePtr, valueSize);
-            vector<str_t> temp_vec;
-            for (auto& it : *vec) {
-                temp_vec.push_back(it);
-            }
-            temp_vec.push_back(valueStr);
-
-            str_t merged_delta;
-
-            // allocate merged_delta. The deletion is now managed by cache
-            KDSepMergeOperatorPtr_->PartialMerge(temp_vec, merged_delta);
-
-            vector<str_t>* merged_deltas = new vector<str_t>;
-            merged_deltas->push_back(merged_delta);
-
-            keyToValueListCacheStr_->updateCache(key, merged_deltas);
-        }
-    }
-}
-
-// for get
-inline void BucketOperator::putKeyValueVectorToAppendableCacheIfNotExist(
-        char* keyPtr, size_t keySize, vector<str_t>& values) {
-    str_t currentKeyStr(keyPtr, keySize);
-
-    if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == false) {
-        str_t newKeyStr(new char[keySize], keySize);
-        memcpy(newKeyStr.data_, keyPtr, keySize);
-
-        vector<str_t>* valuesForInsertPtr = new vector<str_t>;
-        for (auto& it : values) {
-            str_t newValueStr(new char[it.size_], it.size_);
-            memcpy(newValueStr.data_, it.data_, it.size_);
-            valuesForInsertPtr->push_back(newValueStr);
-        }
-
-        keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsertPtr);
-    }
-}
-
-// for put
 inline void BucketOperator::updateKDCacheIfExist(
         str_t key, str_t delta, bool isAnchor)
 {
@@ -1160,11 +1048,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                 } else {
                     if (bucket->filter->MayExist(key_str_t) == false) {
                         // does not exist, or not stored in the memory 
-                        if (enableLsmTreeDeltaMeta_ == true) {
-                            debug_error("[ERROR] Read bucket done, but could not"
-                                    " found values for key = %s\n", key.c_str());
-                            exit(1);
-                        }
                         valueVec.clear();
                         bucket->ownership = 0;
                         return true;
@@ -1209,8 +1092,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                 valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -1254,8 +1135,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                             merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1288,11 +1167,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
             } else {
                 if (bucket->filter->MayExist(key_str_t) == false) {
                     // does not exist, or not stored in the memory 
-                    if (enableLsmTreeDeltaMeta_ == true) {
-                        debug_error("[ERROR] Read bucket done, but could not"
-                                " found values for key = %s\n", key.c_str());
-                        exit(1);
-                    }
                     valueVec.clear();
                     bucket->ownership = 0;
                     return true;
@@ -1390,11 +1264,6 @@ bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)
                 } else {
                     if (bucket->filter->MayExist(key_str_t) == false) {
                         // does not exist, or not stored in the memory 
-                        if (enableLsmTreeDeltaMeta_ == true) {
-                            debug_error("[ERROR] Read bucket done, but could not"
-                                    " found values for key = %s\n", key.c_str());
-                            exit(1);
-                        }
                         valueVec.clear();
                         bucket->ownership = 0;
                         return true;
@@ -1439,8 +1308,6 @@ bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)
                 valueVec.push_back(new string(merged_delta.data_, merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -1484,8 +1351,6 @@ bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)
                             merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1522,11 +1387,6 @@ bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)
             } else {
                 if (bucket->filter->MayExist(key_str_t) == false) {
                     // does not exist, or not stored in the memory 
-                    if (enableLsmTreeDeltaMeta_ == true) {
-                        debug_error("[ERROR] Read bucket done, but could not"
-                                " found values for key = %s\n", key.c_str());
-                        exit(1);
-                    }
                     valueVec.clear();
                     bucket->ownership = 0;
                     return true;
@@ -1645,8 +1505,6 @@ bool BucketOperator::operationMultiGet(deltaStoreOpHandler* op_hdl)
 		    merged_delta.size_);
 	}
 
-	//putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-	//    key.size(), deltas);
 	if (kd_cache_ != nullptr) {
 	    updateKDCache((*keys)[key_i]->data(), 
 		    (*keys)[key_i]->size(), merged_delta);
@@ -1738,56 +1596,6 @@ void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
         delete w_lock;
     }
 
-}
-
-void BucketOperator::operationWorker(int threadID)
-{
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
-    struct timeval empty_time;
-    bool empty_started = false;
-    while (true) {
-        gettimeofday(&tve, 0);
-        {
-            std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            if (operationToWorkerMQ_->isEmpty() && 
-                    operationToWorkerMQ_->done == false && 
-                    empty_started == true && 
-                    tve.tv_sec - empty_time.tv_sec > 3) {
-                operationNotifyCV_.wait(lk);
-            }
-        }
-        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
-            break;
-        }
-        deltaStoreOpHandler* op_hdl;
-        if (operationToWorkerMQ_->pop(op_hdl)) {
-            empty_started = false;
-            singleOperation(op_hdl);
-        } else {
-            if (empty_started == false) {
-                empty_started = true;
-                gettimeofday(&empty_time, 0);
-            }
-        }
-    }
-    debug_info("Thread of operation worker exit success %p\n", this);
-    workingThreadExitFlagVec_ += 1;
-    return;
-}
-
-void BucketOperator::notifyOperationWorkerThread()
-{
-    while (true) {
-        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
-            break;
-        }
-        if (operationToWorkerMQ_->isEmpty() == false) {
-            operationNotifyCV_.notify_all();
-            usleep(10000);
-        }
-    }
-    return;
 }
 
 bool BucketOperator::probeThread() {

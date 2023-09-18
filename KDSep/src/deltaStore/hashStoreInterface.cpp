@@ -5,31 +5,21 @@
 namespace KDSEP_NAMESPACE {
 
 HashStoreInterface::HashStoreInterface(KDSepOptions* options, 
-    const string& workingDirStr, BucketManager*& bucketManager,
-    BucketOperator*& bucketOperator)
+    const string& workingDirStr, shared_ptr<BucketManager>& bucketManager,
+    shared_ptr<BucketOperator>& bucketOperator)
 {
     if (options->deltaStore_max_bucket_number_ == 0) {
         options->deltaStore_max_bucket_number_ = 1;
     }
     internalOptionsPtr_ = options;
     extractValueSizeThreshold_ = options->extract_to_deltaStore_size_lower_bound;
-    enable_lsm_tree_delta_meta_ = options->enable_lsm_tree_delta_meta;
-    if (options->enable_deltaStore_garbage_collection == true) {
-        notifyGCMQ_ = new messageQueue<BucketHandler*>;
-    }
 
     if (options->enable_deltaStore_KDLevel_cache == true) {
         options->kd_cache.reset(new KDLRUCache(options->deltaStore_KDCache_item_number_));
         kd_cache_ = options->kd_cache;
     }
-    bucketManager = new BucketManager(options, workingDirStr, notifyGCMQ_);
-    bucketOperator = new BucketOperator(options, workingDirStr, bucketManager);
-    if (!bucketManager) {
-        debug_error("[ERROR] Create BucketManager error,  file path = %s\n", workingDirStr.c_str());
-    }
-    if (!bucketOperator) {
-        debug_error("[ERROR] Create BucketOperator error, file path = %s\n", workingDirStr.c_str());
-    }
+    bucketManager.reset(new BucketManager(options, workingDirStr));
+    bucketOperator.reset(new BucketOperator(options, workingDirStr, bucketManager));
     fileFlushThreshold_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     enable_crash_consistency_ = options->enable_crash_consistency;
 
@@ -48,16 +38,10 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options,
 
 HashStoreInterface::~HashStoreInterface()
 {
-    if (notifyGCMQ_ != nullptr) {
-        delete notifyGCMQ_;
-    }
 }
 
 bool HashStoreInterface::setJobDone()
 {
-    if (notifyGCMQ_ != nullptr) {
-        notifyGCMQ_->done = true;
-    }
     if (file_manager_->setJobDone() == true) {
         if (file_operator_->setJobDone() == true) {
             return true;
@@ -246,42 +230,6 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     delete[] read_buf;
 
     return processed_delta_num > 0;
-}
-
-bool HashStoreInterface::put(mempoolHandler_t objectPairMempoolHandler)
-{
-    if (objectPairMempoolHandler.isAnchorFlag_ == true && anyBucketInitedFlag_ == false) {
-        return true;
-        debug_info("New OP: put delta key [Anchor] = %s\n", objectPairMempoolHandler.keyPtr_);
-    } else {
-        anyBucketInitedFlag_ = true;
-        debug_info("New OP: put delta key [Data] = %s\n", objectPairMempoolHandler.keyPtr_);
-    }
-
-    BucketHandler* tempFileHandler;
-    bool ret;
-    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKeySimplified(objectPairMempoolHandler.keyPtr_, objectPairMempoolHandler.keySize_, kPut, tempFileHandler, objectPairMempoolHandler.isAnchorFlag_), StatsType::DS_PUT_GET_HANDLER);
-    if (ret != true) {
-        debug_error("[ERROR] get fileHandler from file manager error for key = %s\n", objectPairMempoolHandler.keyPtr_);
-        return false;
-    } else {
-        if (objectPairMempoolHandler.isAnchorFlag_ == true && (tempFileHandler == nullptr || tempFileHandler->total_object_bytes == 0)) {
-            if (tempFileHandler != nullptr) {
-                tempFileHandler->ownership = 0;
-            }
-            return true;
-        }
-//        ret = file_operator_->directlyWriteOperation(tempFileHandler, &objectPairMempoolHandler);
-        debug_e("Not implemented");
-        exit(1);
-        tempFileHandler->ownership = 0;
-        if (ret != true) {
-            debug_error("[ERROR] write to dLog error for key = %s\n", objectPairMempoolHandler.keyPtr_);
-            return false;
-        } else {
-            return true;
-        }
-    }
 }
 
 bool HashStoreInterface::putCommitLog(
@@ -484,8 +432,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
                 }
 
                 it->ownership = 1;
-                deltaStoreOpHandler* op_hdl = new
-                    deltaStoreOpHandler(it);
+                deltaStoreOpHandler* op_hdl = new deltaStoreOpHandler(it);
                 op_hdl->op_type = kFlush;
                 file_operator_->putIntoJobQueue(op_hdl);
                 handlers.push_back(op_hdl);
@@ -545,8 +492,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
             return true;
         }
 
-        if (enable_lsm_tree_delta_meta_ == true ||
-                tempFileHandler->filter->MayExist(keyStr) ||
+        if (tempFileHandler->filter->MayExist(keyStr) ||
                 tempFileHandler->sorted_filter->MayExist(keyStr)) {
             ret = file_operator_->directlyReadOperation(tempFileHandler, keyStr, valueStrVec);
             bool deltaExistFlag = (!valueStrVec.empty());

@@ -85,8 +85,7 @@ public:
     bool enable_parallel_lsm_interface_ = false;
     bool enable_crash_consistency = false;
     bool enable_bucket_merge = true;
-    bool enable_batched_operations_ = true;
-    bool enable_lsm_tree_delta_meta = false;
+    bool enable_batched_operations = true;
     uint64_t key_value_cache_object_number_ = 1000;
     uint64_t write_buffer_num = 5;
     uint64_t write_buffer_size = 2 * 1024 * 1024;
@@ -101,15 +100,12 @@ public:
     uint64_t min_block_cache_size = 0;
     uint64_t memory_budget;
 
-    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    shared_ptr<KDLRUCache> kd_cache;
-
     // not message queue
     shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue;
     shared_ptr<condition_variable> write_back_cv;
+    shared_ptr<bool> write_stall;
+    shared_ptr<KDLRUCache> kd_cache;
 
-    //    boost::atomic<bool>* write_stall = nullptr;
-    bool* write_stall = nullptr;
     // dump options
     bool dumpOptions(string dumpPath);
     bool dumpDataStructureInfo(string dumpPath);

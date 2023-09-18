@@ -14,7 +14,8 @@ class BucketManager;
 
 class BucketOperator {
 public:
-    BucketOperator(KDSepOptions* options, string workingDirStr, BucketManager* bucketManager /*messageQueue<BucketHandler*>* fileManagerNotifyGCMQ*/);
+    BucketOperator(KDSepOptions* options, string workingDirStr, 
+            shared_ptr<BucketManager> bucketManager);
     ~BucketOperator();
     // file operations with job queue support
     bool putWriteOperationIntoJobQueue(BucketHandler* bucket, mempoolHandler_t* memPoolHandler);
@@ -27,9 +28,7 @@ public:
     bool waitOperationHandlerDone(deltaStoreOpHandler* op_hdl, 
             bool need_delete = true);
     // threads with job queue support
-    void operationWorker(int threadID);
     bool setJobDone();
-    void notifyOperationWorkerThread();
     bool probeThread();
 
 private:
@@ -41,7 +40,6 @@ private:
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     bool enableGCFlag_ = false;
-    bool enableLsmTreeDeltaMeta_ = true;
     bool enable_index_block_ = true;
 
     void asioSingleOperation(deltaStoreOpHandler* op_hdl);
@@ -90,20 +88,18 @@ private:
     bool pushGcIfNeeded(BucketHandler* bucket);
     void operationBoostThreadWorker(deltaStoreOpHandler* op_hdl);
     // boost thread
-    boost::asio::thread_pool*  workerThreads_ = nullptr;
+    unique_ptr<boost::asio::thread_pool> workerThreads_;
     // message management
-    messageQueue<deltaStoreOpHandler*>* operationToWorkerMQ_ = nullptr;
-    BucketManager* bucket_manager_ = nullptr;
-    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    std::shared_ptr<KDLRUCache> kd_cache_;
-    std::mutex operationNotifyMtx_;
-    std::condition_variable operationNotifyCV_;
+    shared_ptr<BucketManager> bucket_manager_;
+    shared_ptr<KDLRUCache> kd_cache_;
+    mutex operationNotifyMtx_;
+    condition_variable operationNotifyCV_;
+
     boost::atomic<uint64_t> workingThreadExitFlagVec_;
     boost::atomic<uint64_t> num_threads_;
     uint64_t workerThreadNumber_ = 0;
     bool syncStatistics_;
-//    boost::atomic<bool>* write_stall_;
-    bool* write_stall_;
+    shared_ptr<bool> write_stall_;
     bool should_exit_ = false;
 };
 
