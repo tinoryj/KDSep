@@ -2777,7 +2777,6 @@ void BucketManager::asioSingleFileGC(BucketHandler* bucket) {
 void BucketManager::singleFileGC(BucketHandler* bucket) {
     struct timeval tv;
     gettimeofday(&tv, 0);
-    debug_warn("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, wait for lock\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
     std::scoped_lock<std::shared_mutex> w_lock(bucket->op_mtx);
     debug_info("new file request for GC, file ID = %lu, existing size = %lu, total disk size = %lu, file gc status = %d, start process\n", bucket->file_id, bucket->total_object_bytes, bucket->total_on_disk_bytes, bucket->gc_status);
 //    debug_error("total object bytes = %lu, total on disk bytes = %lu\n", bucket->total_object_bytes, bucket->total_on_disk_bytes);

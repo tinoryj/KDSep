@@ -592,11 +592,11 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
     // 2. Scan the delta store
     bool ret;
     vector<vector<string>> key_deltas;
-    debug_e("start");
+    debug_warn("start%s\n", "");
     STAT_PROCESS(
     ret = delta_store_->multiGet(keys, key_deltas),
     StatsType::KDS_WRITE_BACK_GET_DS);
-    debug_e("Finish multiGet");
+    debug_warn("Finish multiGet%s\n", "");
 
     if (ret == false) {
 	debug_error("scan in delta store failed: %lu\n", keys.size());
@@ -693,11 +693,11 @@ bool KDSep::Merge(const string& key, const string& value)
     // check write stall 
     if (write_stall_ != nullptr) {
         if (*write_stall_) {
-            debug_error("merge stall key %s\n", key.c_str());
+            debug_warn("merge stall key %s\n", key.c_str());
             while (*write_stall_) {
                 asm volatile("");
             }
-            debug_error("merge stall finish %s\n", key.c_str());
+            debug_warn("merge stall finish %s\n", key.c_str());
         }
     }
 
@@ -1510,9 +1510,9 @@ void KDSep::processWriteBackOperationsWorker()
                     keys.push_back((*objs)[i]->key);
                 }
 
-                debug_error("(sta) Target Write back key %zu\n", keys.size());
+                debug_warn("(sta) Target Write back key %zu\n", keys.size());
                 bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
-                debug_error("(fin) Target Write back key %zu\n", keys.size());
+                debug_warn("(fin) Target Write back key %zu\n", keys.size());
 
                 if (writeBackStatus == false) {
                     debug_error("Could not write back keys %zu\n", keys.size());

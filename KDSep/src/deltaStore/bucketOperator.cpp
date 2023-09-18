@@ -570,7 +570,7 @@ uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
             // skip since it is gc flag, no content.
 	    if (has_gc_done) {
 		debug_error("read error: gc done appeared before"
-			" %lu %lu %d\n", gc_done_offset, i);
+			" %lu %lu\n", gc_done_offset, i);
 		exit(1);
 	    }
 	    has_gc_done = true;
