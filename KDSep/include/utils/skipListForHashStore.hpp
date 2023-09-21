@@ -246,10 +246,8 @@ public:
         }
 
         Node* iter = head;
-        fprintf(stdout, "find next: key = %s\n", key.c_str());
         while (iter->forwards[0] != nullptr) {
             iter = iter->forwards[0];
-            fprintf(stdout, "iter->key = %s\n", iter->key.c_str());
         }
 
         if (p->forwards[0] != nullptr) {

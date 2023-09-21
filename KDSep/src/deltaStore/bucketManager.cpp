@@ -2045,7 +2045,8 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         // switch to the second bucket
 //        if (tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio && 
 //                key_cnt < gc_result_map_size) 
-        if (tmp_orig_sizes > maxBucketSize_ / 2 / size_ratio && 
+        if (((size_ratio > 1 && tmp_orig_sizes > maxBucketSize_ / 2 / size_ratio) || 
+                    (size_ratio == 1 && tmp_orig_sizes > target_size / 2)) && 
                 key_cnt < gc_result_map_size) {
             bi++;
             tmpGcResult.push_back({{}, 0});
