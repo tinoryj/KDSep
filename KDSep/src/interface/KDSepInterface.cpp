@@ -41,7 +41,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     tv_tune_cache_ = tv2;
     rocks_block_cache_ = options.rocks_block_cache;
     max_kd_cache_size_ = options.deltaStore_KDCache_item_number_;
-    min_block_cache_size_ = options.min_block_cache_size; 
+    //min_block_cache_size_ = options.min_block_cache_size; 
     memory_budget_ = options.memory_budget;
 
     printf("restore lsmTree interface time: %.6lf\n", 
