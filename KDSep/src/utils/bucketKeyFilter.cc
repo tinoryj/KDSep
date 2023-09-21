@@ -33,12 +33,7 @@ BucketKeyFilter::BucketKeyFilter() {
 }
 
 BucketKeyFilter::~BucketKeyFilter() {
-    static int free_cnt = 0;
     Clear(false);
-    free_cnt++;
-    if (free_cnt % 1000 == 0) {
-        printf("free key filter %d\n", free_cnt);
-    }
 }
 
 bool BucketKeyFilter::SingleInsertToBitmap(const str_t& key) {

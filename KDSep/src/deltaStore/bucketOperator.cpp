@@ -862,8 +862,7 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
     bool writeContentStatus = true;
 
     // before write, check
-    if (write_i + bucket->total_object_bytes > 
-            singleFileSizeLimit_) {
+    if (bucket->io_ptr->canWriteFile(write_i) == false) {
         // directly do GC on this file. 
         // can skip the write stall check, because there will be no write back
         bucket->extra_wb = new char[write_i]; 

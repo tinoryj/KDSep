@@ -15,14 +15,29 @@ FileOperation::FileOperation(fileOperationType operationType)
     buf_used_size_ = 0;
 }
 
-FileOperation::FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize)
-{
+FileOperation::FileOperation(fileOperationType operationType, uint64_t
+        fileSize, uint64_t bufferSize) {
     operationType_ = operationType;
     fd_ = -1;
     preAllocateFileSize_ = fileSize;
     globalWriteBuffer_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
     buf_size_ = bufferSize;
     buf_used_size_ = 0;
+}
+
+// open an existing file
+FileOperation::FileOperation(fileOperationType operationType, 
+    uint64_t fileSize, uint64_t bufferSize, int existing_fd, uint64_t offset)
+{
+    operationType_ = operationType;
+    fd_ = existing_fd; //-1;
+    preAllocateFileSize_ = fileSize;
+    globalWriteBuffer_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
+    buf_size_ = bufferSize;
+    buf_used_size_ = 0;
+
+    use_existing_ = true;
+    start_offset_ = offset;
 }
 
 FileOperation::~FileOperation()
@@ -35,16 +50,7 @@ FileOperation::~FileOperation()
 bool FileOperation::createFile(string path)
 {
     path_ = path;
-    if (operationType_ == kFstream) {
-        fileStream_.open(path, ios::out);
-        if (fileStream_.is_open() == false) {
-            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
-            return false;
-        } else {
-            return true;
-        }
-        return true;
-    } else if (operationType_ == kDirectIO || 
+    if (operationType_ == kDirectIO || 
             operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
         fd_ = open(path.c_str(), O_CREAT, 0644);
@@ -56,23 +62,14 @@ bool FileOperation::createFile(string path)
             newlyCreatedFileFlag_ = true;
             return true;
         }
-    } else {
-        return false;
-    }
+    } 
+    return false;
 }
 
 bool FileOperation::openFile(string path)
 {
     path_ = path;
-    if (operationType_ == kFstream) {
-        fileStream_.open(path, ios::in | ios::out | ios::binary);
-        if (fileStream_.is_open() == false) {
-            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
-            return false;
-        } else {
-            return true;
-        }
-    } else if (operationType_ == kDirectIO ||
+    if (operationType_ == kDirectIO ||
             operationType_ == kAlignLinuxIO || 
             operationType_ == kPreadWrite) {
         auto flag = O_RDWR | (operationType_ == kDirectIO ? O_DIRECT : 0);
@@ -99,18 +96,10 @@ bool FileOperation::openFile(string path)
 }
 
 bool FileOperation::openAndReadFile(string path, char*& read_buf, 
-	uint64_t& data_size, bool save_page_data_sizes)
+        uint64_t& data_size, bool save_page_data_sizes)
 {
     path_ = path;
-    if (operationType_ == kFstream) {
-        fileStream_.open(path, ios::in | ios::out | ios::binary);
-        if (fileStream_.is_open() == false) {
-            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
-            return false;
-        } else {
-            return true;
-        }
-    } else if (operationType_ == kDirectIO ||
+    if (operationType_ == kDirectIO ||
             operationType_ == kAlignLinuxIO) {
         auto flag = O_RDWR | (operationType_ == kDirectIO ? O_DIRECT : 0);
         fd_ = open(path.c_str(), flag, 0644);
@@ -151,7 +140,7 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
 
         uint64_t left = readBufferSize, p = 0;
         while (left > 0) {
-            auto rReturn = pread(fd_, readBuffer, left, p);
+            auto rReturn = pread(fd_, readBuffer + p, left, start_offset_ + p);
             if (rReturn > left || rReturn == 0 || rReturn < 0) {
                 debug_error("rReturn %ld %lx err %s left %lu\n", 
                         rReturn, rReturn, strerror(errno), left);
@@ -167,16 +156,19 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
             free(readBuffer);
             delete[] read_buf;
             read_buf = nullptr;
-            debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", p, strerror(errno), req_page_num, readBufferSize, disk_size_);
+            debug_error("[ERROR] Read return value = %lu, err = %s,"
+                    " req_page_num = %lu, readBuffer size = %lu, disk_size_ ="
+                    " %lu\n", p, strerror(errno), req_page_num, readBufferSize,
+                    disk_size_);
             return false;
         }
 
         data_size = 0;
         disk_size_ = 0;
 
-	if (save_page_data_sizes) {
-	    page_data_sizes_.clear();
-	}
+        if (save_page_data_sizes) {
+            page_data_sizes_.clear();
+        }
         for (auto page_i = 0; page_i < req_page_num; page_i++) {
             uint32_t page_data_size = 0;
             memcpy(&page_data_size, readBuffer + page_i * page_size_, sizeof(uint32_t));
@@ -185,9 +177,9 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
                 break;
             }
 
-	    if (save_page_data_sizes) {
-		page_data_sizes_.push_back(page_data_size);
-	    }
+            if (save_page_data_sizes) {
+                page_data_sizes_.push_back(page_data_size);
+            }
 
             disk_size_ += page_size_;
             memcpy(read_buf + data_size, 
@@ -197,56 +189,179 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
         }
         data_size_ = data_size;
         free(readBuffer);
-	debug_info("Open old file at path = %s, file fd = %d, current "
-		" physical file size = %lu, actual file size = %lu\n", 
-		path.c_str(), fd_, disk_size_, data_size_);
+        debug_info("Open old file at path = %s, file fd = %d, current "
+                " physical file size = %lu, actual file size = %lu\n", 
+                path.c_str(), fd_, disk_size_, data_size_);
 
-	if (save_page_data_sizes) {
-	    recovery_state_ = true;
-	}
+        if (save_page_data_sizes) {
+            recovery_state_ = true;
+        }
         return true;
     } else {
         return false;
     }
 }
 
-bool FileOperation::rollbackFile(char* read_buf, uint64_t rollback_offset) {
+// for recovery. Don't know the file size
+bool FileOperation::retrieveFilePiece(char*& read_buf, 
+        uint64_t& data_size, bool save_page_data_sizes) {
+    if (operationType_ != kDirectIO && operationType_ != kAlignLinuxIO) {
+        debug_error("not direct IO%s\n", "");
+        exit(1);
+    }
 
+    if (!use_existing_) {
+        debug_error("[ERROR] open a non-existing file %s\n", "");
+        exit(1);
+    }
+
+    disk_size_ = preAllocateFileSize_;
+    data_size_ = 0;
+
+    uint64_t req_page_num = (disk_size_ + page_size_ - 1) / page_size_;
+    // align mem
+    char* readBuffer;
+    auto readBufferSize = page_size_ * req_page_num;
+    auto ret = posix_memalign((void**)&readBuffer, page_size_, readBufferSize);
+    read_buf = new char[readBufferSize];
+
+    if (ret) {
+        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+        return false;
+    }
+    auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
+    if (rReturn != readBufferSize) {
+        free(readBuffer);
+        debug_error("[ERROR] Read return value = %lu, err = %s,"
+                " req_page_num = %lu, readBuffer size = %lu, disk_size_ ="
+                " %lu, start_offset_ %lu\n",
+                rReturn, strerror(errno), req_page_num, readBufferSize,
+                disk_size_, start_offset_);
+        free(readBuffer);
+        return false;
+    }
+
+    data_size = 0;
+    disk_size_ = 0;
+
+    if (save_page_data_sizes) {
+        page_data_sizes_.clear();
+    }
+    for (auto page_i = 0; page_i < req_page_num; page_i++) {
+        uint32_t page_data_size = 0;
+        memcpy(&page_data_size, readBuffer + page_i * page_size_, sizeof(uint32_t));
+
+        if (page_data_size == 0) {
+            break;
+        }
+
+        if (save_page_data_sizes) {
+            page_data_sizes_.push_back(page_data_size);
+        }
+
+        disk_size_ += page_size_;
+        memcpy(read_buf + data_size, 
+                readBuffer + page_i * page_size_ + sizeof(uint32_t), 
+                page_data_size);
+        data_size += page_data_size;
+    }
+    data_size_ = data_size;
+    free(readBuffer);
+    debug_info("Open old fd = %d, current "
+            " physical file size = %lu, actual file size = %lu\n",
+            fd_, disk_size_, data_size_);
+
+    if (save_page_data_sizes) {
+        recovery_state_ = true;
+    }
+    return true;
+}
+
+bool FileOperation::cleanFile() {
+    if (!use_existing_) {
+        debug_error("[ERROR] clean a non-existing file %s\n", "");
+        exit(1);
+    }
+
+    // generate a buffer filled with zeros, and size is preAllocateFileSize_
+    char* zeroBuffer;
+    auto ret = posix_memalign((void**)&zeroBuffer, page_size_, preAllocateFileSize_);
+    if (ret) {
+        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+        return false;
+    }
+    memset(zeroBuffer, 0, preAllocateFileSize_);
+
+    ret = pwrite(fd_, zeroBuffer, preAllocateFileSize_, start_offset_);
+    if (ret != preAllocateFileSize_) {
+        debug_error("[ERROR] pwrite failed: %d %s ret %lu\n", errno,
+                strerror(errno), ret);
+        throw std::runtime_error("exception");
+    }
+
+    free(zeroBuffer);
+    buf_used_size_ = 0;
+    disk_size_ = 0;
+    data_size_ = 0;
+    return true;
+}
+
+bool FileOperation::rollbackFile(char* read_buf, uint64_t rollback_offset)
+{
     if (rollback_offset > data_size_) {
-	debug_error("[ERROR] roll back offset too large: %lu > %lu\n",
-		rollback_offset, data_size_);
-	return false;
+        debug_error("[ERROR] roll back offset too large: %lu > %lu\n",
+            rollback_offset, data_size_);
+        return false;
     }
 
     if (recovery_state_ == false) {
-	debug_error("[ERROR] not in recovery but rollback: %lu %lu\n",
-		data_size_, rollback_offset);
-	return false;
+        debug_error("[ERROR] not in recovery but rollback: %lu %lu\n",
+            data_size_, rollback_offset);
+        return false;
     }
 
     uint64_t data_i_on_disk = 0;
     for (auto i = 0; i < page_data_sizes_.size(); i++) {
-	if (data_i_on_disk + page_data_sizes_[i] > rollback_offset) {
-	    debug_info("roll back to page %d\n", i);
+        if (data_i_on_disk + page_data_sizes_[i] > rollback_offset) {
+            debug_info("roll back to page %d\n", i);
 
-	    data_size_ = data_i_on_disk;
-	    disk_size_ = i * page_size_;
-	    buf_used_size_ = rollback_offset - data_i_on_disk;
-	    debug_error("roll back: %s new data size %lu new disk size %lu"
-		    " roll offset %lu buf size %lu\n",
-		    path_.c_str(),
-		    data_size_, disk_size_, rollback_offset, 
-		    buf_used_size_);
-		    
-	    if (buf_used_size_ > 0) {
-		memcpy(globalWriteBuffer_, read_buf + data_i_on_disk,
-			buf_used_size_); 
-	    }
-	    break;
-	}
-	data_i_on_disk += page_data_sizes_[i];
+            data_size_ = data_i_on_disk;
+            disk_size_ = i * page_size_;
+            buf_used_size_ = rollback_offset - data_i_on_disk;
+            debug_error("roll back: %s new data size %lu new disk size %lu"
+                        " roll offset %lu buf size %lu\n",
+                path_.c_str(),
+                data_size_, disk_size_, rollback_offset,
+                buf_used_size_);
+
+            if (buf_used_size_ > 0) {
+                memcpy(globalWriteBuffer_, read_buf + data_i_on_disk,
+                    buf_used_size_);
+            }
+            break;
+        }
+        data_i_on_disk += page_data_sizes_[i];
     }
-    
+
+    return true;
+}
+
+bool FileOperation::setStartOffset(uint64_t start_offset) {
+    start_offset_ = start_offset;
+    if (!use_existing_) {
+        debug_error("[ERROR] a non-existing file %s\n", "");
+        exit(1);
+    }
+    return true;
+}
+
+bool FileOperation::reuseLargeFile(uint64_t start_offset) {
+    if (!use_existing_) {
+        debug_error("[ERROR] reuse a non-existing file %s\n", "");
+        exit(1);
+    }
+    start_offset_ = start_offset;
+    cleanFile();
     return true;
 }
 
@@ -254,39 +369,29 @@ bool FileOperation::createThenOpenFile(string path)
 {
     path_ = path;
     switch (operationType_) {
-    case kFstream:
-        fileStream_.open(path, ios::out);
-        if (fileStream_.is_open() == false) {
-            debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
-            return false;
-        } else {
-            fileStream_.close();
-            fileStream_.open(path, ios::in | ios::out | ios::binary);
-            if (fileStream_.is_open() == false) {
-                debug_error("[ERROR] File stream (create) error, path = %s\n", path.c_str());
-                return false;
-            } else {
-                return true;
-            }
-        }
-        return true;
-        break;
     case kDirectIO:
     case kAlignLinuxIO:
     case kPreadWrite: 
     {
-        auto flag = O_CREAT | O_RDWR | 
-            (operationType_ == kDirectIO ? O_DIRECT : 0);
-        fd_ = open(path.c_str(), flag, 0644);
-        if (fd_ == -1) {
-            debug_error("[ERROR] File descriptor (open) = %d, err = %s,"
-                " operationType %d path %s\n", fd_, strerror(errno),
-                operationType_, path.c_str());
-            return false;
+        if (use_existing_) {
+            // ignore the variable path
+            cleanFile();
+            return true;
         } else {
-            int allocateStatus = fallocate(fd_, 0, 0, preAllocateFileSize_);
-            if (allocateStatus != 0) {
-                debug_warn("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
+            auto flag = O_CREAT | O_RDWR | 
+                (operationType_ == kDirectIO ? O_DIRECT : 0);
+            fd_ = open(path.c_str(), flag, 0644);
+            if (fd_ == -1) {
+                debug_error("[ERROR] File descriptor (open) = %d, err = %s,"
+                        " operationType %d path %s\n", fd_, strerror(errno),
+                        operationType_, path.c_str());
+                exit(1);
+                return false;
+            } else {
+                int allocateStatus = fallocate(fd_, 0, 0, preAllocateFileSize_);
+                if (allocateStatus != 0) {
+                    debug_warn("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
+                }
             }
             disk_size_ = 0;
             data_size_ = 0;
@@ -299,30 +404,28 @@ bool FileOperation::createThenOpenFile(string path)
         return false;
         break;
     }
+    return false;
 }
 
 bool FileOperation::closeFile()
 {
-    if (operationType_ == kFstream) {
-        fileStream_.flush();
-        fileStream_.close();
-        return true;
-    } else if (operationType_ == kDirectIO || 
-            operationType_ == kAlignLinuxIO ||
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
-        if (globalWriteBuffer_ != nullptr) {
-            memset(globalWriteBuffer_, 0, buf_size_);
-        }
         buf_used_size_ = 0;
-        debug_info("Close file fd = %d\n", fd_);
-        int status = close(fd_);
-        if (status == 0) {
-            debug_info("Close file success, current file fd = %d\n", fd_);
-            closed_before_ = true;
-            fd_ = -1;
-            return true;
+        if (!use_existing_) {
+            debug_info("Close file fd = %d\n", fd_);
+            int status = close(fd_);
+            if (status == 0) {
+                debug_info("Close file success, current file fd = %d\n", fd_);
+                closed_before_ = true;
+                fd_ = -1;
+                return true;
+            } else {
+                debug_error("[ERROR] File descriptor (close) = %d, err = %s\n", fd_, strerror(errno));
+                return false;
+            }
         } else {
-            debug_error("[ERROR] File descriptor (close) = %d, err = %s\n", fd_, strerror(errno));
+            debug_error("Closing an existing file %s\n", "");
             return false;
         }
     } else {
@@ -332,10 +435,7 @@ bool FileOperation::closeFile()
 
 bool FileOperation::isFileOpen()
 {
-    if (operationType_ == kFstream) {
-        return fileStream_.is_open();
-    } else if (operationType_ == kDirectIO || 
-            operationType_ == kAlignLinuxIO ||
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
         return (fd_ != -1);
     } else {
@@ -355,35 +455,65 @@ void FileOperation::markDirectDataAddress(uint64_t data) {
     mark_in_page_offset_ = (buf_used_size_ == 0) ? 0 : 1;
 
     if (recovery_state_) {
-	uint64_t data_i_on_disk = 0;
-	for (auto i = 0; i < page_data_sizes_.size(); i++) {
-	    if (data_i_on_disk + page_data_sizes_[i] == data) {
-		mark_disk_ = i * page_size_;
-	    }
-	}
-	mark_in_page_offset_ = 0; // must be in recovery state
+        uint64_t data_i_on_disk = 0;
+        for (auto i = 0; i < page_data_sizes_.size(); i++) {
+            if (data_i_on_disk + page_data_sizes_[i] == data) {
+                mark_disk_ = i * page_size_;
+            }
+        }
+        mark_in_page_offset_ = 0; // must be in recovery state
     }
 }
 
-FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
+// A simple version of write file
+bool FileOperation::canWriteFile(uint64_t write_size) {
+    // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        if (write_size + buf_used_size_ <= buf_size_) {
+            return true;
+        } else if (buf_size_ > 0) {
+            // need to flush
+            uint64_t req_page_num = (write_size + buf_used_size_ +
+                    page_size_m4_ - 1) / page_size_m4_;
+            uint64_t written_size = 0;
+            auto writeBufferSize = page_size_ * req_page_num;
+            uint64_t page_i = 0;
+
+            return writeBufferSize + disk_size_ <= preAllocateFileSize_;
+        } else {
+            uint64_t req_page_num = (write_size + page_size_m4_ - 1) /
+                page_size_m4_;
+            auto writeBufferSize = page_size_ * req_page_num;
+            return writeBufferSize + disk_size_ <= preAllocateFileSize_;
+        }
+    } else if (operationType_ == kPreadWrite) {
+        if (write_size + buf_used_size_ <= buf_size_) {
+            return true;
+        } else if (buf_size_ > 0) {
+            // need to flush
+            debug_e("Not implemented");
+            return false;
+        } else {
+            return write_size + disk_size_ <= preAllocateFileSize_;
+        }
+    } else {
+        return false;
+    }
+}
+
+FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::end);
-        fileStream_.seekp(0, ios::end);
-        fileStream_.write(contentBuffer, contentSize);
-        FileOpStatus ret(true, contentSize, contentSize, 0);
-        return ret;
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        if (contentSize + buf_used_size_ <= buf_size_) {
-            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, contentSize);
-            buf_used_size_ += contentSize;
-            FileOpStatus ret(true, 0, 0, contentSize);
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        if (write_size + buf_used_size_ <= buf_size_) {
+            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, write_size);
+            buf_used_size_ += write_size;
+            FileOpStatus ret(true, 0, 0, write_size);
             return ret;
         } else if (buf_size_ > 0) {
-	    // need to flush
-	    uint64_t req_page_num = (contentSize + buf_used_size_ +
-		    page_size_m4_ - 1) / page_size_m4_;
+            // need to flush
+            uint64_t req_page_num = (write_size + buf_used_size_ +
+                    page_size_m4_ - 1) / page_size_m4_;
             uint64_t written_size = 0;
             // align mem
             char* write_buf_dio;
@@ -397,12 +527,12 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                 memset(write_buf_dio, 0, writeBufferSize);
             }
             uint64_t page_i = 0;
-            uint64_t targetWriteSize = buf_used_size_ + contentSize;
+            uint64_t targetWriteSize = buf_used_size_ + write_size;
 
             uint64_t previousBufferUsedSize = buf_used_size_;
             char exist_content[targetWriteSize];
             memcpy(exist_content, globalWriteBuffer_, previousBufferUsedSize);
-            memcpy(exist_content + previousBufferUsedSize, contentBuffer, contentSize);
+            memcpy(exist_content + previousBufferUsedSize, contentBuffer, write_size);
             int actual_disk_write_size = 0;
             uint32_t currentPageWriteSize = 0;
             while (written_size != targetWriteSize) {
@@ -426,10 +556,18 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-	    auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
-		    disk_size_);
+            // write to the offset start_offset_ + disk_size_
+            if (actual_disk_write_size + disk_size_ > preAllocateFileSize_ ||
+                    start_offset_ % preAllocateFileSize_ > 0) {
+                debug_error("write too much: %lu + %lu > %lu\n",
+                        actual_disk_write_size, disk_size_,
+                        preAllocateFileSize_);
+                throw std::runtime_error("exception");
+            }
+            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
+                start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(
-		    StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
+                StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
             if (wReturn != actual_disk_write_size) {
                 free(write_buf_dio);
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
@@ -440,12 +578,12 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                 disk_size_ += actual_disk_write_size;
                 // data size already on disk
                 data_size_ += (targetWriteSize - buf_used_size_);
-                FileOpStatus ret(true, actual_disk_write_size, 
-			targetWriteSize - buf_used_size_, buf_used_size_);
+                FileOpStatus ret(true, actual_disk_write_size,
+                    targetWriteSize - buf_used_size_, buf_used_size_);
                 return ret;
             }
         } else {
-            uint64_t req_page_num = ceil((double)contentSize / (double)page_size_m4_);
+            uint64_t req_page_num = ceil((double)write_size / (double)page_size_m4_);
             uint64_t written_size = 0;
             // align mem
             char* write_buf_dio;
@@ -459,7 +597,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                 memset(write_buf_dio, 0, writeBufferSize);
             }
             uint64_t processedPageNumber = 0;
-            uint64_t targetWriteSize = contentSize;
+            uint64_t targetWriteSize = write_size;
 
             int actual_disk_write_size = 0;
             uint32_t currentPageWriteSize = 0;
@@ -473,7 +611,8 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size, disk_size_);
+            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
+                start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
             if (wReturn != actual_disk_write_size) {
                 free(write_buf_dio);
@@ -489,18 +628,19 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
             }
         }
     } else if (operationType_ == kPreadWrite) {
-        if (contentSize + buf_used_size_ <= buf_size_) {
-            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, contentSize);
-            buf_used_size_ += contentSize;
-            FileOpStatus ret(true, 0, 0, contentSize);
+        if (write_size + buf_used_size_ <= buf_size_) {
+            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, write_size);
+            buf_used_size_ += write_size;
+            FileOpStatus ret(true, 0, 0, write_size);
             return ret;
         } else if (buf_size_ > 0) {
             debug_error("Not complete! buf_size_ %lu\n", buf_size_);
-            if (contentSize + buf_used_size_ - buf_size_ < buf_size_) {
+            if (write_size + buf_used_size_ - buf_size_ < buf_size_) {
                 memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, buf_size_ - buf_used_size_);
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_size_, disk_size_);
+                auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_size_,
+                        start_offset_ + disk_size_);
                 StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
                 if (wReturn != buf_size_) {
                     debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
@@ -508,11 +648,11 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
                     return ret;
                 } 
 
-                buf_used_size_ = contentSize - (buf_size_ - buf_used_size_);
+                buf_used_size_ = write_size - (buf_size_ - buf_used_size_);
                 disk_size_ += buf_size_;
-                data_size_ += contentSize - buf_used_size_;
-                memcpy(globalWriteBuffer_, contentBuffer + contentSize - buf_used_size_, buf_used_size_);
-                FileOpStatus ret(true, buf_size_, contentSize - buf_used_size_, buf_used_size_);
+                data_size_ += write_size - buf_used_size_;
+                memcpy(globalWriteBuffer_, contentBuffer + write_size - buf_used_size_, buf_used_size_);
+                FileOpStatus ret(true, buf_size_, write_size - buf_used_size_, buf_used_size_);
                 return ret;
             } else {
                 // Not complete
@@ -522,17 +662,18 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
         } else {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, contentBuffer, contentSize, disk_size_);
+            auto wReturn = pwrite(fd_, contentBuffer, write_size,
+                    start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
-            if (wReturn != contentSize) {
+            if (wReturn != write_size) {
                 debug_error("[ERROR] Write return value = %ld, "
                         "file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
                 FileOpStatus ret(false, 0, 0, 0);
                 return ret;
             } else {
-                disk_size_ += contentSize;
-                data_size_ += contentSize;
-                FileOpStatus ret(true, contentSize, contentSize, 0);
+                disk_size_ += write_size;
+                data_size_ += write_size;
+                FileOpStatus ret(true, write_size, write_size, 0);
                 return ret;
             }
         }
@@ -545,14 +686,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t contentSize)
 FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t contentSize)
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::end);
-        fileStream_.seekp(0, ios::end);
-        fileStream_.write(contentBuffer, contentSize);
-        fileStream_.flush();
-        FileOpStatus ret(true, contentSize, contentSize, 0);
-        return ret;
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (buf_size_ > 0) {
             uint64_t targetWriteSize = buf_used_size_ + contentSize;
             uint64_t req_page_num = (targetWriteSize + page_size_m4_ - 1) /
@@ -588,10 +722,19 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size, disk_size_);
+            if (actual_disk_write_size + disk_size_ > preAllocateFileSize_ || 
+                    start_offset_ % preAllocateFileSize_ > 0) {
+                debug_error("write too much: %lu + %lu > %lu\n",
+                        actual_disk_write_size, disk_size_,
+                        preAllocateFileSize_);
+                throw std::runtime_error("exception");
+            }
+            auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
+                    start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
-	    // stop recovery
-	    recovery_state_ = false;
+
+            // stop recovery
+            recovery_state_ = false;
 
             if (wReturn != actual_disk_write_size) {
                 free(write_buf_dio);
@@ -602,8 +745,8 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
                 free(write_buf_dio);
                 disk_size_ += actual_disk_write_size;
                 data_size_ += targetWriteSize;
-		FileOpStatus ret(true, actual_disk_write_size, targetWriteSize,
-			buf_used_size_);
+                FileOpStatus ret(true, actual_disk_write_size, targetWriteSize,
+                        buf_used_size_);
                 return ret;
             }
         } else {
@@ -647,13 +790,9 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
 FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::beg);
-        fileStream_.read(contentBuffer, contentSize);
-        FileOpStatus ret(true, contentSize, contentSize, 0);
-        return ret;
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        if (contentSize != data_size_ + buf_used_size_) {
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+        if (contentSize <= preAllocateFileSize_ && contentSize != data_size_ +
+                buf_used_size_) {
             debug_error("[ERROR] Read size mismatch, request size = %lu,"
                     " DirectIO current writed physical size = %lu, actual size"
                     " = %lu, buffered size = %lu\n", 
@@ -672,7 +811,7 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
-        auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
+        auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
         if (rReturn != readBufferSize) {
             free(readBuffer);
             debug_error("[ERROR] Read return value = %lu, file fd = %d, "
@@ -696,7 +835,8 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             memcpy(contentBuffer + currentReadDoneSize, globalWriteBuffer_, buf_used_size_);
             currentReadDoneSize += buf_used_size_;
         }
-        if (currentReadDoneSize != contentSize) {
+        if (contentSize <= preAllocateFileSize_ && currentReadDoneSize !=
+            contentSize) {
             free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, req_page_num, disk_size_, data_size_, buf_used_size_);
             FileOpStatus ret(false, 0, 0, 0);
@@ -716,7 +856,7 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
-        auto rReturn = pread(fd_, contentBuffer, disk_size_, 0);
+        auto rReturn = pread(fd_, contentBuffer, disk_size_, start_offset_);
         if (rReturn != data_size_) {
             debug_error("[ERROR] Read return value = %lu, file fd = %d, "
                     "err = %s, disk_size_ = %lu\n", 
@@ -741,11 +881,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         uint64_t offset, uint64_t read_buf_size)
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        debug_error("[ERROR] kFstream not implemented (sz %lu)\n", 
-                read_buf_size);
-        return FileOpStatus(false, 0, 0, 0);
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (read_buf_size == 0) {
             debug_error("read size cannot be zero!%s\n", "");
             FileOpStatus ret(false, 0, 0, 0);
@@ -815,7 +951,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             // not page_size_m4_ 
             disk_end_page_id = disk_size_  / page_size_;
             page_index = (mark_in_page_offset_ == 0) ? 0 : 
-		offset - disk_start_page_id * page_size_m4_;
+                offset - disk_start_page_id * page_size_m4_;
 //            debug_error("mark_data_ %lu"
 //                    " offset %lu data size %lu start %lu end %lu index %lu\n",
 //                    mark_data_, offset, data_size_, 
@@ -863,8 +999,8 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
-	auto rReturn = pread(fd_, tmp_read_buf, readBufferSize,
-		disk_start_page_id * page_size_);
+        auto rReturn = pread(fd_, tmp_read_buf, readBufferSize,
+                start_offset_ + disk_start_page_id * page_size_);
         if (rReturn != readBufferSize) {
             free(tmp_read_buf);
             debug_error("[ERROR] Read return value = %lu, file fd = %d, err = %s, req_page_num = %lu, tmp_read_buf size = %lu, disk_size_ = %lu\n", rReturn, fd_, strerror(errno), req_page_num, readBufferSize, disk_size_);
@@ -971,7 +1107,8 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             req_buf_data_size = 0;
         }
 
-        auto rReturn = pread(fd_, read_buf, req_disk_data_size, offset);
+        auto rReturn = pread(fd_, read_buf, req_disk_data_size, 
+                start_offset_ + offset);
         if (rReturn != req_disk_data_size) {
             debug_error("[ERROR] Read return value = %lu, file fd = %d,"
                     " err = %s, disk_size_ = %lu\n", 
@@ -996,11 +1133,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
 FileOpStatus FileOperation::flushFile()
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.flush();
-        FileOpStatus ret(true, 0, 0, 0);
-        return ret;
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (buf_used_size_ != 0) {
             uint64_t req_page_num = 
                 (buf_used_size_ + page_size_m4_ - 1) / page_size_m4_;
@@ -1022,15 +1155,16 @@ FileOpStatus FileOperation::flushFile()
                 uint32_t curr_sz;
                 curr_sz = min(targetWriteSize - written_size, page_size_m4_);
                 memcpy(writeBuffer + page_i * page_size_, 
-			&curr_sz, sizeof(uint32_t));
-		memcpy(writeBuffer + page_i * page_size_ + sizeof(uint32_t),
-			globalWriteBuffer_ + written_size, curr_sz);
+                        &curr_sz, sizeof(uint32_t));
+                memcpy(writeBuffer + page_i * page_size_ + sizeof(uint32_t),
+                        globalWriteBuffer_ + written_size, curr_sz);
                 written_size += curr_sz;
                 page_i++;
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, writeBuffer, writeBufferSize, disk_size_);
+            auto wReturn = pwrite(fd_, writeBuffer, writeBufferSize, 
+                    start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_FLUSH, tv);
             if (wReturn != writeBufferSize) {
                 free(writeBuffer);
@@ -1054,7 +1188,8 @@ FileOpStatus FileOperation::flushFile()
         if (buf_used_size_ != 0) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_used_size_, disk_size_);
+            auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_used_size_,
+                    start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_FLUSH, tv);
             if (wReturn != buf_used_size_) {
                 debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
@@ -1080,12 +1215,7 @@ FileOpStatus FileOperation::flushFile()
 uint64_t FileOperation::getFileSize()
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::end);
-        uint64_t fileSize = fileStream_.tellg();
-        fileStream_.seekg(0, ios::beg);
-        return fileSize;
-    } else if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         uint64_t fileRealSizeWithoutPadding = 0;
         uint64_t req_page_num = ceil((double)disk_size_ / (double)page_size_);
         // align mem
@@ -1096,7 +1226,7 @@ uint64_t FileOperation::getFileSize()
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
         }
-        auto rReturn = pread(fd_, readBuffer, readBufferSize, 0);
+        auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
         if (rReturn != readBufferSize) {
             free(readBuffer);
             debug_error("[ERROR] Read return value = %lu, err = %s, req_page_num = %lu, readBuffer size = %lu, disk_size_ = %lu\n", rReturn, strerror(errno), req_page_num, readBufferSize, disk_size_);
@@ -1119,12 +1249,12 @@ uint64_t FileOperation::getFileSize()
 
 bool FileOperation::removeAndReopen() {
     if (isFileOpen()) {
-	closeFile();
+        closeFile();
     }
     auto ret = remove(path_.c_str());
     if (ret == -1) {
-	debug_error("[ERROR] could not delete %s\n", path_.c_str());
-	return false;
+        debug_error("[ERROR] could not delete %s\n", path_.c_str());
+        return false;
     }
     createThenOpenFile(path_);
     return true;
@@ -1132,13 +1262,7 @@ bool FileOperation::removeAndReopen() {
 
 uint64_t FileOperation::getCachedFileSize() {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::end);
-        uint64_t fileSize = fileStream_.tellg();
-        fileStream_.seekg(0, ios::beg);
-        return fileSize;
-    } else if (operationType_ == kDirectIO || 
-            operationType_ == kAlignLinuxIO ||
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
         return disk_size_;
     } else {
@@ -1148,13 +1272,7 @@ uint64_t FileOperation::getCachedFileSize() {
 
 uint64_t FileOperation::getCachedFileDataSize() {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
-    if (operationType_ == kFstream) {
-        fileStream_.seekg(0, ios::end);
-        uint64_t fileSize = fileStream_.tellg();
-        fileStream_.seekg(0, ios::beg);
-        return fileSize;
-    } else if (operationType_ == kDirectIO || 
-            operationType_ == kAlignLinuxIO ||
+    if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO ||
             operationType_ == kPreadWrite) {
         return data_size_;
     } else {

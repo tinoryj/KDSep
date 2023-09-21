@@ -1510,10 +1510,7 @@ void KDSep::processWriteBackOperationsWorker()
                     keys.push_back((*objs)[i]->key);
                 }
 
-                debug_warn("(sta) Target Write back key %zu\n", keys.size());
                 bool writeBackStatus = GetCurrentValuesThenWriteBack(keys);
-                debug_warn("(fin) Target Write back key %zu\n", keys.size());
-
                 if (writeBackStatus == false) {
                     debug_error("Could not write back keys %zu\n", keys.size());
                     exit(1);
@@ -1534,15 +1531,12 @@ void KDSep::processWriteBackOperationsWorker()
 
         if (written_pairs > 0) {
             total_written_pairs += written_pairs;
-//            debug_error("Write back: %d KD pairs (total %lu)\n", 
-//                    written_pairs, total_written_pairs);
             if (write_stall_ != nullptr) {
                 *write_stall_ = false;
             }
             StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK, tv);
         }
     }
-    debug_e("thread finished");
     return;
 }
 
@@ -1577,7 +1571,6 @@ void KDSep::processLsmInterfaceOperationsWorker()
             op->job_done = kDone;
         }
     }
-    debug_e("thread finished");
     return;
 }
 

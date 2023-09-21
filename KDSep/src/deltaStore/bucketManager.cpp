@@ -10,6 +10,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
 {
     maxBucketNumber_ = options->deltaStore_max_bucket_number_;
     bucket_bitmap_.reset(new BitMap(maxBucketNumber_ + 16));
+    working_dir_ = workingDirStr;
+    OpenBucketFile();
     uint64_t k = 0;
     while (pow((double)2, (double)k) <= maxBucketNumber_) {
         k++;
@@ -27,7 +29,6 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     maxBucketSize_ = options->deltaStore_bucket_size_;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
     debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
-    working_dir_ = workingDirStr;
     manifest_ = new ManifestManager(workingDirStr);
     enable_write_back_ = (options->write_back_queue.get() != nullptr);
     if (enable_write_back_) {
@@ -40,8 +41,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enable_crash_consistency_ = options->enable_crash_consistency;
     singleFileSplitGCTriggerSize_ =
-	options->deltaStore_gc_split_threshold_
-	* options->deltaStore_bucket_size_;
+        options->deltaStore_gc_split_threshold_
+        * options->deltaStore_bucket_size_;
 //    prefix_tree_ = new SkipListForBuckets(maxBucketNumber_);
     prefix_tree_.init(maxBucketNumber_);
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
@@ -55,8 +56,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     RetriveHashStoreFileMetaDataList();
     gettimeofday(&tv2, 0);
     printf("retrieve metadata list time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
+            tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+            tv.tv_usec / 1000000.0);
 
     // for asio
     gc_threads_.reset(new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_));
@@ -79,6 +80,42 @@ BucketManager::~BucketManager()
     prefix_tree_.getCurrentValidNodesNoKey(vec);
     for (auto& it : vec) {
         deleteFileHandler(it);
+    }
+}
+
+void BucketManager::OpenBucketFile()
+{
+    std::string filename = working_dir_ + "/bucket";
+    bool bucket_exist = std::filesystem::exists(filename);
+
+    if (bucket_exist) {
+        // open with O_DIRECT
+        bucket_fd_ = open(filename.c_str(), O_RDWR | O_DIRECT, 0644);
+        if (bucket_fd_ < 0) {
+            debug_error("open bucket file failed, err %s\n", strerror(errno));
+            exit(1);
+        }
+    } else {
+        // open with O_CREAT | O_DIRECT
+        bucket_fd_ = open(filename.c_str(), O_RDWR | O_CREAT | O_DIRECT, 0644);
+        if (bucket_fd_ < 0) {
+            debug_error("open bucket file failed, err %s, retry no direct IO\n",
+                    strerror(errno));
+            bucket_fd_ = open(filename.c_str(), O_RDWR | O_CREAT, 0644);
+            if (bucket_fd_ < 0) {
+                debug_error("open bucket file %s failed, err %s\n",
+                        filename.c_str(), strerror(errno));
+                exit(1);
+            }
+        }
+
+        // allocate space
+        uint64_t file_size = (maxBucketNumber_ + 16) * maxBucketSize_;
+        if (fallocate(bucket_fd_, 0, 0, file_size) < 0) {
+            debug_error("fallocate bucket file failed, err %s, continue\n",
+                    strerror(errno));
+//            exit(1);
+        }
     }
 }
 
@@ -107,20 +144,18 @@ uint64_t BucketManager::getNumOfBuckets() {
 BucketHandler* BucketManager::createFileHandler() {
     BucketHandler* bucket = new BucketHandler; 
     bucket->io_ptr = new FileOperation(fileOperationMethod_,
-	    maxBucketSize_, singleFileFlushSize_);
+            maxBucketSize_, singleFileFlushSize_, bucket_fd_, 0);
     bucket->sorted_filter = new BucketKeyFilter();
     bucket->filter = new BucketKeyFilter();
     return bucket;
 }
 
-void BucketManager::deleteFileHandler(
-	BucketHandler* bucket) {
-
+void BucketManager::deleteFileHandler(BucketHandler* bucket) {
     if (bucket->index_block) {
-	delete bucket->index_block;
+        delete bucket->index_block;
     }
     if (bucket->io_ptr) {
-	delete bucket->io_ptr;
+        delete bucket->io_ptr;
     }
     delete bucket->sorted_filter;
     delete bucket->filter;
@@ -176,7 +211,7 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
+        commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -215,7 +250,7 @@ bool BucketManager::commitToCommitLog() {
     }
 
     if (commit_log_fop_ == nullptr) {
-	commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
+        commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -238,9 +273,9 @@ bool BucketManager::cleanCommitLog() {
     gettimeofday(&tv, 0);
     ret = commit_log_fop_->removeAndReopen();
     StatsRecorder::staticProcess(
-	    StatsType::DS_REMOVE_COMMIT_LOG, tv);
+            StatsType::DS_REMOVE_COMMIT_LOG, tv);
     if (ret == false) {
-	debug_error("remove failed commit log %s\n", "");
+        debug_error("remove failed commit log %s\n", "");
     }
     commit_log_next_threshold_ = commit_log_maximum_size_;
     return true;
@@ -342,28 +377,29 @@ void BucketManager::recoverFileMt(BucketHandler* bucket,
         boost::atomic<uint64_t>& disk_sizes,
         boost::atomic<uint64_t>& cnt) {
     FileOperation* fop = bucket->io_ptr;
-    string filename = working_dir_ + "/" + to_string(bucket->file_id) +
-	".delta";
+//    string filename = working_dir_ + "/" + to_string(bucket->file_id) +
+//        ".delta";
     char* read_buf;
     uint64_t data_size;
     bool ret;
 
     STAT_PROCESS(
-    ret = fop->openAndReadFile(filename, read_buf, data_size, true),
+//    ret = fop->openAndReadFile(filename, read_buf, data_size, true),
+    ret = fop->retrieveFilePiece(read_buf, data_size, true),
     StatsType::DS_RECOVERY_READ);
 
-    if (ret == false) {
-	printf("[ERROR] open failed: %s\n", filename.c_str()); 
-	debug_error("[ERROR] open failed: %s\n", filename.c_str()); 
-	exit(1);
-    }
+//    if (ret == false) {
+//        printf("[ERROR] open failed: %s\n", filename.c_str()); 
+//        debug_error("[ERROR] open failed: %s\n", filename.c_str()); 
+//        exit(1);
+//    }
 
     uint64_t onDiskFileSize = fop->getCachedFileSize();
-    if (onDiskFileSize == 0) {
-	printf("[ERROR] read failed: %s\n", filename.c_str()); 
-	debug_error("[ERROR] read failed: %s\n", filename.c_str()); 
-	exit(1);
-    }
+//    if (onDiskFileSize == 0) {
+//        printf("[ERROR] read failed: %s\n", filename.c_str()); 
+//        debug_error("[ERROR] read failed: %s\n", filename.c_str()); 
+//        exit(1);
+//    }
 
     recoverIndexAndFilter(bucket, read_buf, data_size);
 
@@ -374,7 +410,7 @@ void BucketManager::recoverFileMt(BucketHandler* bucket,
 }
 
 uint64_t BucketManager::recoverIndexAndFilter(
-	BucketHandler* bucket,
+        BucketHandler* bucket,
         char* read_buf, uint64_t read_buf_size)
 {
     uint64_t i = 0;
@@ -385,11 +421,11 @@ uint64_t BucketManager::recoverIndexAndFilter(
 
     // create the index block
     if (enable_index_block_) {
-	if (bucket->index_block == nullptr) {
-	    bucket->index_block = new BucketIndexBlock();
-	} else {
-	    bucket->index_block->Clear();
-	}
+        if (bucket->index_block == nullptr) {
+            bucket->index_block = new BucketIndexBlock();
+        } else {
+            bucket->index_block->Clear();
+        }
     }
 
     bucket->max_seq_num = 0;
@@ -407,139 +443,139 @@ uint64_t BucketManager::recoverIndexAndFilter(
 
     while (i < read_buf_size) {
         processed_delta_num++;
-	header_offset = i;
-	// get header
+        header_offset = i;
+        // get header
         if (use_varint_d_header == false) {
             memcpy(&header, read_buf + i, header_sz);
         } else {
-	    // TODO check whether header can be destructed
-            header = GetDeltaHeaderVarintMayFail(read_buf + i, 
-		    read_buf_size - i, header_sz, read_header_success);
-	    if (read_header_success == false) {
-		debug_error("because of header break: %lu %lu\n",
-			i, read_buf_size);
-		rollback_offset = header_offset;
-		break;
-	    }
+    // TODO check whether header can be destructed
+            header = GetDeltaHeaderVarintMayFail(read_buf + i,
+                    read_buf_size - i, header_sz, read_header_success);
+            if (read_header_success == false) {
+                debug_error("because of header break: %lu %lu\n",
+                        i, read_buf_size);
+                rollback_offset = header_offset;
+                break;
+            }
         }
 
         i += header_sz;
         if (header.is_gc_done_ == true) {
             // skip since it is gc flag, no content.
-	    if (sorted == false) {
-		debug_error("[ERROR] Have gc done flag but keys not"
-		       " sorted, deltas %lu file id %lu size %lu "
-		       "[%lu %lu] processed %lu\n", 
-		       processed_delta_num, bucket->file_id,
-		       may_sorted_records.size(),
-		       i, read_buf_size, processed_delta_num);
-		debug_error("file id %lu previous key %.*s\n",
-			bucket->file_id,
-			(int)previous_key.size(), 
-			previous_key.data()); 
-		exit(1);
-	    }
+            if (sorted == false) {
+                debug_error("[ERROR] Have gc done flag but keys not"
+                        " sorted, deltas %lu file id %lu size %lu "
+                        "[%lu %lu] processed %lu\n", 
+                        processed_delta_num, bucket->file_id,
+                        may_sorted_records.size(),
+                        i, read_buf_size, processed_delta_num);
+                debug_error("file id %lu previous key %.*s\n",
+                        bucket->file_id,
+                        (int)previous_key.size(), 
+                        previous_key.data()); 
+                exit(1);
+            }
 
-	    sorted = false;
+            sorted = false;
 
-	    bucket->unsorted_part_offset = i;
-	    bucket->io_ptr->markDirectDataAddress(i);
+            bucket->unsorted_part_offset = i;
+            bucket->io_ptr->markDirectDataAddress(i);
 
-	    // build index and filter blocks
-	    if (enable_index_block_) {
-		for (auto i = 0; i < may_sorted_records.size(); i++) {
-		    auto& key = may_sorted_records[i].first;
-		    auto& tmp_header = may_sorted_records[i].second;
-		    uint64_t total_kd_size =
-			GetDeltaHeaderVarintSize(tmp_header) + 
-			tmp_header.key_size_ + tmp_header.value_size_;
-		    bucket->index_block->Insert(key, total_kd_size); 
-		    bucket->sorted_filter->Insert(key);
+    // build index and filter blocks
+            if (enable_index_block_) {
+                for (auto i = 0; i < may_sorted_records.size(); i++) {
+                    auto& key = may_sorted_records[i].first;
+                    auto& tmp_header = may_sorted_records[i].second;
+                    uint64_t total_kd_size =
+                        GetDeltaHeaderVarintSize(tmp_header) + 
+                        tmp_header.key_size_ + tmp_header.value_size_;
+                    bucket->index_block->Insert(key, total_kd_size); 
+                    bucket->sorted_filter->Insert(key);
 
-		}
+                }
 
-		bucket->index_block->Build();
-		bucket->index_block->IndicesClear();
-	    } else {
-		for (auto& it : may_sorted_records) {
-		    bucket->sorted_filter->Insert(it.first);
-		}
-	    }
+                bucket->index_block->Build();
+                bucket->index_block->IndicesClear();
+            } else {
+                for (auto& it : may_sorted_records) {
+                    bucket->sorted_filter->Insert(it.first);
+                }
+            }
 
-	    may_sorted_records.clear();
+            may_sorted_records.clear();
             continue;
         }
 
-	str_t key(read_buf + i, header.key_size_);
-	string_view key_view(read_buf + i, header.key_size_);
+        str_t key(read_buf + i, header.key_size_);
+        string_view key_view(read_buf + i, header.key_size_);
 
-//	if (key_view == "user13704398570070748503") {
-//	    debug_error("user13704398570070748503 file %lu seqnum %u\n", 
-//		    bucket->file_id, header.seq_num);
-//	}
+//      if (key_view == "user13704398570070748503") {
+//          debug_error("user13704398570070748503 file %lu seqnum %u\n", 
+//                  bucket->file_id, header.seq_num);
+//      }
 
-	// no sorted part if the key is smaller or equal to the previous key
-	if (sorted && previous_key.size() > 0 && previous_key >= key_view) {
-	    // no sorted part
-	    sorted = false;
-	} 
+        // no sorted part if the key is smaller or equal to the previous key
+        if (sorted && previous_key.size() > 0 && previous_key >= key_view) {
+            // no sorted part
+            sorted = false;
+        }
 
         i += header.key_size_;
-	// no sorted part if there is an anchor 
+        // no sorted part if there is an anchor
         if (header.is_anchor_ == true) {
-	    sorted = false;
+            sorted = false;
         } else {
             i += header.value_size_;
         }
 
-	if (i <= read_buf_size) {
-	    // successfully read record. 
-	    bucket->max_seq_num = max(
-		    bucket->max_seq_num,
-		    (uint64_t)header.seq_num); 
-//	    if (bucket->file_id == 2295) {
-//		//user13704398570070748503
-//		debug_error("key %.*s file id %lu seq %lu maxseq %lu\n", 
-//			(int)key.size_, key.data_,
-//			header.seq_num,
-//			bucket->file_id,
-//			bucket->max_seq_num);
-//	    }
-	    if (sorted) {
-		may_sorted_records.push_back(make_pair(key, header));
-	    } else {
-		// not the sorted part, release all the records and put into
-		// the unsorted filter
-		if (may_sorted_records.size() > 0) {
-		    for (auto& it : may_sorted_records) {
-			bucket->filter->Insert(it.first);
-		    }
-		    may_sorted_records.clear();
-		}
-		bucket->filter->Insert(key);
-	    }
+        if (i <= read_buf_size) {
+            // successfully read record.
+            bucket->max_seq_num = max(
+                bucket->max_seq_num,
+                (uint64_t)header.seq_num);
+//          if (bucket->file_id == 2295) {
+//              //user13704398570070748503
+//              debug_error("key %.*s file id %lu seq %lu maxseq %lu\n", 
+//                      (int)key.size_, key.data_,
+//                      header.seq_num,
+//                      bucket->file_id,
+//                      bucket->max_seq_num);
+//          }
+            if (sorted) {
+                may_sorted_records.push_back(make_pair(key, header));
+            } else {
+                // not the sorted part, release all the records and put into
+                // the unsorted filter
+                if (may_sorted_records.size() > 0) {
+                    for (auto& it : may_sorted_records) {
+                        bucket->filter->Insert(it.first);
+                    }
+                    may_sorted_records.clear();
+                }
+                bucket->filter->Insert(key);
+            }
 
-	    previous_key = key_view;
-	} else {
-	    // read record failed
-	    rollback_offset = header_offset;
-	    i = rollback_offset;
-	    break;
-	}
+            previous_key = key_view;
+        } else {
+            // read record failed
+            rollback_offset = header_offset;
+            i = rollback_offset;
+            break;
+        }
     }
 
 //    if (i < read_buf_size) {
 //        debug_error("file id %lu buf size %lu roll back to %lu\n", 
-//		bucket->file_id,
+//              bucket->file_id,
 //                read_buf_size, rollback_offset);
 //    }
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_INDEX_FILTER, tv);
 
     if (i < read_buf_size) {
-	STAT_PROCESS(
-		bucket->io_ptr->rollbackFile(read_buf, rollback_offset),
-		StatsType::DS_RECOVERY_ROLLBACK);
+        STAT_PROCESS(
+                bucket->io_ptr->rollbackFile(read_buf, rollback_offset),
+                StatsType::DS_RECOVERY_ROLLBACK);
     }
 
     // update file handler
@@ -548,7 +584,7 @@ uint64_t BucketManager::recoverIndexAndFilter(
     bucket->total_on_disk_bytes = bucket->io_ptr->getCachedFileSize();
 
 //    debug_error("file id %lu seq num %lu\n", 
-//	    bucket->file_id, bucket->max_seq_num);
+//          bucket->file_id, bucket->max_seq_num);
 
     return processed_delta_num;
 }
@@ -561,7 +597,7 @@ bool BucketManager::recoverBucketTable() {
     int cnt_f = 0;
 
     boost::asio::thread_pool* recovery_thread_ = new
-	boost::asio::thread_pool(8);
+        boost::asio::thread_pool(8);
     boost::atomic<uint64_t> cnt_in_progress;
     boost::atomic<uint64_t> data_sizes;
     boost::atomic<uint64_t> disk_sizes;
@@ -571,18 +607,18 @@ bool BucketManager::recoverBucketTable() {
 
     // Step 2: Recover each bucket
     for (auto& it : id2buckets_) {
-	cnt_in_progress++;
+        cnt_in_progress++;
 
-	boost::asio::post(*recovery_thread_,
-		boost::bind(
-		    &BucketManager::recoverFileMt,
-		    this,
-		    it.second,
-		    boost::ref(data_sizes),
-		    boost::ref(disk_sizes),
-		    boost::ref(cnt_in_progress)));
+        boost::asio::post(*recovery_thread_,
+            boost::bind(
+                &BucketManager::recoverFileMt,
+                this,
+                it.second,
+                boost::ref(data_sizes),
+                boost::ref(disk_sizes),
+                boost::ref(cnt_in_progress)));
 
-	cnt_f++;
+        cnt_f++;
     }
 
     while (cnt_in_progress > 0) {
@@ -597,21 +633,21 @@ bool BucketManager::recoverBucketTable() {
     min_seq_num_ = 0; 
     bool first = true;
     for (auto& it : id2buckets_) {
-	if (first) {
-	    min_seq_num_ = it.second->max_seq_num; 
-	    first = false;
-	} else {
-	    min_seq_num_ = min(min_seq_num_, it.second->max_seq_num);
-	}
+        if (first) {
+            min_seq_num_ = it.second->max_seq_num;
+            first = false;
+        } else {
+            min_seq_num_ = min(min_seq_num_, it.second->max_seq_num);
+        }
     }
 
     printf("part 2 (%d files, data size %lu disk size %lu)\n", 
-	    cnt_f, t1, t2);
+            cnt_f, t1, t2);
 
     gettimeofday(&tv2, 0);
     printf("read all buckets time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
+            tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+            tv.tv_usec / 1000000.0);
     return true;
 }
 
@@ -631,7 +667,7 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
     bool ret;
     STAT_PROCESS(
     ret = commit_log_fop_->openAndReadFile(commit_log_path, read_buf,
-	data_size, false),
+        data_size, false),
     StatsType::DS_RECOVERY_COMMIT_LOG_READ);
 
     if (ret == false) {
@@ -639,15 +675,15 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
         if (read_buf != nullptr) {
             delete[] read_buf;
         }
-	read_buf = nullptr;
-	data_size = 0;
-	return true;
+        read_buf = nullptr;
+        data_size = 0;
+        return true;
     }
 
     gettimeofday(&tv2, 0);
     printf("read commit log time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
+            tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+            tv.tv_usec / 1000000.0);
     return true;
 }
 
@@ -722,9 +758,9 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 //                    bool isGCFlushedDoneFlag = false;
 //                    unordered_map<string, vector<pair<bool, string>>> currentFileRecoveryMap;
 //                    uint64_t currentFileObjectNumber = 
-//			decodeAllData(readContentBuffer,
-//				targetFileRemainReadSize,
-//				currentFileRecoveryMap, isGCFlushedDoneFlag);
+//                      decodeAllData(readContentBuffer,
+//                              targetFileRemainReadSize,
+//                              currentFileRecoveryMap, isGCFlushedDoneFlag);
 //                }
 //            } else {
 //                // the file not in metadata, but ID smaller than committed ID, should delete
@@ -803,10 +839,11 @@ bool BucketManager::RetriveHashStoreFileMetaDataList()
     }
 
     id2buckets_.clear();
+    // TODO will fix later
 
 //    for (auto& it : id2prefixes_) {
 //        auto& file_id = it.first;
-        //	auto& prefix = it.second;
+        //      auto& prefix = it.second;
 //        BucketHandler* old_hdl = nullptr;
 //        BucketHandler* bucket = createFileHandler();
 
@@ -817,7 +854,7 @@ bool BucketManager::RetriveHashStoreFileMetaDataList()
 
         //      uint64_t ret_lvl;
         // TODO for recovery
-//	ret_lvl = prefix_tree_.insertWithFixedBitNumber(prefixExtract(prefix),
+//      ret_lvl = prefix_tree_.insertWithFixedBitNumber(prefixExtract(prefix),
 //      prefixLenExtract(prefix), bucket, old_hdl);
 
 //        if (ret_lvl == 0) {
@@ -937,9 +974,9 @@ bool BucketManager::RemoveObsoleteFiles() {
 //        }
 //    }
     bucket_delete_mtx_.lock();
-    for (auto it : bucket_id_to_delete_) {
-        deleteObslateFileWithFileIDAsInput(it);
-    }
+//    for (auto it : bucket_id_to_delete_) {
+//        deleteObslateFileWithFileIDAsInput(it);
+//    }
     struct timeval tv;
     gettimeofday(&tv, 0);
     while (!bucket_to_delete_.empty()) {
@@ -950,7 +987,7 @@ bool BucketManager::RemoveObsoleteFiles() {
         bucket_to_delete_.pop();
         deleteFileHandler(p.second);
     }
-    bucket_id_to_delete_.clear();
+//    bucket_id_to_delete_.clear();
     bucket_delete_mtx_.unlock();
     return true;
 }
@@ -1027,7 +1064,7 @@ bool BucketManager::CloseHashStoreFileMetaDataList()
 //                if (it.second->io_ptr->isFileOpen() == true) {
 //                    it.second->io_ptr->closeFile();
 //                }
-//		deleteFileHandler(it.second);
+//              deleteFileHandler(it.second);
 //            }
 //        }
 //        bucket_delete_mtx_.lock();
@@ -1046,7 +1083,7 @@ bool BucketManager::CloseHashStoreFileMetaDataList()
 //                if (it.second->io_ptr->isFileOpen() == true) {
 //                    it.second->io_ptr->closeFile();
 //                }
-//		deleteFileHandler(it.second);
+//              deleteFileHandler(it.second);
 //            }
 //        }
 //        return false;
@@ -1452,7 +1489,7 @@ BucketManager::createNewInitialBucket(BucketHandler*& bucket)
             tmp_bucket = tmp;
         }
         debug_e("Insert failed!\n");
-	return false;
+        return false;
     }
 
     // initialize the file handler
@@ -1468,7 +1505,7 @@ BucketManager::createNewInitialBucket(BucketHandler*& bucket)
     bucket = tmp_bucket;
     if (enable_crash_consistency_) {
         // TODO modify manifest
-	manifest_->InitialSnapshot(bucket);
+        manifest_->InitialSnapshot(bucket);
     }
     return true;
 }
@@ -1477,7 +1514,6 @@ bool BucketManager::createFileHandlerForGC(const string& key,
         BucketHandler*& ret_bucket)
 {
     auto bucket = createFileHandler();
-//    bucket->prefix = prefixConcat(0, targetPrefixLen);
     bucket->key = key;
     bucket->file_id = generateNewFileID();
     bucket->ownership = -1;
@@ -1488,9 +1524,9 @@ bool BucketManager::createFileHandlerForGC(const string& key,
     // write header to current file
     string targetFilePathStr = working_dir_ + "/" +
         to_string(bucket->file_id) + ".delta";
-    bool createAndOpenNewFileStatus =
-        bucket->io_ptr->createThenOpenFile(targetFilePathStr);
-    if (createAndOpenNewFileStatus == true) {
+    bool create_new_file_s =
+        bucket->io_ptr->reuseLargeFile(bucket->file_id * maxBucketSize_);
+    if (create_new_file_s == true) {
         // move pointer for return
         debug_info("Newly created file ID = %lu\n", bucket->file_id);
         ret_bucket = bucket;
@@ -1506,12 +1542,17 @@ bool BucketManager::createFileHandlerForGC(const string& key,
 uint64_t BucketManager::generateNewFileID()
 {
     fileIDGeneratorMtx_.lock();
-    targetNewFileID_ += 1;
-    uint64_t tempIDForReturn = targetNewFileID_;
-//    uint64_t tempIDForReturn = bucket_bitmap_->getFirstZeroAndFlip(); 
-//    if (tempIDForReturn == -1) {
-//        debug_error("generate error: -1 %s\n", "")
-//    }
+    uint64_t tempIDForReturn = bucket_bitmap_->getFirstZeroAndFlip(); 
+    if (tempIDForReturn == -1) {
+        debug_error("generate error: -1 %s\n", "");
+    }
+
+//    targetNewFileID_ += 1;
+//    uint64_t tempIDForReturn = targetNewFileID_;
+////    uint64_t tempIDForReturn = bucket_bitmap_->getFirstZeroAndFlip(); 
+////    if (tempIDForReturn == -1) {
+////        debug_error("generate error: -1 %s\n", "")
+////    }
     fileIDGeneratorMtx_.unlock();
     return tempIDForReturn;
 }
@@ -1578,7 +1619,7 @@ BucketManager::decodeValidData(
 
     if (read_i > buf_size) {
         debug_error("index error: %lu v.s. %lu\n", read_i, buf_size);
-	return make_pair(-1, -1);
+        return make_pair(-1, -1);
     }
     debug_info("deconstruct current file done, find different key number = "
             "%lu, total processed object number = %lu, target keep object "
@@ -1609,7 +1650,10 @@ uint64_t BucketManager::partialMergeGcResultMap(
             vector<KDRecordHeader> headerVec;
             KDRecordHeader newRecordHeader;
 
-            KDSepMergeOperatorPtr_->PartialMerge(values, result);
+            bool ret = KDSepMergeOperatorPtr_->PartialMerge(values, result);
+            if (!ret) {
+                return 0xfffffff;
+            }
 
             newRecordHeader.key_size_ = key.size_;
             newRecordHeader.value_size_ = result.size_; 
@@ -1768,9 +1812,9 @@ bool BucketManager::singleFileRewrite(
 
     // copy the file header finally
     if (enable_index_block_) {
-	bucket->unsorted_part_offset = write_i;
+        bucket->unsorted_part_offset = write_i;
     } else {
-	bucket->unsorted_part_offset = 0;
+        bucket->unsorted_part_offset = 0;
     }
 
     debug_trace("Rewrite done buffer size = %lu\n", write_i);
@@ -1778,79 +1822,73 @@ bool BucketManager::singleFileRewrite(
     string filename = working_dir_ + "/" + to_string(new_id) + ".delta";
     StatsRecorder::staticProcess(StatsType::REWRITE_ADD_HEADER, tv);
     gettimeofday(&tv, 0);
-    // create since file not exist
-    if (bucket->io_ptr->isFileOpen() == true) {
-        bucket->io_ptr->closeFile();
-    } // close old file
-    bucket->io_ptr->createThenOpenFile(filename);
-
+    bucket->io_ptr->reuseLargeFile(new_id * maxBucketSize_);
     if (bucket->io_ptr->isFileOpen() == false) {
-	debug_error("[ERROR] Could not open new file ID = %lu, for old file "
-		"ID = %lu for single file rewrite\n", new_id, old_id);
-        bucket_delete_mtx_.lock();
-        bucket_id_to_delete_.push_back(new_id);
-        bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
-        bucket_delete_mtx_.unlock();
+        debug_error("[ERROR] Could not open new file ID = %lu, for old file "
+                "ID = %lu for single file rewrite\n", new_id, old_id);
         return false;
     }
 
     // write content and update current file stream to new one.
     FileOpStatus onDiskWriteSizePair;
     if (enable_crash_consistency_) {
-	STAT_PROCESS(onDiskWriteSizePair =
-		bucket->io_ptr->writeAndFlushFile(write_buf,
-		    write_i), StatsType::KDSep_GC_WRITE);
+        STAT_PROCESS(onDiskWriteSizePair =
+                bucket->io_ptr->writeAndFlushFile(write_buf,
+                    write_i), StatsType::KDSep_GC_WRITE);
     } else {
-	STAT_PROCESS(onDiskWriteSizePair =
-		bucket->io_ptr->writeFile(write_buf,
-		    write_i), StatsType::KDSep_GC_WRITE);
+        STAT_PROCESS(onDiskWriteSizePair =
+                bucket->io_ptr->writeFile(write_buf,
+                    write_i), StatsType::KDSep_GC_WRITE);
     }
 
     bucket->io_ptr->markDirectDataAddress(write_i);
-    StatsRecorder::getInstance()->DeltaGcBytesWrite(onDiskWriteSizePair.physicalSize_, onDiskWriteSizePair.logicalSize_, syncStatistics_);
+    StatsRecorder::getInstance()->DeltaGcBytesWrite(
+            onDiskWriteSizePair.physicalSize_,
+            onDiskWriteSizePair.logicalSize_, syncStatistics_);
     debug_trace("Rewrite done file size = %lu, file path = %s\n", write_i,
-	    filename.c_str());
+            filename.c_str());
     // update metadata
     bucket->file_id = new_id;
     bucket->total_object_cnt = newObjectNumber + 1;
     bucket->total_object_bytes = write_i;
     bucket->total_on_disk_bytes = onDiskWriteSizePair.physicalSize_;
     debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n",
-	    bucket->total_object_bytes, bucket->file_id);
+            bucket->total_object_bytes, bucket->file_id);
     // remove old file
-    bucket_delete_mtx_.lock();
-    bucket_id_to_delete_.push_back(old_id);
-    bucket_delete_mtx_.unlock();
+    bucket_bitmap_->clearBit(old_id);
+//    bucket_delete_mtx_.lock();
+//    bucket_id_to_delete_.push_back(old_id);
+//    bucket_delete_mtx_.unlock();
     // check if after rewrite, file size still exceed threshold, mark as no GC.
     if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-	if (write_stall_ != nullptr) {
-	    auto objs = new vector<writeBackObject*>;
-	    objs->resize(gcResultMap.size());
-	    int obji = 0;
-	    for (auto& it : gcResultMap) {
-		string k(it.first.data_, it.first.size_);
-		writeBackObject* obj = new writeBackObject(k, 0);
-		(*objs)[obji++] = obj;
-	    }
-	    *write_stall_ = true; 
-	    pushObjectsToWriteBackQueue(objs);
-	}
+        if (write_stall_ != nullptr) {
+            auto objs = new vector<writeBackObject*>;
+            objs->resize(gcResultMap.size());
+            int obji = 0;
+            for (auto& it : gcResultMap) {
+                string k(it.first.data_, it.first.size_);
+                writeBackObject* obj = new writeBackObject(k, 0);
+                (*objs)[obji++] = obj;
+            }
+            *write_stall_ = true;
+            pushObjectsToWriteBackQueue(objs);
+        }
     }
 
     // rewrite completed: flush the rewrite metadata
     if (enable_crash_consistency_) {
         // TODO update consistency
-	STAT_PROCESS(
-//	manifest_->UpdateGCMetadata(old_id, bucket->prefix,
-//		new_id, bucket->prefix),
+        STAT_PROCESS(
+//      manifest_->UpdateGCMetadata(old_id, bucket->prefix,
+//              new_id, bucket->prefix),
         manifest_->UpdateGCMetadata(old_id, 0, new_id, 0),
-	StatsType::DS_MANIFEST_GC_REWRITE);
+        StatsType::DS_MANIFEST_GC_REWRITE);
     }
 
     debug_info("flushed new file to filesystem since single file gc, the"
-	    " new file ID = %lu, corresponding previous file ID = %lu,"
-	    " target file size = %lu\n", 
-	    new_id, old_id, write_i);
+            " new file ID = %lu, corresponding previous file ID = %lu,"
+            " target file size = %lu\n", 
+            new_id, old_id, write_i);
     return true;
 }
 
@@ -1970,7 +2008,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>, 
         mapSmallerKeyForStr_t>& gcResultMap, 
         map<str_t, uint64_t, mapSmallerKeyForStr_t>& gc_orig_sizes,
-	bool fileContainsReWriteKeysFlag, uint64_t target_size)
+        bool fileContainsReWriteKeysFlag, uint64_t target_size)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -2073,56 +2111,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     StatsRecorder::staticProcess(StatsType::SPLIT_WRITE_FILES, tv);
     gettimeofday(&tv, 0);
     if (new_prefix_and_hdls.size() <= 1) {
-        // impossible
         debug_e("Impossible!");
         exit(1);
-//	string& prefix_u64 = new_prefix_and_hdls[0].first;
-//	auto& new_bucket = new_prefix_and_hdls[0].second;
-//	uint64_t insert_lvl = prefix_tree_.insert(prefix_u64, new_bucket);
-//        if (insert_lvl == 0) {
-//	    debug_error("[ERROR] Error insert to prefix tree, prefix length"
-//		    " used = %lu, inserted file ID = %lu\n",
-//		    prefixLenExtract(new_bucket->prefix),
-//		    new_bucket->file_id);
-//            new_bucket->io_ptr->closeFile();
-//            bucket_delete_mtx_.lock();
-//            bucket_id_to_delete_.push_back(new_bucket->file_id);
-//            bucket_delete_mtx_.unlock();
-//	    deleteFileHandler(new_bucket);
-//            return false;
-//        } else {
-//            if (prefixLenExtract(new_bucket->prefix) != insert_lvl) {
-//                debug_info("After insert to prefix tree, get handler at level ="
-//                        " %lu, but prefix length used = %lu, prefix = %lx,"
-//                        " inserted file ID = %lu, update the current bit number"
-//                        " used in the file handler\n", insert_lvl,
-//                        new_bucket->prefix,
-//                        new_prefix_and_hdls[0].first,
-//                        new_bucket->file_id);
-//                new_bucket->prefix = prefixConcat(prefix_u64, insert_lvl);
-//            }
-//            bucket->gc_status = kShouldDelete;
-//            new_bucket->ownership = 0;
-//            bucket_delete_mtx_.lock();
-//            bucket_id_to_delete_.push_back(bucket->file_id);
-//            bucket_delete_mtx_.unlock();
-//            debug_info("Split file ID = %lu for gc success, mark as should"
-//                    " delete done\n", bucket->file_id);
-//            StatsRecorder::staticProcess(StatsType::SPLIT_METADATA, tv);
-//
-//	    if (enable_crash_consistency_) {
-//		STAT_PROCESS(
-//		manifest_->UpdateGCMetadata(
-//			bucket->file_id, bucket->prefix,
-//			new_bucket->file_id, new_bucket->prefix),
-//		StatsType::DS_MANIFEST_GC_SPLIT);
-//	    }
-//
-//            return true;
-//        }
     } else {
-	string& key1 = new_prefix_and_hdls[0].first;
-	auto& bucket1 = new_prefix_and_hdls[0].second;
+        string& key1 = new_prefix_and_hdls[0].first;
+        auto& bucket1 = new_prefix_and_hdls[0].second;
 
         // update the prefix tree
         vector<pair<string, BucketHandler*>> insertList;
@@ -2138,9 +2131,6 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
                 debug_error("bucket num %d, rss %.2lf\n", tree_size, getRss() /
                     1024.0);
                 t++;
-                //            fprintf(stderr, "--- start ---\n");
-                //            prefix_tree_.printNodeMap();
-                //            fprintf(stderr, "--- end ---\n");
             }
         }
 
@@ -2154,9 +2144,8 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
             gettimeofday(&tv, 0);
             for (int i = 0; i < new_prefix_and_hdls.size(); i++) {
                 auto& bucket = new_prefix_and_hdls[i].second;
-                bucket->io_ptr->closeFile();
+                bucket_bitmap_->clearBit(bucket->file_id);
                 bucket_delete_mtx_.lock();
-                bucket_id_to_delete_.push_back(bucket->file_id);
                 bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
                 bucket_delete_mtx_.unlock();
             }
@@ -2185,10 +2174,13 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
                     StatsType::DS_MANIFEST_GC_SPLIT);
         }
 
+        // delete the old file
+        bucket_bitmap_->clearBit(bucket->file_id);
+
         struct timeval tv;
         gettimeofday(&tv, 0);
         bucket_delete_mtx_.lock();
-        bucket_id_to_delete_.push_back(bucket->file_id);
+//        bucket_id_to_delete_.push_back(bucket->file_id);
         bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
         bucket_delete_mtx_.unlock();
         return true;
@@ -2208,10 +2200,10 @@ bool BucketManager::twoAdjacentFileMerge(
             bucket1->file_id, bucket2->file_id);
     BucketHandler* bucket;
 
-    bool generateFileHandlerStatus = createFileHandlerForGC(bucket1->key, bucket);
+    bool create_new_file_s = createFileHandlerForGC(bucket1->key, bucket);
     StatsRecorder::staticProcess(StatsType::MERGE_CREATE_HANDLER, tv);
     gettimeofday(&tv, 0);
-    if (generateFileHandlerStatus == false) {
+    if (create_new_file_s == false) {
         debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id, bucket2->file_id);
         bucket1->ownership = 0;
         bucket2->ownership = 0;
@@ -2232,24 +2224,24 @@ bool BucketManager::twoAdjacentFileMerge(
 
     // process file 1
     gettimeofday(&tv, 0);
-    char readWriteBuffer1[bucket1->total_object_bytes];
-    char* readWriteBuffer1Ptr = readWriteBuffer1;
+    char read_buf1[bucket1->total_object_bytes];
+    char* read_buf1_ptr = read_buf1;
     bool finished = false;
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap1;
 
-    boost::asio::post(*extra_threads_, [this, readWriteBuffer1Ptr, bucket1,
+    boost::asio::post(*extra_threads_, [this, read_buf1_ptr, bucket1,
             &finished, &gcResultMap1]() {
         FileOpStatus readStatus1;
-        STAT_PROCESS(readStatus1 = bucket1->io_ptr->readFile(readWriteBuffer1Ptr,
+        STAT_PROCESS(readStatus1 = bucket1->io_ptr->readFile(read_buf1_ptr,
                     bucket1->total_object_bytes), StatsType::KDSep_GC_READ);
         StatsRecorder::getInstance()->DeltaGcBytesRead(bucket1->total_on_disk_bytes,
                 bucket1->total_object_bytes, syncStatistics_);
         // process GC contents
         map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes;
         pair<int, int> num_pairs =
-            decodeValidData(readWriteBuffer1Ptr,
-                    bucket1->total_object_bytes, gcResultMap1, gc_orig_sizes);
+            decodeValidData(read_buf1_ptr, bucket1->total_object_bytes,
+                    gcResultMap1, gc_orig_sizes);
         if (num_pairs.first < 0 && num_pairs.second < 0) {
             debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
                     bucket1->ownership);
@@ -2259,17 +2251,19 @@ bool BucketManager::twoAdjacentFileMerge(
     });
 
     // process file2
-    char readWriteBuffer2[bucket2->total_object_bytes];
+    char read_buf2[bucket2->total_object_bytes];
     FileOpStatus readStatus2;
-    STAT_PROCESS(readStatus2 = bucket2->io_ptr->readFile(readWriteBuffer2, bucket2->total_object_bytes), StatsType::KDSep_GC_READ);
-    StatsRecorder::getInstance()->DeltaGcBytesRead(bucket2->total_on_disk_bytes, bucket2->total_object_bytes, syncStatistics_);
+    STAT_PROCESS(readStatus2 = bucket2->io_ptr->readFile(read_buf2,
+                bucket2->total_object_bytes), StatsType::KDSep_GC_READ);
+    StatsRecorder::getInstance()->DeltaGcBytesRead(bucket2->total_on_disk_bytes,
+            bucket2->total_object_bytes, syncStatistics_);
     // process GC contents
     map<str_t, pair<vector<str_t>, vector<KDRecordHeader>>,
         mapSmallerKeyForStr_t> gcResultMap2;
     map<str_t, uint64_t, mapSmallerKeyForStr_t> gc_orig_sizes_2;
     pair<int, int> num_pairs =
-    decodeValidData(readWriteBuffer2,
-            bucket2->total_object_bytes, gcResultMap2, gc_orig_sizes_2);
+    decodeValidData(read_buf2, bucket2->total_object_bytes, gcResultMap2,
+            gc_orig_sizes_2);
     if (num_pairs.first < 0 && num_pairs.second < 0) {
         debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
                 bucket1->ownership);
@@ -2287,21 +2281,23 @@ bool BucketManager::twoAdjacentFileMerge(
     StatsRecorder::staticProcess(StatsType::MERGE_FILE1, tv);
     gettimeofday(&tv, 0);
 
-    uint64_t targetWriteSize = 0;
+    uint64_t reserved_size = 0;
     for (auto& keyIt : gcResultMap1) {
         for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
-            targetWriteSize += (sizeof(KDRecordHeader) + keyIt.first.size_ + keyIt.second.first[vec_i].size_);
+            reserved_size += sizeof(KDRecordHeader) + keyIt.first.size_ +
+                    keyIt.second.first[vec_i].size_;
         }
     }
     for (auto& keyIt : gcResultMap2) {
         for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
-            targetWriteSize += (sizeof(KDRecordHeader) + keyIt.first.size_ + keyIt.second.first[vec_i].size_);
+            reserved_size += sizeof(KDRecordHeader) + keyIt.first.size_ +
+                keyIt.second.first[vec_i].size_;
         }
     }
     // reserve more space, use sizeof()
-    targetWriteSize += sizeof(KDRecordHeader);
-    debug_info("Merge GC target write file size = %lu\n", targetWriteSize);
-    char write_buf[targetWriteSize];
+    reserved_size += sizeof(KDRecordHeader);
+    debug_info("Merge GC target write file size = %lu\n", reserved_size);
+    char write_buf[reserved_size];
 
     bucket->filter->Clear();
     bucket->sorted_filter->Clear();
@@ -2310,15 +2306,15 @@ bool BucketManager::twoAdjacentFileMerge(
 
     // build the index block
     if (enable_index_block_) {
-	if (bucket->index_block == nullptr) {
-	    bucket->index_block = new BucketIndexBlock();
-	} else {
-	    bucket->index_block->Clear();
-	}
+        if (bucket->index_block == nullptr) {
+            bucket->index_block = new BucketIndexBlock();
+        } else {
+            bucket->index_block->Clear();
+        }
 
-	// select keys for building index block
+        // select keys for building index block
 
-	for (auto keyIt : gcResultMap1) {
+        for (auto keyIt : gcResultMap1) {
             size_t total_kd_size = 0;
             auto& key = keyIt.first;
 
@@ -2334,9 +2330,9 @@ bool BucketManager::twoAdjacentFileMerge(
             if (total_kd_size > 0) {
                 bucket->index_block->Insert(key, total_kd_size);
             }
-	}
+        }
 
-	for (auto keyIt : gcResultMap2) {
+        for (auto keyIt : gcResultMap2) {
             size_t total_kd_size = 0;
             auto& key = keyIt.first;
 
@@ -2352,24 +2348,24 @@ bool BucketManager::twoAdjacentFileMerge(
             if (total_kd_size > 0) {
                 bucket->index_block->Insert(key, total_kd_size);
             }
-	}
+        }
 
-	bucket->index_block->Build();
+        bucket->index_block->Build();
     }
 
     // write file buffer
     if (enable_index_block_) {
         for (auto& sorted_it : bucket->index_block->indices) {
-	    auto* map_ptr = &gcResultMap1;
+            auto* map_ptr = &gcResultMap1;
             auto keyIt =
                 gcResultMap1.find(str_t(const_cast<char*>(sorted_it.first.data()),
                             sorted_it.first.size()));
-	    if (keyIt == gcResultMap1.end()) {
-		keyIt =
-		    gcResultMap2.find(str_t(const_cast<char*>(sorted_it.first.data()),
-				sorted_it.first.size()));
-		map_ptr = &gcResultMap2;
-	    }	
+            if (keyIt == gcResultMap1.end()) {
+                keyIt =
+                    gcResultMap2.find(str_t(const_cast<char*>(sorted_it.first.data()),
+                                sorted_it.first.size()));
+                map_ptr = &gcResultMap2;
+            }   
 
             auto& key = keyIt->first;
             if (keyIt == map_ptr->end()) {
@@ -2389,7 +2385,7 @@ bool BucketManager::twoAdjacentFileMerge(
                 }
                 copyInc(write_buf, write_i, key.data_, key.size_);
                 copyInc(write_buf, write_i, value.data_, value.size_);
-		bucket->total_object_cnt++;
+                bucket->total_object_cnt++;
             }
             if (keyIt->second.first.size() > 0) {
                 bucket->sorted_filter->Insert(key);
@@ -2397,46 +2393,46 @@ bool BucketManager::twoAdjacentFileMerge(
         }
         bucket->index_block->IndicesClear();
     } else {
-	for (auto& keyIt : gcResultMap1) {
-	    auto& key = keyIt.first;
-	    for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
-		auto& header = keyIt.second.second[vec_i];
-		auto& value = keyIt.second.first[vec_i];
+        for (auto& keyIt : gcResultMap1) {
+            auto& key = keyIt.first;
+            for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
+                auto& header = keyIt.second.second[vec_i];
+                auto& value = keyIt.second.first[vec_i];
 
-		// write header
-		if (use_varint_d_header == false) {
-		    copyInc(write_buf, write_i, &header, header_sz);
-		} else {
-		    write_i += PutDeltaHeaderVarint(write_buf + write_i, header);
-		}
-		copyInc(write_buf, write_i, key.data_, key.size_);
-		copyInc(write_buf, write_i, value.data_, value.size_);
-		bucket->total_object_cnt++;
-	    }
-	    if (keyIt.second.first.size() > 0) {
-		bucket->filter->Insert(key.data_, key.size_);
-	    }
-	}
+                // write header
+                if (use_varint_d_header == false) {
+                    copyInc(write_buf, write_i, &header, header_sz);
+                } else {
+                    write_i += PutDeltaHeaderVarint(write_buf + write_i, header);
+                }
+                copyInc(write_buf, write_i, key.data_, key.size_);
+                copyInc(write_buf, write_i, value.data_, value.size_);
+                bucket->total_object_cnt++;
+            }
+            if (keyIt.second.first.size() > 0) {
+                bucket->filter->Insert(key.data_, key.size_);
+            }
+        }
 
-	for (auto& keyIt : gcResultMap2) {
-	    auto& key = keyIt.first;
-	    for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
-		auto& header = keyIt.second.second[vec_i];
-		auto& value = keyIt.second.first[vec_i];
+        for (auto& keyIt : gcResultMap2) {
+            auto& key = keyIt.first;
+            for (auto vec_i = 0; vec_i < keyIt.second.first.size(); vec_i++) {
+                auto& header = keyIt.second.second[vec_i];
+                auto& value = keyIt.second.first[vec_i];
 
-		if (use_varint_d_header == false) {
-		    copyInc(write_buf, write_i, &header, header_sz);
-		} else {
-		    write_i += PutDeltaHeaderVarint(write_buf + write_i, header);
-		}
-		copyInc(write_buf, write_i, key.data_, key.size_);
-		copyInc(write_buf, write_i, value.data_, value.size_);
-		bucket->total_object_cnt++;
-	    }
-	    if (keyIt.second.first.size() > 0) {
-		bucket->filter->Insert(key.data_, key.size_);
-	    }
-	}
+                if (use_varint_d_header == false) {
+                    copyInc(write_buf, write_i, &header, header_sz);
+                } else {
+                    write_i += PutDeltaHeaderVarint(write_buf + write_i, header);
+                }
+                copyInc(write_buf, write_i, key.data_, key.size_);
+                copyInc(write_buf, write_i, value.data_, value.size_);
+                bucket->total_object_cnt++;
+            }
+            if (keyIt.second.first.size() > 0) {
+                bucket->filter->Insert(key.data_, key.size_);
+            }
+        }
     }
 
     debug_info("Merge GC processed write file size = %lu\n", write_i);
@@ -2454,9 +2450,9 @@ bool BucketManager::twoAdjacentFileMerge(
     }
 
     if (enable_index_block_) {
-	bucket->unsorted_part_offset = write_i;
+        bucket->unsorted_part_offset = write_i;
     } else {
-	bucket->unsorted_part_offset = 0;
+        bucket->unsorted_part_offset = 0;
     }
 
     debug_info("Merge GC processed total write file size = %lu\n", write_i);
@@ -2464,40 +2460,39 @@ bool BucketManager::twoAdjacentFileMerge(
 
     // write the file generated by merge
     if (enable_crash_consistency_) {
-	STAT_PROCESS(onDiskWriteSizePair =
-		bucket->io_ptr->writeAndFlushFile(write_buf,
-		    write_i), StatsType::KDSep_GC_WRITE);
+        STAT_PROCESS(onDiskWriteSizePair =
+                bucket->io_ptr->writeAndFlushFile(write_buf,
+                    write_i), StatsType::KDSep_GC_WRITE);
     } else {
-	STAT_PROCESS(onDiskWriteSizePair =
-		bucket->io_ptr->writeFile(write_buf,
-		    write_i), StatsType::KDSep_GC_WRITE);
+        STAT_PROCESS(onDiskWriteSizePair =
+                bucket->io_ptr->writeFile(write_buf,
+                    write_i), StatsType::KDSep_GC_WRITE);
     }
     bucket->io_ptr->markDirectDataAddress(write_i);
 
     StatsRecorder::getInstance()->DeltaGcBytesWrite(
-	    onDiskWriteSizePair.physicalSize_,
-	    onDiskWriteSizePair.logicalSize_, syncStatistics_);
+            onDiskWriteSizePair.physicalSize_,
+            onDiskWriteSizePair.logicalSize_, syncStatistics_);
 
     debug_info("Merge GC write file size = %lu done\n", write_i);
     bucket->total_object_bytes += write_i;
     bucket->total_on_disk_bytes += onDiskWriteSizePair.physicalSize_;
     bucket->total_object_cnt++;
-    debug_info("Flushed new file to filesystem since merge gc, the new file ID = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n", bucket->file_id, bucket1->file_id, bucket2->file_id);
+    debug_info("Flushed new file to filesystem since merge gc, the new file ID"
+            " = %lu, corresponding previous file ID 1 = %lu, ID 2 = %lu\n",
+            bucket->file_id, bucket1->file_id, bucket2->file_id);
 
     // update metadata
     bool mergeNodeStatus = prefix_tree_.remove(bucket2->key);
 
     if (mergeNodeStatus == false) {
-        debug_error("[ERROR] Could not merge two existing node corresponding file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id, bucket2->file_id);
-        if (bucket->io_ptr->isFileOpen() == true) {
-            bucket->io_ptr->closeFile();
-        }
-        bucket_delete_mtx_.lock();
-        bucket_id_to_delete_.push_back(bucket->file_id);
-        bucket_delete_mtx_.unlock();
+        debug_error("[ERROR] Could not merge two existing node corresponding"
+                " file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id,
+                bucket2->file_id);
+        bucket_bitmap_->clearBit(bucket->file_id);
         bucket1->ownership = 0;
         bucket2->ownership = 0;
-	deleteFileHandler(bucket); // roll back, can directly delete
+        deleteFileHandler(bucket); // roll back, can directly delete
         StatsRecorder::staticProcess(StatsType::MERGE_METADATA, tv);
         return false;
     }
@@ -2510,52 +2505,48 @@ bool BucketManager::twoAdjacentFileMerge(
 //            bucket1->key.c_str());
     prefix_tree_.update(bucket1->key, bucket);
 //    if (tempHandler != nullptr) {
-//	// delete old handler;
-//	debug_info("Find exist data handler = %p\n", tempHandler);
-//	debug_error("Find exist data handler = %p\n", tempHandler);
-//	if (tempHandler->io_ptr != nullptr) {
-//	    if (tempHandler->io_ptr->isFileOpen() == true) {
-//		tempHandler->io_ptr->closeFile();
-//	    }
-//	    bucket_delete_mtx_.lock();
-//	    bucket_id_to_delete_.push_back(tempHandler->file_id);
-//	    bucket_delete_mtx_.unlock();
-//	}
-//	deleteFileHandler(tempHandler);
+//      // delete old handler;
+//      debug_info("Find exist data handler = %p\n", tempHandler);
+//      debug_error("Find exist data handler = %p\n", tempHandler);
+//      if (tempHandler->io_ptr != nullptr) {
+//          if (tempHandler->io_ptr->isFileOpen() == true) {
+//              tempHandler->io_ptr->closeFile();
+//          }
+//          bucket_delete_mtx_.lock();
+//          bucket_id_to_delete_.push_back(tempHandler->file_id);
+//          bucket_delete_mtx_.unlock();
+//      }
+//      deleteFileHandler(tempHandler);
 //    }
     debug_info("Start update metadata for merged file ID = %lu\n", bucket->file_id);
 
     if (enable_crash_consistency_) {
-	vector<BucketHandler*> old_hdls;
-	vector<BucketHandler*> new_hdls;
-	old_hdls.push_back(bucket1);
-	old_hdls.push_back(bucket2);
-	new_hdls.push_back(bucket);
-	STAT_PROCESS(
-	manifest_->UpdateGCMetadata(old_hdls, new_hdls),
-	StatsType::DS_MANIFEST_GC_MERGE);
+        vector<BucketHandler*> old_hdls;
+        vector<BucketHandler*> new_hdls;
+        old_hdls.push_back(bucket1);
+        old_hdls.push_back(bucket2);
+        new_hdls.push_back(bucket);
+        STAT_PROCESS(
+        manifest_->UpdateGCMetadata(old_hdls, new_hdls),
+        StatsType::DS_MANIFEST_GC_MERGE);
     }
 
     bucket1->gc_status = kShouldDelete;
     bucket2->gc_status = kShouldDelete;
-    if (bucket1->io_ptr->isFileOpen() == true) {
-	bucket1->io_ptr->closeFile();
-    }
-
-    if (bucket2->io_ptr->isFileOpen() == true) {
-	bucket2->io_ptr->closeFile();
-    }
 
     bucket1->ownership = 0;
     bucket2->ownership = 0;
     bucket->ownership = 0;
 
+    bucket_bitmap_->clearBit(bucket1->file_id);
+    bucket_bitmap_->clearBit(bucket2->file_id);
+
     bucket_delete_mtx_.lock();
     {
         struct timeval tv;
         gettimeofday(&tv, 0);
-        bucket_id_to_delete_.push_back(bucket1->file_id);
-        bucket_id_to_delete_.push_back(bucket2->file_id);
+//        bucket_id_to_delete_.push_back(bucket1->file_id);
+//        bucket_id_to_delete_.push_back(bucket2->file_id);
         bucket_to_delete_.push(make_pair(tv.tv_sec, bucket1));
         bucket_to_delete_.push(make_pair(tv.tv_sec, bucket2));
     }
@@ -2622,7 +2613,7 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
     }
 
     for (auto pairIt : targetFilesForMerge) {
-	BucketHandler* tmpBucket1 = pairIt.first;
+        BucketHandler* tmpBucket1 = pairIt.first;
         BucketHandler* tmpBucket2 = pairIt.second;
 
         uint64_t total_bytes = pairIt.first->total_object_bytes +
@@ -2676,14 +2667,14 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
             // update threshold and release the previously selected
             // files
             sel_threshold = total_bytes;
-            //			return true;
+            //                  return true;
 
-            //			bucket1->ownership = 0;
-            //			bucket2->ownership = 0;
-            //			selected.push_back(bucket1);
-            //			selected.push_back(bucket2);
-            //			prefices_needed.push_back(target_prefix);
-            //			prefices_needed.push_back(prefix_len);
+            //                  bucket1->ownership = 0;
+            //                  bucket2->ownership = 0;
+            //                  selected.push_back(bucket1);
+            //                  selected.push_back(bucket2);
+            //                  prefices_needed.push_back(target_prefix);
+            //                  prefices_needed.push_back(prefix_len);
 
             BucketHandler* tmpBucket;
             prefix_tree_.getNext(bucket1->key, tmpBucket);
@@ -2711,9 +2702,9 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 
     // have a selection. Return true
     if (sel_hdl1 != nullptr) {
-	bucket1 = sel_hdl1;
-	bucket2 = sel_hdl2;
-	return true;
+        bucket1 = sel_hdl1;
+        bucket2 = sel_hdl2;
+        return true;
     }
 
     StatsRecorder::staticProcess(StatsType::GC_SELECT_MERGE_R3, tvAll);
@@ -2984,14 +2975,13 @@ void BucketManager::scheduleMetadataUpdateWorker()
     while (true) {
         usleep(100000);
 //      STAT_PROCESS(status = UpdateHashStoreFileMetaDataList(),
-//	StatsType::FM_UPDATE_META);
+//      StatsType::FM_UPDATE_META);
         STAT_PROCESS(RemoveObsoleteFiles(),
                 StatsType::FM_UPDATE_META);
         if (should_exit_ == true) {
             break;
         }
     }
-    debug_e("thread finished");
     return;
 }
 
@@ -3007,20 +2997,13 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
     vector<BucketHandler*> validFilesVec;
     prefix_tree_.getCurrentValidNodesNoKey(validFilesVec);
     for (auto bucket : validFilesVec) {
-	if (bucket->ownership != 0) {
-	    debug_error("file id %lu not zero %d\n", bucket->file_id, bucket->ownership);
-	}
         while (bucket->ownership != 0) {
             usleep(10);
         }
-        // cerr << "File ID = " << bucket->file_id << ", file size on disk = " << bucket->total_on_disk_bytes << endl;
         if (bucket->gc_status == kShouldDelete) {
             continue;
         } else {
             if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
-                debug_error("Push file ID = %lu, file size = %lu\n",
-                        bucket->file_id,
-                        bucket->total_on_disk_bytes);
                 pushToGCQueue(bucket); 
                 wrap_up_gc_num++;
             }
@@ -3033,8 +3016,10 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
         usleep(10);
     }
     gettimeofday(&tv2, 0);
-    debug_error("wait for GC threads %lu us\n",
-            (tv2.tv_sec - tv.tv_sec) * 1000000 + tv2.tv_usec - tv.tv_usec);
+    if ((tv2.tv_sec - tv.tv_sec) * 1000000 + tv2.tv_usec - tv.tv_usec > 0) {
+        debug_warn("wait for GC threads %lu us\n",
+                (tv2.tv_sec - tv.tv_sec) * 1000000 + tv2.tv_usec - tv.tv_usec);
+    }
     // wait until ongoing GC finishes
     return true;
 }

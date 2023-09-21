@@ -119,6 +119,9 @@ private:
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
     // user-side operations
     bool getHashStoreFileHandlerByPrefix(const string& prefixU64, BucketHandler*& fileHandlerPtr);
+
+
+    void OpenBucketFile();
     BucketHandler* createFileHandler();
     bool createNewInitialBucket(BucketHandler*& bucket);
     bool getBucketHandlerNoCreate(const string& key, 
@@ -197,6 +200,7 @@ private:
 
     unique_ptr<FileOperation> commit_log_fop_;
     unique_ptr<BitMap> bucket_bitmap_; 
+    int bucket_fd_ = -1;
 
     uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
     uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 1024 * 3; //1024 * 1024 * 1024;

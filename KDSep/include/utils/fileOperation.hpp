@@ -42,7 +42,10 @@ class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
     FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize);
+    FileOperation(fileOperationType operationType, uint64_t fileSize, 
+        uint64_t bufferSize, int existing_fd, uint64_t existing_offset);
     ~FileOperation();
+    bool canWriteFile(uint64_t size);
     FileOpStatus writeFile(char* write_buf, uint64_t size);
     FileOpStatus writeAndFlushFile(char* write_buf, uint64_t size);
     FileOpStatus readFile(char* read_buf, uint64_t size);
@@ -65,7 +68,14 @@ public:
     // for recovery
     bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
 	    bool save_page_data_sizes);
+    bool retrieveFilePiece(char*& read_buf, uint64_t& data_size, 
+	    bool save_page_data_sizes);
     bool rollbackFile(char* read_buf, uint64_t rollback_offset);
+
+    bool setStartOffset(uint64_t start_offset);
+    bool reuseLargeFile(uint64_t start_offset);
+
+    bool cleanFile();
 
 private:
     fileOperationType operationType_;
@@ -86,6 +96,10 @@ private:
     uint64_t mark_data_ = 0;
     uint64_t mark_disk_ = 0;
     uint64_t mark_in_page_offset_ = 0;
+
+    // operate an existing file
+    bool use_existing_ = false; 
+    uint64_t start_offset_ = 0;
 
     bool recovery_state_ = false;
     bool closed_before_ = false;
