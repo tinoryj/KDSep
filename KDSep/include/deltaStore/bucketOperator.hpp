@@ -39,7 +39,7 @@ private:
     uint64_t singleFileSizeLimit_;
     uint64_t operationNumberThresholdForForcedSingleFileGC_;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
-    bool enableGCFlag_ = false;
+    bool enable_gc_ = false;
     bool enable_index_block_ = true;
 
     void asioSingleOperation(deltaStoreOpHandler* op_hdl);

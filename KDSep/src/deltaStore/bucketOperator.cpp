@@ -20,7 +20,7 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr,
     if (options->kd_cache != nullptr) {
         kd_cache_ = options->kd_cache;
     }
-    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
+    enable_gc_ = options->enable_bucket_gc;
     enable_index_block_ = options->enable_index_block;
     bucket_manager_ = bucketManager;
     working_dir_ = workingDirStr;
@@ -868,11 +868,14 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
         bucket->extra_wb = new char[write_i]; 
         bucket->extra_wb_size = write_i;
         memcpy(bucket->extra_wb, write_buf, write_i);
-//        debug_error("target file %lu exceed limit %lu, extra write buffer"
-//                " %lu, total bytes %lu\n",
-//                bucket->file_id, singleFileSizeLimit_, write_i,
-//                bucket->total_object_bytes);
-        pushGcIfNeeded(bucket);
+        bool ret = pushGcIfNeeded(bucket);
+        if (ret == false) {
+            debug_error("[ERROR] target file %lu exceed limit %lu, extra "
+                    "write buffer %lu, total bytes %lu, but no GC\n",
+                    bucket->file_id, singleFileSizeLimit_, write_i,
+                    bucket->total_object_bytes);
+            exit(1);
+        }
         gc_pushed = true;
     } else {
         STAT_PROCESS(writeContentStatus = writeToFile(bucket,
@@ -948,8 +951,7 @@ bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket)
     // insert into GC job queue if exceed the threshold
     if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
         bucket->ownership = -1;
-        bucket_manager_->pushToGCQueue(bucket);
-        return true;
+        return bucket_manager_->pushToGCQueue(bucket);
     } else {
         debug_trace("Current file ID = %lu should not GC, skip\n",
                 bucket->file_id);
@@ -1573,7 +1575,7 @@ void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
         op_hdl->job_done = kError;
     } else if (bucket_is_input) {
         if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut) &&
-                enableGCFlag_ && !gc_pushed) {
+                enable_gc_ && !gc_pushed) {
             bool putIntoGCJobQueueStatus = pushGcIfNeeded(bucket);
             if (putIntoGCJobQueueStatus == false) {
                 bucket->ownership = 0;

@@ -39,7 +39,7 @@ public:
     // deltaStore options
     bool enable_deltaStore = false;
     bool enable_deltaStore_KDLevel_cache = false;
-    bool enable_deltaStore_garbage_collection = false;
+    bool enable_bucket_gc = false;
     contentCacheMode deltaStore_base_cache_mode = contentCacheMode::kLRUCache;
     contentStoreMode deltaStore_base_store_mode = contentStoreMode::kHashBasedBucketWithoutIndex;
     uint64_t deltaStore_KDCache_item_number_ = 1 * 1024 * 1024;

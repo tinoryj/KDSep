@@ -38,7 +38,7 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     gcWriteBackDeltaNum_ = options->deltaStore_gc_write_back_delta_num;
     gcWriteBackDeltaSize_ = options->deltaStore_gc_write_back_delta_size;
     fileOperationMethod_ = options->fileOperationMethod_;
-    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
+    enable_gc_ = options->enable_bucket_gc;
     enable_crash_consistency_ = options->enable_crash_consistency;
     if (options->enable_bucket_split) {
         singleFileSplitGCTriggerSize_ =
@@ -95,8 +95,14 @@ void BucketManager::OpenBucketFile()
         // open with O_DIRECT
         bucket_fd_ = open(filename.c_str(), O_RDWR | O_DIRECT, 0644);
         if (bucket_fd_ < 0) {
-            debug_error("open bucket file failed, err %s\n", strerror(errno));
-            exit(1);
+            debug_error("open bucket file failed, err %s, retry no direct IO\n",
+                    strerror(errno));
+            bucket_fd_ = open(filename.c_str(), O_RDWR, 0644);
+            if (bucket_fd_ < 0) {
+                debug_error("open bucket file %s failed, err %s\n",
+                        filename.c_str(), strerror(errno));
+                exit(1);
+            }
         }
     } else {
         // open with O_CREAT | O_DIRECT
@@ -126,7 +132,7 @@ bool BucketManager::setJobDone()
 {
     should_exit_ = true;
     metaCommitCV_.notify_all();
-    if (enableGCFlag_ == true) {
+    if (enable_gc_ == true) {
         while (num_threads_ > 0) {
             usleep(10);
         }
@@ -134,10 +140,18 @@ bool BucketManager::setJobDone()
     return true;
 }
 
-void BucketManager::pushToGCQueue(BucketHandler* bucket) {
+bool BucketManager::pushToGCQueue(BucketHandler* bucket) {
+    if (done_first_gc_ && !enable_gc_) {
+        // release the bucket
+        bucket->ownership = 0;
+        return false;
+    }
+    // if GC is disabled, still do GC, but only for the first time
+    done_first_gc_ = true;
     boost::asio::post(*gc_threads_, [this, bucket]() {
             asioSingleFileGC(bucket);
             });
+    return true;
 }
 
 uint64_t BucketManager::getNumOfBuckets() {
@@ -2029,11 +2043,17 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     startKeys.push_back(string(it->first.data_, it->first.size_));
 
     int size_ratio = (int)ceil((double)target_size / maxBucketSize_);
-    if (size_ratio > 10) {
-        // split to 5% of capacity
-        debug_error("target_size %lu, maxBucketSize_ %lu, size_ratio %d\n", 
-                target_size, maxBucketSize_, size_ratio);   
-        size_ratio = 10;
+    if (enable_gc_) {
+        if (size_ratio > 10) {
+            // split to 5% of capacity
+            debug_error("target_size %lu, maxBucketSize_ %lu, size_ratio %d\n", 
+                    target_size, maxBucketSize_, size_ratio);   
+            size_ratio = 10;
+        }
+    } else {
+        // split to buckets so that each bucket has as few keys as possible 
+        // so the size threshold becomes "target_size / maxBucketNumber_"
+        size_ratio = maxBucketNumber_ * maxBucketSize_ / 2 / target_size;
     }
 
     int gc_result_map_size = gcResultMap.size();

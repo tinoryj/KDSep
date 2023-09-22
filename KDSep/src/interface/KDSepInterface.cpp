@@ -114,7 +114,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
 //        th = new boost::thread(attrs, boost::bind(&KDSep::probeThread, this));
 //        thList_.push_back(th);
 
-        if (options.enable_deltaStore_garbage_collection == true) {
+        if (options.enable_bucket_gc == true) {
             enable_delta_gc_ = true;
         }
     }

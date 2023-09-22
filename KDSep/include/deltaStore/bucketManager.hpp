@@ -42,7 +42,7 @@ public:
     bool setJobDone();
     bool isGCFinished();
 
-    void pushToGCQueue(BucketHandler* fileHandlerPtr);
+    bool pushToGCQueue(BucketHandler* fileHandlerPtr);
 
     // Consistency
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag, 
@@ -83,7 +83,9 @@ private:
     uint64_t operationNumberForMetadataCommitThreshold_ = 0;
     uint64_t gcWriteBackDeltaNum_ = 5;
     uint64_t gcWriteBackDeltaSize_ = 0;
-    bool enableGCFlag_ = false;
+
+    bool done_first_gc_ = false;
+    bool enable_gc_ = false;
     bool enable_bucket_merge_ = false;
     bool enable_write_back_ = false;
     bool enableBatchedOperations_ = false;

@@ -18,7 +18,7 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "DeltaStore options:" << endl;
         dumpOptionsOutStream << "\tenable_deltaStore = " << enable_deltaStore << endl;
         dumpOptionsOutStream << "\tenable_deltaStore_KDLevel_cache = " << enable_deltaStore_KDLevel_cache << endl;
-        dumpOptionsOutStream << "\tenable_deltaStore_garbage_collection = " << enable_deltaStore_garbage_collection << endl;
+        dumpOptionsOutStream << "\tenable_bucket_gc = " << enable_bucket_gc << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(deltaStore_base_cache_mode) << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(deltaStore_base_store_mode) << endl;
         dumpOptionsOutStream << "\tdeltaStore_KDCache_item_number_ = " << deltaStore_KDCache_item_number_ << endl;
