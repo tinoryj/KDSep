@@ -206,10 +206,10 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
         options_.deltaStore_max_bucket_number_ = config.getDeltaStoreMaxBucketNumber();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
         if (enable_gc_flag == true) {
-            options_.enable_deltaStore_garbage_collection = true;
+            options_.enable_bucket_gc = true;
             options_.deltaStore_gc_split_threshold_ = config.getDeltaStoreSplitGCThreshold();
         } else {
-            options_.enable_deltaStore_garbage_collection = false;
+            options_.enable_bucket_gc = false;
         }
     }
     options_.write_buffer_size = config.getKDSepWriteBufferSize();

@@ -51,6 +51,7 @@ class ExternDBConfig {
     uint64_t max_kv_size;
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
+    bool enable_bucket_split_;
     bool enable_bucket_merge_;
     bool enable_index_block_;
     double blobgcforce_;
@@ -103,6 +104,7 @@ class ExternDBConfig {
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 65536);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
+        enable_bucket_split_ = pt_.get<bool>("config.enable_bucket_split", true); 
         enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
@@ -237,6 +239,9 @@ class ExternDBConfig {
     }
     bool getEnableBucketMerge() {
         return enable_bucket_merge_;
+    }
+    bool getEnableBucketSplit() {
+        return enable_bucket_split_;
     }
     bool getEnableIndexBlock() {
         return enable_index_block_;
