@@ -84,6 +84,7 @@ public:
     bool enable_write_back_optimization_ = true;
     bool enable_parallel_lsm_interface_ = false;
     bool enable_crash_consistency = false;
+    bool enable_bucket_split = true;
     bool enable_bucket_merge = true;
     bool enable_batched_operations = true;
     uint64_t key_value_cache_object_number_ = 1000;

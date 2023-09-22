@@ -40,9 +40,12 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     fileOperationMethod_ = options->fileOperationMethod_;
     enableGCFlag_ = options->enable_deltaStore_garbage_collection;
     enable_crash_consistency_ = options->enable_crash_consistency;
-    singleFileSplitGCTriggerSize_ =
-        options->deltaStore_gc_split_threshold_
-        * options->deltaStore_bucket_size_;
+    if (options->enable_bucket_split) {
+        singleFileSplitGCTriggerSize_ =
+            options->deltaStore_gc_split_threshold_ * maxBucketSize_;
+    } else {
+        singleFileSplitGCTriggerSize_ = maxBucketSize_;
+    }
 //    prefix_tree_ = new SkipListForBuckets(maxBucketNumber_);
     prefix_tree_.init(maxBucketNumber_);
     singleFileGCWorkerThreadsNumebr_ = options->deltaStore_gc_worker_thread_number_limit_;
@@ -2036,6 +2039,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     int gc_result_map_size = gcResultMap.size();
     int key_cnt = 0;
     int tmp_orig_sizes = 0;
+
+//    int total_orig_size = 0;
+//    for (auto& it : gc_orig_sizes) {
+//        total_orig_size += it.second;
+//    }
     
     // fill the keys to two buckets
     for (auto keyIt : gcResultMap) {
@@ -2045,9 +2053,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         // switch to the second bucket
 //        if (tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio && 
 //                key_cnt < gc_result_map_size) 
-        if (((size_ratio > 1 && tmp_orig_sizes > maxBucketSize_ / 2 / size_ratio) || 
-                    (size_ratio == 1 && tmp_orig_sizes > target_size / 2)) && 
-                key_cnt < gc_result_map_size) {
+        if (((size_ratio > 1 && 
+                        tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio) || 
+                (size_ratio == 1 && tmpGcResult[bi].second > target_size / 2))
+                && key_cnt < gc_result_map_size) 
+        {
             bi++;
             tmpGcResult.push_back({{}, 0});
             startKeys.push_back(string(key.data_, key.size_));
@@ -2062,8 +2072,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
             if (use_varint_d_header == true) {
                 header_sz = GetDeltaHeaderVarintSize(headers[i]);
             }
-            kd_pair_sz += key.size_ +
-                values[i].size_ + header_sz;
+            kd_pair_sz += key.size_ + values[i].size_ + header_sz;
         }
 
         // update the space needed for this key
@@ -2869,6 +2878,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
         debug_error("[ERROR] File ID = %lu total object size %lu is larger"
                 " than max bucket size %lu, valid size %lu\n", bucket->file_id,
                 bucket->total_object_bytes, maxBucketSize_, target_size);
+        exit(1);
     }
 
     // count valid object size to determine GC method;
