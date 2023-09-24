@@ -37,11 +37,11 @@ KDLRUCache::~KDLRUCache() {
            rss_before / 1024.0 / 1024, 
            rss_after / 1024.0 / 1024, 
            (rss_before - rss_after) / 1024.0 / 1024.0); 
-//    printf("total_data_size: %lu\n", total_data_size);
-//    printf("total_items: %lu\n", num_items);
-//    printf("rss from %lu to %lu (diff: %.4lf)\n", 
-//           rss_before, rss_after, 
-//           (rss_before - rss_after) / 1024.0 / 1024.0); 
+    printf("KDCache total_data_size: %lu\n", total_data_size);
+    printf("KDCache total_items: %lu\n", num_items);
+    printf("KDCache rss from %lu to %lu (diff: %.4lf)\n", 
+           rss_before, rss_after, 
+           (rss_before - rss_after) / 1024.0 / 1024.0); 
 }
 
 } // KDSEP_NAMESPACE

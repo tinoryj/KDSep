@@ -110,7 +110,7 @@ private:
     // file ID generator
     uint64_t targetNewFileID_ = 0;
     uint64_t generateNewFileID();
-    std::shared_mutex fileIDGeneratorMtx_;
+    std::shared_mutex bitmap_mtx_;
     // operation counter for metadata commit
     uint64_t currentTotalHashStoreFileSize_ = 0;
     uint64_t currentTotalHashStoreFileNumber_ = 0;
@@ -205,11 +205,12 @@ private:
     int bucket_fd_ = -1;
 
     uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
-    uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 1024 * 3; //1024 * 1024 * 1024;
+    uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 512 * 5; // 2.5G // 1024 * 1024 * 1024;
 
     unordered_map<uint64_t, uint64_t> id2prefixes_;
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
+    bool debug_flag_ = false;
     unique_ptr<boost::asio::thread_pool> gc_threads_;
     unique_ptr<boost::asio::thread_pool> extra_threads_;
 };

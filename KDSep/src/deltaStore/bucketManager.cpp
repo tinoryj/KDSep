@@ -74,8 +74,10 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
 
 BucketManager::~BucketManager()
 {
-    commit_log_fop_->flushFile();
-    commit_log_fop_->closeFile();
+    if (commit_log_fop_ != nullptr) {
+        commit_log_fop_->flushFile();
+        commit_log_fop_->closeFile();
+    }
     CloseHashStoreFileMetaDataList();
 
     // release all buckets
@@ -294,7 +296,6 @@ bool BucketManager::cleanCommitLog() {
     if (ret == false) {
         debug_error("remove failed commit log %s\n", "");
     }
-    commit_log_next_threshold_ = commit_log_maximum_size_;
     return true;
 }
 
@@ -679,8 +680,10 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 
     string commit_log_path = working_dir_ + "/commit.log";
 
-    commit_log_fop_.reset(new FileOperation(fileOperationMethod_,
-        commit_log_maximum_size_, 0));
+    if (commit_log_fop_ == nullptr) {
+        commit_log_fop_.reset(new FileOperation(fileOperationMethod_,
+                    commit_log_maximum_size_, 0));
+    }
     bool ret;
     STAT_PROCESS(
     ret = commit_log_fop_->openAndReadFile(commit_log_path, read_buf,
@@ -1558,8 +1561,12 @@ bool BucketManager::createFileHandlerForGC(const string& key,
 
 uint64_t BucketManager::generateNewFileID()
 {
-    fileIDGeneratorMtx_.lock();
+    bitmap_mtx_.lock();
     uint64_t tempIDForReturn = bucket_bitmap_->getFirstZeroAndFlip(); 
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] setBit %lu\n", __LINE__, __func__,
+                tempIDForReturn);
+    }
     if (tempIDForReturn == -1) {
         debug_error("generate error: -1 %s\n", "");
     }
@@ -1570,7 +1577,7 @@ uint64_t BucketManager::generateNewFileID()
 ////    if (tempIDForReturn == -1) {
 ////        debug_error("generate error: -1 %s\n", "")
 ////    }
-    fileIDGeneratorMtx_.unlock();
+    bitmap_mtx_.unlock();
     return tempIDForReturn;
 }
 
@@ -1864,15 +1871,20 @@ bool BucketManager::singleFileRewrite(
             onDiskWriteSizePair.logicalSize_, syncStatistics_);
     debug_trace("Rewrite done file size = %lu, file path = %s\n", write_i,
             filename.c_str());
+
     // update metadata
     bucket->file_id = new_id;
     bucket->total_object_cnt = newObjectNumber + 1;
     bucket->total_object_bytes = write_i;
     bucket->total_on_disk_bytes = onDiskWriteSizePair.physicalSize_;
-    debug_trace("Rewrite file size in metadata = %lu, file ID = %lu\n",
-            bucket->total_object_bytes, bucket->file_id);
-    // remove old file
-    bucket_bitmap_->clearBit(old_id);
+    
+    if (write_i > maxBucketSize_) {
+        debug_error("Rewrite file size = %lu too large, file id %lu\n",
+                write_i, bucket->file_id);
+        exit(1);
+        return false;
+    }
+
 //    bucket_delete_mtx_.lock();
 //    bucket_id_to_delete_.push_back(old_id);
 //    bucket_delete_mtx_.unlock();
@@ -1902,10 +1914,14 @@ bool BucketManager::singleFileRewrite(
         StatsType::DS_MANIFEST_GC_REWRITE);
     }
 
-    debug_info("flushed new file to filesystem since single file gc, the"
-            " new file ID = %lu, corresponding previous file ID = %lu,"
-            " target file size = %lu\n", 
-            new_id, old_id, write_i);
+    // remove old file
+    bitmap_mtx_.lock();
+    bucket_bitmap_->clearBit(old_id);
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__, __func__, old_id);
+    }
+    bitmap_mtx_.unlock();
+
     return true;
 }
 
@@ -2114,6 +2130,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
                     " key when split GC %s\n", startKeys[bi].c_str());
             return false;
         }
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] createFileHandlerForGC %s id %lu\n",
+                    __LINE__, __func__, startKeys[bi].c_str(), 
+                    new_bucket->file_id);
+        }
         new_prefix_and_hdls.push_back(make_pair(startKeys[bi], new_bucket));
     }
 
@@ -2150,18 +2171,13 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         // update the prefix tree
         vector<pair<string, BucketHandler*>> insertList;
 
-        for (int i = 1, t = 0; i < new_prefix_and_hdls.size(); i++) {
+        for (int i = 1; i < new_prefix_and_hdls.size(); i++) {
             string& key = new_prefix_and_hdls[i].first;
             auto& bucket2 = new_prefix_and_hdls[i].second;
             insertList.push_back(make_pair(key, bucket2));
 
             // test
             int tree_size = maxBucketNumber_ - prefix_tree_.getRemainFileNumber();
-            if (t == 0 && tree_size == (tree_size & (-tree_size))) {
-                debug_error("bucket num %d, rss %.2lf\n", tree_size, getRss() /
-                    1024.0);
-                t++;
-            }
         }
 
         bool s = prefix_tree_.batchInsertAndUpdate(insertList, key1, bucket1);
@@ -2174,7 +2190,13 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
             gettimeofday(&tv, 0);
             for (int i = 0; i < new_prefix_and_hdls.size(); i++) {
                 auto& bucket = new_prefix_and_hdls[i].second;
+                bitmap_mtx_.lock();
                 bucket_bitmap_->clearBit(bucket->file_id);
+                if (debug_flag_) {
+                    fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__,
+                            __func__, bucket->file_id);
+                }
+                bitmap_mtx_.unlock();
                 bucket_delete_mtx_.lock();
                 bucket_to_delete_.push(make_pair(tv.tv_sec, bucket));
                 bucket_delete_mtx_.unlock();
@@ -2205,7 +2227,13 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         }
 
         // delete the old file
+        bitmap_mtx_.lock();
         bucket_bitmap_->clearBit(bucket->file_id);
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__, __func__,
+                    bucket->file_id);
+        }
+        bitmap_mtx_.unlock();
 
         struct timeval tv;
         gettimeofday(&tv, 0);
@@ -2230,20 +2258,38 @@ bool BucketManager::twoAdjacentFileMerge(
             bucket1->file_id, bucket2->file_id);
     BucketHandler* bucket;
 
-    bool create_new_file_s = createFileHandlerForGC(bucket1->key, bucket);
-    StatsRecorder::staticProcess(StatsType::MERGE_CREATE_HANDLER, tv);
-    gettimeofday(&tv, 0);
-    if (create_new_file_s == false) {
-        debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id, bucket2->file_id);
+    if (bucket1->key >= bucket2->key) {
+        debug_error("[ERROR] Bucket 1 key is larger than bucket 2 key, bucket"
+                " 1 key = %s, bucket 2 key = %s\n", 
+                bucket1->key.c_str(), bucket2->key.c_str());
         bucket1->ownership = 0;
         bucket2->ownership = 0;
         return false;
     }
 
-    if (bucket1->key >= bucket2->key) {
-        debug_error("[ERROR] Bucket 1 key is larger than bucket 2 key, bucket"
-                " 1 key = %s, bucket 2 key = %s\n", 
-                bucket1->key.c_str(), bucket2->key.c_str());
+    // raised because of multi-threaded merge; a bucket may be already cleaned
+    // but selected as a victim by another thread
+    // The bug is like this:
+    // thread1: select bucket1 and bucket2
+    // thread2: select bucket2 and bucket3
+    // thread1: merge bucket1 and bucket2
+    // thread2: merge bucket2 and bucket3 (here the bug happens; bucket2 is cleaned twice)
+    if (bucket1->gc_status == kShouldDelete || bucket2->gc_status == kShouldDelete) {
+        bucket1->ownership = 0;
+        bucket2->ownership = 0;
+        return false;
+    }
+
+    bool create_new_file_s = createFileHandlerForGC(bucket1->key, bucket);
+
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] createFileHandlerForGC id %lu\n",
+                __LINE__, __func__, bucket->file_id);
+    }
+    StatsRecorder::staticProcess(StatsType::MERGE_CREATE_HANDLER, tv);
+    gettimeofday(&tv, 0);
+    if (create_new_file_s == false) {
+        debug_error("[ERROR] Could not generate new file handler for merge GC,previous file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id, bucket2->file_id);
         bucket1->ownership = 0;
         bucket2->ownership = 0;
         return false;
@@ -2265,6 +2311,11 @@ bool BucketManager::twoAdjacentFileMerge(
         FileOpStatus readStatus1;
         STAT_PROCESS(readStatus1 = bucket1->io_ptr->readFile(read_buf1_ptr,
                     bucket1->total_object_bytes), StatsType::KDSep_GC_READ);
+        if (readStatus1.success_ == false) {
+            debug_error("Read error: file id %lu own %d\n", bucket1->file_id,
+                    bucket1->ownership);
+            exit(1);
+        }
         StatsRecorder::getInstance()->DeltaGcBytesRead(bucket1->total_on_disk_bytes,
                 bucket1->total_object_bytes, syncStatistics_);
         // process GC contents
@@ -2285,6 +2336,11 @@ bool BucketManager::twoAdjacentFileMerge(
     FileOpStatus readStatus2;
     STAT_PROCESS(readStatus2 = bucket2->io_ptr->readFile(read_buf2,
                 bucket2->total_object_bytes), StatsType::KDSep_GC_READ);
+    if (readStatus2.success_ == false) {
+        debug_error("Read error: file id %lu own %d\n", bucket2->file_id,
+                bucket2->ownership);
+        exit(1);
+    }
     StatsRecorder::getInstance()->DeltaGcBytesRead(bucket2->total_on_disk_bytes,
             bucket2->total_object_bytes, syncStatistics_);
     // process GC contents
@@ -2519,7 +2575,12 @@ bool BucketManager::twoAdjacentFileMerge(
         debug_error("[ERROR] Could not merge two existing node corresponding"
                 " file ID 1 = %lu, ID 2 = %lu\n", bucket1->file_id,
                 bucket2->file_id);
+        bitmap_mtx_.lock();
         bucket_bitmap_->clearBit(bucket->file_id);
+        if (debug_flag_)
+        fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__, __func__,
+                bucket->file_id);
+        bitmap_mtx_.unlock();
         bucket1->ownership = 0;
         bucket2->ownership = 0;
         deleteFileHandler(bucket); // roll back, can directly delete
@@ -2568,8 +2629,16 @@ bool BucketManager::twoAdjacentFileMerge(
     bucket2->ownership = 0;
     bucket->ownership = 0;
 
+    bitmap_mtx_.lock();
     bucket_bitmap_->clearBit(bucket1->file_id);
     bucket_bitmap_->clearBit(bucket2->file_id);
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__, __func__,
+                bucket1->file_id);
+        fprintf(stdout, "[%d %s] clearBit %lu\n", __LINE__, __func__,
+                bucket2->file_id);
+    }
+    bitmap_mtx_.unlock();
 
     bucket_delete_mtx_.lock();
     {
@@ -2768,24 +2837,19 @@ void BucketManager::TryMerge() {
     debug_info("Select two file for merge GC success, "
             " bucket 1 key %s, bucket 2 key %s\n", 
             bucket1->key.c_str(), bucket2->key.c_str());
-    if (merge_cnt % 10 == 0) {
-        debug_error("Select two file for merge id1 %lu id2 %lu "
-                "total size %lu + %lu = %lu\n", 
-                bucket1->file_id, bucket2->file_id,
-                bucket1->total_object_bytes,
-                bucket2->total_object_bytes,
-                bucket1->total_object_bytes +
-                bucket2->total_object_bytes);
-    }
+//    if (merge_cnt % 10 == 0) {
+//        debug_error("Select two file for merge id1 %lu id2 %lu "
+//                "total size %lu + %lu = %lu\n", 
+//                bucket1->file_id, bucket2->file_id,
+//                bucket1->total_object_bytes,
+//                bucket2->total_object_bytes,
+//                bucket1->total_object_bytes +
+//                bucket2->total_object_bytes);
+//    }
     merge_cnt++;
     bool performFileMergeStatus;
     STAT_PROCESS(performFileMergeStatus = 
             twoAdjacentFileMerge(bucket1, bucket2), StatsType::DELTASTORE_MERGE);
-    if (performFileMergeStatus != true) {
-        debug_error("[ERROR] Could not merge two files for GC,"
-                " bucket 1 key %s, bucket 2 key %s\n", 
-                bucket1->key.c_str(), bucket2->key.c_str());
-    }
     StatsRecorder::staticProcess(StatsType::GC_MERGE_SUCCESS, tv);
 }
     

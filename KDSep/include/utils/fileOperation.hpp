@@ -85,9 +85,9 @@ private:
     uint64_t page_size_m4_ = sysconf(_SC_PAGESIZE) - sizeof(uint32_t);
     uint64_t disk_size_ = 0;
     uint64_t data_size_ = 0;
-    uint64_t newlyCreatedFileFlag_ = false;
-    uint64_t preAllocateFileSize_ = 0;
-    char* globalWriteBuffer_ = nullptr;
+    uint64_t is_newly_created_ = false;
+    uint64_t max_size_ = 0;
+    char* write_buf_ = nullptr;
     uint64_t buf_used_size_ = 0;
     uint64_t buf_size_ = 0;
 
@@ -103,6 +103,7 @@ private:
 
     bool recovery_state_ = false;
     bool closed_before_ = false;
+    bool debug_flag_ = false;
     std::vector<uint32_t> page_data_sizes_;
 };
 
