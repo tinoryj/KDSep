@@ -9,9 +9,9 @@ FileOperation::FileOperation(fileOperationType operationType)
 {
     operationType_ = operationType;
     fd_ = -1;
-    preAllocateFileSize_ = 256 * 1024;
+    max_size_ = 256 * 1024;
     buf_size_ = 0; // page_size_ - sizeof(uint32_t);
-    globalWriteBuffer_ = (buf_size_ > 0) ? new char[buf_size_] : nullptr;
+    write_buf_ = (buf_size_ > 0) ? new char[buf_size_] : nullptr;
     buf_used_size_ = 0;
 }
 
@@ -19,8 +19,8 @@ FileOperation::FileOperation(fileOperationType operationType, uint64_t
         fileSize, uint64_t bufferSize) {
     operationType_ = operationType;
     fd_ = -1;
-    preAllocateFileSize_ = fileSize;
-    globalWriteBuffer_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
+    max_size_ = fileSize;
+    write_buf_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
     buf_size_ = bufferSize;
     buf_used_size_ = 0;
 }
@@ -31,8 +31,8 @@ FileOperation::FileOperation(fileOperationType operationType,
 {
     operationType_ = operationType;
     fd_ = existing_fd; //-1;
-    preAllocateFileSize_ = fileSize;
-    globalWriteBuffer_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
+    max_size_ = fileSize;
+    write_buf_ = (bufferSize > 0) ? new char[bufferSize] : nullptr;
     buf_size_ = bufferSize;
     buf_used_size_ = 0;
 
@@ -42,8 +42,8 @@ FileOperation::FileOperation(fileOperationType operationType,
 
 FileOperation::~FileOperation()
 {
-    if (globalWriteBuffer_ != nullptr) { 
-        delete[] globalWriteBuffer_;
+    if (write_buf_ != nullptr) { 
+        delete[] write_buf_;
     }
 }
 
@@ -59,7 +59,7 @@ bool FileOperation::createFile(string path)
             return false;
         } else {
             closed_before_ = false;
-            newlyCreatedFileFlag_ = true;
+            is_newly_created_ = true;
             return true;
         }
     } 
@@ -79,7 +79,7 @@ bool FileOperation::openFile(string path)
             return false;
         } else {
             closed_before_ = false;
-            if (newlyCreatedFileFlag_ == true) {
+            if (is_newly_created_ == true) {
                 disk_size_ = 0;
                 data_size_ = 0;
                 debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fd_, disk_size_, data_size_);
@@ -111,7 +111,7 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
         } 
         closed_before_ = false;
 
-        if (newlyCreatedFileFlag_ == true) {
+        if (is_newly_created_ == true) {
             disk_size_ = 0;
             data_size_ = 0;
             debug_info("Open new file at path = %s, file fd = %d, current physical file size = %lu, actual file size = %lu\n", path.c_str(), fd_, disk_size_, data_size_);
@@ -140,6 +140,10 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
 
         uint64_t left = readBufferSize, p = 0;
         while (left > 0) {
+            if (debug_flag_) {
+                fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                        __LINE__, __func__, this, start_offset_ + p, left);
+            }
             auto rReturn = pread(fd_, readBuffer + p, left, start_offset_ + p);
             if (rReturn > left || rReturn == 0 || rReturn < 0) {
                 debug_error("rReturn %ld %lx err %s left %lu\n", 
@@ -215,7 +219,7 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
         exit(1);
     }
 
-    disk_size_ = preAllocateFileSize_;
+    disk_size_ = max_size_;
     data_size_ = 0;
 
     uint64_t req_page_num = (disk_size_ + page_size_ - 1) / page_size_;
@@ -228,6 +232,10 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
     if (ret) {
         debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
         return false;
+    }
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                __LINE__, __func__, this, start_offset_, readBufferSize);
     }
     auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
     if (rReturn != readBufferSize) {
@@ -283,17 +291,22 @@ bool FileOperation::cleanFile() {
         exit(1);
     }
 
-    // generate a buffer filled with zeros, and size is preAllocateFileSize_
+    // generate a buffer filled with zeros, and size is max_size_
     char* zeroBuffer;
-    auto ret = posix_memalign((void**)&zeroBuffer, page_size_, preAllocateFileSize_);
+    auto ret = posix_memalign((void**)&zeroBuffer, page_size_, max_size_);
     if (ret) {
         debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
         return false;
     }
-    memset(zeroBuffer, 0, preAllocateFileSize_);
+    memset(zeroBuffer, 0, max_size_);
 
-    ret = pwrite(fd_, zeroBuffer, preAllocateFileSize_, start_offset_);
-    if (ret != preAllocateFileSize_) {
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                __LINE__, __func__, this, 
+                start_offset_, max_size_);
+    }
+    ret = pwrite(fd_, zeroBuffer, max_size_, start_offset_);
+    if (ret != max_size_) {
         debug_error("[ERROR] pwrite failed: %d %s ret %lu\n", errno,
                 strerror(errno), ret);
         throw std::runtime_error("exception");
@@ -335,7 +348,7 @@ bool FileOperation::rollbackFile(char* read_buf, uint64_t rollback_offset)
                 buf_used_size_);
 
             if (buf_used_size_ > 0) {
-                memcpy(globalWriteBuffer_, read_buf + data_i_on_disk,
+                memcpy(write_buf_, read_buf + data_i_on_disk,
                     buf_used_size_);
             }
             break;
@@ -359,6 +372,11 @@ bool FileOperation::reuseLargeFile(uint64_t start_offset) {
     if (!use_existing_) {
         debug_error("[ERROR] reuse a non-existing file %s\n", "");
         exit(1);
+    }
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] %p reuseLargeFile old_offset %lu "
+                "start_offset %lu\n",
+                __LINE__, __func__, this, start_offset_, start_offset);
     }
     start_offset_ = start_offset;
     cleanFile();
@@ -388,7 +406,7 @@ bool FileOperation::createThenOpenFile(string path)
                 exit(1);
                 return false;
             } else {
-                int allocateStatus = fallocate(fd_, 0, 0, preAllocateFileSize_);
+                int allocateStatus = fallocate(fd_, 0, 0, max_size_);
                 if (allocateStatus != 0) {
                     debug_warn("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
                 }
@@ -469,22 +487,20 @@ void FileOperation::markDirectDataAddress(uint64_t data) {
 bool FileOperation::canWriteFile(uint64_t write_size) {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
     if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        if (write_size + buf_used_size_ <= buf_size_) {
-            return true;
-        } else if (buf_size_ > 0) {
-            // need to flush
+        if (buf_size_ > 0) {
+            // always assume that it needs flush
             uint64_t req_page_num = (write_size + buf_used_size_ +
                     page_size_m4_ - 1) / page_size_m4_;
             uint64_t written_size = 0;
             auto writeBufferSize = page_size_ * req_page_num;
             uint64_t page_i = 0;
 
-            return writeBufferSize + disk_size_ <= preAllocateFileSize_;
+            return writeBufferSize + disk_size_ <= max_size_;
         } else {
             uint64_t req_page_num = (write_size + page_size_m4_ - 1) /
                 page_size_m4_;
             auto writeBufferSize = page_size_ * req_page_num;
-            return writeBufferSize + disk_size_ <= preAllocateFileSize_;
+            return writeBufferSize + disk_size_ <= max_size_;
         }
     } else if (operationType_ == kPreadWrite) {
         if (write_size + buf_used_size_ <= buf_size_) {
@@ -494,7 +510,7 @@ bool FileOperation::canWriteFile(uint64_t write_size) {
             debug_e("Not implemented");
             return false;
         } else {
-            return write_size + disk_size_ <= preAllocateFileSize_;
+            return write_size + disk_size_ <= max_size_;
         }
     } else {
         return false;
@@ -506,7 +522,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
     if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (write_size + buf_used_size_ <= buf_size_) {
-            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, write_size);
+            memcpy(write_buf_ + buf_used_size_, contentBuffer, write_size);
             buf_used_size_ += write_size;
             FileOpStatus ret(true, 0, 0, write_size);
             return ret;
@@ -531,7 +547,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
 
             uint64_t previousBufferUsedSize = buf_used_size_;
             char exist_content[targetWriteSize];
-            memcpy(exist_content, globalWriteBuffer_, previousBufferUsedSize);
+            memcpy(exist_content, write_buf_, previousBufferUsedSize);
             memcpy(exist_content + previousBufferUsedSize, contentBuffer, write_size);
             int actual_disk_write_size = 0;
             uint32_t currentPageWriteSize = 0;
@@ -545,7 +561,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
                     page_i++;
                 } else {
                     currentPageWriteSize = targetWriteSize - written_size;
-                    memcpy(globalWriteBuffer_, exist_content + written_size, currentPageWriteSize);
+                    memcpy(write_buf_, exist_content + written_size, currentPageWriteSize);
                     buf_used_size_ = currentPageWriteSize;
                     written_size += currentPageWriteSize;
                     page_i++;
@@ -557,12 +573,17 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
             struct timeval tv;
             gettimeofday(&tv, 0);
             // write to the offset start_offset_ + disk_size_
-            if (actual_disk_write_size + disk_size_ > preAllocateFileSize_ ||
-                    start_offset_ % preAllocateFileSize_ > 0) {
+            if (actual_disk_write_size + disk_size_ > max_size_ ||
+                    start_offset_ % max_size_ > 0) {
                 debug_error("write too much: %lu + %lu > %lu\n",
                         actual_disk_write_size, disk_size_,
-                        preAllocateFileSize_);
+                        max_size_);
                 throw std::runtime_error("exception");
+            }
+            if (debug_flag_) {
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                        __LINE__, __func__, this, 
+                        start_offset_ + disk_size_, actual_disk_write_size);
             }
             auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
                 start_offset_ + disk_size_);
@@ -611,6 +632,18 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
+            if (actual_disk_write_size + disk_size_ > max_size_ ||
+                    start_offset_ % max_size_ > 0) {
+                debug_error("write too much: %lu + %lu > %lu\n",
+                        actual_disk_write_size, disk_size_,
+                        max_size_);
+                throw std::runtime_error("exception");
+            }
+            if (debug_flag_) {
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                        __LINE__, __func__, this, 
+                        start_offset_ + disk_size_, actual_disk_write_size);
+            }
             auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
                 start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
@@ -629,17 +662,17 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
         }
     } else if (operationType_ == kPreadWrite) {
         if (write_size + buf_used_size_ <= buf_size_) {
-            memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, write_size);
+            memcpy(write_buf_ + buf_used_size_, contentBuffer, write_size);
             buf_used_size_ += write_size;
             FileOpStatus ret(true, 0, 0, write_size);
             return ret;
         } else if (buf_size_ > 0) {
             debug_error("Not complete! buf_size_ %lu\n", buf_size_);
             if (write_size + buf_used_size_ - buf_size_ < buf_size_) {
-                memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, buf_size_ - buf_used_size_);
+                memcpy(write_buf_ + buf_used_size_, contentBuffer, buf_size_ - buf_used_size_);
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_size_,
+                auto wReturn = pwrite(fd_, write_buf_, buf_size_,
                         start_offset_ + disk_size_);
                 StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
                 if (wReturn != buf_size_) {
@@ -651,7 +684,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
                 buf_used_size_ = write_size - (buf_size_ - buf_used_size_);
                 disk_size_ += buf_size_;
                 data_size_ += write_size - buf_used_size_;
-                memcpy(globalWriteBuffer_, contentBuffer + write_size - buf_used_size_, buf_used_size_);
+                memcpy(write_buf_, contentBuffer + write_size - buf_used_size_, buf_used_size_);
                 FileOpStatus ret(true, buf_size_, write_size - buf_used_size_, buf_used_size_);
                 return ret;
             } else {
@@ -706,7 +739,7 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             uint64_t page_i = 0;
 
             char exist_content[targetWriteSize];
-            memcpy(exist_content, globalWriteBuffer_, buf_used_size_);
+            memcpy(exist_content, write_buf_, buf_used_size_);
             memcpy(exist_content + buf_used_size_, contentBuffer, contentSize);
             buf_used_size_ = 0;
 
@@ -722,12 +755,17 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
-            if (actual_disk_write_size + disk_size_ > preAllocateFileSize_ || 
-                    start_offset_ % preAllocateFileSize_ > 0) {
+            if (actual_disk_write_size + disk_size_ > max_size_ || 
+                    start_offset_ % max_size_ > 0) {
                 debug_error("write too much: %lu + %lu > %lu\n",
                         actual_disk_write_size, disk_size_,
-                        preAllocateFileSize_);
+                        max_size_);
                 throw std::runtime_error("exception");
+            }
+            if (debug_flag_) {
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                        __LINE__, __func__, this, 
+                        start_offset_ + disk_size_, actual_disk_write_size);
             }
             auto wReturn = pwrite(fd_, write_buf_dio, actual_disk_write_size,
                     start_offset_ + disk_size_);
@@ -756,10 +794,10 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
         if (buf_size_ > 0) {
             debug_error("Not complete! buf_size_ %lu\n", buf_size_);
             if (contentSize + buf_used_size_ - buf_size_ < buf_size_) {
-                memcpy(globalWriteBuffer_ + buf_used_size_, contentBuffer, buf_size_ - buf_used_size_);
+                memcpy(write_buf_ + buf_used_size_, contentBuffer, buf_size_ - buf_used_size_);
                 struct timeval tv;
                 gettimeofday(&tv, 0);
-                auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_size_, disk_size_);
+                auto wReturn = pwrite(fd_, write_buf_, buf_size_, disk_size_);
                 StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_WRITE, tv);
                 if (wReturn != buf_size_) {
                     debug_error("[ERROR] Write return value = %ld, file fd = %d, err = %s\n", wReturn, fd_, strerror(errno));
@@ -770,7 +808,7 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
                 buf_used_size_ = contentSize - (buf_size_ - buf_used_size_);
                 disk_size_ += buf_size_;
                 data_size_ += contentSize - buf_used_size_;
-                memcpy(globalWriteBuffer_, contentBuffer + contentSize - buf_used_size_, buf_used_size_);
+                memcpy(write_buf_, contentBuffer + contentSize - buf_used_size_, buf_used_size_);
                 FileOpStatus ret(true, buf_size_, contentSize - buf_used_size_, buf_used_size_);
                 return ret;
             } else {
@@ -791,7 +829,7 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
     if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        if (contentSize <= preAllocateFileSize_ && contentSize != data_size_ +
+        if (contentSize <= max_size_ && contentSize != data_size_ +
                 buf_used_size_) {
             debug_error("[ERROR] Read size mismatch, request size = %lu,"
                     " DirectIO current writed physical size = %lu, actual size"
@@ -810,6 +848,10 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
+        }
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                    __LINE__, __func__, this, start_offset_, readBufferSize);
         }
         auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
         if (rReturn != readBufferSize) {
@@ -832,10 +874,10 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             vec.push_back(currentReadDoneSize);
         }
         if (buf_used_size_ != 0) {
-            memcpy(contentBuffer + currentReadDoneSize, globalWriteBuffer_, buf_used_size_);
+            memcpy(contentBuffer + currentReadDoneSize, write_buf_, buf_used_size_);
             currentReadDoneSize += buf_used_size_;
         }
-        if (contentSize <= preAllocateFileSize_ && currentReadDoneSize !=
+        if (contentSize <= max_size_ && currentReadDoneSize !=
             contentSize) {
             free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, req_page_num, disk_size_, data_size_, buf_used_size_);
@@ -856,6 +898,10 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                    __LINE__, __func__, this, start_offset_, disk_size_);
+        }
         auto rReturn = pread(fd_, contentBuffer, disk_size_, start_offset_);
         if (rReturn != data_size_) {
             debug_error("[ERROR] Read return value = %lu, file fd = %d, "
@@ -866,7 +912,7 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         vector<uint64_t> vec;
         if (buf_used_size_ != 0) {
-            memcpy(contentBuffer + disk_size_, globalWriteBuffer_, buf_used_size_);
+            memcpy(contentBuffer + disk_size_, write_buf_, buf_used_size_);
         }
 
         FileOpStatus ret(true, disk_size_, contentSize, 0);
@@ -917,12 +963,12 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         if (offset >= data_size_) {
             // The whole data in buffer
             memcpy(read_buf, 
-                    globalWriteBuffer_ + offset - data_size_,
+                    write_buf_ + offset - data_size_,
                     read_buf_size); 
             return FileOpStatus(true, read_buf_size, read_buf_size, 0);
         } 
 
-        if (offset == mark_data_ && globalWriteBuffer_ == 0) {
+        if (offset == mark_data_ && write_buf_ == 0) {
             // Reading the unsorted part. Read from the marked address
             if (offset + read_buf_size != data_size_) {
                 debug_error("[ERROR] Not reading to the end! "
@@ -999,6 +1045,12 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         }
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                    __LINE__, __func__, this,
+                    start_offset_ + disk_start_page_id * page_size_,
+                    readBufferSize);
+        }
         auto rReturn = pread(fd_, tmp_read_buf, readBufferSize,
                 start_offset_ + disk_start_page_id * page_size_);
         if (rReturn != readBufferSize) {
@@ -1051,7 +1103,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
 
         if (req_buf_data_size != 0) {
             memcpy(read_buf + read_done_size, 
-                    globalWriteBuffer_, req_buf_data_size);
+                    write_buf_, req_buf_data_size);
             read_done_size += req_buf_data_size;
         }
 
@@ -1092,7 +1144,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
         if (offset >= data_size_) {
             // The whole data in buffer
             memcpy(read_buf, 
-                    globalWriteBuffer_ + offset - data_size_,
+                    write_buf_ + offset - data_size_,
                     read_buf_size); 
             return FileOpStatus(true, read_buf_size, read_buf_size, 0);
         } 
@@ -1107,6 +1159,11 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
             req_buf_data_size = 0;
         }
 
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                    __LINE__, __func__, this, 
+                    start_offset_ + offset, req_disk_data_size);
+        }
         auto rReturn = pread(fd_, read_buf, req_disk_data_size, 
                 start_offset_ + offset);
         if (rReturn != req_disk_data_size) {
@@ -1120,7 +1177,7 @@ FileOpStatus FileOperation::positionedReadFile(char* read_buf,
 
         if (req_buf_data_size != 0) {
             memcpy(read_buf + req_disk_data_size, 
-                    globalWriteBuffer_, req_buf_data_size);
+                    write_buf_, req_buf_data_size);
         }
 
         return FileOpStatus(true, req_disk_data_size, read_buf_size, 0);
@@ -1134,7 +1191,7 @@ FileOpStatus FileOperation::flushFile()
 {
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
     if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
-        if (buf_used_size_ != 0) {
+        if (buf_used_size_ > 0) {
             uint64_t req_page_num = 
                 (buf_used_size_ + page_size_m4_ - 1) / page_size_m4_;
             // align mem
@@ -1157,12 +1214,24 @@ FileOpStatus FileOperation::flushFile()
                 memcpy(writeBuffer + page_i * page_size_, 
                         &curr_sz, sizeof(uint32_t));
                 memcpy(writeBuffer + page_i * page_size_ + sizeof(uint32_t),
-                        globalWriteBuffer_ + written_size, curr_sz);
+                        write_buf_ + written_size, curr_sz);
                 written_size += curr_sz;
                 page_i++;
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
+            if (writeBufferSize + disk_size_ > max_size_ || start_offset_ %
+                    max_size_ > 0) {
+                debug_error("write too much: %lu + %lu > %lu\n",
+                        writeBufferSize, disk_size_,
+                        max_size_);
+                throw std::runtime_error("exception");
+            }
+            if (debug_flag_) {
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                        __LINE__, __func__, this, 
+                        start_offset_ + disk_size_, writeBufferSize);
+            }
             auto wReturn = pwrite(fd_, writeBuffer, writeBufferSize, 
                     start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_FLUSH, tv);
@@ -1177,7 +1246,7 @@ FileOpStatus FileOperation::flushFile()
                 data_size_ += buf_used_size_;
                 uint64_t flushedSize = buf_used_size_;
                 buf_used_size_ = 0;
-                memset(globalWriteBuffer_, 0, buf_size_);
+                memset(write_buf_, 0, buf_size_);
                 FileOpStatus ret(true, writeBufferSize, flushedSize, 0);
                 return ret;
             }
@@ -1188,7 +1257,7 @@ FileOpStatus FileOperation::flushFile()
         if (buf_used_size_ != 0) {
             struct timeval tv;
             gettimeofday(&tv, 0);
-            auto wReturn = pwrite(fd_, globalWriteBuffer_, buf_used_size_,
+            auto wReturn = pwrite(fd_, write_buf_, buf_used_size_,
                     start_offset_ + disk_size_);
             StatsRecorder::getInstance()->timeProcess(StatsType::DS_FILE_FUNC_REAL_FLUSH, tv);
             if (wReturn != buf_used_size_) {
@@ -1225,6 +1294,11 @@ uint64_t FileOperation::getFileSize()
         if (ret) {
             debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
             return false;
+        }
+        if (debug_flag_) {
+            fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
+                    __LINE__, __func__, this,
+                    start_offset_, readBufferSize);
         }
         auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
         if (rReturn != readBufferSize) {

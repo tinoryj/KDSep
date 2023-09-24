@@ -209,9 +209,13 @@ public:
                         update[i]->forwards[i]->forwards[i];
                 }
             }
+        } else {
+            fprintf(stderr, "Error: target key %s not exist!\n",
+                    target->key.c_str());
+            exit(1);
         }
 
-        while (num_levels_ > 1 && head->forwards[num_levels_] == nullptr){
+        while (num_levels_ > 1 && head->forwards[num_levels_ - 1] == nullptr){
             num_levels_--;
         }
 
@@ -459,8 +463,8 @@ public:
 private:
 //    vector<BucketHandler*> targetDeleteVec;
     uint64_t max_file_num_ = 0;
-//    SkipListWithMap list_;
-    SkipList list_;
+    SkipListWithMap list_;
+//    SkipList list_;
     std::shared_mutex nodeOperationMtx_;
 };
 

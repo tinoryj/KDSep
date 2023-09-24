@@ -44,11 +44,10 @@ private:
 
     void asioSingleOperation(deltaStoreOpHandler* op_hdl);
     void singleOperation(deltaStoreOpHandler* op_hdl);
-    bool operationPut(deltaStoreOpHandler* op_hdl);
     bool operationGet(deltaStoreOpHandler* op_hdl);
     bool operationMultiGet(deltaStoreOpHandler* op_hdl);
     bool operationMultiPut(deltaStoreOpHandler* op_hdl, bool& gc_pushed);
-    bool operationFlush(deltaStoreOpHandler* op_hdl);
+    bool operationFlush(deltaStoreOpHandler* op_hdl, bool& gc_pushed);
     bool operationFind(deltaStoreOpHandler* op_hdl);
 
     uint64_t readWholeFile(BucketHandler* bucket, char** buf);

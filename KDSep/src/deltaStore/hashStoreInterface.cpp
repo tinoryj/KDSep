@@ -403,8 +403,6 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
         vector<BucketHandler*> buckets; 
         status = file_manager_->prepareForUpdatingMetadata(buckets); 
 
-	debug_error("need flush %lu\n", buckets.size());
-
         if (status == false) {
             debug_error("Error for updating meta: %d\n", (int)status);
             exit(1);

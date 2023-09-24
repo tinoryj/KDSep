@@ -646,104 +646,6 @@ bool BucketOperator::writeToFile(
     }
 }
 
-bool BucketOperator::operationPut(deltaStoreOpHandler* op_hdl)
-{
-    str_t currentKeyStr(op_hdl->write_op.object->keyPtr_, op_hdl->write_op.object->keySize_);
-    if (op_hdl->write_op.object->isAnchorFlag_ == true) {
-        // Only when the key is not in the sorted filter, clean the filter.
-        // Otherwise, it will read the deltas in the sorted part but ignore the
-        // anchors in the unsorted part 
-        if (op_hdl->bucket->sorted_filter->MayExist(currentKeyStr) == true) {
-            op_hdl->bucket->filter->Insert(currentKeyStr);
-        } else {
-            if (op_hdl->bucket->filter->MayExist(currentKeyStr) == true) {
-                op_hdl->bucket->filter->Erase(currentKeyStr);
-            }
-        }
-    } else {
-        op_hdl->bucket->filter->Insert(currentKeyStr);
-    }
-    // construct record header
-    // leave it here 
-    KDRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = op_hdl->write_op.object->isAnchorFlag_;
-    newRecordHeader.key_size_ = op_hdl->write_op.object->keySize_;
-    newRecordHeader.seq_num = op_hdl->write_op.object->seq_num;
-    newRecordHeader.value_size_ = op_hdl->write_op.object->valueSize_;
-    if (op_hdl->bucket->io_ptr->isFileOpen() == false) {
-        // since file not created, shoud not flush anchors
-        // place file header and record header in write buffer
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            targetWriteSize = writeBufferSize;
-        } else {
-            targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // open target file
-        debug_info("First open newly created file ID = %lu\n",
-                op_hdl->bucket->file_id);
-        string targetFilePathStr = working_dir_ + "/" + to_string(op_hdl->bucket->file_id) + ".delta";
-        if (std::filesystem::exists(targetFilePathStr) != true) {
-            op_hdl->bucket->io_ptr->createThenOpenFile(targetFilePathStr);
-        } else {
-            op_hdl->bucket->io_ptr->openFile(targetFilePathStr);
-        }
-        // write contents of file
-        bool writeContentStatus = writeToFile(op_hdl->bucket, writeBuffer, targetWriteSize, 1);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", op_hdl->bucket->file_id);
-            return false;
-        } else {
-            // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_op.object;
-            if (kd_cache_ != nullptr) {
-                STAT_PROCESS(updateKDCacheIfExist(
-                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
-                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
-                            newRecordHeader.is_anchor_),
-                        StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE);
-            }
-            return true;
-        }
-    } else {
-        // since file exist, may contains unflushed anchors, check anchors first
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.object->keyPtr_, newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_op.object->valuePtr_, newRecordHeader.value_size_);
-            targetWriteSize = writeBufferSize;
-        } else {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.object->keyPtr_, newRecordHeader.key_size_);
-            targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // write contents of file
-        bool writeContentStatus = writeToFile(op_hdl->bucket, writeBuffer, targetWriteSize, 1);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", op_hdl->bucket->file_id);
-            return false;
-        } else {
-            // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_op.object;
-            if (kd_cache_ != nullptr) {
-                STAT_PROCESS(updateKDCacheIfExist(
-                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
-                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
-                            newRecordHeader.is_anchor_),
-                        StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE);
-            }
-            return true;
-        }
-    }
-}
-
 bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl, 
         bool& gc_pushed)
 {
@@ -910,7 +812,7 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
     }
 }
 
-bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl)
+bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl, bool& gc_pushed)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -920,15 +822,29 @@ bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl)
         return true;
     }
 
-    // write content
-    FileOpStatus status = op_hdl->bucket->io_ptr->flushFile();
-//    debug_error("flush file %lu\n", op_hdl->bucket->file_id);
-    if (status.success_ == false) {
-        debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
-                op_hdl->bucket->file_id);
-        exit(1);
-    } 
-    op_hdl->bucket->total_on_disk_bytes += status.physicalSize_;
+    auto bucket = op_hdl->bucket;
+    if (bucket->io_ptr->canWriteFile(0) == false) {
+        // directly do GC on this file. 
+        bool ret = pushGcIfNeeded(bucket);
+        if (ret == false) {
+            debug_error("[ERROR] target file %lu exceed limit %lu, "
+                    "total bytes %lu, but no GC\n",
+                    bucket->file_id, singleFileSizeLimit_,
+                    bucket->total_object_bytes);
+            exit(1);
+        }
+        gc_pushed = true;
+    } else {
+        // write content
+        FileOpStatus status = op_hdl->bucket->io_ptr->flushFile();
+        //    debug_error("flush file %lu\n", op_hdl->bucket->file_id);
+        if (status.success_ == false) {
+            debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
+                    op_hdl->bucket->file_id);
+            exit(1);
+        } 
+        op_hdl->bucket->total_on_disk_bytes += status.physicalSize_;
+    }
     return true;
 }
 
@@ -1550,13 +1466,8 @@ void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
             STAT_PROCESS(operationsStatus = operationMultiPut(op_hdl,
                         gc_pushed), StatsType::OP_MULTIPUT);
             break;
-        case kPut:
-            debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
-            STAT_PROCESS(operationsStatus = operationPut(op_hdl),
-                    StatsType::OP_PUT);
-            break;
         case kFlush:
-            STAT_PROCESS(operationsStatus = operationFlush(op_hdl),
+            STAT_PROCESS(operationsStatus = operationFlush(op_hdl, gc_pushed),
                     StatsType::OP_FLUSH);
             break;
         case kFind:

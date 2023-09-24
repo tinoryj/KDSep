@@ -46,11 +46,11 @@ config_workload() {
     if [[ "$workloada" == "true" || "$workloadf" == "true" ]]; then
         ReadProportion=0.5
         UpdateProportion=0.5
-        rmw="true"
+#        rmw="true"
     elif [[ "$workloadb" == "true" ]]; then
         ReadProportion=0.95
         UpdateProportion=0.05
-        rmw="true"
+#        rmw="true"
     elif [[ "$workloadc" == "true" ]]; then
         ReadProportion=1
         UpdateProportion=0
@@ -172,8 +172,10 @@ DB_Working_Path="./working"
 DB_Loaded_Path="./loaded"
     DB_Working_Path="/mnt/sn640/KDSepanonymous/working"
     DB_Loaded_Path="/mnt/sn640/KDSepanonymous"
-    DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
-    DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
+    if [[ ! -d /mnt/sn640/ ]]; then
+        DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
+        DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
+    fi
 ResultLogFolder="Exp/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
@@ -181,6 +183,7 @@ RocksDBThreadNumber=8
 rawConfigPath="configDir/KDSep.ini"
 bucketSize="$((256 * 1024))"
 cacheSize="$((1024 * 1024 * 1024))"
+budget="$(( 4 * 1024 * 1024 * 1024 ))"
 blobCacheSize=0
 kdcache=0
 workerThreadNumber=8
@@ -344,7 +347,8 @@ for param in $*; do
     elif [[ "$param" =~ ^cache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/cache//g')
         cacheSize=$(($num * 1024 * 1024))
-        run_suffix=${run_suffix}_bkc${num}
+        budget=$(($num * 1024 * 1024))
+        run_suffix=${run_suffix}_bud${num} # memory budget
     elif [[ "$param" =~ ^blobcache[0-9]+$ ]]; then
         num=$(echo $param | sed 's/blobcache//g')
         blobCacheSize=$(($num * 1024 * 1024))
@@ -430,6 +434,7 @@ for param in $*; do
     elif [[ "$param" == "up2x" ]]; then
         up2x="true"
         fieldlength=48
+        fieldcount=1
     elif [[ "$param" == "rmw" ]]; then
         rmw="true"
     elif [[ "$param" == "recovery" ]]; then
@@ -463,12 +468,13 @@ sed -i "/write_buffer_size/c\\write_buffer_size = $(($batchSize * 1024 * 1024))"
 if [[ $batchSizeK != "0" ]]; then
     sed -i "/write_buffer_size/c\\write_buffer_size = $(($batchSizeK * 1024))" temp.ini
 fi
+sed -i "/memory_budget/c\\memory_budget = $budget" temp.ini
 sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
 sed -i "/blobgcforce/c\\blobgcforce = ${blobgcforce}" temp.ini
-totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024))
-run_suffix=${run_suffix}_tc${totCacheSize}
+#totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024))
+#run_suffix=${run_suffix}_tc${totCacheSize}
 
 if [[ "$nodirect" == "true" ]]; then
     sed -i "/directIO/c\\directIO = false" temp.ini

@@ -1478,7 +1478,6 @@ void KDSep::processBatchedOperationsWorker()
     }
     writeBatchOperationWorkExitFlag = true;
     debug_info("Process batched operations done, exit thread%s\n", "");
-    debug_error("Process batched operations done, exit thread%s\n", "");
     return;
 }
 
@@ -1628,6 +1627,7 @@ bool KDSep::extractDeltas(string lsm_value, uint64_t skipSize,
 }
 
 void KDSep::tryTuneCache() {
+    static int cnt = 0;
     if (kd_cache_ == nullptr || delta_store_ == nullptr || 
             extra_mem_threshold_ > memory_budget_ - min_block_cache_size_) {
         return;
@@ -1644,17 +1644,21 @@ void KDSep::tryTuneCache() {
         if (kdcache_mem + bucket_mem > extra_mem_threshold_) {
             rocks_block_cache_->SetCapacity(memory_budget_ - extra_mem_threshold_);
             extra_mem_threshold_ += extra_mem_step_;
-            debug_error("set rocksdb block cache capacity = %.2lf MiB, "
-                    "extra %.2lf MiB (cache %.2lf + bucket table %.2lf)\n", 
-                    (memory_budget_ - extra_mem_threshold_) / 1024.0 / 1024, 
-                    (kdcache_mem + bucket_mem) / 1024.0 / 1024, 
-                    kdcache_mem / 1024.0 / 1024, 
-                    bucket_mem / 1024.0 / 1024);
-            uint64_t rss = getRss();
-            debug_error("rss = %.2lf (-block: %.2lf) MiB, bucket num %lu\n", 
-                rss / 1024.0 / 1024, 
-                (rss * 1024 - rocks_block_cache_->GetUsage()) / 1024.0 / 1024,
-                bucket_mem / 10 / 1024);
+
+//            if (cnt % 20 == 0) {
+//                debug_error("set rocksdb block cache capacity = %.2lf MiB, "
+//                        "extra %.2lf MiB (cache %.2lf + bucket table %.2lf)\n", 
+//                        (memory_budget_ - extra_mem_threshold_) / 1024.0 / 1024, 
+//                        (kdcache_mem + bucket_mem) / 1024.0 / 1024, 
+//                        kdcache_mem / 1024.0 / 1024, 
+//                        bucket_mem / 1024.0 / 1024);
+//                uint64_t rss = getRss();
+//                debug_error("rss = %.2lf (-block: %.2lf) MiB, bucket num %lu\n", 
+//                        rss / 1024.0 / 1024, 
+//                        (rss * 1024 - rocks_block_cache_->GetUsage()) / 1024.0
+//                        / 1024, bucket_mem / 10 / 1024);
+//            }
+            cnt++;
         }
     }
 }
