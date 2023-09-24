@@ -143,6 +143,7 @@ log_db_status() {
 testcpu() {
     sleep 2 
     PIDC=$(pgrep -f "ycsbc") 
+    echo $PIDC
     OUTPUT_CPU="$1"
     rm -f $OUTPUT_CPU
     while true; do
@@ -174,6 +175,8 @@ DB_Loaded_Path="./loaded"
     DB_Loaded_Path="/mnt/sn640/KDSepanonymous"
     DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
     DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
+#    DB_Working_Path="/mnt/data/KDSepanonymous/working"
+#    DB_Loaded_Path="/mnt/data/KDSepanonymous"
 ResultLogFolder="Exp/ResultLogs"
 DB_Name="loadedDB"
 MAXRunTimes=1
@@ -215,6 +218,8 @@ workload4="false"
 fake="false"
 nodirect="false"
 nodirectreads="false"
+nomerge="false"
+nosplit="false"
 nommap="false"
 rmw="false"
 up2x="false"
@@ -424,6 +429,12 @@ for param in $*; do
     elif [[ "$param" == "nodirectreads" ]]; then
         nodirectreads="true"
         run_suffix=${run_suffix}_nodirectreads
+    elif [[ "$param" == "nosplit" ]]; then
+        nosplit="true"
+        run_suffix=${run_suffix}_nosplit
+    elif [[ "$param" == "nomerge" ]]; then
+        nomerge="true"
+        run_suffix=${run_suffix}_nomerge
     elif [[ "$param" == "nommap" ]]; then
         nommap="true"
         run_suffix=${run_suffix}_nommap
@@ -476,6 +487,14 @@ fi
 
 if [[ "$nodirectreads" == "true" ]]; then
     sed -i "/directReads/c\\directReads = false" temp.ini
+fi
+
+if [[ "$nosplit" == "true" ]]; then
+    sed -i "/enable_bucket_split/c\\enable_bucket_split = false" temp.ini
+fi
+
+if [[ "$nomerge" == "true" ]]; then
+    sed -i "/enable_bucket_merge/c\\enable_bucket_merge = false" temp.ini
 fi
 
 if [[ "$nommap" == "true" ]]; then
