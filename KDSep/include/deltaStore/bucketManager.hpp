@@ -203,6 +203,7 @@ private:
     unique_ptr<FileOperation> commit_log_fop_;
     unique_ptr<BitMap> bucket_bitmap_; 
     int bucket_fd_ = -1;
+    bool wrap_up_ = false;
 
     uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
     uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 512 * 5; // 2.5G // 1024 * 1024 * 1024;

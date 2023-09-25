@@ -2059,7 +2059,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     startKeys.push_back(string(it->first.data_, it->first.size_));
 
     int size_ratio = (int)ceil((double)target_size / maxBucketSize_);
-    if (enable_gc_) {
+    if (enable_gc_ && singleFileSplitGCTriggerSize_ != maxBucketSize_) {
         if (size_ratio > 10) {
             // split to 5% of capacity
             debug_error("target_size %lu, maxBucketSize_ %lu, size_ratio %d\n", 
@@ -3045,7 +3045,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
             // try to merge
             uint64_t remainEmptyBucketNumber = prefix_tree_.getRemainFileNumber();
             if (remainEmptyBucketNumber < singleFileGCWorkerThreadsNumebr_ + 2 &&
-                    enable_bucket_merge_) {
+                    enable_bucket_merge_ && !wrap_up_) {
                 debug_info("May reached max file number, need to merge, current"
                         " remain empty file numebr = %lu\n",
                         remainEmptyBucketNumber);
@@ -3088,6 +3088,7 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
     }
 
     wrap_up_gc_num = 0;
+    wrap_up_ = true;
 
     vector<BucketHandler*> validFilesVec;
     prefix_tree_.getCurrentValidNodesNoKey(validFilesVec);
