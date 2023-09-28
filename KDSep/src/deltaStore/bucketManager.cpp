@@ -1733,6 +1733,11 @@ bool BucketManager::singleFileRewrite(
     struct timeval tv;
     gettimeofday(&tv, 0);
 
+    if (wrap_up_) {
+        debug_error("bucket id %lu, size %lu\n", bucket->file_id,
+                bucket->total_object_bytes);
+    }
+
     // file before:
     // [[record_header] [key] [value]] ... [record_header]
     // file after:
@@ -2080,6 +2085,9 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
 //    for (auto& it : gc_orig_sizes) {
 //        total_orig_size += it.second;
 //    }
+    if (wrap_up_) {
+        debug_error("id %lu\n", bucket->file_id);
+    }
     
     // fill the keys to two buckets
     for (auto keyIt : gcResultMap) {
@@ -2092,8 +2100,11 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
         if (((size_ratio > 1 && 
                         tmpGcResult[bi].second > maxBucketSize_ / 2 / size_ratio) || 
                 (size_ratio == 1 && tmpGcResult[bi].second > target_size / 2))
-                && key_cnt < gc_result_map_size) 
-        {
+                && key_cnt < gc_result_map_size) {
+            if (wrap_up_) {
+                debug_error("id %lu split to %d buckets, key_cnt %d, size %lu\n", 
+                        bucket->file_id, bi, key_cnt, tmpGcResult[bi].second);
+            }
             bi++;
             tmpGcResult.push_back({{}, 0});
             startKeys.push_back(string(key.data_, key.size_));
@@ -2871,6 +2882,12 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     char read_buf[read_buf_size];
     FileOpStatus readFileStatus;
 
+    if (wrap_up_) {
+        debug_error("id %lu size %lu = %lu + %lu\n", bucket->file_id,
+                read_buf_size, bucket->total_object_bytes,
+                bucket->extra_wb_size);
+    }
+
     if (bucket->total_object_bytes > 0) {
         STAT_PROCESS(readFileStatus = bucket->io_ptr->readFile(read_buf,
                     bucket->total_object_bytes), StatsType::KDSep_GC_READ);
@@ -2952,7 +2969,7 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
                 writeBackObject* newWriteBackObject = new
                     writeBackObject(currentKeyForWriteBack, 0);
                 targetWriteBackVec->push_back(newWriteBackObject);
-            } 
+            }
         }
     }
 
@@ -3053,10 +3070,8 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
             }
         } else {
             // Case 3 in the paper: push all KD pairs in the bucket to the queue 
-            if (remainObjectNumberPair.first < remainObjectNumberPair.second) {
-                StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
-                STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetSizeWithHeader, fileContainsReWriteKeysFlag), StatsType::REWRITE);
-            }
+            StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
+            STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetSizeWithHeader, fileContainsReWriteKeysFlag), StatsType::REWRITE);
             bucket->ownership = 0;
             StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC, tv);
             pushObjectsToWriteBackQueue(targetWriteBackVec);
