@@ -123,6 +123,7 @@ public:
         for (int i = 0; i < level; ++i) {
             update[i] = head;
         }
+        cached_ = nullptr;
 
         // record every level largest value which smaller than insert value in update[]
         Node* p = head;
@@ -160,6 +161,7 @@ public:
 
     virtual bool updateNoLargerThan(const string& key, BucketHandler* newData) {
         Node* p = head;
+        cached_ = nullptr;
         for (int i = num_levels_ - 1; i >= 0; --i) {
             while (p->forwards[i] != nullptr && key >= p->forwards[i]->key) {
                 p = p->forwards[i];
@@ -177,6 +179,7 @@ public:
     virtual bool deleteNoLargerThan(const string& key) {
         Node* p = head;
         Node* target = nullptr;
+        cached_ = nullptr;
 
         // search for the first time, find the target
         for (int i = num_levels_ - 1; i >= 0; --i) {
@@ -227,6 +230,14 @@ public:
 
     virtual BucketHandler* findNoLargerThan(const string& key) {
         Node* p = head;
+        if (cached_ != nullptr) {
+            // cache hit
+            if (cached_->key <= key && (cached_->forwards[0] == nullptr ||
+                    cached_->forwards[0]->key > key)) {
+                return cached_->data;
+            } 
+        }
+
         for (int i = num_levels_ - 1; i >= 0; --i) {
             while (p->forwards[i] != nullptr && p->forwards[i]->key <= key) {
                 p = p->forwards[i];
@@ -237,12 +248,24 @@ public:
         if (p == head) {
             return nullptr;
         } else {
+            cached_ = p;
             return p->data;
         }
     }
 
     virtual BucketHandler* findNext(const string& key) {
         Node* p = head;
+        
+        // check whether it is cached yet. If so, directly return the next node
+        if (cached_ != nullptr) {
+            // cache hit
+            if (cached_->key <= key && (cached_->forwards[0] == nullptr ||
+                    cached_->forwards[0]->key > key)) {
+                cached_ = cached_->forwards[0];
+                return cached_->data;
+            }
+        }
+
         for (int i = num_levels_ - 1; i >= 0; --i) {
             while (p->forwards[i] != nullptr && p->forwards[i]->key <= key) {
                 p = p->forwards[i];
@@ -255,6 +278,7 @@ public:
         }
 
         if (p->forwards[0] != nullptr) {
+            cached_ = p->forwards[0];
             return p->forwards[0]->data;
         } else {
             return nullptr;
@@ -306,6 +330,7 @@ private:
 
     Node* head = nullptr;
     Node* update[MAX_LEVEL]; // temp array for iterating
+    Node* cached_ = nullptr;
     int num_levels_ = 1;
     int size_ = 0;
 };

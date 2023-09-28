@@ -76,7 +76,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     file_manager_->readCommitLog(read_buf, read_buf_size);
 
     if (read_buf == nullptr) {
-	return true;
+    return true;
     }
 
     uint64_t i = 0;
@@ -97,11 +97,11 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     // retrieve all headers, and get the file handlers
     while (i < read_buf_size) {
         processed_delta_num++;
-//	if (processed_delta_num % 100000 == 0) {
-//	    debug_error("processed_delta_num %lu hdls num %lu\n", 
-//		    processed_delta_num, find_hdls.size());
-//	}
-	// get header
+//  if (processed_delta_num % 100000 == 0) {
+//      debug_error("processed_delta_num %lu hdls num %lu\n", 
+//          processed_delta_num, find_hdls.size());
+//  }
+    // get header
         if (use_varint_d_header == false) {
             memcpy(&header, read_buf + i, header_sz);
         } else {
@@ -114,45 +114,45 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
             continue;
         }
 
-	key = str_t(read_buf + i, header.key_size_);
+    key = str_t(read_buf + i, header.key_size_);
         string_view value(nullptr, 0);
 
         i += header.key_size_;
-	// no sorted part if there is an anchor 
+    // no sorted part if there is an anchor 
         if (header.is_anchor_ == true) {
-	    sorted = false;
+        sorted = false;
         } else {
-	    value = string_view(read_buf + i, header.value_size_);
+        value = string_view(read_buf + i, header.value_size_);
             i += header.value_size_;
         }
 
-	if (header.seq_num < min_seq_num) {
-	    continue;
-	}
+    if (header.seq_num < min_seq_num) {
+        continue;
+    }
 
-	deltaStoreOpHandler* find_op = new deltaStoreOpHandler;
-	find_op->op_type = kFind;
-	find_op->object = new mempoolHandler_t;
+    deltaStoreOpHandler* find_op = new deltaStoreOpHandler;
+    find_op->op_type = kFind;
+    find_op->object = new mempoolHandler_t;
 
-	auto& object = find_op->object;
-	object->keyPtr_ = key.data_;	
-	object->keySize_ = key.size_;	
-	object->isAnchorFlag_ = header.is_anchor_;
-	object->seq_num = header.seq_num;
-	if (header.is_anchor_ == false) {
-	    object->valuePtr_ = const_cast<char*>(value.data());
-	    object->valueSize_ = value.size();
-	}
-	
-	file_operator_->putIntoJobQueue(find_op);
-	find_hdls.push_back(find_op);
+    auto& object = find_op->object;
+    object->keyPtr_ = key.data_;    
+    object->keySize_ = key.size_;   
+    object->isAnchorFlag_ = header.is_anchor_;
+    object->seq_num = header.seq_num;
+    if (header.is_anchor_ == false) {
+        object->valuePtr_ = const_cast<char*>(value.data());
+        object->valueSize_ = value.size();
+    }
+    
+    file_operator_->putIntoJobQueue(find_op);
+    find_hdls.push_back(find_op);
     }
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_GET_FILE_HANDLER, tv);
     gettimeofday(&tv, 0);
 
     if (i > read_buf_size) {
-	debug_error("i too large: %lu %lu\n", i, read_buf_size);
+    debug_error("i too large: %lu %lu\n", i, read_buf_size);
     }
     debug_error("start retrieve results: %lu\n", find_hdls.size());
 
@@ -162,30 +162,30 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     unordered_map<BucketHandler*, vector<int>> bucket2index;
 
     for (auto i = 0; i < find_hdls.size(); i++) {
-	file_operator_->waitOperationHandlerDone(find_hdls[i], false);
-	auto bucket = find_hdls[i]->bucket;
-	auto& seq_num = find_hdls[i]->object->seq_num;
+    file_operator_->waitOperationHandlerDone(find_hdls[i], false);
+    auto bucket = find_hdls[i]->bucket;
+    auto& seq_num = find_hdls[i]->object->seq_num;
 
-	string_view key_view(find_hdls[i]->object->keyPtr_,
-		find_hdls[i]->object->keySize_);
-//	if (key_view == "user13704398570070748503") {
-//	    debug_error("user13704398570070748503 file %lu seq %u fseq %lu\n", 
-//		    bucket->file_id, find_hdls[i]->object->seq_num,
-//		    bucket->max_seq_num);
-//	}
+    string_view key_view(find_hdls[i]->object->keyPtr_,
+        find_hdls[i]->object->keySize_);
+//  if (key_view == "user13704398570070748503") {
+//      debug_error("user13704398570070748503 file %lu seq %u fseq %lu\n", 
+//          bucket->file_id, find_hdls[i]->object->seq_num,
+//          bucket->max_seq_num);
+//  }
 
 
-	if (bucket == nullptr || bucket->max_seq_num >= seq_num) {
-	    continue;
-	}
+    if (bucket == nullptr || bucket->max_seq_num >= seq_num) {
+        continue;
+    }
 
-	if (bucket2index.find(bucket) != bucket2index.end()) {
-	    bucket2index.at(bucket).push_back(i);
-	} else {
-	    vector<int> indexVec;
-	    indexVec.push_back(i);
-	    bucket2index.insert(make_pair(bucket, indexVec));
-	}
+    if (bucket2index.find(bucket) != bucket2index.end()) {
+        bucket2index.at(bucket).push_back(i);
+    } else {
+        vector<int> indexVec;
+        indexVec.push_back(i);
+        bucket2index.insert(make_pair(bucket, indexVec));
+    }
     }
 
 
@@ -198,32 +198,32 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     write_hdls.resize(bucket2index.size());
 
     for (auto mapIt : bucket2index) {
-	struct timeval tv;
-	gettimeofday(&tv, 0);
+    struct timeval tv;
+    gettimeofday(&tv, 0);
 
-	write_obj_start = write_obj_i;
-	for (auto& index : mapIt.second) {
-	    write_objects[write_obj_i++] = *find_hdls[index]->object;
-	}
+    write_obj_start = write_obj_i;
+    for (auto& index : mapIt.second) {
+        write_objects[write_obj_i++] = *find_hdls[index]->object;
+    }
 
-	mapIt.first->markedByMultiPut = false;
+    mapIt.first->markedByMultiPut = false;
 
-	auto write_op_hdl = new deltaStoreOpHandler(mapIt.first);
-	write_op_hdl->multiput_op.objects = write_objects + write_obj_start;
-	write_op_hdl->multiput_op.size = write_obj_i - write_obj_start;
-	write_op_hdl->op_type = kMultiPut;
-	write_op_hdl->need_flush = true; 
+    auto write_op_hdl = new deltaStoreOpHandler(mapIt.first);
+    write_op_hdl->multiput_op.objects = write_objects + write_obj_start;
+    write_op_hdl->multiput_op.size = write_obj_i - write_obj_start;
+    write_op_hdl->op_type = kMultiPut;
+    write_op_hdl->need_flush = true; 
 
-	STAT_PROCESS(file_operator_->putIntoJobQueue(write_op_hdl),
-		StatsType::DS_RECOVERY_PUT_TO_QUEUE_OP);
-	write_hdls[write_op_hdls_i++] = write_op_hdl;
+    STAT_PROCESS(file_operator_->putIntoJobQueue(write_op_hdl),
+        StatsType::DS_RECOVERY_PUT_TO_QUEUE_OP);
+    write_hdls[write_op_hdls_i++] = write_op_hdl;
     }
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_PUT_TO_QUEUE, tv);
 
     gettimeofday(&tv, 0);
     for (auto& it : write_hdls) {
-	file_operator_->waitOperationHandlerDone(it);
+    file_operator_->waitOperationHandlerDone(it);
     }
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_WAIT_HANDLERS, tv);
 
@@ -233,7 +233,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
 }
 
 bool HashStoreInterface::putCommitLog(
-	vector<mempoolHandler_t>& objects, bool& need_flush) {
+    vector<mempoolHandler_t>& objects, bool& need_flush) {
     bool allAnchoarsFlag = true;
     for (auto it : objects) {
         if (it.isAnchorFlag_ == false) {
@@ -253,16 +253,16 @@ bool HashStoreInterface::putCommitLog(
 
     need_flush = false;
     if (enable_crash_consistency_ == false) {
-	return true;
+    return true;
     }
 
     // write to the commit log
     bool write_commit_log_status = 
-	file_manager_->writeToCommitLog(objects, need_flush, false);
+    file_manager_->writeToCommitLog(objects, need_flush, false);
     if (write_commit_log_status == false) {
-	debug_error("[ERROR] write to commit log failed: %lu objects\n",
-		objects.size());
-	exit(1);
+    debug_error("[ERROR] write to commit log failed: %lu objects\n",
+        objects.size());
+    exit(1);
     }
 
     return true;
@@ -273,7 +273,7 @@ bool HashStoreInterface::commitToCommitLog() {
 }
 
 bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
-	bool need_flush, bool need_commit)
+    bool need_flush, bool need_commit)
 {
     static int tstatic = 0; //50;
     int rssBefore;
@@ -303,7 +303,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
     // come here because there are no values written by the interface
     if (enable_crash_consistency_ == true && need_commit == true) {
         // directly write to the commit log
-	need_flush = false;
+    need_flush = false;
         bool write_commit_log_status = 
             file_manager_->writeToCommitLog(objects, need_flush, true);
         if (write_commit_log_status == false) {
@@ -324,33 +324,33 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 
     // get all the file handlers 
     { 
-	gettimeofday(&tv, 0);
-	deltaStoreOpHandler hdls[objects.size()];
+    gettimeofday(&tv, 0);
+    deltaStoreOpHandler hdls[objects.size()];
         // push to queue
-	for (auto i = 0; i < objects.size(); i++) {
-	    hdls[i].op_type = kFind;
-	    hdls[i].object = &objects[i]; 
-	    file_operator_->putIntoJobQueue(&hdls[i]);
-	}
-	StatsRecorder::staticProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
+    for (auto i = 0; i < objects.size(); i++) {
+        hdls[i].op_type = kFind;
+        hdls[i].object = &objects[i]; 
+        file_operator_->putIntoJobQueue(&hdls[i]);
+    }
+    StatsRecorder::staticProcess(StatsType::DS_MULTIPUT_GET_HANDLER, tv);
 
         // get the results
-	for (auto i = 0; i < objects.size(); i++) {
-	    file_operator_->waitOperationHandlerDone(&hdls[i], false);
-	    auto bucket = hdls[i].bucket;
-	    if (bucket == nullptr) {
-		// should skip current key since it is only an anchor
-		continue;
-	    }
+    for (auto i = 0; i < objects.size(); i++) {
+        file_operator_->waitOperationHandlerDone(&hdls[i], false);
+        auto bucket = hdls[i].bucket;
+        if (bucket == nullptr) {
+        // should skip current key since it is only an anchor
+        continue;
+        }
 
-	    if (fileHandlerToIndexMap.find(bucket) != fileHandlerToIndexMap.end()) {
-		fileHandlerToIndexMap.at(bucket).push_back(i);
-	    } else {
-		vector<int> indexVec;
-		indexVec.push_back(i);
-		fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
-	    }
-	}
+        if (fileHandlerToIndexMap.find(bucket) != fileHandlerToIndexMap.end()) {
+        fileHandlerToIndexMap.at(bucket).push_back(i);
+        } else {
+        vector<int> indexVec;
+        indexVec.push_back(i);
+        fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
+        }
+    }
     }
 
     multiop_mtx_.unlock();
@@ -367,13 +367,13 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
             struct timeval tv;
             gettimeofday(&tv, 0);
             handlerStartVecIndex = handlerVecIndex;
-	    map<int, int> sequence2index;
+        map<int, int> sequence2index;
 
-	    for (auto& index : mapIt.second) {
+        for (auto& index : mapIt.second) {
                 sequence2index[objects[index].seq_num] = index;
             }
 
-	    for (auto& it : sequence2index) {
+        for (auto& it : sequence2index) {
                 handlerVecTemp[handlerVecIndex++] = objects[it.second];
             }
 
@@ -416,7 +416,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
         for (auto& it : buckets) {
             if (it != nullptr && 
                     it->io_ptr->getFileBufferedSize() > 0) {
-//		debug_error("real flush file %lu\n", it->file_id);
+//      debug_error("real flush file %lu\n", it->file_id);
                 if (it->ownership != 0) {
                     debug_error("wait file owner ship %lu %d\n",
                             it->file_id,
@@ -445,7 +445,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 
         StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_SYNC, tv);
 
-	file_manager_->cleanCommitLog();
+    file_manager_->cleanCommitLog();
     }
 
     if (tstatic) {
@@ -465,17 +465,17 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     bool ret;
 
     if (kd_cache_ != nullptr) {
-	str_t key(const_cast<char*>(keyStr.data()), keyStr.size());
-	str_t delta = kd_cache_->getFromCache(key);
-	if (delta.data_ != nullptr && delta.size_ > 0) {
-	    valueStrVec.push_back(string(delta.data_, delta.size_));
-	    return true;
-	    // non-empty delta for this key
-	} else if (delta.data_ == nullptr && delta.size_ == 0) {
-	    valueStrVec.clear();
-	    // empty delta for this key
-	    return true;
-	}
+    str_t key(const_cast<char*>(keyStr.data()), keyStr.size());
+    str_t delta = kd_cache_->getFromCache(key);
+    if (delta.data_ != nullptr && delta.size_ > 0) {
+        valueStrVec.push_back(string(delta.data_, delta.size_));
+        return true;
+        // non-empty delta for this key
+    } else if (delta.data_ == nullptr && delta.size_ == 0) {
+        valueStrVec.clear();
+        // empty delta for this key
+        return true;
+    }
     }
 
     STAT_PROCESS(ret = file_manager_->getFileHandlerWithKeySimplified((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
@@ -512,7 +512,7 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
 }
 
 bool HashStoreInterface::multiGet(const vector<string>& keys,
-	vector<vector<string>>& valueStrVecVec)
+    vector<vector<string>>& valueStrVecVec)
 {
     bool ret;
 
@@ -526,7 +526,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     for (int i = 0; i < keys.size(); i++) {
         get_result[i] = false;
         if (kd_cache_ != nullptr) {
-	    str_t key(const_cast<char*>(keys[i].data()), keys[i].size());
+        str_t key(const_cast<char*>(keys[i].data()), keys[i].size());
             str_t delta = kd_cache_->getFromCache(key);
             if (delta.data_ != nullptr && delta.size_ > 0) {
                 valueStrVecVec[i].push_back(string(delta.data_, delta.size_));
@@ -551,7 +551,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     multiop_mtx_.lock();
     for (int i = 0; i < all; i++) {
         if (get_result[i] == false) {
-	    // get the file handlers in parallel
+        // get the file handlers in parallel
             STAT_PROCESS(ret = 
                     file_manager_->getFileHandlerWithKeySimplified(keys[i].data(),
                         keys[i].size(), kMultiGet, buckets[i], false),
@@ -574,23 +574,23 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
                 valueStrVecVec[i].clear();
                 get_result[i] = true;
                 need_read--;
-		if (fileHandlerToIndexMap.find(bucket) ==
-			fileHandlerToIndexMap.end()) {
-		    bucket->ownership = 0;
-		    bucket->markedByMultiGet = false;
-		    buckets[i] = nullptr;
-		}
+        if (fileHandlerToIndexMap.find(bucket) ==
+            fileHandlerToIndexMap.end()) {
+            bucket->ownership = 0;
+            bucket->markedByMultiGet = false;
+            buckets[i] = nullptr;
+        }
             } else {
-		// need to 
-		if (fileHandlerToIndexMap.find(bucket) !=
-			fileHandlerToIndexMap.end()) {
-		    fileHandlerToIndexMap.at(bucket).push_back(i);
-		} else {
-		    vector<int> indexVec;
-		    indexVec.push_back(i);
-		    fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
-		}
-	    }
+        // need to 
+        if (fileHandlerToIndexMap.find(bucket) !=
+            fileHandlerToIndexMap.end()) {
+            fileHandlerToIndexMap.at(bucket).push_back(i);
+        } else {
+            vector<int> indexVec;
+            indexVec.push_back(i);
+            fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
+        }
+        }
         } else {
             buckets[i] = nullptr;
         }
@@ -607,24 +607,24 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     int needed_i = 0;
 
     for (auto& mapIt : fileHandlerToIndexMap) {
-	auto& bucket = mapIt.first;
-	auto& index_vec = mapIt.second;
+        auto& bucket = mapIt.first;
+        auto& index_vec = mapIt.second;
         auto op_hdl = new deltaStoreOpHandler(bucket);
-	bucket->markedByMultiGet = false;
+        bucket->markedByMultiGet = false;
         op_hdl->multiget_op.keys = new vector<string*>; 
         op_hdl->multiget_op.values = new vector<string*>; 
-	op_hdl->multiget_op.key_indices = index_vec;
+        op_hdl->multiget_op.key_indices = index_vec;
         op_hdl->op_type = kMultiGet;
 
-	for (auto index = 0; index < index_vec.size(); index++) {
-	    auto& key_i = index_vec[index];
-	    if (key_i >= keys.size() || get_result[key_i] == true) {
-		debug_error("key_i %d keys.size() %lu get result %d\n",
-			key_i, keys.size(), (int)get_result[key_i]);
-		exit(1);
-	    }
-	    op_hdl->multiget_op.keys->push_back(const_cast<string*>(&keys[index_vec[index]])); 
-	}
+        for (auto index = 0; index < index_vec.size(); index++) {
+            auto& key_i = index_vec[index];
+            if (key_i >= keys.size() || get_result[key_i] == true) {
+            debug_error("key_i %d keys.size() %lu get result %d\n",
+                key_i, keys.size(), (int)get_result[key_i]);
+            exit(1);
+            }
+            op_hdl->multiget_op.keys->push_back(const_cast<string*>(&keys[index_vec[index]])); 
+        }
         
         file_operator_->startJob(op_hdl);
         handlers[needed_i++] = op_hdl;
@@ -632,32 +632,66 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
 
     for (int i = 0; i < needed_i; i++) {
         auto& op_hdl = handlers[i];
-	// do not delete the handler
+    // do not delete the handler
         struct timeval tv;
         gettimeofday(&tv, nullptr);
         file_operator_->waitOperationHandlerDone(op_hdl, false);
-	auto& values = *(op_hdl->multiget_op.values);
+        auto& values = *(op_hdl->multiget_op.values);
 
-	for (int index_i = 0; index_i < values.size(); index_i++) {
-	    auto& key_i = op_hdl->multiget_op.key_indices[index_i];
-	    if (get_result[key_i] == true) {
-		debug_error("key_i %d has result?\n", key_i);
-	    }
-	    if (values[index_i] != nullptr) {
-		valueStrVecVec[key_i].clear();
-		valueStrVecVec[key_i].push_back(*values[index_i]);
+        for (int index_i = 0; index_i < values.size(); index_i++) {
+            auto& key_i = op_hdl->multiget_op.key_indices[index_i];
+            if (get_result[key_i] == true) {
+                debug_error("key_i %d has result?\n", key_i);
+            }
+            if (values[index_i] != nullptr) {
+                valueStrVecVec[key_i].clear();
+                valueStrVecVec[key_i].push_back(*values[index_i]);
 
-		delete values[index_i];
-	    }
-	}
+                delete values[index_i];
+            }
+        }
 
-	delete op_hdl->multiget_op.keys;
-	delete op_hdl->multiget_op.values;
-	delete op_hdl;
+        delete op_hdl->multiget_op.keys;
+        delete op_hdl->multiget_op.values;
+        delete op_hdl;
         StatsRecorder::staticProcess(StatsType::DS_MULTIGET_ONE_FILE, tv);
     }
 
     return true;
+}
+
+bool HashStoreInterface::Scan(const string& key, int len,
+    map<string, vector<string>>& keys_values)
+{
+    // skip the cache, directly read the bucket
+    string cur_key = key;
+
+    BucketHandler* bucket;
+
+    STAT_PROCESS(ret =
+    file_manager_->getBucketWithKey((char*)cur_key.c_str(),
+        cur_key.size(), kGet, bucket, false),
+    StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
+
+    // No bucket. Next one 
+    if (bucket == nullptr) {
+        debug_error("No bucket for key %s\n", cur_key.c_str());
+        keys_values.clear();
+        return true;
+    }
+
+    if (bucket->total_object_bytes > 0) { 
+        ret = file_operator_->directlyScanOperation(bucket, key, len,
+            keys_values);
+        if (ret == false) {
+            debug_error("failed %s\n", keyStr.c_str());
+            exit(1);
+        }
+        return ret;
+    } else {
+        tempFileHandler->ownership = 0;
+        return true;
+    }
 }
 
 bool HashStoreInterface::wrapUpGC(uint64_t& wrap_up_gc_num)

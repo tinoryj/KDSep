@@ -1111,249 +1111,27 @@ bool BucketManager::CloseHashStoreFileMetaDataList()
     return true;
 }
 
-// file operations - public
-// A modification: add "getForAnchorWriting". If true, and if the file handler
-// does not exist, do not create the file and directly return.
-bool BucketManager::getFileHandlerWithKey(const char* keyBuffer, 
-        uint32_t keySize, deltaStoreOperationType op_type,
-        BucketHandler*& bucket, bool getForAnchorWriting)
-{
-    struct timeval tv;
-    string key(keyBuffer, keySize);
-
-    // 1. Generate prefix
-    gettimeofday(&tv, 0);
-    if (op_type == kMultiPut) {
-        StatsRecorder::staticProcess(
-                StatsType::DSTORE_MULTIPUT_PREFIX, tv);
-    } else {
-        StatsRecorder::staticProcess(
-                StatsType::DSTORE_PREFIX, tv);
-    }
-
-    // 2. Search the prefix tree 
-    bool getFileHandlerStatus;
-    gettimeofday(&tv, 0);
-    getFileHandlerStatus = getHashStoreFileHandlerByPrefix(key, bucket);
-    if (op_type == kMultiPut) {
-        StatsRecorder::staticProcess(
-                StatsType::DSTORE_MULTIPUT_GET_HANDLER, tv);
-    }
-
-    if (getFileHandlerStatus == false && 
-            (op_type == kGet || op_type == kMultiGet)) {
-        bucket = nullptr;
-        return true;
-    }
-
-    if (getFileHandlerStatus == false && getForAnchorWriting == true) {
-        bucket = nullptr;
-        return true;
-    }
-
-    // 4. Create file if necessary 
-    if (getFileHandlerStatus == false) {
-        // not writing anchors, or reading the file. Need to create
-        bool createNewFileHandlerStatus;
-        // TODO there may be some sync problems
-        // solution: For get, use "get"; For put, use "getOrCreate".
-        STAT_PROCESS(createNewFileHandlerStatus =
-                createNewInitialBucket(bucket),
-                StatsType::KDSep_HASHSTORE_CREATE_NEW_BUCKET);
-        if (!createNewFileHandlerStatus || bucket == nullptr) {
-            debug_error("[ERROR] create new bucket, key %.*s\n", 
-                    (int)keySize, keyBuffer);
-            return false;
-        } else {
-            debug_info("[Insert] Create new file ID = %lu, for key = %.*s, file"
-                    " gc status flag = %d\n",
-                    bucket->file_id, (int)keySize, keyBuffer,
-                    bucket->gc_status);
-            if (op_type == kMultiPut) {
-                bucket->markedByMultiPut = true;
-            } else if (op_type == kMultiGet) {
-                bucket->markedByMultiGet = true;
-            }
-            bucket->ownership = 1;
-            return true;
-        }
-    }
-    
-    // Get the handler
-    struct timeval tv_loop;
-    gettimeofday(&tv_loop, 0);
-    bool first = true;
-    while (true) {
-        if (first == false) {
-            gettimeofday(&tv, 0);
-            getFileHandlerStatus =
-                getHashStoreFileHandlerByPrefix(key, bucket);
-            if (op_type == kMultiPut) {
-                StatsRecorder::staticProcess(
-                        StatsType::DSTORE_MULTIPUT_GET_HANDLER, tv);
-            }
-        }
-        first = false;
-
-        if (getFileHandlerStatus == false
-                && (op_type == kPut || op_type == kMultiPut)) {
-            debug_error("come here %d\n", 1);
-            bool createNewFileHandlerStatus;
-            STAT_PROCESS(createNewFileHandlerStatus =
-                    createNewInitialBucket(bucket),
-                    StatsType::KDSep_HASHSTORE_CREATE_NEW_BUCKET);
-            if (!createNewFileHandlerStatus) {
-                debug_error("[ERROR] Previous file may deleted during GC,"
-                        " and splited new files not contains current key"
-                        " prefix, create new bucket for put operation"
-                        " error, key = %s\n", keyBuffer);
-                return false;
-            } else {
-                debug_warn("[Insert] Previous file may deleted during GC, and"
-                        " splited new files not contains current key prefix,"
-                        " create new file ID %lu, for key %s, file gc "
-                        "status flag %d, prefix bit number used %lu\n",
-                        bucket->file_id, keyBuffer, bucket->gc_status,
-                        0ul//prefixLenExtract(bucket->prefix)
-                        );
-                if (op_type == kMultiPut) {
-                    bucket->markedByMultiPut = true;
-                } else {
-                    bucket->markedByMultiGet = true;
-                }
-                bucket->ownership = 1;
-                return true;
-            }
-        } else {
-            if (bucket->ownership == 1 && 
-                    ((op_type == kMultiPut && 
-                     bucket->markedByMultiPut == true) ||
-                    (op_type == kMultiGet &&
-                      bucket->markedByMultiGet == true))) {
-                StatsRecorder::staticProcess(
-                        StatsType::DSTORE_GET_HANDLER_LOOP, tv_loop);
-                return true;
-            }
-            // avoid get file handler which is in GC;
-            if (bucket->ownership != 0) {
-//                debug_error("Wait for file ownership, file ID = %lu, "
-//                        " own = %d, gc status %d\n", bucket->file_id, 
-//                        (int)bucket->ownership,
-//                        (int)bucket->gc_status);
-                debug_trace("Wait for file ownership, file ID = %lu, for"
-                        " key = %s\n", bucket->file_id, keyBuffer);
-                struct timeval tv, tv2, tv3;
-                gettimeofday(&tv, 0);
-                tv3 = tv;// for recording wait
-                int own = bucket->ownership;
-                while (bucket->ownership == -1 ||
-                        (bucket->ownership >= 1 && 
-                         (!(op_type == kMultiPut && bucket->markedByMultiPut)
-                          &&
-                         !(op_type == kMultiGet &&
-                             bucket->markedByMultiGet)))) {
-                    gettimeofday(&tv2, 0);
-                    if (tv2.tv_sec - tv.tv_sec > 10) {
-                        debug_error("wait for 5 seconds; own %d, id %d, op %d\n",
-                                (int)bucket->ownership,
-                                (int)bucket->file_id,
-                                (int)op_type);
-                        tv = tv2;
-                    }
-//                    asm volatile("");
-                    // wait if file is using in gc
-                }
-                debug_trace("Wait for file ownership, file ID = %lu, for"
-                        " key = %s over\n", bucket->file_id,
-                        keyBuffer);
-                if (own == -1) {
-                    StatsRecorder::staticProcess(StatsType::WAIT_GC, tv3);
-                } else {
-                    StatsRecorder::staticProcess(StatsType::WAIT_NORMAL, tv3);
-                }
-            }
-
-            if (bucket->gc_status == kShouldDelete) {
-                // retry if the file should delete;
-                debug_warn("Get exist file ID = %lu, for key = %s, "
-                        "this file is marked as kShouldDelete\n",
-                        bucket->file_id, keyBuffer);
-                continue;
-            } else {
-                debug_trace("Get exist file ID = %lu, for key = %s\n",
-                        bucket->file_id, keyBuffer);
-                if (op_type == kMultiPut) {
-                    bucket->markedByMultiPut = true;
-                } else if (op_type == kMultiGet) {
-                    bucket->markedByMultiGet = true;
-                }
-                bucket->ownership = 1;
-                StatsRecorder::staticProcess(
-                        StatsType::DSTORE_GET_HANDLER_LOOP, tv_loop);
-                return true;
-            }
-        }
-    }
-    return true;
-}
-
-bool BucketManager::getFileHandlerWithKeySimplified(const char* keyBuffer, 
+bool BucketManager::getBucketWithKey(const char* keyBuffer, 
         uint32_t keySize, deltaStoreOperationType op_type,
         BucketHandler*& bucket, bool getForAnchorWriting) {
     struct timeval tv;
     string key(keyBuffer, keySize);
 
-    bool s;
-//    if (op_type == kGet || op_type == kMultiGet || 
-//            ((op_type == kPut || op_type == kMultiPut) 
-//             && getForAnchorWriting)) 
-    {
-         s = getBucketHandlerNoCreate(key, op_type, bucket);
-         // What ever, return true 
-//         if (s == false) {
-//             return true;
-//         }
-//         return true;
-    } 
-//    else {
-//        // Need to create
-//        s = getBucketHandlerOrCreate(key, op_type, bucket);
-//        if (s == false) {
-//            debug_error("Cannot get or create buckets for key %.*s\n",
-//                    (int)keySize, keyBuffer);
-//            return false; // different from get!
-//        }
-//    }
+    getBucketHandlerInternal(key, op_type, bucket, false);
     return true;
 }
 
-// file operations - private
-bool BucketManager::generateHashBasedPrefix(const char* rawStr, 
-        uint32_t strSize, uint64_t& prefixU64) {
-//    u_char murmurHashResultBuffer[16];
-//    MurmurHash3_x64_128((void*)rawStr, strSize, 0, murmurHashResultBuffer);
-//    memcpy(&prefixU64, murmurHashResultBuffer, sizeof(uint64_t));
-    prefixU64 = XXH64(rawStr, strSize, 10);
-    return true;
+bool BucketManager::getNextBucketWithKey(const string& key, BucketHandler*& bucket) {
+    getBucketHandlerInternal(key, kGet, bucket, true);
 }
 
-bool BucketManager::getHashStoreFileHandlerByPrefix(
-        const string& prefixU64, 
-        BucketHandler*& bucket)
-{
-    bool handlerGetStatus = prefix_tree_.get(prefixU64, bucket);
-    if (handlerGetStatus == true) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
-bool BucketManager::getBucketHandlerNoCreate(const string& key, 
-        deltaStoreOperationType op_type, BucketHandler*& bucket)
+bool BucketManager::getBucketHandlerInternal(const string& key, 
+        deltaStoreOperationType op_type, BucketHandler*& bucket,
+        bool is_next)
 {
     bool s;
-    s = prefix_tree_.get(key, bucket);
+    s = (is_next) ? prefix_tree_.getNext(key, bucket) : 
+        prefix_tree_.get(key, bucket);
     if (s == false) {
         debug_e("cannot get from the prefix tree");
         return s;
@@ -1408,7 +1186,8 @@ bool BucketManager::getBucketHandlerNoCreate(const string& key,
         }
 
         if (bucket->gc_status == kShouldDelete) {
-            s = prefix_tree_.get(key, bucket);
+            s = (is_next) ? prefix_tree_.getNext(key, bucket) :
+                prefix_tree_.get(key, bucket);
             continue;
         } else {
             if (op_type == kMultiPut) {
@@ -1416,79 +1195,6 @@ bool BucketManager::getBucketHandlerNoCreate(const string& key,
             } else if (op_type == kMultiGet) {
                 bucket->markedByMultiGet = true;
             }
-            bucket->ownership = 1;
-            return true;
-        }
-    }
-    return true;
-}
-
-bool BucketManager::getBucketHandlerOrCreate(const string& key,
-        deltaStoreOperationType op_type, BucketHandler*& bucket) {
-    bool s;
-    debug_e("get bucket handler or create\n");
-    {
-        std::scoped_lock<std::shared_mutex> w_lock(createNewBucketMtx_);
-        s = prefix_tree_.get(key, bucket);
-        if (s == false) {
-//            s = createNewInitialBucket(bucket);
-//            if (s == false) {
-//                debug_error("create initial bucket failed, key %s\n",
-//                        key.c_str());
-//                return false;
-//            }
-        }
-    }
-
-    while (true) {
-        if (s == false) {
-            // impossible
-            return s;
-        }
-
-        if (bucket->ownership == 1 &&
-                (op_type == kMultiPut && bucket->markedByMultiPut
-                  && !bucket->markedByMultiGet)) {
-            return true;
-        }
-
-        if (bucket->ownership != 0) {
-            // wait if file is using in gc
-            debug_trace("Wait for file ownership, file ID = %lu, for"
-                    " key = %s\n", bucket->file_id, key.c_str());
-            struct timeval tv, tv2, tv3;
-            gettimeofday(&tv, 0);
-            tv3 = tv;// for recording wait
-            int own = bucket->ownership;
-            while (bucket->ownership == -1 ||
-                    (bucket->ownership == 1 && 
-                     !(op_type == kMultiPut && bucket->markedByMultiPut))) {
-                gettimeofday(&tv2, 0);
-                if (tv2.tv_sec - tv.tv_sec > 5) {
-                    debug_error("wait for 5 seconds; own %d, id %d, op %d\n",
-                            (int)bucket->ownership,
-                            (int)bucket->file_id,
-                            (int)op_type);
-                    tv = tv2;
-                }
-            }
-            debug_trace("Wait for file ownership, file ID = %lu, for"
-                    " key = %s over\n", bucket->file_id,
-                    key.c_str());
-            if (own == -1) {
-                StatsRecorder::staticProcess(StatsType::WAIT_GC, tv3);
-            } else {
-                StatsRecorder::staticProcess(StatsType::WAIT_NORMAL, tv3);
-            }
-        }
-
-        if (bucket->gc_status == kShouldDelete) {
-            s = prefix_tree_.get(key, bucket);
-            continue;
-        } else {
-            if (op_type == kMultiPut) {
-                bucket->markedByMultiPut = true;
-            } 
             bucket->ownership = 1;
             return true;
         }

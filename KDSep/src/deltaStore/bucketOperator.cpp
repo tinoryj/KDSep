@@ -225,8 +225,7 @@ bool BucketOperator::readAndProcessWholeFile(
     uint64_t process_delta_num = 0;
 
     STAT_PROCESS(process_delta_num = processReadContentToValueLists(
-                *buf, file_size, 
-                kd_list, key_view),
+                *buf, file_size, kd_list, key_view),
             StatsType::KDSep_HASHSTORE_GET_PROCESS);
     if (process_delta_num != bucket->total_object_cnt) {
         debug_error("[ERROR] processed object number during read = %lu, not"
@@ -235,6 +234,34 @@ bool BucketOperator::readAndProcessWholeFile(
         return false;
     }
 
+    return true;
+}
+
+bool BucketOperator::readAndProcessWholeFile(
+    BucketHandler* bucket, map<string_view, vector<string_view>>& kd_lists,
+    char** buf) {
+
+    auto& file_size = bucket->total_object_bytes;
+    bool s = readWholeFile(bucket, buf);
+    kd_lists.clear();
+
+    if (s == false) {
+        debug_error("[ERROR] Could not read from file for key list %lu\n",
+                keys->size());
+        exit(1);
+    }
+
+    uint64_t process_delta_num = 0;
+    STAT_PROCESS(process_delta_num = processReadContentToValueLists(
+                *buf, file_size, kd_lists),
+            StatsType::KDSep_HASHSTORE_GET_PROCESS);
+    
+    if (process_delta_num != bucket->total_object_cnt) {
+        debug_error("[ERROR] processed object number during read = %lu, not"
+                " equal to object number in metadata = %lu\n",
+                process_delta_num, bucket->total_object_cnt);
+        return false;
+    }
     return true;
 }
 
@@ -250,13 +277,12 @@ bool BucketOperator::readAndProcessWholeFileKeyList(
         debug_error("[ERROR] Could not read from file for key list %lu\n",
                 keys->size());
         exit(1);
-        return false;
     }
 
     vector<string_view> key_views;
     key_views.resize(keys->size());
     for (int i = 0; i < keys->size(); i++) {
-	key_views[i] = string_view((*(*keys)[i]));
+        key_views[i] = string_view((*(*keys)[i]));
     }
 
     uint64_t process_delta_num = 0;
@@ -545,9 +571,9 @@ uint64_t BucketOperator::processReadContentToValueLists(
 }
 
 uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
-        char* read_buf, uint64_t read_buf_size, 
-	vector<vector<string_view>>& kd_lists,
-        const vector<string_view>& keys)
+    char* read_buf, uint64_t read_buf_size,
+    vector<vector<string_view>>& kd_lists,
+    const vector<string_view>& keys)
 {
     kd_lists.clear();
     kd_lists.resize(keys.size());
@@ -581,28 +607,85 @@ uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
         // get key 
         string_view currentKey(read_buf + i, header.key_size_);
 
-	int key_i = 0;
-	bool has_key = false;
-	for (key_i = 0; key_i < (int)keys.size(); key_i++) {
-	    string_view key = keys[key_i];
-	    if (key != currentKey) {
-		continue;
-	    }
+        int key_i = 0;
+        bool has_key = false;
+        for (key_i = 0; key_i < (int)keys.size(); key_i++) {
+            string_view key = keys[key_i];
+            if (key != currentKey) {
+                continue;
+            }
 
-	    has_key = true;
-	    i += header.key_size_;
-	    if (header.is_anchor_ == false) {
-		string_view currentValue(read_buf + i, header.value_size_);
-		kd_lists[key_i].push_back(currentValue);
-		i += header.value_size_;
-	    }
-	}
+            has_key = true;
+            i += header.key_size_;
+            if (header.is_anchor_ == false) {
+                string_view currentValue(read_buf + i, header.value_size_);
+                kd_lists[key_i].push_back(currentValue);
+                i += header.value_size_;
+            }
+        }
 
-	if (has_key == false) {
+        if (has_key == false) {
 	    i += header.key_size_ +
 		((header.is_anchor_) ? 0 :
 		 header.value_size_);
 	}
+    }
+    if (i > read_buf_size) {
+        debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
+                i, read_buf_size);
+        return 0;
+    }
+    return processed_delta_num;
+}
+
+uint64_t BucketOperator::processReadContentToValueLists(
+    char* read_buf, uint64_t read_buf_size,
+    map<string_view, vector<string_view>>& kd_lists)
+{
+    kd_lists.clear();
+
+    uint64_t i = 0;
+    uint64_t processed_delta_num = 0;
+    size_t header_sz = sizeof(KDRecordHeader);
+    KDRecordHeader header;
+    bool has_gc_done = false;
+    uint64_t gc_done_offset = 0;
+    while (i < read_buf_size) {
+        processed_delta_num++;
+        if (use_varint_d_header == false) {
+            memcpy(&header, read_buf + i, header_sz);
+        } else {
+            header = GetDeltaHeaderVarint(read_buf + i, header_sz);
+        }
+        i += header_sz;
+        if (header.is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
+            if (has_gc_done) {
+                debug_error("read error: gc done appeared before"
+                            " %lu %lu\n",
+                    gc_done_offset, i);
+                exit(1);
+            }
+            has_gc_done = true;
+            gc_done_offset = i;
+            continue;
+        }
+
+        // get key 
+        string_view currentKey(read_buf + i, header.key_size_);
+
+        i += header.key_size_;
+        if (header.is_anchor_ == false) {
+            string_view currentValue(read_buf + i, header.value_size_);
+            kd_lists[currentKey].push_back(currentValue);
+            i += header.value_size_;
+        } else {
+            // is an anchor, clean all KD pairs for this key
+            if (kd_list.count(currentKey)) {
+                kd_list.at(currentKey).clear();
+                kd_list.erase(currentKey);
+            }
+        }
     }
     if (i > read_buf_size) {
         debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
@@ -1142,6 +1225,86 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
         bucket->ownership = 0;
         return true;
     }
+}
+
+bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
+	string key, int len, vector<pair<string, string>>& keys_values) {
+
+    string cur_key = key;
+    BucketHandler* prev_bucket = nullptr;
+
+    while (true) {
+        std::scoped_lock<std::shared_mutex> r_lock(bucket->op_mtx);
+
+        // Do not enable index block, directly write 
+        // Not exist in cache, find the content in the file
+        map<string_view, vector<string_view>> kd_lists;
+
+        char* buf = nullptr;
+        bool success;
+
+        success = readAndProcessWholeFile(bucket, kd_lists, &buf);
+        // TODO here
+
+        if (success == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+            exit(1);
+        }
+
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        vector<str_t> deltas;
+
+        for (auto& it : kd_lists) {
+            if (it.first < cur_key || len == 0) {
+                continue;
+            }
+
+            len--;
+
+            vector<str_t> deltas;
+            for (auto& delta : it.second) {
+                deltas.push_back(str_t(const_cast<char*>(delta.data()),
+                            delta.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                KDSepMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                keys_values.push_back(make_pair(
+                    string(it.first.data(), it.first.size()),
+                    string(merged_delta.data_, merged_delta.size_)));
+            }
+
+            if (kd_cache_ != nullptr) {
+                updateKDCache(it.first.data(), it.first.size(), merged_delta);
+            }
+        }
+
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
+
+        delete[] buf;
+        bucket->ownership = 0;
+
+        if (len) {
+            cur_key = (keys_values.empty()) ? cur_key :
+                keys_values.back().first;
+            // TODO a bug: if the bucket does not have the key, it will go into
+            // a dead loop
+            prev_bucket = bucket;
+            bucket_manager_->getNextBucketWithKey(cur_key, bucket);
+            if (prev_bucket == bucket) {
+                debug_e("[ERROR] Exit because of empty bucket\n");
+                return false;
+            } else if (bucket == nullptr) {
+                debug_e("[ERROR] Exit because of going to the end, len %d\n",
+                    len);
+                return true;
+            }
+        }
+    }
+    return true;
 }
 
 bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)

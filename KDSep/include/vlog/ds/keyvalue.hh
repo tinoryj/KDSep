@@ -315,11 +315,7 @@ public:
         size_t index_sz = sizeof(externalIndexInfo);
 
         // encode header
-        if (use_varint_kv_header == false) {
-            memcpy(buf, &header, header_sz);
-        } else {
-            header_sz = PutKVHeaderVarint(buf, header);
-        }
+        header_sz = PutKVHeaderVarint(buf, header);
 
         // encode index
         if (use_varint_index == false) {
@@ -349,11 +345,7 @@ public:
         size_t index_sz = sizeof(externalIndexInfo);
 
         // encode header
-        if (use_varint_kv_header == false) {
-            memcpy(buf, &header, header_sz);
-        } else {
-            header_sz = PutKVHeaderVarint(buf, header);
-        }
+        header_sz = PutKVHeaderVarint(buf, header);
 
         // encode index
         if (use_varint_index == false) {
@@ -379,9 +371,7 @@ public:
         size_t offset = 0;
         size_t header_sz = sizeof(KvHeader);
 
-        if (use_varint_kv_header == true) {
-            header_sz = GetKVHeaderVarintSize(cstr);
-        }
+        header_sz = GetKVHeaderVarintSize(cstr);
 
         externalIndexInfo index;
         if (use_varint_index == false) {
