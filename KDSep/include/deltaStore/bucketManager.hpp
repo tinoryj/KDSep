@@ -24,14 +24,10 @@ public:
     BucketManager& operator=(const BucketManager&) = delete;
 
     // file operations
-    bool getFileHandlerWithKey(const char* keyBuffer, uint32_t keySize,
-	    deltaStoreOperationType opType, 
-	    BucketHandler*& fileHandlerPtr, 
-	    bool getForAnchorWriting = false);
-    bool getFileHandlerWithKeySimplified(const char* keyBuffer, 
+    bool getBucketWithKey(const char* keyBuffer, 
             uint32_t keySize, deltaStoreOperationType op_type,
             BucketHandler*& bucket, bool getForAnchorWriting = false); 
-    bool generateHashBasedPrefix(const char* rawStr, uint32_t strSize, uint64_t& prefixU64);
+    bool getNextBucketWithKey(const string& key, BucketHandler*& bucket);
     uint64_t getNumOfBuckets();
 
     // GC manager
@@ -62,7 +58,7 @@ public:
         boost::atomic<uint64_t>& disk_sizes,
         boost::atomic<uint64_t>& cnt); 
     uint64_t recoverIndexAndFilter(
-	BucketHandler* bucket, char* read_buf, uint64_t read_buf_size);
+    BucketHandler* bucket, char* read_buf, uint64_t read_buf_size);
 
     bool recoverBucketTable(); // return map of key to all related values that need redo, bool flag used for is_anchor check
     uint64_t GetMinSequenceNumber();
@@ -119,17 +115,12 @@ private:
     bool shouldDoRecoveryFlag_ = false;
 
     bool deleteObslateFileWithFileIDAsInput(uint64_t fileID);
-    // user-side operations
-    bool getHashStoreFileHandlerByPrefix(const string& prefixU64, BucketHandler*& fileHandlerPtr);
-
 
     void OpenBucketFile();
     BucketHandler* createFileHandler();
     bool createNewInitialBucket(BucketHandler*& bucket);
-    bool getBucketHandlerNoCreate(const string& key, 
-            deltaStoreOperationType op_type, BucketHandler*& bucket);
-    bool getBucketHandlerOrCreate(const string& key, 
-            deltaStoreOperationType op_type, BucketHandler*& bucket); 
+    bool getBucketHandlerInternal(const string& key, 
+        deltaStoreOperationType op_type, BucketHandler*& bucket, bool is_next);
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management

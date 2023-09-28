@@ -81,11 +81,7 @@ bool LsmTreeInterface::Put(const mempoolHandler_t& obj)
         size_t header_sz = sizeof(KvHeader);
 
         // Put header
-        if (use_varint_kv_header == false) {
-            memcpy(valueBuffer, &header, header_sz);
-        } else {
-            header_sz = PutKVHeaderVarint(valueBuffer, header); 
-        }
+        header_sz = PutKVHeaderVarint(valueBuffer, header); 
         // Put raw value
         memcpy(valueBuffer + header_sz, obj.valuePtr_, obj.valueSize_);
 
@@ -132,11 +128,7 @@ bool LsmTreeInterface::Merge(const mempoolHandler_t& obj)
     size_t value_sz = obj.valueSize_ + sizeof(KvHeader);
     char valueBuffer[value_sz];
     size_t header_sz = sizeof(KvHeader);
-    if (use_varint_kv_header == false) {
-        memcpy(valueBuffer, &header, header_sz);
-    } else {
-        header_sz = PutKVHeaderVarint(valueBuffer, header);
-    }
+    header_sz = PutKVHeaderVarint(valueBuffer, header);
     memcpy(valueBuffer + header_sz, obj.valuePtr_, obj.valueSize_);
     value_sz = header_sz + obj.valueSize_;
 
@@ -188,11 +180,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         KvHeader header;
         size_t header_sz = sizeof(KvHeader);
 
-        if (use_varint_kv_header == false) {
-            memcpy(&header, lsm_value.c_str(), header_sz);
-        } else {
-            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz); 
-        }
+        header = GetKVHeaderVarint(lsm_value.c_str(), header_sz); 
 
         if (header.valueSeparatedFlag_ == true) {
             string vLogValue; 
@@ -220,11 +208,7 @@ bool LsmTreeInterface::Get(const string& key, string* value)
             header.valueSeparatedFlag_ = false;
 
             // Put header to buffer
-            if (use_varint_kv_header == false) {
-                memcpy(buf, &header, header_sz);
-            } else {
-                header_sz = PutKVHeaderVarint(buf, header);
-            }
+            header_sz = PutKVHeaderVarint(buf, header);
             // Put raw value to buffer
             memcpy(buf + header_sz, vLogValue.c_str(), vLogValue.size());
             value_sz = header_sz + vLogValue.size();
@@ -271,11 +255,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(
             char buf[it.valueSize_ + sizeof(header)];
 
             // encode header
-            if (use_varint_kv_header == false) {
-                memcpy(buf, &header, header_sz);
-            } else {
-                header_sz = PutKVHeaderVarint(buf, header);
-            }
+            header_sz = PutKVHeaderVarint(buf, header);
             memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
             value_sz = header_sz + it.valueSize_;
 
@@ -291,11 +271,7 @@ bool LsmTreeInterface::MultiWriteWithBatch(
                 // Reserve enough space. Use sizeof() here
                 char buf[it.valueSize_ + sizeof(header)];
 
-                if (use_varint_kv_header == false) {
-                    memcpy(buf, &header, header_sz);
-                } else {
-                    header_sz = PutKVHeaderVarint(buf, header);
-                }
+                header_sz = PutKVHeaderVarint(buf, header);
                 memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
                 value_sz = header_sz + it.valueSize_;
 
@@ -467,12 +443,8 @@ bool LsmTreeInterface::vLogMultiGetInternal(const vector<string>& keys,
         const string& lsm_value = values_lsm.at(i);
         KvHeader header;
 
-        if (use_varint_kv_header == false) {
-            memcpy(&header, lsm_value.c_str(), header_sz);
-        } else {
-            // change header_sz
-            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
-        }
+        // change header_sz
+        header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
 
         if (header.valueSeparatedFlag_ == true) {
             isSeparated[i] = true;
@@ -506,12 +478,8 @@ bool LsmTreeInterface::vLogMultiGetInternal(const vector<string>& keys,
     for (uint64_t i = 0; i < len; i++) {
         const string& lsm_value = values_lsm.at(i);
         KvHeader header;
-        if (use_varint_kv_header == false) {
-            memcpy(&header, lsm_value.c_str(), header_sz);
-        } else {
-            // change header_sz
-            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
-        }
+        // change header_sz
+        header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
 
         if (isSeparated[i] == true) {
             // remaining deltas
@@ -528,11 +496,7 @@ bool LsmTreeInterface::vLogMultiGetInternal(const vector<string>& keys,
             header.valueSeparatedFlag_ = false;
 
             // Put header to buffer
-            if (use_varint_kv_header == false) {
-                memcpy(valueBuffer, &header, header_sz);
-            } else {
-                header_sz = PutKVHeaderVarint(valueBuffer, header);
-            }
+            header_sz = PutKVHeaderVarint(valueBuffer, header);
             memcpy(valueBuffer + header_sz, vLogValue.c_str(), vLogValue.size());
             valueBufferSize = header_sz + vLogValue.size();
 

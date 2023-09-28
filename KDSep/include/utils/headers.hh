@@ -5,7 +5,7 @@
 namespace KDSEP_NAMESPACE {
 
 const bool use_varint_index = true;
-const bool use_varint_kv_header = true;
+//const bool use_varint_kv_header = true;
 const bool use_varint_d_header = true;
 const bool use_sequence_number = true;
 

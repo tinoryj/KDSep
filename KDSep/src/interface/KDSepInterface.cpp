@@ -45,8 +45,8 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
     memory_budget_ = options.memory_budget;
 
     printf("restore lsmTree interface time: %.6lf\n", 
-	    tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
-	    tv.tv_usec / 1000000.0);
+        tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
+        tv.tv_usec / 1000000.0);
 
     write_stall_ = options.write_stall;
 
@@ -83,7 +83,8 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
         thList_.push_back(th);
     }
 
-    if (options.enable_parallel_lsm_interface_ == true) {
+    if (options.enable_parallel_lsm_interface_ == true &&
+        options.enable_deltaStore) {
         enableParallelLsmInterface = true;
         lsm_interface_mq_ = new messageQueue<lsmInterfaceOperationStruct*>;
         boost::thread* th = new boost::thread(attrs, boost::bind(&KDSep::processLsmInterfaceOperationsWorker, this));
@@ -98,7 +99,7 @@ bool KDSep::Open(KDSepOptions& options, const string& name)
                     bucket_manager_, bucket_operator_));
         // create deltaStore related threads
         boost::thread* th;
-	// will not need this later
+    // will not need this later
         th = new boost::thread(attrs,
                 boost::bind(&BucketManager::scheduleMetadataUpdateWorker,
                     bucket_manager_));
@@ -221,7 +222,7 @@ bool KDSep::Close()
 
 bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
     // Do not use deltaStore
-    if (KDSepRunningMode_ == kWithNoDeltaStore || KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
+    if (KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
         string lsm_value;
         bool ret = lsmTreeInterface_.Get(key, &lsm_value);
         if (ret == false) {
@@ -230,9 +231,7 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
         }
 
         size_t header_sz = sizeof(KvHeader);
-        if (use_varint_kv_header == true) {
-            header_sz = GetKVHeaderVarintSize(lsm_value.c_str());
-        }
+        header_sz = GetKVHeaderVarintSize(lsm_value.c_str());
         // simply remove the header and return
         value->assign(lsm_value.substr(header_sz));
         return true;
@@ -282,11 +281,7 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
 
     KvHeader header;
     size_t header_sz = sizeof(KvHeader);
-    if (use_varint_kv_header == false) {
-        memcpy(&header, lsm_value.c_str(), header_sz);
-    } else {
-        header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
-    }
+    header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
 
     if (header.valueSeparatedFlag_ == true) {
         debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
@@ -510,42 +505,55 @@ bool KDSep::Get(const string& key, string* value)
     }
 }
 
-// The correct procedure: (Not considering deleted keys)
+// The correct procedure: 
 // 1. Scan the RocksDB/vLog for keys and values
 // 2. Scan the buffer to check whether some keys are updated
 // 3. Scan delta store to find deltas.
-bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<string>& values) 
+bool KDSep::Scan(const string& startKey, int len, vector<string>& keys,
+    vector<string>& values) 
 {
     scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
     struct timeval tv;
     gettimeofday(&tv, 0);
-    vector<string> lsm_values;
+    vector<string> lsm_keys, lsm_values;
 
     // 1. Scan the RocksDB/vLog for keys and values
-    STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, keys, lsm_values),
-            StatsType::KDS_SCAN_LSM);
+    lsmInterfaceOperationStruct* op = nullptr;
+    if (enableParallelLsmInterface == true) {
+        op = new lsmInterfaceOperationStruct;
+        op->key = startKey;
+        op->scan_len = len;
+        op->mutable_keys_ptr = &lsm_keys;
+        op->valuesPtr = &lsm_values;
+        op->is_write = false;
+        op->job_done = kNotDone;
+        lsm_interface_mq_->push(op);
+    } else {
+        STAT_PROCESS(lsmTreeInterface_.Scan(startKey, len, lsm_keys,
+            lsm_values), StatsType::KDS_SCAN_LSM);
+    }
 
-    if (KDSepRunningMode_ == kWithNoDeltaStore || 
-	    KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
+    if (KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
+        if (op) {
+            while (op->job_done == kNotDone) {
+                asm volatile("");
+            }
+        }
+        keys = lsm_keys;
         StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
-	return true;
+        return true;
     }
 
     // 2. Scan the delta store
-
     bool ret;
-    vector<vector<string>> key_deltas;
-//    debug_error("Start key %s len %d\n", startKey.c_str(), len);
-    STAT_PROCESS(
-    ret = delta_store_->multiGet(keys, key_deltas),
-    StatsType::KDS_SCAN_DS);
+    map<string, string> key_deltas;
 
     if (ret == false) {
-	debug_error("scan in delta store failed: %lu\n", keys.size());
+        debug_error("scan in delta store failed: %lu\n", keys.size());
     }
 
     STAT_PROCESS(
-    MultiGetFullMergeInternal(keys, lsm_values, key_deltas, values), 
+    BatchFullMergeInternal(lsm_keys, lsm_values, key_deltas, len, values), 
     StatsType::KDS_SCAN_FULL_MERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
@@ -561,19 +569,17 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys, vector<s
 }
 
 bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys, 
-	vector<string>& values) 
+    vector<string>& values) 
 {
 //    scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
     struct timeval tv;
     gettimeofday(&tv, 0);
     vector<string> lsm_values;
 
-    if (KDSepRunningMode_ == kWithNoDeltaStore || 
-	    KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
+    if (KDSepRunningMode_ == kBatchedWithNoDeltaStore) {
         StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
-	return true;
+        return true;
     }
-
 
     // 1. Scan the RocksDB/vLog for keys and values
     lsmInterfaceOperationStruct* op = nullptr;
@@ -595,11 +601,11 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
     debug_warn("start%s\n", "");
     STAT_PROCESS(
     ret = delta_store_->multiGet(keys, key_deltas),
-    StatsType::KDS_WRITE_BACK_GET_DS);
+        StatsType::KDS_WRITE_BACK_GET_DS);
     debug_warn("Finish multiGet%s\n", "");
 
     if (ret == false) {
-	debug_error("scan in delta store failed: %lu\n", keys.size());
+    debug_error("scan in delta store failed: %lu\n", keys.size());
     }
 
     if (op != nullptr) {
@@ -630,37 +636,33 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
 }
 
 bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
-	const vector<string>& lsm_values,
-	const vector<vector<string>>& key_deltas,
-	vector<string>& values) {
+    const vector<string>& lsm_values,
+    const vector<vector<string>>& key_deltas,
+    vector<string>& values) {
 
     values.resize(keys.size());
     for (auto i = 0; i < keys.size(); i++) {
-	const string& lsm_value = lsm_values[i];
-	auto& key = keys[i];
+        const string& lsm_value = lsm_values[i];
+        auto& key = keys[i];
 
-	// extract header
+        // extract header
         KvHeader header;
         size_t header_sz = sizeof(KvHeader);
-        if (use_varint_kv_header == false) {
-            memcpy(&header, lsm_value.c_str(), header_sz);
-        } else {
-            header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
-        }
+        header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
 
         if (header.valueSeparatedFlag_ == true) {
             debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
             assert(0);
         }
 
-	// get the raw value
-	str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
-		header.rawValueSize_);
+    // get the raw value
+    str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
+        header.rawValueSize_);
 
-	// check the deltas
+    // check the deltas
         if (key_deltas[i].empty() == true) { 
             values[i].assign(raw_value.data_, raw_value.size_);
-	    continue;
+            continue;
         }
 
         bool mergeOperationStatus;
@@ -668,13 +670,13 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
         int total_d_sz = 0;
         for (auto& it : key_deltas[i]) {
             deltaInStrT.push_back(
-		    str_t(const_cast<char*>(it.data()), it.size()));
+            str_t(const_cast<char*>(it.data()), it.size()));
             total_d_sz += it.size();
         }
 
         STAT_PROCESS(mergeOperationStatus =
-		KDSepMergeOperatorPtr_->Merge(raw_value, deltaInStrT, 
-		    &(values[i])),
+        KDSepMergeOperatorPtr_->Merge(raw_value, deltaInStrT, 
+            &(values[i])),
                 StatsType::KDSep_GET_FULL_MERGE);
 
         if (mergeOperationStatus == false) { 
@@ -682,9 +684,101 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
                     key.c_str());
             return false;
         }
-	// dont do write back
+    // dont do write back
     }
 
+    return true;
+}
+
+str_t KDSep::extractRawLsmValue(const string& lsm_value) {
+    const string& lsm_value = lsm_values[i];
+
+    // extract header
+    KvHeader header;
+    size_t header_sz = sizeof(KvHeader);
+    header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
+
+    if (header.valueSeparatedFlag_ == true) {
+        debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
+        assert(0);
+    }
+
+    // get the raw value
+    str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
+        header.rawValueSize_);
+    return raw_value;
+}
+
+bool KDSep::BatchFullMergeInternal(
+    const vector<string>& lsm_keys,
+    const vector<string>& lsm_values,
+    const map<string, string>& key_deltas,
+    int len,
+    map<string, string>& keys_values) {
+
+    int lsm_i = 0;
+
+    for (auto& it : key_deltas) {
+        if (it.first == lsm_keys[lsm_i]) {
+            // same key
+            auto& key = it.first;
+            str_t raw_value = extractRawLsmValue(lsm_values[lsm_i]);
+
+            vector<str_t> deltaInStrT;
+            deltaInStrT.push_back(
+                str_t(const_cast<char*>(it.second.data()), it.second.size()));
+
+            bool s;
+            str_t merged_delta(nullptr, 0);
+            STAT_PROCESS(s = KDSepMergeOperatorPtr_->Merge(raw_value,
+                    deltaInStrT, &merged_delta),
+                StatsType::KDSep_GET_FULL_MERGE);
+
+            if (s == false) {
+                debug_e("[ERROR] Perform merge operation fail");
+                return false;
+            }
+
+            if (merged_delta.size_ == 0 || merged_delta.data_ == nullptr) {
+                debug_e("[ERROR] merged_delta empty");
+                return false;
+            }
+
+            keys_values[key] = string(merged_delta.data_, merged_delta.size_);
+            lsm_i++;
+        } else if (it.first < lsm_keys[lsm_i]) {
+            // put delta directly 
+            debug_error("non existing key: %s\n", it.first.c_str());
+            auto& key = it.first;
+
+            str_t merged_delta(nullptr, 0);
+            STAT_PROCESS(s = KDSepMergeOperatorPtr_->Merge(
+                    str_t(nullptr, 0), deltaInStrT, &merged_delta),
+                StatsType::KDSep_GET_FULL_MERGE);
+
+            if (s == false) {
+                debug_e("[ERROR] Perform merge operation fail");
+                return false;
+            }
+
+            if (merged_delta.size_ == 0 || merged_delta.data_ == nullptr) {
+                debug_e("[ERROR] merged_delta empty");
+                return false;
+            }
+
+            keys_values[key] = string(merged_delta.data_, merged_delta.size_);
+        } else {
+            // put value directly
+            auto& key = lsm_keys[lsm_i]; 
+            str_t raw_value = extractRawLsmValue(lsm_values[lsm_i]);
+            keys_values[key] = string(raw_value.data_, raw_value.size_);
+            lsm_i++;
+        }
+        len--;
+        if (len == 0) {
+            break;
+        }
+    }
     return true;
 }
 
@@ -834,55 +928,55 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     // read from buffer
     for (int i = 0; i < keys.size(); i++) {
         gettimeofday(&tv, 0);
-	auto& key = keys[i];
-	need_write_back[i] = true;
-	needMergeWithInBufferOperationsFlag[i] = false;
+    auto& key = keys[i];
+    need_write_back[i] = true;
+    needMergeWithInBufferOperationsFlag[i] = false;
 
-	if (enable_write_buffer_ == false) {
-	    break;
-	}
-	
-	// try read from buffer first;
-	if (buffer_in_process_ == true) {
-	    debug_trace("Wait for batched buffer process%s\n", "");
-	    while (buffer_in_process_ == true) {
-		asm volatile("");
-	    }
-	}
+    if (enable_write_buffer_ == false) {
+        break;
+    }
+    
+    // try read from buffer first;
+    if (buffer_in_process_ == true) {
+        debug_trace("Wait for batched buffer process%s\n", "");
+        while (buffer_in_process_ == true) {
+        asm volatile("");
+        }
+    }
         shared_lock<shared_mutex> r_lock(write_buffer_mtx_);
         StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER,
                 tv);
 
-	gettimeofday(&tv, 0);
-	debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-	char keyBuffer[key.size()];
-	memcpy(keyBuffer, key.c_str(), key.size());
-	str_t currentKey(keyBuffer, key.length());
-	auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
-	if (mapIt != batch_map_[batch_in_use_]->end()) {
-	    struct timeval tv0;
-	    gettimeofday(&tv0, 0);
-	    for (auto queueIt : mapIt->second) {
-		if (queueIt.first == kPutOp) {
-		    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-		    StatsRecorder::getInstance()->timeProcess(
-			    StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
-			    tv);
-		    need_write_back[i] = false;
-		    any_no_need = true;
-		} else {
-		    buf_deltas_strs[i].push_back(string(queueIt.second.valuePtr_,
-				queueIt.second.valueSize_));
-		}
-	    }
-	    if (buf_deltas_strs[i].size() != 0) {
-		needMergeWithInBufferOperationsFlag[i] = true;
-		debug_info("get deltas from unflushed buffer, for key = "
-			"%s, deltas number = %lu\n", key.c_str(),
-			buf_deltas_strs[i].size());
-	    }
-	}
-	StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
+    gettimeofday(&tv, 0);
+    debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
+    char keyBuffer[key.size()];
+    memcpy(keyBuffer, key.c_str(), key.size());
+    str_t currentKey(keyBuffer, key.length());
+    auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
+    if (mapIt != batch_map_[batch_in_use_]->end()) {
+        struct timeval tv0;
+        gettimeofday(&tv0, 0);
+        for (auto queueIt : mapIt->second) {
+        if (queueIt.first == kPutOp) {
+            debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
+            StatsRecorder::getInstance()->timeProcess(
+                StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
+                tv);
+            need_write_back[i] = false;
+            any_no_need = true;
+        } else {
+            buf_deltas_strs[i].push_back(string(queueIt.second.valuePtr_,
+                queueIt.second.valueSize_));
+        }
+        }
+        if (buf_deltas_strs[i].size() != 0) {
+        needMergeWithInBufferOperationsFlag[i] = true;
+        debug_info("get deltas from unflushed buffer, for key = "
+            "%s, deltas number = %lu\n", key.c_str(),
+            buf_deltas_strs[i].size());
+        }
+    }
+    StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
 
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
@@ -894,75 +988,75 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     if (any_no_need == false) {
         STAT_PROCESS(MultiGetInternalForWriteBack(keys, persist_values),
                 KDSep_WRITE_BACK_GET);
-	for (int i = 0; i < keys.size(); i++) {
-	    auto& key = keys[i];
-	    string& tempRawValueStr = persist_values[i];
-	    string newValueStr;
-	    // merge with existing deltas;
+    for (int i = 0; i < keys.size(); i++) {
+        auto& key = keys[i];
+        string& tempRawValueStr = persist_values[i];
+        string newValueStr;
+        // merge with existing deltas;
 
-	    if (needMergeWithInBufferOperationsFlag[i] == true) {
-		STAT_PROCESS(mergeStatus =
-			KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
-			    buf_deltas_strs[i], &newValueStr),
-			StatsType::KDSep_WRITE_BACK_FULL_MERGE);
-		if (mergeStatus == false) {
-		    debug_error("merge failed: key %s raw value size %lu\n",
-			    key.c_str(), tempRawValueStr.size());
-		    exit(1);
-		}
-	    } else {
-		newValueStr.assign(tempRawValueStr);
-	    }
+        if (needMergeWithInBufferOperationsFlag[i] == true) {
+        STAT_PROCESS(mergeStatus =
+            KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
+                buf_deltas_strs[i], &newValueStr),
+            StatsType::KDSep_WRITE_BACK_FULL_MERGE);
+        if (mergeStatus == false) {
+            debug_error("merge failed: key %s raw value size %lu\n",
+                key.c_str(), tempRawValueStr.size());
+            exit(1);
+        }
+        } else {
+        newValueStr.assign(tempRawValueStr);
+        }
 
-	    // put
-	    STAT_PROCESS(ret = PutImpl(key, newValueStr),
-		    StatsType::KDSep_WRITE_BACK_PUT);
-	    if (ret == false) {
-		debug_error("write back failed, key %s\n", key.c_str());
-	    }
-	}
+        // put
+        STAT_PROCESS(ret = PutImpl(key, newValueStr),
+            StatsType::KDSep_WRITE_BACK_PUT);
+        if (ret == false) {
+        debug_error("write back failed, key %s\n", key.c_str());
+        }
+    }
     } else {
-	vector<string> new_keys;
-	for (int i = 0; i < keys.size(); i++) {
-	    if (need_write_back[i]) {
-		new_keys.push_back(keys[i]);
-	    }
-	}
+    vector<string> new_keys;
+    for (int i = 0; i < keys.size(); i++) {
+        if (need_write_back[i]) {
+        new_keys.push_back(keys[i]);
+        }
+    }
         STAT_PROCESS(MultiGetInternalForWriteBack(new_keys, persist_values),
                 KDSep_WRITE_BACK_GET);
-	int new_ki = 0;
-	for (int i = 0; i < keys.size(); i++) {
-	    if (need_write_back[i] == false) {
-		continue;
-	    }
+    int new_ki = 0;
+    for (int i = 0; i < keys.size(); i++) {
+        if (need_write_back[i] == false) {
+        continue;
+        }
 
-	    auto& key = keys[i];
-	    string& tempRawValueStr = persist_values[new_ki];
-	    string newValueStr;
+        auto& key = keys[i];
+        string& tempRawValueStr = persist_values[new_ki];
+        string newValueStr;
 
-	    if (needMergeWithInBufferOperationsFlag[i] == true) {
-		STAT_PROCESS(mergeStatus =
-			KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
-			    buf_deltas_strs[i], &newValueStr),
-			StatsType::KDSep_WRITE_BACK_FULL_MERGE);
-		if (mergeStatus == false) {
-		    debug_error("merge failed: key %s raw value size %lu\n",
-			    key.c_str(), tempRawValueStr.size());
-		    exit(1);
-		}
-	    } else {
-		newValueStr.assign(tempRawValueStr);
-	    }
+        if (needMergeWithInBufferOperationsFlag[i] == true) {
+        STAT_PROCESS(mergeStatus =
+            KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
+                buf_deltas_strs[i], &newValueStr),
+            StatsType::KDSep_WRITE_BACK_FULL_MERGE);
+        if (mergeStatus == false) {
+            debug_error("merge failed: key %s raw value size %lu\n",
+                key.c_str(), tempRawValueStr.size());
+            exit(1);
+        }
+        } else {
+        newValueStr.assign(tempRawValueStr);
+        }
 
-	    // put
-	    STAT_PROCESS(ret = PutImpl(key, newValueStr),
-		    StatsType::KDSep_WRITE_BACK_PUT);
-	    if (ret == false) {
-		debug_error("write back failed, key %s\n", key.c_str());
-	    }
-	
-	    new_ki++;
-	}
+        // put
+        STAT_PROCESS(ret = PutImpl(key, newValueStr),
+            StatsType::KDSep_WRITE_BACK_PUT);
+        if (ret == false) {
+        debug_error("write back failed, key %s\n", key.c_str());
+        }
+    
+        new_ki++;
+    }
     }
 
     return ret;
@@ -1052,7 +1146,7 @@ bool KDSep::PutWithWriteBatch(mempoolHandler_t obj)
 bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
 {
     debug_info("[MergeOp] key = %s, sequence number = %u\n",
-	    string(obj.keyPtr_, obj.keySize_).c_str(), obj.seq_num);
+        string(obj.keyPtr_, obj.keySize_).c_str(), obj.seq_num);
     if (obj.isAnchorFlag_ == true) {
         debug_error("[ERROR] merge operation should has no anchor flag%s\n", "");
     }
@@ -1321,11 +1415,7 @@ void KDSep::processBatchedOperationsWorker()
                         char buf[it.valueSize_ + sizeof(KvHeader)];
                         size_t header_sz = sizeof(KvHeader);
 
-                        if (use_varint_kv_header == false) {
-                            memcpy(buf, &header, header_sz);
-                        } else {
-                            header_sz = PutKVHeaderVarint(buf, header);
-                        }
+                        header_sz = PutKVHeaderVarint(buf, header);
                         memcpy(buf + header_sz, it.valuePtr_, it.valueSize_);
 
                         rocksdb::Slice newKey(it.keyPtr_, it.keySize_);
@@ -1334,8 +1424,8 @@ void KDSep::processBatchedOperationsWorker()
                     }
                 }
 
-		bool placeholder = false;
-		bool lsmTreeInterfaceStatus =
+        bool placeholder = false;
+        bool lsmTreeInterfaceStatus =
                     lsmTreeInterface_.MultiWriteWithBatch(
                             pending_kvs, &mergeBatch, placeholder);
 
@@ -1371,8 +1461,8 @@ void KDSep::processBatchedOperationsWorker()
 
                 // LSM interface
                 struct lsmInterfaceOperationStruct* op = nullptr;
-		bool vlog_need_post_update = false;
-		bool ds_need_post_update = false;
+        bool vlog_need_post_update = false;
+        bool ds_need_post_update = false;
                 bool ds_need_flush = false;
                 bool two_phase_write = 
                     enable_crash_consistency_ && !pending_kvs.empty();
@@ -1383,31 +1473,31 @@ void KDSep::processBatchedOperationsWorker()
                     op->handlerToValueStoreVecPtr = &pending_kvs;
                     op->is_write = true;
                     op->job_done = kNotDone;
-		    op->need_post_update_ptr = &vlog_need_post_update;
+                    op->need_post_update_ptr = &vlog_need_post_update;
                     lsm_interface_mq_->push(op);
                 } else {
                     STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
-				pending_kvs, &mergeBatch,
-				vlog_need_post_update), 
+                pending_kvs, &mergeBatch,
+                vlog_need_post_update), 
                             StatsType::KDS_FLUSH_LSM_INTERFACE);
                 }
 
                 // DeltaStore interface
 
-		// any value to write, then we need to 
-		if (two_phase_write) {
+        // any value to write, then we need to 
+        if (two_phase_write) {
                     putToDeltaStoreStatus = delta_store_->putCommitLog(pending_kds, ds_need_flush);
                     if (pending_kds.size() > 0) {
                         ds_need_post_update = true;
                     }
-		} else {
+        } else {
                     // directly multiput
-		    STAT_PROCESS(
-		    putToDeltaStoreStatus =
-		    delta_store_->multiPut(pending_kds, 
+            STAT_PROCESS(
+            putToDeltaStoreStatus =
+            delta_store_->multiPut(pending_kds, 
                         true /* arbitrary */, true), 
-			StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
-		}
+            StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
+        }
                 if (putToDeltaStoreStatus == false) {
                     debug_error("[ERROR] could not put %zu object into delta store,"
                             " as well as not separated object number = %zu\n", 
@@ -1419,7 +1509,7 @@ void KDSep::processBatchedOperationsWorker()
                 if (op != nullptr) {
 //                    lsm_interface_cv.notify_one();
                     while (op->job_done == kNotDone) {
-			asm volatile("");
+            asm volatile("");
                     }
                     if (op->job_done == kError) {
                         debug_error("lsmInterfaceOp error %s\n", ""); 
@@ -1440,7 +1530,7 @@ void KDSep::processBatchedOperationsWorker()
                 // Step 5. update the delta stop
                 if (two_phase_write) {
                     bool s;
-		    STAT_PROCESS(
+            STAT_PROCESS(
                     s = delta_store_->multiPut(pending_kds, ds_need_flush,
                             false),
                     StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
@@ -1543,8 +1633,8 @@ void KDSep::processLsmInterfaceOperationsWorker()
 {
     lsmInterfaceOperationStruct* op;
     while (true) {
-	if (lsm_interface_mq_->done == true &&
-		lsm_interface_mq_->isEmpty() == true) {
+        if (lsm_interface_mq_->done == true &&
+            lsm_interface_mq_->isEmpty() == true) {
             break;
         }
 
@@ -1552,19 +1642,23 @@ void KDSep::processLsmInterfaceOperationsWorker()
             struct timeval tv;
             gettimeofday(&tv, 0);
             if (op->is_write == false) {
-                if (op->keysPtr == nullptr) {
-                    STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value),
-                            StatsType::KDS_LSM_INTERFACE_GET); 
-                } else {
+                if (op->keysPtr != nullptr) {
                     STAT_PROCESS(lsmTreeInterface_.MultiGet(*op->keysPtr,
                                 *op->valuesPtr),
                             StatsType::KDS_WRITE_BACK_GET_LSM);
+                } else if (op->mutable_keys_ptr != nullptr) {
+                    STAT_PROCESS(lsmTreeInterface_.Scan(
+                        op->key, op->scan_len, *op->mutable_keys_ptr,
+                        *op->valuesPtr), StatsType::KDS_SCAN_LSM);
+                } else {
+                    STAT_PROCESS(lsmTreeInterface_.Get(op->key, op->value),
+                            StatsType::KDS_LSM_INTERFACE_GET);
                 }
             } else {
-		STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
-			    *(op->handlerToValueStoreVecPtr),
-			    op->mergeBatch, *op->need_post_update_ptr), 
-                            StatsType::KDS_FLUSH_LSM_INTERFACE);
+                STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
+                                 *(op->handlerToValueStoreVecPtr),
+                                 op->mergeBatch, *op->need_post_update_ptr),
+                    StatsType::KDS_FLUSH_LSM_INTERFACE);
             }
             StatsRecorder::getInstance()->timeProcess(StatsType::KDS_LSM_INTERFACE_OP, tv);
             op->job_done = kDone;
@@ -1575,7 +1669,7 @@ void KDSep::processLsmInterfaceOperationsWorker()
 
 void KDSep::Recovery() {
     if (delta_store_ != nullptr) {
-	delta_store_->Recovery();
+    delta_store_->Recovery();
     }
 }
 
@@ -1602,11 +1696,7 @@ bool KDSep::extractDeltas(string lsm_value, uint64_t skipSize,
     size_t header_sz = sizeof(KvHeader);
     while (value_i != internalValueSize) {
         KvHeader header;
-        if (use_varint_kv_header == false) {
-            memcpy(&header, lsm_value.c_str() + value_i, sizeof(KvHeader));
-        } else {
-            header = GetKVHeaderVarint(lsm_value.c_str() + value_i, header_sz);
-        }
+        header = GetKVHeaderVarint(lsm_value.c_str() + value_i, header_sz);
         value_i += header_sz;
         if (header.mergeFlag_ == true) {
             debug_error("[ERROR] Find new value index in merge operand list,"
