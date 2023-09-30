@@ -59,10 +59,15 @@ private:
 
     bool PutImpl(const string& key, const string& value);
     bool GetInternal(const string& key, string* value, bool writing_back);
+
+    str_t extractRawLsmValue(const string& lsm_value); 
     bool MultiGetFullMergeInternal(const vector<string>& keys,
 	const vector<string>& lsm_values,
 	const vector<vector<string>>& key_deltas,
 	vector<string>& values); 
+    bool BatchFullMergeInternal(const vector<string>& lsm_keys, 
+            const vector<string>& lsm_values, const map<string, string>&
+            key_deltas, int len, map<string, string>& keys_values); 
 
     bool MultiGetInternalForWriteBack(const vector<string>& keys,
             vector<string>& values); 

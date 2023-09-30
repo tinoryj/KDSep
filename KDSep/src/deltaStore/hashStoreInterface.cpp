@@ -478,7 +478,9 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     }
     }
 
-    STAT_PROCESS(ret = file_manager_->getFileHandlerWithKeySimplified((char*)keyStr.c_str(), keyStr.size(), kGet, tempFileHandler, false), StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
+    STAT_PROCESS(ret = file_manager_->getBucketWithKey(keyStr, kGet,
+                tempFileHandler, false),
+            StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
     if (ret != true) {
         valueStrVec.clear();
         return false;
@@ -553,8 +555,8 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
         if (get_result[i] == false) {
         // get the file handlers in parallel
             STAT_PROCESS(ret = 
-                    file_manager_->getFileHandlerWithKeySimplified(keys[i].data(),
-                        keys[i].size(), kMultiGet, buckets[i], false),
+                    file_manager_->getBucketWithKey(keys[i], kMultiGet,
+                        buckets[i], false),
                     StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
             if (ret == false) {
                 debug_error("Get handler error for key %s\n", keys[i].c_str());
@@ -660,17 +662,17 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
     return true;
 }
 
-bool HashStoreInterface::Scan(const string& key, int len,
-    map<string, vector<string>>& keys_values)
+bool HashStoreInterface::scan(const string& key, int len, 
+        map<string, string>& keys_values)
 {
     // skip the cache, directly read the bucket
     string cur_key = key;
 
     BucketHandler* bucket;
+    bool ret;
 
     STAT_PROCESS(ret =
-    file_manager_->getBucketWithKey((char*)cur_key.c_str(),
-        cur_key.size(), kGet, bucket, false),
+    file_manager_->getBucketWithKey(cur_key, kGet, bucket, false),
     StatsType::KDSep_HASHSTORE_GET_FILE_HANDLER);
 
     // No bucket. Next one 
@@ -684,12 +686,12 @@ bool HashStoreInterface::Scan(const string& key, int len,
         ret = file_operator_->directlyScanOperation(bucket, key, len,
             keys_values);
         if (ret == false) {
-            debug_error("failed %s\n", keyStr.c_str());
+            debug_error("failed %s\n", key.c_str());
             exit(1);
         }
         return ret;
     } else {
-        tempFileHandler->ownership = 0;
+        bucket->ownership = 0;
         return true;
     }
 }

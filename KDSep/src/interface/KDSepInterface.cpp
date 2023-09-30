@@ -548,12 +548,16 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys,
     bool ret;
     map<string, string> key_deltas;
 
+    delta_store_->scan(startKey, len, key_deltas);
+
     if (ret == false) {
         debug_error("scan in delta store failed: %lu\n", keys.size());
     }
 
+    map<string, string> keys_values;
+
     STAT_PROCESS(
-    BatchFullMergeInternal(lsm_keys, lsm_values, key_deltas, len, values), 
+    BatchFullMergeInternal(lsm_keys, lsm_values, key_deltas, len, keys_values), 
     StatsType::KDS_SCAN_FULL_MERGE);
 
 //    fprintf(stderr, "Start key %s len %d\n", startKey.c_str(), len);
@@ -691,16 +695,15 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
 }
 
 str_t KDSep::extractRawLsmValue(const string& lsm_value) {
-    const string& lsm_value = lsm_values[i];
-
     // extract header
     KvHeader header;
     size_t header_sz = sizeof(KvHeader);
     header = GetKVHeaderVarint(lsm_value.c_str(), header_sz);
 
     if (header.valueSeparatedFlag_ == true) {
-        debug_error("[ERROR] value separated but not retrieved %s\n", key.c_str());
-        assert(0);
+        debug_error("value separated but not retrieved, len %lu\n",
+                lsm_value.size());
+        exit(1);
     }
 
     // get the raw value
@@ -729,9 +732,9 @@ bool KDSep::BatchFullMergeInternal(
                 str_t(const_cast<char*>(it.second.data()), it.second.size()));
 
             bool s;
-            str_t merged_delta(nullptr, 0);
+            string merged_value;
             STAT_PROCESS(s = KDSepMergeOperatorPtr_->Merge(raw_value,
-                    deltaInStrT, &merged_delta),
+                    deltaInStrT, &merged_value),
                 StatsType::KDSep_GET_FULL_MERGE);
 
             if (s == false) {
@@ -739,21 +742,26 @@ bool KDSep::BatchFullMergeInternal(
                 return false;
             }
 
-            if (merged_delta.size_ == 0 || merged_delta.data_ == nullptr) {
-                debug_e("[ERROR] merged_delta empty");
+            if (merged_value.empty()) {
+                debug_e("[ERROR] merged_value empty");
                 return false;
             }
 
-            keys_values[key] = string(merged_delta.data_, merged_delta.size_);
+            keys_values[key] = merged_value;
             lsm_i++;
         } else if (it.first < lsm_keys[lsm_i]) {
             // put delta directly 
             debug_error("non existing key: %s\n", it.first.c_str());
             auto& key = it.first;
 
-            str_t merged_delta(nullptr, 0);
+            string merged_value;
+            bool s;
+            vector<str_t> deltaInStrT;
+            deltaInStrT.push_back(
+                str_t(const_cast<char*>(it.second.data()), it.second.size()));
+
             STAT_PROCESS(s = KDSepMergeOperatorPtr_->Merge(
-                    str_t(nullptr, 0), deltaInStrT, &merged_delta),
+                    str_t(nullptr, 0), deltaInStrT, &merged_value),
                 StatsType::KDSep_GET_FULL_MERGE);
 
             if (s == false) {
@@ -761,12 +769,12 @@ bool KDSep::BatchFullMergeInternal(
                 return false;
             }
 
-            if (merged_delta.size_ == 0 || merged_delta.data_ == nullptr) {
-                debug_e("[ERROR] merged_delta empty");
+            if (merged_value.empty()) {
+                debug_e("[ERROR] merged_value empty");
                 return false;
             }
 
-            keys_values[key] = string(merged_delta.data_, merged_delta.size_);
+            keys_values[key] = merged_value;
         } else {
             // put value directly
             auto& key = lsm_keys[lsm_i]; 

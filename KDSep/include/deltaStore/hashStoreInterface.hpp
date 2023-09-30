@@ -31,6 +31,7 @@ public:
     bool get(const string& keyStr, vector<string>& valueStrVecPtr);
     bool get(const string& keyStr, vector<string>& valueStrVec, vector<KDRecordHeader>& recordVec);
     bool multiGet(const vector<string>& keyStrVec, vector<vector<string>>& valueStrVecVecPtr);
+    bool scan(const string& key, int len, map<string, string>& keys_values);
     bool wrapUpGC(uint64_t& num_bucket_pushed);
     bool setJobDone();
     bool Recovery();

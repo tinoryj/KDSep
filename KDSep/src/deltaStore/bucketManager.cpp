@@ -1111,18 +1111,14 @@ bool BucketManager::CloseHashStoreFileMetaDataList()
     return true;
 }
 
-bool BucketManager::getBucketWithKey(const char* keyBuffer, 
-        uint32_t keySize, deltaStoreOperationType op_type,
+bool BucketManager::getBucketWithKey(const string& key, 
+        deltaStoreOperationType op_type,
         BucketHandler*& bucket, bool getForAnchorWriting) {
-    struct timeval tv;
-    string key(keyBuffer, keySize);
-
-    getBucketHandlerInternal(key, op_type, bucket, false);
-    return true;
+    return getBucketHandlerInternal(key, op_type, bucket, false);
 }
 
 bool BucketManager::getNextBucketWithKey(const string& key, BucketHandler*& bucket) {
-    getBucketHandlerInternal(key, kGet, bucket, true);
+    return getBucketHandlerInternal(key, kGet, bucket, true);
 }
 
 bool BucketManager::getBucketHandlerInternal(const string& key, 

@@ -246,8 +246,8 @@ bool BucketOperator::readAndProcessWholeFile(
     kd_lists.clear();
 
     if (s == false) {
-        debug_error("[ERROR] Could not read from file for key list %lu\n",
-                keys->size());
+        debug_error("[ERROR] Could not read from file bucket id %lu\n",
+                bucket->file_id);
         exit(1);
     }
 
@@ -681,9 +681,9 @@ uint64_t BucketOperator::processReadContentToValueLists(
             i += header.value_size_;
         } else {
             // is an anchor, clean all KD pairs for this key
-            if (kd_list.count(currentKey)) {
-                kd_list.at(currentKey).clear();
-                kd_list.erase(currentKey);
+            if (kd_lists.count(currentKey)) {
+                kd_lists.at(currentKey).clear();
+                kd_lists.erase(currentKey);
             }
         }
     }
@@ -933,8 +933,8 @@ bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl, bool& gc_pushed
 
 bool BucketOperator::operationFind(deltaStoreOpHandler* op_hdl) {
     auto obj = op_hdl->object;
-    bool status = bucket_manager_->getFileHandlerWithKeySimplified(
-            obj->keyPtr_, obj->keySize_, kMultiPut, op_hdl->bucket,
+    bool status = bucket_manager_->getBucketWithKey(
+            string(obj->keyPtr_, obj->keySize_), kMultiPut, op_hdl->bucket,
             obj->isAnchorFlag_);
 
     if (status == false) {
@@ -1228,7 +1228,7 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
 }
 
 bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
-	string key, int len, vector<pair<string, string>>& keys_values) {
+	string key, int len, map<string, string>& keys_values) {
 
     string cur_key = key;
     BucketHandler* prev_bucket = nullptr;
@@ -1271,13 +1271,13 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
             str_t merged_delta(nullptr, 0);
             if (deltas.size() > 0) {
                 KDSepMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
-                keys_values.push_back(make_pair(
-                    string(it.first.data(), it.first.size()),
-                    string(merged_delta.data_, merged_delta.size_)));
+                keys_values[string(it.first.data(), it.first.size())] =
+                    string(merged_delta.data_, merged_delta.size_);
             }
 
             if (kd_cache_ != nullptr) {
-                updateKDCache(it.first.data(), it.first.size(), merged_delta);
+                updateKDCache(const_cast<char*>(it.first.data()),
+                        it.first.size(), merged_delta);
             }
         }
 
@@ -1289,16 +1289,17 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
 
         if (len) {
             cur_key = (keys_values.empty()) ? cur_key :
-                keys_values.back().first;
+                (--keys_values.end())->first;
             // TODO a bug: if the bucket does not have the key, it will go into
             // a dead loop
             prev_bucket = bucket;
             bucket_manager_->getNextBucketWithKey(cur_key, bucket);
             if (prev_bucket == bucket) {
-                debug_e("[ERROR] Exit because of empty bucket\n");
+                debug_error("[ERROR] Exit because of empty bucket %s len %d\n",
+                        cur_key.c_str(), len);
                 return false;
             } else if (bucket == nullptr) {
-                debug_e("[ERROR] Exit because of going to the end, len %d\n",
+                debug_error("Exit because of going to the end, len %d\n",
                     len);
                 return true;
             }

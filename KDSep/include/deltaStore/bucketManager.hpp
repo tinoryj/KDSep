@@ -24,8 +24,7 @@ public:
     BucketManager& operator=(const BucketManager&) = delete;
 
     // file operations
-    bool getBucketWithKey(const char* keyBuffer, 
-            uint32_t keySize, deltaStoreOperationType op_type,
+    bool getBucketWithKey(const string& key, deltaStoreOperationType op_type,
             BucketHandler*& bucket, bool getForAnchorWriting = false); 
     bool getNextBucketWithKey(const string& key, BucketHandler*& bucket);
     uint64_t getNumOfBuckets();
