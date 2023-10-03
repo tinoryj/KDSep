@@ -237,6 +237,7 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
         return true;
     }
 
+    debug_info("GetInternal: %s\n", key.c_str());
     tryTuneCache();
 
     // do not have metadata
@@ -265,7 +266,7 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
     ret = false;
     STAT_PROCESS(ret = delta_store_->get(key, deltasFromDeltaStoreVec), StatsType::DS_GET);
     if (ret != true) {
-        debug_trace("Read external deltaStore fault, key = %s\n", key.c_str());
+        debug_error("Read external deltaStore fault, key = %s\n", key.c_str());
         return false;
     }
 
@@ -289,7 +290,7 @@ bool KDSep::GetInternal(const string& key, string* value, bool writing_back) {
     }
 
     str_t raw_value(lsm_value.data() + header_sz, header.rawValueSize_);
-    
+
     if (deltasFromDeltaStoreVec.empty() == true) { 
         value->assign(raw_value.data_, raw_value.size_);
         return true;
@@ -609,7 +610,7 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
     debug_warn("Finish multiGet%s\n", "");
 
     if (ret == false) {
-    debug_error("scan in delta store failed: %lu\n", keys.size());
+        debug_error("scan in delta store failed: %lu\n", keys.size());
     }
 
     if (op != nullptr) {
@@ -639,6 +640,7 @@ bool KDSep::MultiGetInternalForWriteBack(const vector<string>& keys,
     return true;
 }
 
+// results do not have headers
 bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
     const vector<string>& lsm_values,
     const vector<vector<string>>& key_deltas,
@@ -659,11 +661,12 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
             assert(0);
         }
 
-    // get the raw value
-    str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
-        header.rawValueSize_);
+        // get the raw value
+        str_t raw_value(const_cast<char*>(lsm_value.data()) + header_sz,
+                header.rawValueSize_);
 
-    // check the deltas
+
+        // check the deltas
         if (key_deltas[i].empty() == true) { 
             values[i].assign(raw_value.data_, raw_value.size_);
             continue;
@@ -683,12 +686,13 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
             &(values[i])),
                 StatsType::KDSep_GET_FULL_MERGE);
 
+
         if (mergeOperationStatus == false) { 
             debug_error("[ERROR] Perform merge operation fail, key = %s\n",
                     key.c_str());
             return false;
         }
-    // dont do write back
+        // dont do write back
     }
 
     return true;
@@ -839,86 +843,6 @@ bool KDSep::Merge(const string& key, const string& value)
     }
 }
 
-bool KDSep::GetCurrentValueThenWriteBack(const string& key)
-{
-    scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
-
-    vector<string> buf_deltas_str;
-    bool needMergeWithInBufferOperationsFlag = false;
-
-    struct timeval tvAll;
-    gettimeofday(&tvAll, 0);
-    if (enable_write_buffer_ == true) {
-        // try read from buffer first;
-        if (buffer_in_process_ == true) {
-            debug_trace("Wait for batched buffer process%s\n", "");
-            while (buffer_in_process_ == true) {
-                asm volatile("");
-            }
-        }
-        shared_lock<shared_mutex> r_lock(write_buffer_mtx_);
-        StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER, tvAll);
-        struct timeval tv;
-        gettimeofday(&tv, 0);
-        debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-        char keyBuffer[key.size()];
-        memcpy(keyBuffer, key.c_str(), key.size());
-        str_t currentKey(keyBuffer, key.length());
-        auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
-        if (mapIt != batch_map_[batch_in_use_]->end()) {
-            struct timeval tv0;
-            gettimeofday(&tv0, 0);
-            for (auto queueIt : mapIt->second) {
-                if (queueIt.first == kPutOp) {
-                    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-                    StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
-                    return true;
-                } else {
-                    buf_deltas_str.push_back(string(queueIt.second.valuePtr_, queueIt.second.valueSize_));
-                }
-            }
-            if (buf_deltas_str.size() != 0) {
-                needMergeWithInBufferOperationsFlag = true;
-                debug_info("get deltas from unflushed buffer, for key = %s, deltas number = %lu\n", key.c_str(), buf_deltas_str.size());
-            }
-        }
-        StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
-    }
-    StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
-    // get content from underlying DB
-    string newValueStr;
-    string tempRawValueStr;
-    bool getNewValueStrSuccessFlag;
-    STAT_PROCESS(getNewValueStrSuccessFlag = GetInternal(key, &tempRawValueStr, true), StatsType::KDSep_WRITE_BACK_GET);
-    bool mergeStatus;
-    if (getNewValueStrSuccessFlag) { 
-        if (needMergeWithInBufferOperationsFlag == true) {
-            STAT_PROCESS(mergeStatus = KDSepMergeOperatorPtr_->Merge(tempRawValueStr, buf_deltas_str, &newValueStr), StatsType::KDSep_WRITE_BACK_FULL_MERGE);
-            if (mergeStatus == false) {
-                debug_error("merge failed: key %s raw value size %lu\n", key.c_str(), tempRawValueStr.size());
-                exit(1);
-            }
-        } else {
-            newValueStr.assign(tempRawValueStr);
-        }
-    }
-
-    if (getNewValueStrSuccessFlag == false) {
-        debug_error("Could not get current value, skip write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
-        return false;
-    }
-
-    debug_warn("Get current value done, start write back, key = %s, value = %s\n", key.c_str(), newValueStr.c_str());
-
-    bool ret;
-    STAT_PROCESS(ret = PutImpl(key, newValueStr), StatsType::KDSep_WRITE_BACK_PUT);
-    if (ret == false) {
-        debug_error("write back failed, key %s\n", key.c_str());
-    }
-
-    return ret;
-}
-
 bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
 {
     scoped_lock<shared_mutex> w_lock(KDSepOperationsMtx_);
@@ -936,55 +860,55 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     // read from buffer
     for (int i = 0; i < keys.size(); i++) {
         gettimeofday(&tv, 0);
-    auto& key = keys[i];
-    need_write_back[i] = true;
-    needMergeWithInBufferOperationsFlag[i] = false;
+        auto& key = keys[i];
+        need_write_back[i] = true;
+        needMergeWithInBufferOperationsFlag[i] = false;
 
-    if (enable_write_buffer_ == false) {
-        break;
-    }
-    
-    // try read from buffer first;
-    if (buffer_in_process_ == true) {
-        debug_trace("Wait for batched buffer process%s\n", "");
-        while (buffer_in_process_ == true) {
-        asm volatile("");
+        if (enable_write_buffer_ == false) {
+            break;
         }
-    }
+
+        // try read from buffer first;
+        if (buffer_in_process_ == true) {
+            debug_trace("Wait for batched buffer process%s\n", "");
+            while (buffer_in_process_ == true) {
+                asm volatile("");
+            }
+        }
         shared_lock<shared_mutex> r_lock(write_buffer_mtx_);
         StatsRecorder::staticProcess(StatsType::KDSep_WRITE_BACK_WAIT_BUFFER,
                 tv);
 
-    gettimeofday(&tv, 0);
-    debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
-    char keyBuffer[key.size()];
-    memcpy(keyBuffer, key.c_str(), key.size());
-    str_t currentKey(keyBuffer, key.length());
-    auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
-    if (mapIt != batch_map_[batch_in_use_]->end()) {
-        struct timeval tv0;
-        gettimeofday(&tv0, 0);
-        for (auto queueIt : mapIt->second) {
-        if (queueIt.first == kPutOp) {
-            debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
-            StatsRecorder::getInstance()->timeProcess(
-                StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
-                tv);
-            need_write_back[i] = false;
-            any_no_need = true;
-        } else {
-            buf_deltas_strs[i].push_back(string(queueIt.second.valuePtr_,
-                queueIt.second.valueSize_));
+        gettimeofday(&tv, 0);
+        debug_info("try read from unflushed buffer for key = %s\n", key.c_str());
+        char keyBuffer[key.size()];
+        memcpy(keyBuffer, key.c_str(), key.size());
+        str_t currentKey(keyBuffer, key.length());
+        auto mapIt = batch_map_[batch_in_use_]->find(currentKey);
+        if (mapIt != batch_map_[batch_in_use_]->end()) {
+            struct timeval tv0;
+            gettimeofday(&tv0, 0);
+            for (auto queueIt : mapIt->second) {
+                if (queueIt.first == kPutOp) {
+                    debug_info("Get current value in write buffer, skip write back, key = %s\n", key.c_str());
+                    StatsRecorder::getInstance()->timeProcess(
+                            StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER,
+                            tv);
+                    need_write_back[i] = false;
+                    any_no_need = true;
+                } else {
+                    buf_deltas_strs[i].push_back(string(queueIt.second.valuePtr_,
+                                queueIt.second.valueSize_));
+                }
+            }
+            if (buf_deltas_strs[i].size() != 0) {
+                needMergeWithInBufferOperationsFlag[i] = true;
+                debug_info("get deltas from unflushed buffer, for key = "
+                        "%s, deltas number = %lu\n", key.c_str(),
+                        buf_deltas_strs[i].size());
+            }
         }
-        }
-        if (buf_deltas_strs[i].size() != 0) {
-        needMergeWithInBufferOperationsFlag[i] = true;
-        debug_info("get deltas from unflushed buffer, for key = "
-            "%s, deltas number = %lu\n", key.c_str(),
-            buf_deltas_strs[i].size());
-        }
-    }
-    StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
+        StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_NO_WAIT_BUFFER, tv);
     }
 
     StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_WRITE_BACK_CHECK_BUFFER, tvAll);
@@ -996,75 +920,75 @@ bool KDSep::GetCurrentValuesThenWriteBack(const vector<string>& keys)
     if (any_no_need == false) {
         STAT_PROCESS(MultiGetInternalForWriteBack(keys, persist_values),
                 KDSep_WRITE_BACK_GET);
-    for (int i = 0; i < keys.size(); i++) {
-        auto& key = keys[i];
-        string& tempRawValueStr = persist_values[i];
-        string newValueStr;
-        // merge with existing deltas;
+        for (int i = 0; i < keys.size(); i++) {
+            auto& key = keys[i];
+            string& tempRawValueStr = persist_values[i];
+            string newValueStr;
+            // merge with existing deltas;
 
-        if (needMergeWithInBufferOperationsFlag[i] == true) {
-        STAT_PROCESS(mergeStatus =
-            KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
-                buf_deltas_strs[i], &newValueStr),
-            StatsType::KDSep_WRITE_BACK_FULL_MERGE);
-        if (mergeStatus == false) {
-            debug_error("merge failed: key %s raw value size %lu\n",
-                key.c_str(), tempRawValueStr.size());
-            exit(1);
-        }
-        } else {
-        newValueStr.assign(tempRawValueStr);
-        }
+            if (needMergeWithInBufferOperationsFlag[i] == true) {
+                STAT_PROCESS(mergeStatus =
+                        KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
+                            buf_deltas_strs[i], &newValueStr),
+                        StatsType::KDSep_WRITE_BACK_FULL_MERGE);
+                if (mergeStatus == false) {
+                    debug_error("merge failed: key %s raw value size %lu\n",
+                            key.c_str(), tempRawValueStr.size());
+                    exit(1);
+                }
+            } else {
+                newValueStr.assign(tempRawValueStr);
+            }
 
-        // put
-        STAT_PROCESS(ret = PutImpl(key, newValueStr),
-            StatsType::KDSep_WRITE_BACK_PUT);
-        if (ret == false) {
-        debug_error("write back failed, key %s\n", key.c_str());
+            // put
+            STAT_PROCESS(ret = PutImpl(key, newValueStr),
+                StatsType::KDSep_WRITE_BACK_PUT);
+            if (ret == false) {
+                debug_error("write back failed, key %s\n", key.c_str());
+            }
         }
-    }
     } else {
-    vector<string> new_keys;
-    for (int i = 0; i < keys.size(); i++) {
-        if (need_write_back[i]) {
-        new_keys.push_back(keys[i]);
+        vector<string> new_keys;
+        for (int i = 0; i < keys.size(); i++) {
+            if (need_write_back[i]) {
+                new_keys.push_back(keys[i]);
+            }
         }
-    }
         STAT_PROCESS(MultiGetInternalForWriteBack(new_keys, persist_values),
                 KDSep_WRITE_BACK_GET);
-    int new_ki = 0;
-    for (int i = 0; i < keys.size(); i++) {
-        if (need_write_back[i] == false) {
-        continue;
-        }
+        int new_ki = 0;
+        for (int i = 0; i < keys.size(); i++) {
+            if (need_write_back[i] == false) {
+                continue;
+            }
 
-        auto& key = keys[i];
-        string& tempRawValueStr = persist_values[new_ki];
-        string newValueStr;
+            auto& key = keys[i];
+            string& tempRawValueStr = persist_values[new_ki];
+            string newValueStr;
 
-        if (needMergeWithInBufferOperationsFlag[i] == true) {
-        STAT_PROCESS(mergeStatus =
-            KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
-                buf_deltas_strs[i], &newValueStr),
-            StatsType::KDSep_WRITE_BACK_FULL_MERGE);
-        if (mergeStatus == false) {
-            debug_error("merge failed: key %s raw value size %lu\n",
-                key.c_str(), tempRawValueStr.size());
-            exit(1);
-        }
-        } else {
-        newValueStr.assign(tempRawValueStr);
-        }
+            if (needMergeWithInBufferOperationsFlag[i] == true) {
+                STAT_PROCESS(mergeStatus =
+                        KDSepMergeOperatorPtr_->Merge(tempRawValueStr,
+                            buf_deltas_strs[i], &newValueStr),
+                        StatsType::KDSep_WRITE_BACK_FULL_MERGE);
+                if (mergeStatus == false) {
+                    debug_error("merge failed: key %s raw value size %lu\n",
+                            key.c_str(), tempRawValueStr.size());
+                    exit(1);
+                }
+            } else {
+                newValueStr.assign(tempRawValueStr);
+            }
 
-        // put
-        STAT_PROCESS(ret = PutImpl(key, newValueStr),
-            StatsType::KDSep_WRITE_BACK_PUT);
-        if (ret == false) {
-        debug_error("write back failed, key %s\n", key.c_str());
+            // put
+            STAT_PROCESS(ret = PutImpl(key, newValueStr),
+                    StatsType::KDSep_WRITE_BACK_PUT);
+            if (ret == false) {
+                debug_error("write back failed, key %s\n", key.c_str());
+            }
+
+            new_ki++;
         }
-    
-        new_ki++;
-    }
     }
 
     return ret;
@@ -1190,7 +1114,6 @@ bool KDSep::MergeWithWriteBatch(mempoolHandler_t obj)
         vec.push_back(make_pair(kMergeOp, obj));
         batch_nums_[batch_in_use_]++;
         batch_sizes_[batch_in_use_] += obj.keySize_ + obj.valueSize_;
-
 
         // remove some deltas in it.
         if (vec.size() > 10) {
@@ -1600,6 +1523,7 @@ void KDSep::processWriteBackOperationsWorker()
         gettimeofday(&tv, 0);
         while (write_back_queue_->pop(objs)) {
             int i = 0;
+//            debug_error("write back %zu objects\n", objs->size());
             while (i < objs->size()) {
                 for (; objs_to_delete.size() < write_back_batch_size && 
                         i < objs->size(); i++) {

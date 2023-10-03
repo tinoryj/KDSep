@@ -124,6 +124,10 @@ bool IndexStoreInterface::multiGet(const vector<string>& keyStrVec, int numKeys,
 //        get(keyStrVec[i], locs[i], values[i]);
 //    }
     kvServer_->getRangeValuesDecoupled(keyStrVec, numKeys, locs, values); 
+    // remove the sequence number!
+    for (int i = 0; i < values.size(); i++) {
+        values[i] = values[i].substr(sizeof(uint32_t));
+    }
     return true;
 }
 

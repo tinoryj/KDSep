@@ -170,7 +170,8 @@ bool LsmTreeInterface::Get(const string& key, string* value)
         rocksdb::Status rocksDBStatus;
         string lsm_value;
         STAT_PROCESS(
-                rocksDBStatus = rocksdb_->Get(rocksdb::ReadOptions(), key, &lsm_value), StatsType::KDSep_GET_ROCKSDB);
+                rocksDBStatus = rocksdb_->Get(rocksdb::ReadOptions(), key,
+                    &lsm_value), StatsType::KDSep_GET_ROCKSDB);
         if (!rocksDBStatus.ok()) {
             debug_error("[ERROR] Read underlying rocksdb with raw value fault, key = %s, status = %s\n", key.c_str(), rocksDBStatus.ToString().c_str());
             return false;
@@ -193,7 +194,8 @@ bool LsmTreeInterface::Get(const string& key, string* value)
                 vLogIndex = GetVlogIndexVarint(lsm_value.data() +
                     header_sz, index_sz);
             }
-            STAT_PROCESS(vlog_->get(key, vLogIndex, &vLogValue), StatsType::KDSep_GET_INDEXSTORE);
+            STAT_PROCESS(vlog_->get(key, vLogIndex, &vLogValue),
+                    StatsType::KDSep_GET_INDEXSTORE);
 
             // remaining deltas
             string remainingDeltas = lsm_value.substr(header_sz + index_sz);  
@@ -471,7 +473,7 @@ bool LsmTreeInterface::vLogMultiGetInternal(const vector<string>& keys,
         }
     }
 
-    vlog_->multiGet(separated_keys, len, vLogIndices, vLogValues);
+    vlog_->multiGet(separated_keys, separated_cnt, vLogIndices, vLogValues);
 
     separated_cnt = 0;
     values.clear();

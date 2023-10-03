@@ -10,7 +10,7 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr,
         shared_ptr<BucketManager> bucketManager)
 {
     perFileFlushBufferSizeLimit_ = options->deltaStore_bucket_flush_buffer_size_limit_;
-    perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
+    perFileGCSizeLimit_ = options->deltaStore_gc_threshold * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         workerThreads_.reset(new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_));

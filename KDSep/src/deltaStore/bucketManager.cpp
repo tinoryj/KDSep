@@ -25,10 +25,10 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     if (options->kd_cache != nullptr) {
         kd_cache_ = options->kd_cache;
     } 
-    singleFileGCTriggerSize_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
     maxBucketSize_ = options->deltaStore_bucket_size_;
+    gc_threshold_ = options->deltaStore_gc_threshold * maxBucketSize_;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
-    debug_info("[Message]: singleFileGCTriggerSize_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", singleFileGCTriggerSize_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
+    debug_info("[Message]: gc_threshold_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", gc_threshold_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
     manifest_ = new ManifestManager(workingDirStr);
     enable_write_back_ = (options->write_back_queue.get() != nullptr);
     if (enable_write_back_) {
@@ -41,10 +41,10 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     enable_gc_ = options->enable_bucket_gc;
     enable_crash_consistency_ = options->enable_crash_consistency;
     if (options->enable_bucket_split) {
-        singleFileSplitGCTriggerSize_ =
-            options->deltaStore_gc_split_threshold_ * maxBucketSize_;
+        split_threshold_ = options->deltaStore_gc_split_threshold_ *
+            maxBucketSize_;
     } else {
-        singleFileSplitGCTriggerSize_ = maxBucketSize_;
+        split_threshold_ = maxBucketSize_;
     }
 //    prefix_tree_ = new SkipListForBuckets(maxBucketNumber_);
     prefix_tree_.init(maxBucketNumber_);
@@ -1596,7 +1596,7 @@ bool BucketManager::singleFileRewrite(
 //    bucket_id_to_delete_.push_back(old_id);
 //    bucket_delete_mtx_.unlock();
     // check if after rewrite, file size still exceed threshold, mark as no GC.
-    if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
+    if (bucket->DiskAndBufferSizeExceeds(gc_threshold_)) {
         if (write_stall_ != nullptr) {
             auto objs = new vector<writeBackObject*>;
             objs->resize(gcResultMap.size());
@@ -1766,7 +1766,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
     startKeys.push_back(string(it->first.data_, it->first.size_));
 
     int size_ratio = (int)ceil((double)target_size / maxBucketSize_);
-    if (enable_gc_ && singleFileSplitGCTriggerSize_ != maxBucketSize_) {
+    if (enable_gc_ && split_threshold_ != maxBucketSize_) {
         if (size_ratio > 10) {
             // split to 5% of capacity
             debug_error("target_size %lu, maxBucketSize_ %lu, size_ratio %d\n", 
@@ -2412,7 +2412,7 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
     StatsRecorder::staticProcess(StatsType::GC_SELECT_MERGE_SELECT_MERGE, tv);
     gettimeofday(&tv, 0);
 
-    uint64_t sel_threshold = singleFileGCTriggerSize_;
+    uint64_t sel_threshold = gc_threshold_;
     BucketHandler* sel_hdl1, *sel_hdl2;
     sel_hdl1 = sel_hdl2 = nullptr;
 
@@ -2526,9 +2526,13 @@ bool BucketManager::selectFileForMerge(uint64_t targetFileIDForSplit,
 bool BucketManager::pushObjectsToWriteBackQueue(
         vector<writeBackObject*>* targetWriteBackVec) 
 {
-    if (enable_write_back_ && !write_back_queue_->done) {
-        write_back_queue_->push(targetWriteBackVec);  
-        write_back_cv_->notify_one();
+    if (!targetWriteBackVec->empty()) {
+        if (enable_write_back_ && !write_back_queue_->done) {
+            write_back_queue_->push(targetWriteBackVec);  
+            write_back_cv_->notify_one();
+        }
+    } else {
+        delete targetWriteBackVec;
     }
     return true;
 }
@@ -2660,7 +2664,8 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
         }
 
         if (enable_write_back_ == true) {
-            debug_info("key = %s has %lu deltas\n", keyIt.first.data_, keyIt.second.first.size());
+//            debug_info("key = %.*s has %lu deltas\n", (int)keyIt.first.size_,
+//                    keyIt.first.data_, keyIt.second.first.size());
             if ((keyIt.second.first.size() > gcWriteBackDeltaNum_ && gcWriteBackDeltaNum_ != 0) ||
                     (total_kd_size > gcWriteBackDeltaSize_ && gcWriteBackDeltaSize_ != 0)) {
                 fileContainsReWriteKeysFlag = true;
@@ -2724,8 +2729,8 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
     }
 
     // perform split into two buckets via extend prefix bit (+1)
-    if (targetSizeWithHeader <= singleFileSplitGCTriggerSize_) {
-        debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first, targetSizeWithHeader, singleFileSplitGCTriggerSize_);
+    if (targetSizeWithHeader <= split_threshold_) {
+        debug_info("File ID = %lu, total contains object number = %lu, should keep object number = %lu, reclaim empty space success, start re-write, target file size = %lu, split threshold = %lu\n", bucket->file_id, remainObjectNumberPair.second, remainObjectNumberPair.first, targetSizeWithHeader, split_threshold_);
         StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_WORKER_GC_BEFORE_REWRITE, tv);
         STAT_PROCESS(singleFileRewrite(bucket, gcResultMap, targetSizeWithHeader, fileContainsReWriteKeysFlag), StatsType::REWRITE);
         bucket->ownership = 0;
@@ -2816,7 +2821,7 @@ bool BucketManager::wrapUpGC(uint64_t& wrap_up_gc_num)
         if (bucket->gc_status == kShouldDelete) {
             continue;
         } else {
-            if (bucket->DiskAndBufferSizeExceeds(singleFileGCTriggerSize_)) {
+            if (bucket->DiskAndBufferSizeExceeds(gc_threshold_)) {
                 pushToGCQueue(bucket); 
                 wrap_up_gc_num++;
             }

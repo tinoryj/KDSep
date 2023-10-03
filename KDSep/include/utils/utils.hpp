@@ -50,6 +50,21 @@ unsigned long long inline timevalToMicros(struct timeval& res) {
     return res.tv_sec * 1000000ull + res.tv_usec;
 }
 
+inline void printValueString(const string& value) {
+    for (int i = 0; i < value.size(); i++) {
+        auto c = value[i];
+        if (!isdigit(c) && !isalpha(c) && c != ',') {
+            fprintf(stderr, "[%d]", (int)c);
+        } else {
+            fprintf(stderr, "%c", c); 
+        }
+        if (i % 160 == 159) {
+            fprintf(stderr, "\n");
+        }
+    }
+    fprintf(stderr, "\n");
+}
+
 size_t getRss(); 
 size_t getRssNoTrim(); 
 // should add "inline" unless there are link errors

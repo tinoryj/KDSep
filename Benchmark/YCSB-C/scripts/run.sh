@@ -105,12 +105,12 @@ log_db_status() {
     output_file=tmpappend
     rm -rf $output_file
     echo "-------- smallest deltas ---------" >>$output_file
-    ls -lt $DBPath | grep "delta" | sort -n -k5 | head >>$output_file
+    ls -lt $DBPath | grep "bucket" | sort -n -k5 | head >>$output_file
     echo "-------- largest deltas ----------" >>$output_file
-    ls -lt $DBPath | grep "delta" | sort -n -k5 | tail >>$output_file
+    ls -lt $DBPath | grep "bucket" | sort -n -k5 | tail >>$output_file
     echo "-------- delta sizes and counts --" >>$output_file
-    ls -lt $DBPath | grep "delta" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
-    ls -lt $DBPath | grep "delta" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "bucket" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
+    ls -lt $DBPath | grep "bucket" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >>$output_file
@@ -173,10 +173,6 @@ DB_Working_Path="./working"
 DB_Loaded_Path="./loaded"
     DB_Working_Path="/mnt/sn640/KDSepanonymous/working"
     DB_Loaded_Path="/mnt/sn640/KDSepanonymous"
-    DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
-    DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
-#    DB_Working_Path="/mnt/data/KDSepanonymous/working"
-#    DB_Loaded_Path="/mnt/data/KDSepanonymous"
     if [[ ! -d /mnt/sn640/ ]]; then
         DB_Working_Path="/mnt/ramdisk/KDSepanonymous/working"
         DB_Loaded_Path="/mnt/ramdisk/KDSepanonymous"
@@ -194,6 +190,7 @@ kdcache=0
 workerThreadNumber=8
 gcThreadNumber=2
 ds_split_thres=0.8
+ds_gc_thres=0.9
 batchSize=2 # In MiB
 batchSizeK=0
 scanThreads=16
@@ -327,6 +324,12 @@ for param in $*; do
         if [[ "$tmp" != "$ds_split_thres" ]]; then
             ds_split_thres=$(echo $param | sed 's/splitThres//g')
             run_suffix=${run_suffix}_sp${tmp}
+        fi
+    elif [[ "$param" =~ ^gcThres[0-9.]+$ ]]; then
+        tmp=$(echo $param | sed 's/gcThres//g')
+        if [[ "$tmp" != "$ds_gc_thres" && "$havekd" == "true" ]]; then
+            ds_gc_thres=$(echo $param | sed 's/gcThres//g')
+            run_suffix=${run_suffix}_${param}
         fi
     elif [[ "$param" =~ ^workerT[0-9]+$ ]]; then
         tmp=$(echo $param | sed 's/workerT//g')
@@ -474,6 +477,7 @@ if [[ "$usekd" == "true" || "$usebkvkd" == "true" || "$usekvkd" == "true" ]]; th
     sed -i "/ds_gc_thread_number_limit/c\\ds_gc_thread_number_limit = $gcThreadNumber" temp.ini
 
     sed -i "/ds_split_thres/c\\ds_split_thres = $ds_split_thres" temp.ini
+    sed -i "/ds_gc_thres/c\\ds_gc_thres = $ds_gc_thres" temp.ini
     sed -i "/ds_bucket_size/c\\ds_bucket_size = $bucketSize" temp.ini
 fi
 

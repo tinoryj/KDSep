@@ -307,7 +307,7 @@ bool FileOperation::cleanFile() {
     }
     ret = pwrite(fd_, zeroBuffer, max_size_, start_offset_);
     if (ret != max_size_) {
-        debug_error("[ERROR] pwrite failed: %d %s ret %lu\n", errno,
+        debug_error("[ERROR] pwrite failed: %d %s ret %d\n", errno,
                 strerror(errno), ret);
         throw std::runtime_error("exception");
     }
@@ -575,13 +575,13 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
             // write to the offset start_offset_ + disk_size_
             if (actual_disk_write_size + disk_size_ > max_size_ ||
                     start_offset_ % max_size_ > 0) {
-                debug_error("write too much: %lu + %lu > %lu\n",
+                debug_error("write too much: %d + %lu > %lu\n",
                         actual_disk_write_size, disk_size_,
                         max_size_);
                 throw std::runtime_error("exception");
             }
             if (debug_flag_) {
-                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %d\n",
                         __LINE__, __func__, this, 
                         start_offset_ + disk_size_, actual_disk_write_size);
             }
@@ -634,13 +634,13 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
             gettimeofday(&tv, 0);
             if (actual_disk_write_size + disk_size_ > max_size_ ||
                     start_offset_ % max_size_ > 0) {
-                debug_error("write too much: %lu + %lu > %lu\n",
+                debug_error("write too much: %d + %lu > %lu\n",
                         actual_disk_write_size, disk_size_,
                         max_size_);
                 throw std::runtime_error("exception");
             }
             if (debug_flag_) {
-                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %d\n",
                         __LINE__, __func__, this, 
                         start_offset_ + disk_size_, actual_disk_write_size);
             }
@@ -757,13 +757,13 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             gettimeofday(&tv, 0);
             if (actual_disk_write_size + disk_size_ > max_size_ || 
                     start_offset_ % max_size_ > 0) {
-                debug_error("write too much: %lu + %lu > %lu\n",
+                debug_error("write too much: %d + %lu > %lu\n",
                         actual_disk_write_size, disk_size_,
                         max_size_);
                 throw std::runtime_error("exception");
             }
             if (debug_flag_) {
-                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %lu\n",
+                fprintf(stdout, "[%d %s] %p pwrite offset %lu left %d\n",
                         __LINE__, __func__, this, 
                         start_offset_ + disk_size_, actual_disk_write_size);
             }

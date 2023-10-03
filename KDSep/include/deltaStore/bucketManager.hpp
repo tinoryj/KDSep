@@ -68,10 +68,10 @@ private:
     // settings
     uint64_t initialTrieBitNumber_ = 0;
     uint64_t maxBucketNumber_ = 0;
-    uint64_t singleFileGCTriggerSize_ = 0;
+    uint64_t gc_threshold_ = 0;
     uint64_t singleFileMergeGCUpperBoundSize_ = 0;
     uint64_t maxBucketSize_ = 0;
-    uint64_t singleFileSplitGCTriggerSize_ = 0;
+    uint64_t split_threshold_ = 0;
     std::string working_dir_;
     fileOperationType fileOperationMethod_ = kFstream;
     uint64_t operationCounterForMetadataCommit_ = 0;

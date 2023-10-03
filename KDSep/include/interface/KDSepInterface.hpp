@@ -73,7 +73,6 @@ private:
             vector<string>& values); 
     bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
-    bool GetCurrentValueThenWriteBack(const string& key);
     bool GetCurrentValuesThenWriteBack(const vector<string>& keys);
 //    bool GetFromBuffer(const string& key, vector<string>& values);
 

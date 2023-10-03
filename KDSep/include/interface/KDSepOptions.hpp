@@ -53,7 +53,7 @@ public:
     uint64_t deltaStore_gc_worker_thread_number_limit_ = 1;
     uint64_t deltaStore_bucket_flush_buffer_size_limit_ = 4096;
     uint64_t deltaStore_operationNumberForForcedSingleFileGCThreshold_ = 50;
-    float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.9;
+    float deltaStore_gc_threshold = 0.9;
     float deltaStore_gc_split_threshold_ = 0.8;
     uint64_t deltaStore_write_back_during_reads_threshold = 0;
     uint64_t deltaStore_write_back_during_reads_size_threshold = 0;

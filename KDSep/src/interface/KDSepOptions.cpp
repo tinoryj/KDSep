@@ -29,7 +29,7 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "\tdeltaStore_total_storage_maximum_size = " << deltaStore_total_storage_maximum_size << endl;
         dumpOptionsOutStream << "\tdeltaStore_worker_thread_number_limit = " << deltaStore_op_worker_thread_number_limit_ << endl;
         dumpOptionsOutStream << "\tdeltaStore_gc_thread_number_limit = " << deltaStore_gc_worker_thread_number_limit_ << endl;
-        dumpOptionsOutStream << "\tdeltaStore_garbage_collection_start_single_file_minimum_occupancy = " << deltaStore_garbage_collection_start_single_file_minimum_occupancy << endl;
+        dumpOptionsOutStream << "\tdeltaStore_gc_threshold = " << deltaStore_gc_threshold << endl;
     }
     if (enable_valueStore == true) {
         dumpOptionsOutStream << "ValueStore options:" << endl;

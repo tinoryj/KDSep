@@ -210,6 +210,7 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
             options_.enable_bucket_split = config.getEnableBucketSplit();
             options_.enable_bucket_merge = config.getEnableBucketMerge();
             options_.deltaStore_gc_split_threshold_ = config.getDeltaStoreSplitGCThreshold();
+            options_.deltaStore_gc_threshold = config.getDeltaStoreGCThreshold();
         } else {
             options_.enable_bucket_gc = false;
         }
