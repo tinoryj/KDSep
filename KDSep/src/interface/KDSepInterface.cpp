@@ -1355,8 +1355,8 @@ void KDSep::processBatchedOperationsWorker()
                     }
                 }
 
-        bool placeholder = false;
-        bool lsmTreeInterfaceStatus =
+                bool placeholder = false;
+                bool lsmTreeInterfaceStatus =
                     lsmTreeInterface_.MultiWriteWithBatch(
                             pending_kvs, &mergeBatch, placeholder);
 
@@ -1392,8 +1392,8 @@ void KDSep::processBatchedOperationsWorker()
 
                 // LSM interface
                 struct lsmInterfaceOperationStruct* op = nullptr;
-        bool vlog_need_post_update = false;
-        bool ds_need_post_update = false;
+                bool vlog_need_post_update = false;
+                bool ds_need_post_update = false;
                 bool ds_need_flush = false;
                 bool two_phase_write = 
                     enable_crash_consistency_ && !pending_kvs.empty();
@@ -1408,8 +1408,8 @@ void KDSep::processBatchedOperationsWorker()
                     lsm_interface_mq_->push(op);
                 } else {
                     STAT_PROCESS(lsmTreeInterface_.MultiWriteWithBatch(
-                pending_kvs, &mergeBatch,
-                vlog_need_post_update), 
+                                pending_kvs, &mergeBatch,
+                                vlog_need_post_update), 
                             StatsType::KDS_FLUSH_LSM_INTERFACE);
                 }
 
