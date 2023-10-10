@@ -1297,12 +1297,17 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
             if (prev_bucket == bucket) {
                 debug_error("[ERROR] Exit because of empty bucket %s len %d\n",
                         cur_key.c_str(), len);
-                return false;
+                prev_bucket->ownership = 0;
+                return true;
             } else if (bucket == nullptr) {
                 debug_error("Exit because of going to the end, len %d\n",
                     len);
                 return true;
+            } else {
+                debug_e("ok - two different buckets");
             }
+        } else {
+            break;
         }
     }
     return true;

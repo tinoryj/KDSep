@@ -57,6 +57,7 @@ class ExternDBConfig {
     double blobgcforce_;
     bool enable_gc_write_stall_;
     bool test_recovery_;
+    uint64_t test_final_scan_ops_;
 
     struct {
         uint64_t level;
@@ -108,6 +109,7 @@ class ExternDBConfig {
         enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
+        test_final_scan_ops_ = pt_.get<uint64_t>("config.test_final_scan_ops", 0);
 	test_recovery_ = pt_.get<bool>("debug.test_recovery", false);
     }
 
@@ -251,6 +253,12 @@ class ExternDBConfig {
     }
     bool getTestRecovery() {
         return test_recovery_;
+    }
+    bool getUseFinalScan() {
+        return test_final_scan_ops_ > 0;
+    }
+    uint64_t getFinalScanOps() {
+        return test_final_scan_ops_;
     }
     double getBlobGCForce() {
         return blobgcforce_;

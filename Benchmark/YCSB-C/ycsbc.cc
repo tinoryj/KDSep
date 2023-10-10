@@ -88,6 +88,8 @@ bool StrStartWith(const char* str, const char* pre);
 string ParseCommandLine(int argc, const char* argv[], utils::Properties& props);
 double ops_time[6] = {0.0};
 long ops_cnt[6] = {0};
+bool final_scan = false;
+uint64_t final_scan_ops = 20000;  // 1000000;
 
 int DelegateClient(ycsbc::YCSBDB* db, ycsbc::CoreWorkload* wl, const int num_ops,
                    bool is_loading, std::map<ycsbc::Operation, shared_ptr<utils::Histogram>>& histogram) {
@@ -101,9 +103,7 @@ int DelegateClient(ycsbc::YCSBDB* db, ycsbc::CoreWorkload* wl, const int num_ops
     int processLabel_base = num_ops / 100;
     struct timeval tv;
     int output_base = 200;
-    bool final_scan = false;          // (num_ops == 101 * 1000000);
     double duration_scan_start = 0;
-    uint64_t final_scan_ops = 20000;  // 1000000;
     for (int i = 0; i < num_ops; ++i) {
         gettimeofday(&tv, 0);
         timer.Start();
@@ -119,8 +119,10 @@ int DelegateClient(ycsbc::YCSBDB* db, ycsbc::CoreWorkload* wl, const int num_ops
         }
         if (final_scan && num_ops - i == final_scan_ops) {
             duration_scan_start = timerStart.End();
-            std::cerr << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << std::endl;
-            std::cout << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << std::endl;
+            std::cerr << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << 
+                " ops = " << i << std::endl;
+            std::cout << "\nset to scan: duration: " << duration_scan_start / 1000000.0 << 
+                " ops = " << i << std::endl;
             client.SetFinalScan();
             output_base = 200;
         }
@@ -175,8 +177,10 @@ int DelegateClient(ycsbc::YCSBDB* db, ycsbc::CoreWorkload* wl, const int num_ops
 
     std::cout << "resident " << KDSEP_NAMESPACE::getRss() / 1024.0 / 1024.0 << " GiB" << std::endl;
     if (duration_scan_start > 0.0) {
-        duration_scan_start = timerStart.End() - duration_scan_start;
-        std::cout << "\nscan throughput: " << final_scan_ops / (duration_scan_start / 1000000.0) << std::endl;
+        auto scan_time = timerStart.End() - duration_scan_start;
+        std::cout << "\nscan throughput: " << final_scan_ops / (scan_time / 1000000.0) << std::endl;
+        std::cout << "\nscan ops: " << final_scan_ops << std::endl;
+        std::cout << "\nscan time: " << scan_time / 1000000.0 << std::endl;
     }
     db->Close();
     return oks;
@@ -213,6 +217,11 @@ int main(const int argc, const char* argv[]) {
         fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery / 1000000.0);
         KDSEP_NAMESPACE::StatsRecorder::DestroyInstance();
         exit(0);
+    }
+
+    if (config.getUseFinalScan()) {
+        final_scan = true;
+        final_scan_ops = config.getFinalScanOps();
     }
 
     vector<future<int>> actual_ops;

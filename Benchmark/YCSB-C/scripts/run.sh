@@ -228,6 +228,7 @@ up2x="false"
 crash="false"
 crashTime=3600
 recovery="false"
+finalScan="0"
 
 sstsz=16
 memtable=64
@@ -270,10 +271,12 @@ for param in $*; do
         echo "Param error: $param"
         exit
     elif [[ "$param" =~ ^req[0-9]+[mMkK]*$ ]]; then # req10m
-        num=$(echo $param | sed 's/req//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
+        num=$(echo $param | sed 's/req//g' | sed 's/m/000000/g' \
+                | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
         KVPairsNumber=$num
     elif [[ "$param" =~ ^op[0-9]+[mMkK]*$ ]]; then
-        num=$(echo $param | sed 's/op//g' | sed 's/m/000000/g' | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
+        num=$(echo $param | sed 's/op//g' | sed 's/m/000000/g' \
+                | sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
         OperationsNumber=$num
     elif [[ "$param" =~ ^fc[0-9]+$ ]]; then
         num=$(echo $param | sed 's/fc//g')
@@ -344,13 +347,13 @@ for param in $*; do
         tmp=$(echo $param | sed 's/batchSize//g')
         if [[ "$tmp" != "$batchSize" ]]; then
             batchSize=$tmp
-            run_suffix=${run_suffix}_bs${tmp}M
+            run_suffix=${run_suffix}_buf${tmp}M
         fi
     elif [[ "$param" =~ ^batchSize[0-9]+K$ ]]; then
         tmp=$(echo $param | sed 's/batchSize//g' | sed 's/K//g')
         if [[ "$tmp" != "$batchSizeK" ]]; then
             batchSizeK=$tmp
-            run_suffix=${run_suffix}_bs${tmp}K
+            run_suffix=${run_suffix}_buf${tmp}K
         fi
     elif [[ "$param" =~ ^round[0-9]+$ ]]; then
         MAXRunTimes=$(echo $param | sed 's/round//g')
@@ -456,6 +459,13 @@ for param in $*; do
     elif [[ "$param" == "recovery" ]]; then
         recovery="true"
         run_suffix=${run_suffix}_recovery
+    elif [[ "$param" =~ ^finalScan[0-9]+[mMkK]*$ ]]; then # req10m
+        tmp=$(echo $param | sed 's/finalScan//g' | sed 's/m/000000/g' |\
+                sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
+        if [[ $tmp -ne $finalScan ]]; then
+            finalScan=$tmp
+            run_suffix=${run_suffix}_$param
+        fi
     elif [[ "$param" =~ ^crash[0-9]+$ ]]; then
         crash="true"
         crashTime=$(echo $param | sed 's/crash//g')
@@ -490,6 +500,7 @@ sed -i "/blockCache/c\\blockCache = $cacheSize" temp.ini
 sed -i "/blobCacheSize/c\\blobCacheSize = ${blobCacheSize}" temp.ini
 sed -i "/numThreads/c\\numThreads = ${RocksDBThreadNumber}" temp.ini
 sed -i "/blobgcforce/c\\blobgcforce = ${blobgcforce}" temp.ini
+sed -i "/test_final_scan_ops/c\\test_final_scan_ops = ${finalScan}" temp.ini
 #totCacheSize=$(((${kvCacheSize} + $kdcache + $cacheSize + $blobCacheSize) / 1024 / 1024))
 #run_suffix=${run_suffix}_tc${totCacheSize}
 

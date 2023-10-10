@@ -12,12 +12,14 @@ func() {
             if [[ "$runMode" == "raw" ]]; then
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize \
-                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit} \
-                    sst${sst} memtable${memtable} l1sz${l1sz}
+                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} \
+                    sst${sst} memtable${memtable} l1sz${l1sz} finalScan${finalScan}
             elif [[ "$runMode" == "bkv" ]]; then
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize \
-                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit}
+                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} finalScan${finalScan}
             elif [[ "$runMode" == "bkvkd" ]]; then
                 if [[ "$ratio" == "1" ]]; then
                     bucketNumber=1024 
@@ -26,11 +28,14 @@ func() {
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize kdcache${kdcacheSize} \
                     workerT$works bn$bucketNumber splitThres${splitThres} \
-                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit}
+                    gcThres$gcThres \
+                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} finalScan${finalScan}
             elif [[ "$runMode" == "kv" ]]; then
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize \
-                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit}
+                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} finalScan${finalScan}
             elif [[ "$runMode" == "kvkd" ]]; then
                 if [[ "$ratio" == "1" ]]; then
                     bucketNumber=1024 
@@ -39,7 +44,9 @@ func() {
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize kdcache${kdcacheSize} \
                     workerT$works bn$bucketNumber batchSize${batchSize} splitThres${splitThres} \
-                    readRatio$ratio Exp$ExpName zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit} 
+                    gcThres$gcThres \
+                    readRatio$ratio Exp$ExpName zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} finalScan${finalScan}
             elif [[ "$runMode" == "kd" ]]; then
                 if [[ "$ratio" == "1" ]]; then
                     bucketNumber=1024 
@@ -48,7 +55,9 @@ func() {
                 scripts/run.sh $runMode req${req} op${op} fc${fcl} fl${flength} \
                     cache$cacheSize kdcache${kdcacheSize} \
                     workerT$works bn$bucketNumber splitThres${splitThres} \
-                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} ${bonus2} ${bonus5} ${bonus4} ${initBit}
+                    gcThres$gcThres \
+                    readRatio$ratio Exp$ExpName batchSize${batchSize} zipf${zipf} ${bonus} \
+                    ${bonus2} ${bonus5} ${bonus4} ${initBit} finalScan${finalScan}
             fi
         done
     done
