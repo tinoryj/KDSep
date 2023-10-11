@@ -25,15 +25,8 @@ HashStoreInterface::HashStoreInterface(KDSepOptions* options,
 
     file_manager_ = bucketManager;
     file_operator_ = bucketOperator;
-    file_manager_->recoverBucketTable();
 //    unordered_map<string, vector<pair<bool, string>>> targetListForRedo;
 //    file_manager_->recoveryFromFailureOld(targetListForRedo);
-    
-    if (enable_parallel_get_hdl_) {
-        printf("enable parallel get hdl\n");
-    } else {
-        printf("disable parallel get hdl\n");
-    }
 }
 
 HashStoreInterface::~HashStoreInterface()
@@ -76,7 +69,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     file_manager_->readCommitLog(read_buf, read_buf_size);
 
     if (read_buf == nullptr) {
-    return true;
+        return true;
     }
 
     uint64_t i = 0;
@@ -114,7 +107,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
             continue;
         }
 
-    key = str_t(read_buf + i, header.key_size_);
+        key = str_t(read_buf + i, header.key_size_);
         string_view value(nullptr, 0);
 
         i += header.key_size_;
@@ -152,7 +145,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     gettimeofday(&tv, 0);
 
     if (i > read_buf_size) {
-    debug_error("i too large: %lu %lu\n", i, read_buf_size);
+        debug_error("i too large: %lu %lu\n", i, read_buf_size);
     }
     debug_error("start retrieve results: %lu\n", find_hdls.size());
 
@@ -162,30 +155,24 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     unordered_map<BucketHandler*, vector<int>> bucket2index;
 
     for (auto i = 0; i < find_hdls.size(); i++) {
-    file_operator_->waitOperationHandlerDone(find_hdls[i], false);
-    auto bucket = find_hdls[i]->bucket;
-    auto& seq_num = find_hdls[i]->object->seq_num;
+        file_operator_->waitOperationHandlerDone(find_hdls[i], false);
+        auto bucket = find_hdls[i]->bucket;
+        auto& seq_num = find_hdls[i]->object->seq_num;
 
-    string_view key_view(find_hdls[i]->object->keyPtr_,
-        find_hdls[i]->object->keySize_);
-//  if (key_view == "user13704398570070748503") {
-//      debug_error("user13704398570070748503 file %lu seq %u fseq %lu\n", 
-//          bucket->file_id, find_hdls[i]->object->seq_num,
-//          bucket->max_seq_num);
-//  }
+        string_view key_view(find_hdls[i]->object->keyPtr_,
+                find_hdls[i]->object->keySize_);
 
+        if (bucket == nullptr || bucket->max_seq_num >= seq_num) {
+            continue;
+        }
 
-    if (bucket == nullptr || bucket->max_seq_num >= seq_num) {
-        continue;
-    }
-
-    if (bucket2index.find(bucket) != bucket2index.end()) {
-        bucket2index.at(bucket).push_back(i);
-    } else {
-        vector<int> indexVec;
-        indexVec.push_back(i);
-        bucket2index.insert(make_pair(bucket, indexVec));
-    }
+        if (bucket2index.find(bucket) != bucket2index.end()) {
+            bucket2index.at(bucket).push_back(i);
+        } else {
+            vector<int> indexVec;
+            indexVec.push_back(i);
+            bucket2index.insert(make_pair(bucket, indexVec));
+        }
     }
 
 
@@ -198,32 +185,32 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     write_hdls.resize(bucket2index.size());
 
     for (auto mapIt : bucket2index) {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
+        struct timeval tv;
+        gettimeofday(&tv, 0);
 
-    write_obj_start = write_obj_i;
-    for (auto& index : mapIt.second) {
-        write_objects[write_obj_i++] = *find_hdls[index]->object;
-    }
+        write_obj_start = write_obj_i;
+        for (auto& index : mapIt.second) {
+            write_objects[write_obj_i++] = *find_hdls[index]->object;
+        }
 
-    mapIt.first->markedByMultiPut = false;
+        mapIt.first->markedByMultiPut = false;
 
-    auto write_op_hdl = new deltaStoreOpHandler(mapIt.first);
-    write_op_hdl->multiput_op.objects = write_objects + write_obj_start;
-    write_op_hdl->multiput_op.size = write_obj_i - write_obj_start;
-    write_op_hdl->op_type = kMultiPut;
-    write_op_hdl->need_flush = true; 
+        auto write_op_hdl = new deltaStoreOpHandler(mapIt.first);
+        write_op_hdl->multiput_op.objects = write_objects + write_obj_start;
+        write_op_hdl->multiput_op.size = write_obj_i - write_obj_start;
+        write_op_hdl->op_type = kMultiPut;
+        write_op_hdl->need_flush = true; 
 
-    STAT_PROCESS(file_operator_->putIntoJobQueue(write_op_hdl),
-        StatsType::DS_RECOVERY_PUT_TO_QUEUE_OP);
-    write_hdls[write_op_hdls_i++] = write_op_hdl;
+        STAT_PROCESS(file_operator_->putIntoJobQueue(write_op_hdl),
+            StatsType::DS_RECOVERY_PUT_TO_QUEUE_OP);
+        write_hdls[write_op_hdls_i++] = write_op_hdl;
     }
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_PUT_TO_QUEUE, tv);
 
     gettimeofday(&tv, 0);
     for (auto& it : write_hdls) {
-    file_operator_->waitOperationHandlerDone(it);
+        file_operator_->waitOperationHandlerDone(it);
     }
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_WAIT_HANDLERS, tv);
 
@@ -253,16 +240,16 @@ bool HashStoreInterface::putCommitLog(
 
     need_flush = false;
     if (enable_crash_consistency_ == false) {
-    return true;
+        return true;
     }
 
     // write to the commit log
     bool write_commit_log_status = 
-    file_manager_->writeToCommitLog(objects, need_flush, false);
+        file_manager_->writeToCommitLog(objects, need_flush, false);
     if (write_commit_log_status == false) {
-    debug_error("[ERROR] write to commit log failed: %lu objects\n",
-        objects.size());
-    exit(1);
+        debug_error("[ERROR] write to commit log failed: %lu objects\n",
+                objects.size());
+        exit(1);
     }
 
     return true;
@@ -445,7 +432,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 
         StatsRecorder::staticProcess(StatsType::KDSep_HASHSTORE_SYNC, tv);
 
-    file_manager_->cleanCommitLog();
+        file_manager_->cleanCommitLog();
     }
 
     if (tstatic) {

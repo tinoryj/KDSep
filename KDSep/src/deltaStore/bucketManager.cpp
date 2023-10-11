@@ -26,6 +26,8 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
         kd_cache_ = options->kd_cache;
     } 
     maxBucketSize_ = options->deltaStore_bucket_size_;
+    commit_log_maximum_size_ = options->commit_log_size;
+    commit_log_next_threshold_ = commit_log_maximum_size_ - 32 * 1024 * 1024;
     gc_threshold_ = options->deltaStore_gc_threshold * maxBucketSize_;
     singleFileMergeGCUpperBoundSize_ = maxBucketSize_ * 0.5;
     debug_info("[Message]: gc_threshold_ = %lu, singleFileMergeGCUpperBoundSize_ = %lu, initialTrieBitNumber_ = %lu\n", gc_threshold_, singleFileMergeGCUpperBoundSize_, initialTrieBitNumber_);
@@ -53,23 +55,27 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     singleFileFlushSize_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
     enable_index_block_ = options->enable_index_block;
+    enable_bucket_merge_ = options->enable_bucket_merge;
     write_stall_ = options->write_stall;
     struct timeval tv, tv2;
     gettimeofday(&tv, 0);
-    RetriveHashStoreFileMetaDataList();
+    recoverBucketList();
     gettimeofday(&tv2, 0);
     printf("retrieve metadata list time: %.6lf\n", 
             tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
             tv.tv_usec / 1000000.0);
+
+    recoverBucketTable(); 
 
     // for asio
     gc_threads_.reset(new boost::asio::thread_pool(options->deltaStore_gc_worker_thread_number_limit_));
     // for split/merge in parallel
     extra_threads_.reset(new boost::asio::thread_pool(4));  
     BucketHandler* bucket;
-    createNewInitialBucket(bucket); // the first bucket
+    if (prefix_tree_.size() == 0) {
+        createNewInitialBucket(bucket); // the first bucket
+    }
     num_threads_ = 0;
-    enable_bucket_merge_ = options->enable_bucket_merge;
 }
 
 BucketManager::~BucketManager()
@@ -121,12 +127,12 @@ void BucketManager::OpenBucketFile()
         }
 
         // allocate space
-        uint64_t file_size = (maxBucketNumber_ + 16) * maxBucketSize_;
-        if (fallocate(bucket_fd_, 0, 0, file_size) < 0) {
-            debug_error("fallocate bucket file failed, err %s, continue\n",
-                    strerror(errno));
-//            exit(1);
-        }
+//        uint64_t file_size = (maxBucketNumber_ + 16) * maxBucketSize_;
+//        if (fallocate(bucket_fd_, 0, 0, file_size) < 0) { 
+//            debug_error("fallocate bucket file failed, err %s, continue\n",
+//                    strerror(errno));
+////            exit(1);
+//        }
     }
 }
 
@@ -230,11 +236,14 @@ bool BucketManager::writeToCommitLog(vector<mempoolHandler_t> objects,
     }
 
     if (commit_log_fop_ == nullptr) {
-        commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
+        commit_log_fop_.reset(new FileOperation(fileOperationMethod_,
+                    commit_log_maximum_size_, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
     FileOpStatus status;
+//    debug_error("write and flush file %lu cached size %lu\n", write_i,
+//            commit_log_fop_->getCachedFileSize());
     STAT_PROCESS(status = commit_log_fop_->writeAndFlushFile(write_buf,
                 write_i),
            StatsType::DS_PUT_COMMIT_LOG); 
@@ -269,7 +278,8 @@ bool BucketManager::commitToCommitLog() {
     }
 
     if (commit_log_fop_ == nullptr) {
-        commit_log_fop_.reset(new FileOperation(fileOperationMethod_, 4096, 0));
+        commit_log_fop_.reset(new FileOperation(fileOperationMethod_,
+                    commit_log_maximum_size_, 0));
         commit_log_fop_->createThenOpenFile(working_dir_ + "/commit.log");
     }
 
@@ -420,6 +430,7 @@ void BucketManager::recoverFileMt(BucketHandler* bucket,
 //    }
 
     recoverIndexAndFilter(bucket, read_buf, data_size);
+    delete[] read_buf;
 
     disk_sizes += onDiskFileSize;
     data_sizes += data_size;
@@ -491,7 +502,7 @@ uint64_t BucketManager::recoverIndexAndFilter(
                         bucket->file_id,
                         (int)previous_key.size(), 
                         previous_key.data()); 
-                exit(1);
+                break;
             }
 
             sorted = false;
@@ -499,7 +510,7 @@ uint64_t BucketManager::recoverIndexAndFilter(
             bucket->unsorted_part_offset = i;
             bucket->io_ptr->markDirectDataAddress(i);
 
-    // build index and filter blocks
+            // build index and filter blocks
             if (enable_index_block_) {
                 for (auto i = 0; i < may_sorted_records.size(); i++) {
                     auto& key = may_sorted_records[i].first;
@@ -527,11 +538,6 @@ uint64_t BucketManager::recoverIndexAndFilter(
         str_t key(read_buf + i, header.key_size_);
         string_view key_view(read_buf + i, header.key_size_);
 
-//      if (key_view == "user13704398570070748503") {
-//          debug_error("user13704398570070748503 file %lu seqnum %u\n", 
-//                  bucket->file_id, header.seq_num);
-//      }
-
         // no sorted part if the key is smaller or equal to the previous key
         if (sorted && previous_key.size() > 0 && previous_key >= key_view) {
             // no sorted part
@@ -551,14 +557,6 @@ uint64_t BucketManager::recoverIndexAndFilter(
             bucket->max_seq_num = max(
                 bucket->max_seq_num,
                 (uint64_t)header.seq_num);
-//          if (bucket->file_id == 2295) {
-//              //user13704398570070748503
-//              debug_error("key %.*s file id %lu seq %lu maxseq %lu\n", 
-//                      (int)key.size_, key.data_,
-//                      header.seq_num,
-//                      bucket->file_id,
-//                      bucket->max_seq_num);
-//          }
             if (sorted) {
                 may_sorted_records.push_back(make_pair(key, header));
             } else {
@@ -615,7 +613,7 @@ bool BucketManager::recoverBucketTable() {
     int cnt_f = 0;
 
     boost::asio::thread_pool* recovery_thread_ = new
-        boost::asio::thread_pool(8);
+        boost::asio::thread_pool(32);
     boost::atomic<uint64_t> cnt_in_progress;
     boost::atomic<uint64_t> data_sizes;
     boost::atomic<uint64_t> disk_sizes;
@@ -844,16 +842,22 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
 //}
 
 // Manager's metadata management
-bool BucketManager::RetriveHashStoreFileMetaDataList()
+bool BucketManager::recoverBucketList()
 {
     bool should_recover;
-    bool ret = manifest_->RetrieveFileMetadata(should_recover, id2prefixes_);
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+    bool ret = manifest_->retrieve(should_recover, id2prefixes_);
+    gettimeofday(&end, NULL);
+    printf("-- retrieve: %ld s\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
     if (ret == false) {
         debug_error("[ERROR] read metadata failed: ids %lu\n",
                 id2prefixes_.size());
     }
 
     if (should_recover == false) {
+        debug_e("No need to recover");
         manifest_->CreateManifestIfNotExist();
         return true;
     }
@@ -861,26 +865,21 @@ bool BucketManager::RetriveHashStoreFileMetaDataList()
     id2buckets_.clear();
     // TODO will fix later
 
-//    for (auto& it : id2prefixes_) {
-//        auto& file_id = it.first;
-        //      auto& prefix = it.second;
-//        BucketHandler* old_hdl = nullptr;
-//        BucketHandler* bucket = createFileHandler();
+    for (auto& it : id2prefixes_) {
+        auto& file_id = it.first;
+        auto& prefix = it.second;
+        BucketHandler* old_hdl = nullptr;
+        BucketHandler* bucket = createFileHandler();
 
-//        id2buckets_[file_id] = bucket;
-//        // TODO fix this
-//        bucket->key = "";
-//        bucket->file_id = file_id;
+        id2buckets_[file_id] = bucket;
+        bucket->key = prefix;
+        bucket->file_id = file_id;
 
-        //      uint64_t ret_lvl;
-        // TODO for recovery
-//      ret_lvl = prefix_tree_.insertWithFixedBitNumber(prefixExtract(prefix),
-//      prefixLenExtract(prefix), bucket, old_hdl);
-
-//        if (ret_lvl == 0) {
-//            debug_error("ret failed: old_hdl %p\n", old_hdl);
-//        }
-//    }
+        //debug_error("Recover file id = %lu, prefix = %s\n", file_id, prefix.c_str());
+        prefix_tree_.insert(prefix, bucket);
+        recoverBucketID(file_id);
+        manifest_->InitialSnapshot(bucket);
+    }
 
     return true;
 }
@@ -1226,7 +1225,6 @@ BucketManager::createNewInitialBucket(BucketHandler*& bucket)
 
     bucket = tmp_bucket;
     if (enable_crash_consistency_) {
-        // TODO modify manifest
         manifest_->InitialSnapshot(bucket);
     }
     return true;
@@ -1281,6 +1279,12 @@ uint64_t BucketManager::generateNewFileID()
 ////    }
     bitmap_mtx_.unlock();
     return tempIDForReturn;
+}
+
+void BucketManager::recoverBucketID(uint64_t bucket_id) {
+    bitmap_mtx_.lock();
+    bucket_bitmap_->setBit(bucket_id);
+    bitmap_mtx_.unlock();
 }
 
 pair<int, int>
@@ -1615,9 +1619,7 @@ bool BucketManager::singleFileRewrite(
     if (enable_crash_consistency_) {
         // TODO update consistency
         STAT_PROCESS(
-//      manifest_->UpdateGCMetadata(old_id, bucket->prefix,
-//              new_id, bucket->prefix),
-        manifest_->UpdateGCMetadata(old_id, 0, new_id, 0),
+        manifest_->UpdateGCMetadata(old_id, bucket->key, new_id, bucket->key),
         StatsType::DS_MANIFEST_GC_REWRITE);
     }
 
@@ -1931,7 +1933,7 @@ bool BucketManager::singleFileSplit(BucketHandler* bucket,
             vector<BucketHandler*> old_hdls;
             vector<BucketHandler*> new_hdls;
             old_hdls.push_back(bucket);
-            for (int i = 1; i < new_prefix_and_hdls.size(); i++) {
+            for (int i = 0; i < new_prefix_and_hdls.size(); i++) {
                 new_hdls.push_back(new_prefix_and_hdls[i].second);
             }
             STAT_PROCESS(

@@ -97,6 +97,8 @@ public:
     bool enable_index_block = true;
     bool test_recovery = false;
 
+    uint64_t commit_log_size = 1024 * 1024 * 1024;
+
     // tune the block cache size
     uint64_t min_block_cache_size = 0;
     uint64_t memory_budget;

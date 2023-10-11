@@ -105,6 +105,7 @@ private:
     // file ID generator
     uint64_t targetNewFileID_ = 0;
     uint64_t generateNewFileID();
+    void recoverBucketID(uint64_t bucket_id);
     std::shared_mutex bitmap_mtx_;
     // operation counter for metadata commit
     uint64_t currentTotalHashStoreFileSize_ = 0;
@@ -123,7 +124,7 @@ private:
     std::shared_mutex createNewBucketMtx_;
 
     // Manager's metadata management
-    bool RetriveHashStoreFileMetaDataList(); // will reopen all existing files
+    bool recoverBucketList(); // will reopen all existing files
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
     void asioSingleFileGC(BucketHandler* bucket);
@@ -195,10 +196,10 @@ private:
     int bucket_fd_ = -1;
     bool wrap_up_ = false;
 
-    uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; // 1024 * 1024 * 1024;
-    uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 512 * 5; // 2.5G // 1024 * 1024 * 1024;
+    uint64_t commit_log_maximum_size_ = 1024ull * 1024 * 1024 * 3; 
+    uint64_t commit_log_next_threshold_ = 1024ull * 1024 * 512 * 5; 
 
-    unordered_map<uint64_t, uint64_t> id2prefixes_;
+    unordered_map<uint64_t, string> id2prefixes_;
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
     bool debug_flag_ = false;

@@ -40,8 +40,8 @@ bool ManifestManager::CreateManifestIfNotExist() {
     return true;
 }
 
-bool ManifestManager::RetrieveFileMetadata(bool& should_recover, 
-	unordered_map<uint64_t, uint64_t>& id2prefixes) {
+bool ManifestManager::retrieve(bool& should_recover, 
+	unordered_map<uint64_t, string>& id2prefixes) {
     string path = working_dir_ + "/deltaStoreManifest";
     should_recover = true;
     id2prefixes.clear();
@@ -92,32 +92,33 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
     while (getline(manifest_fs, line_str)) {
 	// Case 1: From snapshot
 	if (line_str == "add") {
-	    uint64_t prefix, file_id;;
-	    if (!getline(manifest_fs, line_str)) {
-		debug_error("recover manifest stop at prefix: get %lu\n",
-			id2prefixes.size());
-		return true;
-	    }
-	    prefix = stoull(line_str);
+            string prefix;
+	    uint64_t file_id;;
+            if (!getline(manifest_fs, line_str)) {
+                debug_error("recover manifest stop: get key %lu\n",
+                        id2prefixes.size());
+                goto label_stop;
+            }
+            prefix = line_str;
 
 	    if (!getline(manifest_fs, line_str)) {
 		debug_error("recover manifest stop at file id: get %lu\n",
 			id2prefixes.size());
-		return true;
+		goto label_stop;
 	    }
 	    file_id = stoull(line_str);
 
 	    if (!getline(manifest_fs, line_str)) {
 		debug_error("recover manifest stop at end label: get %lu\n",
 			id2prefixes.size());
-		return true;
+		goto label_stop;
 	    }
 	    
 	    if (line_str != "add_end") {
 		debug_error("recover manifest stop at end label: not add_end"
 			"but %s get %lu\n",
 			line_str.c_str(), id2prefixes.size());
-		return true;
+		goto label_stop;
 	    }
 
 	    id2prefixes[file_id] = prefix;
@@ -127,28 +128,28 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
 
 	// Case 2: From GC
 	if (line_str == "gc_start") {
-	    uint64_t prefix, file_id;
-	    unordered_map<uint64_t, uint64_t> id2prefixes_del;
-	    unordered_map<uint64_t, uint64_t> id2prefixes_add;
+	    uint64_t file_id;
+            string prefix;
+	    unordered_map<uint64_t, string> id2prefixes_del;
+	    unordered_map<uint64_t, string> id2prefixes_add;
 
 	    while (true) {
 		// get prefix
 		if (!getline(manifest_fs, line_str)) {
 		    debug_error("recover manifest stop at prefix: get %lu\n",
 			    id2prefixes.size());
-		    return true;
+		    goto label_stop;
 		}
 		if (line_str == "gc_new") {
 		    break;
 		}
 
-		prefix = stoull(line_str); 
+                prefix = line_str;
 
-		// get file id 
 		if (!getline(manifest_fs, line_str)) {
 		    debug_error("recover manifest stop at fileid: get %lu\n",
 			    id2prefixes.size());
-		    return true;
+		    goto label_stop;
 		}
 		file_id = stoull(line_str); 
 
@@ -156,8 +157,9 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
 		    debug_error("[ERROR] do not have %lu\n", file_id); 
 		    return false;
 		} else if (id2prefixes[file_id] != prefix) {
-		    debug_error("[ERROR] prefix of %lu is not %lu but %lu\n", 
-			    file_id, prefix, id2prefixes[file_id]); 
+		    debug_error("[ERROR] prefix of %lu is not %s but %s\n", 
+                            file_id, prefix.c_str(),
+                            id2prefixes[file_id].c_str()); 
 		    return false;
 		}
 
@@ -166,24 +168,24 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
 
 	    if (line_str != "gc_new") {
 		debug_error("not gc new: %s\n", line_str.c_str());
-		return true;
+		goto label_stop;
 	    }
 
 	    while (true) {
 		if (!getline(manifest_fs, line_str)) {
 		    debug_error("recover manifest stop at prefix: get %lu\n",
 			    id2prefixes.size());
-		    return true;
+		    goto label_stop;
 		}
 		if (line_str == "gc_end") {
 		    break;
 		}
-		prefix = stoull(line_str); 
+                prefix = line_str;
 
 		if (!getline(manifest_fs, line_str)) {
 		    debug_error("recover manifest stop at prefix: get %lu\n",
 			    id2prefixes.size());
-		    return true;
+		    goto label_stop;
 		}
 		file_id = stoull(line_str); 
 
@@ -199,6 +201,7 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
 	}
     }
 
+label_stop:
     manifest_fs.close();
     manifest_fs_.open(working_dir_ + "/deltaStoreManifest", ios::app);
     if (!manifest_fs_.is_open()) {
@@ -210,10 +213,13 @@ bool ManifestManager::RetrieveFileMetadata(bool& should_recover,
 void ManifestManager::InitialSnapshot(BucketHandler* bucket) {
     scoped_lock<shared_mutex> lk(mtx_);
 
+    if (!manifest_fs_.is_open()) {
+        debug_e("manifest_fs_ is not open\n");
+        exit(1);
+    }
     if (!(manifest_fs_ << "add" << endl)) {
 	debug_error("output error: %d\n", __LINE__);
     }	
-    manifest_fs_ << bucket->key.size() << " ";
     manifest_fs_ << bucket->key << endl;
     manifest_fs_ << bucket->file_id << endl;
     manifest_fs_ << "add_end" << endl;
@@ -227,57 +233,58 @@ void ManifestManager::UpdateGCMetadata(
 
     if (!(manifest_fs_ << "gc_start" << endl)) {
 	debug_error("output error: %d\n", __LINE__);
+//        exit(1);
     }	
     // write old file handlers
     for (auto& bucket : old_buckets) {
-        manifest_fs_ << bucket->key.size() << " ";
-	manifest_fs_ << bucket->key << endl;
+        manifest_fs_ << bucket->key << endl;
 	manifest_fs_ << bucket->file_id << endl;
     }
 
     manifest_fs_ << "gc_new" << endl;
     // write new file handlers
     for (auto& bucket : new_buckets) {
-        manifest_fs_ << bucket->key.size() << " ";
-	manifest_fs_ << bucket->key << endl;
+        manifest_fs_ << bucket->key << endl;
 	manifest_fs_ << bucket->file_id << endl;
     }
     manifest_fs_ << "gc_end" << endl;
 }
 
 void ManifestManager::UpdateGCMetadata(const vector<uint64_t>& old_ids,
-	const vector<uint64_t>& old_prefixes,
+	const vector<string>& old_keys,
 	const vector<uint64_t>& new_ids,
-	const vector<uint64_t>& new_prefixes) {
+	const vector<string>& new_keys) {
     scoped_lock<shared_mutex> lk(mtx_);
 
     if (!(manifest_fs_ << "gc_start" << endl)) {
 	debug_error("output error: %d\n", __LINE__);
+//        exit(1);
     }	
     for (auto i = 0; i < old_ids.size(); i++) {
-	manifest_fs_ << old_prefixes[i] << endl;
+	manifest_fs_ << old_keys[i] << endl;
 	manifest_fs_ << old_ids[i] << endl;
     }
     manifest_fs_ << "gc_new" << endl;
     for (auto i = 0; i < new_ids.size(); i++) {
-	manifest_fs_ << new_prefixes[i] << endl;
+	manifest_fs_ << new_keys[i] << endl;
 	manifest_fs_ << new_ids[i] << endl;
     }
     manifest_fs_ << "gc_end" << endl;
 }
 
 void ManifestManager::UpdateGCMetadata(const uint64_t old_id, 
-	const uint64_t old_prefix, const uint64_t new_id, 
-	const uint64_t new_prefix) {
+	const string& old_key, const uint64_t new_id, 
+	const string& new_key) {
     scoped_lock<shared_mutex> lk(mtx_);
 
     if (!(manifest_fs_ << "gc_start" << endl)) {
 	debug_error("output error: %d\n", __LINE__);
+//        exit(1);
     }	
-    manifest_fs_ << old_prefix << endl;
+    manifest_fs_ << old_key << endl;
     manifest_fs_ << old_id << endl;
     manifest_fs_ << "gc_new" << endl;
-    manifest_fs_ << new_prefix << endl;
+    manifest_fs_ << new_key << endl;
     manifest_fs_ << new_id << endl;
     manifest_fs_ << "gc_end" << endl;
 }

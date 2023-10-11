@@ -74,13 +74,13 @@ bool BucketOperator::waitOperationHandlerDone(deltaStoreOpHandler* op_hdl, bool 
         asm volatile("");
     }
     if (op_hdl->job_done == kDone) {
-        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->bucket->file_id, op_hdl->multiput_op.size);
         if (need_delete) {
             delete op_hdl;
         }
         return true;
     } else {
-        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->bucket->file_id, op_hdl->multiput_op.size);
+        debug_error("[ERROR] Process %d operation ID = %lu\n",
+                (int)op_hdl->op_type, op_hdl->bucket->file_id);
         if (need_delete) {
             delete op_hdl;
         }

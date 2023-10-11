@@ -58,6 +58,7 @@ class ExternDBConfig {
     bool enable_gc_write_stall_;
     bool test_recovery_;
     uint64_t test_final_scan_ops_;
+    uint64_t commit_log_size_;
 
     struct {
         uint64_t level;
@@ -109,6 +110,7 @@ class ExternDBConfig {
         enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
+        commit_log_size_ = pt_.get<uint64_t>("config.commit_log_size", 1024 *1024 * 1024);
         test_final_scan_ops_ = pt_.get<uint64_t>("config.test_final_scan_ops", 0);
 	test_recovery_ = pt_.get<bool>("debug.test_recovery", false);
     }
@@ -253,6 +255,9 @@ class ExternDBConfig {
     }
     bool getTestRecovery() {
         return test_recovery_;
+    }
+    uint64_t getCommitLogSize() {
+        return commit_log_size_;
     }
     bool getUseFinalScan() {
         return test_final_scan_ops_ > 0;

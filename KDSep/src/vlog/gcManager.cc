@@ -91,8 +91,8 @@ size_t GCManager::gcVLog()
     _keyManager->persistMeta();
 
     gcFront = _segmentGroupManager->getLogGCOffset();
-    debug_error("logTail %lu gcFront %lu minus %lu -minus %lu\n", logTail,
-            gcFront, logTail - gcFront, gcFront - logTail);
+//    debug_error("logTail %lu gcFront %lu minus %lu -minus %lu\n", logTail,
+//            gcFront, logTail - gcFront, gcFront - logTail);
 
     struct timeval gcStartTime;
     gettimeofday(&gcStartTime, 0);
@@ -173,8 +173,8 @@ size_t GCManager::gcVLog()
                         // buffer (relative) offset to disk (absolute) offset
                         v.offset = (v.offset + logOffset) % capacity;
                     }
-                    debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
-                            logOffset + len);
+//                    debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
+//                            logOffset + len);
                     STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys,
                                 values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
                     if (!ret) {

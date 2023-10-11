@@ -111,6 +111,7 @@ log_db_status() {
     echo "-------- delta sizes and counts --" >>$output_file
     ls -lt $DBPath | grep "bucket" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
     ls -lt $DBPath | grep "bucket" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "commit" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB commit log, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "c0" | awk '{s+=$5;} END {print s / 1024 / 1024 " MiB vLog";}' >>$output_file
@@ -228,6 +229,7 @@ up2x="false"
 crash="false"
 crashTime=3600
 recovery="false"
+commit_log_size="$(( 1 * 1024 * 1024 * 1024 ))"
 finalScan="0"
 
 sstsz=16
@@ -466,6 +468,13 @@ for param in $*; do
             finalScan=$tmp
             run_suffix=${run_suffix}_$param
         fi
+    elif [[ "$param" =~ ^cmsz[0-9]+[mM]*$ ]]; then
+        tmp=$(echo $param | sed 's/cmsz//g' | sed 's/m/000000/g' |\
+                sed 's/M/000000/g')
+        if [[ $tmp -ne $commit_log_size ]]; then
+            suffix=${suffix}_$param
+            commit_log_size=$tmp
+        fi
     elif [[ "$param" =~ ^crash[0-9]+$ ]]; then
         crash="true"
         crashTime=$(echo $param | sed 's/crash//g')
@@ -535,6 +544,7 @@ if [[ $numMainSegment -le 100 ]]; then
 fi
 sed -i "/numMainSegment/c\\numMainSegment = $numMainSegment" temp.ini
 sed -i "/numRangeScanThread/c\\numRangeScanThread = $scanThreads" temp.ini
+sed -i "/commit_log_size/c\\commit_log_size = $commit_log_size" temp.ini
 
 size="$(($KVPairsNumber / 1000000))M"
 if [[ $size == "0M" ]]; then
@@ -707,10 +717,10 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         echo "./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file"
         ./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file
 #        perf stat ./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file
-        t_output_file=$output_file
-        log_db_status $workingDB $t_output_file $CPU_FILE
-        output_file=${t_output_file}
     fi
+    t_output_file=$output_file
+    log_db_status $workingDB $t_output_file $CPU_FILE
+    output_file=${t_output_file}
     set +x
     loaded="false"
     echo "output at $output_file"

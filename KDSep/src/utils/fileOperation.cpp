@@ -245,7 +245,6 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
                 " %lu, start_offset_ %lu\n",
                 rReturn, strerror(errno), req_page_num, readBufferSize,
                 disk_size_, start_offset_);
-        free(readBuffer);
         return false;
     }
 
@@ -341,11 +340,11 @@ bool FileOperation::rollbackFile(char* read_buf, uint64_t rollback_offset)
             data_size_ = data_i_on_disk;
             disk_size_ = i * page_size_;
             buf_used_size_ = rollback_offset - data_i_on_disk;
-            debug_error("roll back: %s new data size %lu new disk size %lu"
-                        " roll offset %lu buf size %lu\n",
-                path_.c_str(),
-                data_size_, disk_size_, rollback_offset,
-                buf_used_size_);
+//            debug_error("roll back: %s new data size %lu new disk size %lu"
+//                        " roll offset %lu buf size %lu\n",
+//                path_.c_str(),
+//                data_size_, disk_size_, rollback_offset,
+//                buf_used_size_);
 
             if (buf_used_size_ > 0) {
                 memcpy(write_buf_, read_buf + data_i_on_disk,
@@ -634,9 +633,9 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
             gettimeofday(&tv, 0);
             if (actual_disk_write_size + disk_size_ > max_size_ ||
                     start_offset_ % max_size_ > 0) {
-                debug_error("write too much: %d + %lu > %lu\n",
+                debug_error("write too much: %d + %lu > %lu, %s\n",
                         actual_disk_write_size, disk_size_,
-                        max_size_);
+                        max_size_, path_.c_str());
                 throw std::runtime_error("exception");
             }
             if (debug_flag_) {
@@ -718,6 +717,7 @@ FileOpStatus FileOperation::writeFile(char* contentBuffer, uint64_t write_size)
 
 FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t contentSize)
 {
+    static bool printed_commit_log = false;
     // std::scoped_lock<std::shared_mutex> w_lock(fileLock_);
     if (operationType_ == kDirectIO || operationType_ == kAlignLinuxIO) {
         if (buf_size_ > 0) {
@@ -755,6 +755,12 @@ FileOpStatus FileOperation::writeAndFlushFile(char* contentBuffer, uint64_t cont
             }
             struct timeval tv;
             gettimeofday(&tv, 0);
+            if (!printed_commit_log && disk_size_ > 128 * 1024 * 1024 &&
+                    path_.find("commit") != std::string::npos) {
+                debug_error("write %s disk_size_ %lu max_size_ %lu\n",
+                        path_.c_str(), disk_size_, max_size_);
+                printed_commit_log = true;
+            }
             if (actual_disk_write_size + disk_size_ > max_size_ || 
                     start_offset_ % max_size_ > 0) {
                 debug_error("write too much: %d + %lu > %lu\n",

@@ -232,6 +232,12 @@ public:
         Node* p = head;
         if (cached_ != nullptr) {
             // cache hit
+//            fprintf(stdout, "cached key %s\n", cached_->key.c_str());
+//            fprintf(stdout, "cached_->forwards[0] %p\n", cached_->forwards[0]);
+//            if (cached_->forwards[0] != nullptr) {
+//                fprintf(stdout, "cached_->forwards[0]->key %s\n",
+//                        cached_->forwards[0]->key.c_str());
+//            }
             if (cached_->key <= key && (cached_->forwards[0] == nullptr ||
                     cached_->forwards[0]->key > key)) {
                 return cached_->data;
@@ -248,7 +254,7 @@ public:
         if (p == head) {
             return nullptr;
         } else {
-            cached_ = p;
+//            cached_ = p;
             return p->data;
         }
     }
@@ -278,7 +284,7 @@ public:
         }
 
         if (p->forwards[0] != nullptr) {
-            cached_ = p->forwards[0];
+//            cached_ = p->forwards[0];
             return p->forwards[0]->data;
         } else {
             return nullptr;
@@ -354,6 +360,12 @@ public:
 //        debug_error("init %lu\n", maxFileNumber);
         max_file_num_ = maxFileNumber;
         list_.init();
+    }
+
+    uint64_t size()
+    {
+        std::shared_lock<std::shared_mutex> r_lock(nodeOperationMtx_);
+        return list_.size();
     }
 
     uint64_t getRemainFileNumber()
