@@ -92,6 +92,8 @@ private:
     void updateKDCacheIfExist(str_t key, str_t delta, bool isAnchor);
     void updateKDCache(char* keyPtr, size_t keySize, str_t delta); 
     bool pushGcIfNeeded(BucketHandler* bucket);
+    bool pushGcIfNeeded(deltaStoreOpHandler* bucket);
+    bool pushGcForOpHandler(deltaStoreOpHandler* op_hdl);
     void operationBoostThreadWorker(deltaStoreOpHandler* op_hdl);
     // boost thread
     unique_ptr<boost::asio::thread_pool> workerThreads_;
@@ -107,6 +109,7 @@ private:
     bool syncStatistics_;
     shared_ptr<bool> write_stall_;
     bool should_exit_ = false;
+    bool enable_crash_consistency_ = false;
 };
 
 } // namespace KDSEP_NAMESPACE

@@ -63,17 +63,20 @@ public:
     uint64_t getCachedFileSize();
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();
+    uint64_t getStartOffset();
     void markDirectDataAddress(uint64_t data);
 
     // for recovery
-    bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
+    bool tryOpenAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
 	    bool save_page_data_sizes);
     bool retrieveFilePiece(char*& read_buf, uint64_t& data_size, 
-	    bool save_page_data_sizes);
+	    bool save_page_data_sizes, 
+            uint64_t physical_size = ~0ull);
     bool rollbackFile(char* read_buf, uint64_t rollback_offset);
 
     bool setStartOffset(uint64_t start_offset);
     bool reuseLargeFile(uint64_t start_offset);
+    bool reuseLargeFileRecovery(uint64_t start_offset); 
 
     bool cleanFile();
 

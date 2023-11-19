@@ -177,7 +177,9 @@ void CoreWorkload::Init(const utils::Properties& p, bool run_phase) {
                         ZIPFIAN_CONSTANT_DEFAULT)));
 
     } else if (request_dist == "latest") {
-        key_chooser_ = new SkewedLatestGenerator(insert_key_sequence_);
+        key_chooser_ = new SkewedLatestGenerator(insert_key_sequence_, 
+                std::stod(p.GetProperty(ZIPFIAN_CONSTANT_PROPERTY,
+                        ZIPFIAN_CONSTANT_DEFAULT)));
 
     } else {
         throw utils::Exception("Unknown request distribution: " + request_dist);

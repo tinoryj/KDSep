@@ -500,8 +500,8 @@ public:
 private:
 //    vector<BucketHandler*> targetDeleteVec;
     uint64_t max_file_num_ = 0;
-//    SkipListWithMap list_;
-    SkipList list_;
+    SkipListWithMap list_;
+//    SkipList list_;
     std::shared_mutex nodeOperationMtx_;
 };
 

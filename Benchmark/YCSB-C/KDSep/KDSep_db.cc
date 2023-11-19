@@ -247,13 +247,6 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     options_.rocks_opt.target_file_size_base = config.getSSTSize();
     options_.rocks_opt.max_bytes_for_level_base = config.getL1Size();
 
-    cerr << "write buffer size " << options_.rocks_opt.write_buffer_size << endl;
-    cerr << "write buffer number " << options_.rocks_opt.max_write_buffer_number << endl;
-    cerr << "num compaction trigger "
-         << options_.rocks_opt.level0_file_num_compaction_trigger << endl;
-    cerr << "targe file size base " << options_.rocks_opt.target_file_size_base << endl;
-    cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
-
     if (config.getEnableGcWriteStall()) {
         options_.write_stall.reset(new bool);
         *options_.write_stall = false;

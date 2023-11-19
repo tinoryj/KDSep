@@ -33,6 +33,10 @@ HashStoreInterface::~HashStoreInterface()
 {
 }
 
+bool HashStoreInterface::isEmpty() {
+    return file_manager_->isEmpty();
+}
+
 bool HashStoreInterface::setJobDone()
 {
     if (file_manager_->setJobDone() == true) {
@@ -90,11 +94,11 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     // retrieve all headers, and get the file handlers
     while (i < read_buf_size) {
         processed_delta_num++;
-//  if (processed_delta_num % 100000 == 0) {
-//      debug_error("processed_delta_num %lu hdls num %lu\n", 
-//          processed_delta_num, find_hdls.size());
-//  }
-    // get header
+        //  if (processed_delta_num % 100000 == 0) {
+        //      debug_error("processed_delta_num %lu hdls num %lu\n", 
+        //          processed_delta_num, find_hdls.size());
+        //  }
+        // get header
         if (use_varint_d_header == false) {
             memcpy(&header, read_buf + i, header_sz);
         } else {
@@ -111,34 +115,34 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
         string_view value(nullptr, 0);
 
         i += header.key_size_;
-    // no sorted part if there is an anchor 
+        // no sorted part if there is an anchor 
         if (header.is_anchor_ == true) {
-        sorted = false;
+            sorted = false;
         } else {
-        value = string_view(read_buf + i, header.value_size_);
+            value = string_view(read_buf + i, header.value_size_);
             i += header.value_size_;
         }
 
-    if (header.seq_num < min_seq_num) {
-        continue;
-    }
+        if (header.seq_num < min_seq_num) {
+            continue;
+        }
 
-    deltaStoreOpHandler* find_op = new deltaStoreOpHandler;
-    find_op->op_type = kFind;
-    find_op->object = new mempoolHandler_t;
+        deltaStoreOpHandler* find_op = new deltaStoreOpHandler;
+        find_op->op_type = kFind;
+        find_op->object = new mempoolHandler_t;
 
-    auto& object = find_op->object;
-    object->keyPtr_ = key.data_;    
-    object->keySize_ = key.size_;   
-    object->isAnchorFlag_ = header.is_anchor_;
-    object->seq_num = header.seq_num;
-    if (header.is_anchor_ == false) {
-        object->valuePtr_ = const_cast<char*>(value.data());
-        object->valueSize_ = value.size();
-    }
-    
-    file_operator_->putIntoJobQueue(find_op);
-    find_hdls.push_back(find_op);
+        auto& object = find_op->object;
+        object->keyPtr_ = key.data_;    
+        object->keySize_ = key.size_;   
+        object->isAnchorFlag_ = header.is_anchor_;
+        object->seq_num = header.seq_num;
+        if (header.is_anchor_ == false) {
+            object->valuePtr_ = const_cast<char*>(value.data());
+            object->valueSize_ = value.size();
+        }
+
+        file_operator_->putIntoJobQueue(find_op);
+        find_hdls.push_back(find_op);
     }
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_GET_FILE_HANDLER, tv);
@@ -147,7 +151,7 @@ bool HashStoreInterface::recoverFromCommitLog(uint64_t min_seq_num) {
     if (i > read_buf_size) {
         debug_error("i too large: %lu %lu\n", i, read_buf_size);
     }
-    debug_error("start retrieve results: %lu\n", find_hdls.size());
+    debug_error("start retreive: %lu handlers\n", find_hdls.size());
 
     deltaStoreOpHandler* hdls_arr[find_hdls.size()];
     copy(find_hdls.begin(), find_hdls.end(), hdls_arr);
@@ -451,18 +455,23 @@ bool HashStoreInterface::get(const string& keyStr, vector<string>& valueStrVec)
     BucketHandler* tempFileHandler;
     bool ret;
 
-    if (kd_cache_ != nullptr) {
-    str_t key(const_cast<char*>(keyStr.data()), keyStr.size());
-    str_t delta = kd_cache_->getFromCache(key);
-    if (delta.data_ != nullptr && delta.size_ > 0) {
-        valueStrVec.push_back(string(delta.data_, delta.size_));
-        return true;
-        // non-empty delta for this key
-    } else if (delta.data_ == nullptr && delta.size_ == 0) {
+    if (file_manager_->isEmpty()) {
         valueStrVec.clear();
-        // empty delta for this key
         return true;
     }
+
+    if (kd_cache_ != nullptr) {
+        str_t key(const_cast<char*>(keyStr.data()), keyStr.size());
+        str_t delta = kd_cache_->getFromCache(key);
+        if (delta.data_ != nullptr && delta.size_ > 0) {
+            valueStrVec.push_back(string(delta.data_, delta.size_));
+            return true;
+            // non-empty delta for this key
+        } else if (delta.data_ == nullptr && delta.size_ == 0) {
+            valueStrVec.clear();
+            // empty delta for this key
+            return true;
+        }
     }
 
     STAT_PROCESS(ret = file_manager_->getBucketWithKey(keyStr, kGet,
@@ -563,23 +572,23 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
                 valueStrVecVec[i].clear();
                 get_result[i] = true;
                 need_read--;
-        if (fileHandlerToIndexMap.find(bucket) ==
-            fileHandlerToIndexMap.end()) {
-            bucket->ownership = 0;
-            bucket->markedByMultiGet = false;
-            buckets[i] = nullptr;
-        }
+                if (fileHandlerToIndexMap.find(bucket) ==
+                        fileHandlerToIndexMap.end()) {
+                    bucket->ownership = 0;
+                    bucket->markedByMultiGet = false;
+                    buckets[i] = nullptr;
+                }
             } else {
-        // need to 
-        if (fileHandlerToIndexMap.find(bucket) !=
-            fileHandlerToIndexMap.end()) {
-            fileHandlerToIndexMap.at(bucket).push_back(i);
-        } else {
-            vector<int> indexVec;
-            indexVec.push_back(i);
-            fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
-        }
-        }
+                // need to 
+                if (fileHandlerToIndexMap.find(bucket) !=
+                        fileHandlerToIndexMap.end()) {
+                    fileHandlerToIndexMap.at(bucket).push_back(i);
+                } else {
+                    vector<int> indexVec;
+                    indexVec.push_back(i);
+                    fileHandlerToIndexMap.insert(make_pair(bucket, indexVec));
+                }
+            }
         } else {
             buckets[i] = nullptr;
         }
@@ -608,11 +617,12 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
         for (auto index = 0; index < index_vec.size(); index++) {
             auto& key_i = index_vec[index];
             if (key_i >= keys.size() || get_result[key_i] == true) {
-            debug_error("key_i %d keys.size() %lu get result %d\n",
-                key_i, keys.size(), (int)get_result[key_i]);
-            exit(1);
+                debug_error("key_i %d keys.size() %lu get result %d\n",
+                        key_i, keys.size(), (int)get_result[key_i]);
+                exit(1);
             }
-            op_hdl->multiget_op.keys->push_back(const_cast<string*>(&keys[index_vec[index]])); 
+            op_hdl->multiget_op.keys->push_back(const_cast<string*>(
+                        &keys[index_vec[index]])); 
         }
         
         file_operator_->startJob(op_hdl);
@@ -621,7 +631,7 @@ bool HashStoreInterface::multiGet(const vector<string>& keys,
 
     for (int i = 0; i < needed_i; i++) {
         auto& op_hdl = handlers[i];
-    // do not delete the handler
+        // do not delete the handler
         struct timeval tv;
         gettimeofday(&tv, nullptr);
         file_operator_->waitOperationHandlerDone(op_hdl, false);

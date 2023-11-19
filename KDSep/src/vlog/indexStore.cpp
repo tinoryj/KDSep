@@ -50,17 +50,11 @@ KvServer::KvServer(DeviceManager* deviceManager, rocksdb::DB* pointerToRawRocksD
 
 KvServer::~KvServer()
 {
-    cerr << "Delete value manager ..." << endl;
     delete _valueManager;
-    cerr << "Delete key manager ..." << endl;
     delete _keyManager;
-    cerr << "Delete gc manager ..." << endl;
     delete _gcManager;
-    cerr << "Delete segmentGroup manager ..." << endl;
     delete _segmentGroupManager;
-    cerr << "Delete log manager ..." << endl;
     delete _logManager;
-    cerr << "Delete cache ..." << endl;
     if (_cache.lru)
         delete _cache.lru;
     if (_freeDeviceManager)

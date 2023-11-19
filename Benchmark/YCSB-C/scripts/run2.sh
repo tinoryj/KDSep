@@ -715,7 +715,7 @@ if [[ $recovery == "true" ]]; then
     sed -i "/test_recovery/c\\test_recovery = true" temp.ini
 fi
 
-max_kv_size=$(((${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
+max_kv_size=$((((${fieldcount} * (2+${fieldlength}) + 4) + 4095) / 4096 * 4096))
 sed -i "/max_kv_size/c\\max_kv_size = $max_kv_size" temp.ini
 sed -i "/memtable/c\\memtable = $(($memtable * 1024 * 1024))" temp.ini
 sed -i "/sst_size/c\\sst_size = $(($sstsz * 1024 * 1024))" temp.ini

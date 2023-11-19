@@ -216,7 +216,7 @@ int main(const int argc, const char* argv[]) {
         printf("recovery total time: %.7lf\n", duration_recovery / 1000000.0);
         fprintf(stderr, "recovery total time: %.7lf\n", duration_recovery / 1000000.0);
         KDSEP_NAMESPACE::StatsRecorder::DestroyInstance();
-        exit(0);
+        return 0;
     }
 
     if (config.getUseFinalScan()) {

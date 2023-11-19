@@ -30,13 +30,13 @@ KDLRUCache::~KDLRUCache() {
         delete shards_[i];
     }
     delete[] shards_;
-    debug_error("total_data_size: %lu\n", total_data_size);
-    debug_error("total_items: %lu\n", num_items);
+//    debug_error("total_data_size: %lu\n", total_data_size);
+//    debug_error("total_items: %lu\n", num_items);
     size_t rss_after = getRss();
-    debug_error("rss from %.2lf to %.2lf (diff: %.4lf) MiB\n", 
-           rss_before / 1024.0 / 1024, 
-           rss_after / 1024.0 / 1024, 
-           (rss_before - rss_after) / 1024.0 / 1024.0); 
+//    debug_error("rss from %.2lf to %.2lf (diff: %.4lf) MiB\n", 
+//           rss_before / 1024.0 / 1024, 
+//           rss_after / 1024.0 / 1024, 
+//           (rss_before - rss_after) / 1024.0 / 1024.0); 
     printf("KDCache total_data_size: %lu\n", total_data_size);
     printf("KDCache total_items: %lu\n", num_items);
     printf("KDCache rss from %lu to %lu (diff: %.4lf)\n", 

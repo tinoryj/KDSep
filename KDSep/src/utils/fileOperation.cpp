@@ -95,7 +95,7 @@ bool FileOperation::openFile(string path)
     }
 }
 
-bool FileOperation::openAndReadFile(string path, char*& read_buf, 
+bool FileOperation::tryOpenAndReadFile(string path, char*& read_buf, 
         uint64_t& data_size, bool save_page_data_sizes)
 {
     path_ = path;
@@ -105,8 +105,11 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
         fd_ = open(path.c_str(), flag, 0644);
         read_buf = nullptr;
         if (fd_ == -1) {
-            debug_error("[ERROR] fd (open) = %d, err = %s, path %s\n", fd_,
-                strerror(errno), path.c_str());
+            if (errno != 2) {
+                // Not "No such file or directory"
+                debug_error("[ERROR] err = %s, path %s\n",
+                    strerror(errno), path.c_str());
+            }
             return false;
         } 
         closed_before_ = false;
@@ -208,7 +211,8 @@ bool FileOperation::openAndReadFile(string path, char*& read_buf,
 
 // for recovery. Don't know the file size
 bool FileOperation::retrieveFilePiece(char*& read_buf, 
-        uint64_t& data_size, bool save_page_data_sizes) {
+        uint64_t& data_size, bool save_page_data_sizes, 
+        uint64_t physical_size) {
     if (operationType_ != kDirectIO && operationType_ != kAlignLinuxIO) {
         debug_error("not direct IO%s\n", "");
         exit(1);
@@ -222,29 +226,46 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
     disk_size_ = max_size_;
     data_size_ = 0;
 
-    uint64_t req_page_num = (disk_size_ + page_size_ - 1) / page_size_;
+    // check whether the file is too small
+    if (physical_size < start_offset_) {
+        debug_error("[ERROR] file too small to retrieve: %lu %lu\n", 
+                physical_size, start_offset_);
+        return false;
+    } else if (physical_size < start_offset_ + max_size_) {
+        disk_size_ = physical_size - start_offset_;
+    }
+
+    if (disk_size_ == 0) {
+        read_buf = nullptr;
+        data_size = 0;
+        return true;
+    }
+
+    uint64_t req_page_num = disk_size_ / page_size_;
     // align mem
-    char* readBuffer;
-    auto readBufferSize = page_size_ * req_page_num;
-    auto ret = posix_memalign((void**)&readBuffer, page_size_, readBufferSize);
-    read_buf = new char[readBufferSize];
+    char* cur_read_buf;
+    auto read_buf_sz = page_size_ * req_page_num;
+    auto ret = posix_memalign((void**)&cur_read_buf, page_size_, read_buf_sz);
+    read_buf = new char[read_buf_sz];
 
     if (ret) {
-        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno, strerror(errno));
+        debug_error("[ERROR] posix_memalign failed: %d %s\n", errno,
+                strerror(errno));
         return false;
     }
+
     if (debug_flag_) {
         fprintf(stdout, "[%d %s] %p pread offset %lu left %lu\n",
-                __LINE__, __func__, this, start_offset_, readBufferSize);
+                __LINE__, __func__, this, start_offset_, read_buf_sz);
     }
-    auto rReturn = pread(fd_, readBuffer, readBufferSize, start_offset_);
-    if (rReturn != readBufferSize) {
-        free(readBuffer);
+    auto rReturn = pread(fd_, cur_read_buf, read_buf_sz, start_offset_);
+    if (rReturn != read_buf_sz) {
+        free(cur_read_buf);
         debug_error("[ERROR] Read return value = %lu, err = %s,"
-                " req_page_num = %lu, readBuffer size = %lu, disk_size_ ="
-                " %lu, start_offset_ %lu\n",
-                rReturn, strerror(errno), req_page_num, readBufferSize,
-                disk_size_, start_offset_);
+                " req_page_num = %lu, cur_read_buf size = %lu, disk_size_ ="
+                " %lu, start_offset_ %lu physical %lu\n",
+                rReturn, strerror(errno), req_page_num, read_buf_sz,
+                disk_size_, start_offset_, physical_size);
         return false;
     }
 
@@ -256,7 +277,8 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
     }
     for (auto page_i = 0; page_i < req_page_num; page_i++) {
         uint32_t page_data_size = 0;
-        memcpy(&page_data_size, readBuffer + page_i * page_size_, sizeof(uint32_t));
+        memcpy(&page_data_size, cur_read_buf + page_i * page_size_,
+                sizeof(uint32_t));
 
         if (page_data_size == 0) {
             break;
@@ -268,12 +290,12 @@ bool FileOperation::retrieveFilePiece(char*& read_buf,
 
         disk_size_ += page_size_;
         memcpy(read_buf + data_size, 
-                readBuffer + page_i * page_size_ + sizeof(uint32_t), 
+                cur_read_buf + page_i * page_size_ + sizeof(uint32_t), 
                 page_data_size);
         data_size += page_data_size;
     }
     data_size_ = data_size;
-    free(readBuffer);
+    free(cur_read_buf);
     debug_info("Open old fd = %d, current "
             " physical file size = %lu, actual file size = %lu\n",
             fd_, disk_size_, data_size_);
@@ -367,6 +389,20 @@ bool FileOperation::setStartOffset(uint64_t start_offset) {
     return true;
 }
 
+bool FileOperation::reuseLargeFileRecovery(uint64_t start_offset) {
+    if (!use_existing_) {
+        debug_error("[ERROR] reuse a non-existing file %s\n", "");
+        exit(1);
+    }
+    if (debug_flag_) {
+        fprintf(stdout, "[%d %s] %p reuseLargeFile old_offset %lu "
+                "start_offset %lu\n",
+                __LINE__, __func__, this, start_offset_, start_offset);
+    }
+    start_offset_ = start_offset;
+    return true;
+}
+
 bool FileOperation::reuseLargeFile(uint64_t start_offset) {
     if (!use_existing_) {
         debug_error("[ERROR] reuse a non-existing file %s\n", "");
@@ -381,6 +417,10 @@ bool FileOperation::reuseLargeFile(uint64_t start_offset) {
     cleanFile();
     return true;
 }
+
+uint64_t FileOperation::getStartOffset() {
+    return start_offset_;
+} 
 
 bool FileOperation::createThenOpenFile(string path)
 {
@@ -404,11 +444,11 @@ bool FileOperation::createThenOpenFile(string path)
                         operationType_, path.c_str());
                 exit(1);
                 return false;
-            } else {
-                int allocateStatus = fallocate(fd_, 0, 0, max_size_);
-                if (allocateStatus != 0) {
-                    debug_warn("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
-                }
+//            } else {
+//                int allocateStatus = fallocate(fd_, 0, 0, max_size_);
+//                if (allocateStatus != 0) {
+//                    debug_error("[WARN] Could not pre-allocate space for current file: %s", path.c_str());
+//                }
             }
             disk_size_ = 0;
             data_size_ = 0;
@@ -877,7 +917,7 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
             memcpy(&page_data_size, readBuffer + processedPageNumber * page_size_, sizeof(uint32_t));
             memcpy(contentBuffer + currentReadDoneSize, readBuffer + processedPageNumber * page_size_ + sizeof(uint32_t), page_data_size);
             currentReadDoneSize += page_data_size;
-            vec.push_back(currentReadDoneSize);
+            vec.push_back(page_data_size);
         }
         if (buf_used_size_ != 0) {
             memcpy(contentBuffer + currentReadDoneSize, write_buf_, buf_used_size_);
@@ -885,8 +925,12 @@ FileOpStatus FileOperation::readFile(char* contentBuffer, uint64_t contentSize)
         }
         if (contentSize <= max_size_ && currentReadDoneSize !=
             contentSize) {
-            free(readBuffer);
+//            free(readBuffer);
             debug_error("[ERROR] Read size mismatch, read size = %lu, request size = %lu, DirectIO current page number = %lu, DirectIO current read physical size = %lu, actual size = %lu, buffered size = %lu\n", currentReadDoneSize, contentSize, req_page_num, disk_size_, data_size_, buf_used_size_);
+            for (int i = 0; i < (int)vec.size(); i++) {
+                debug_error("vec[%d] %lu (start %lu)\n", i, vec[i], 
+                        start_offset_ / max_size_);
+            }
             FileOpStatus ret(false, 0, 0, 0);
             return ret;
         } else {

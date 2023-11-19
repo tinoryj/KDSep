@@ -51,6 +51,14 @@ config_workload() {
         ReadProportion=0.95
         UpdateProportion=0.05
 #        rmw="true"
+    elif [[ "$workloadarmw" == "true" || "$workloadfrmw" == "true" ]]; then
+        ReadProportion=0.5
+        UpdateProportion=0.5
+        rmw="true"
+    elif [[ "$workloadbrmw" == "true" ]]; then
+        ReadProportion=0.95
+        UpdateProportion=0.05
+        rmw="true"
     elif [[ "$workloadc" == "true" ]]; then
         ReadProportion=1
         UpdateProportion=0
@@ -111,6 +119,7 @@ log_db_status() {
     echo "-------- delta sizes and counts --" >>$output_file
     ls -lt $DBPath | grep "bucket" | awk '{s[$5]++;} END {for (i in s) {print i " " s[i];}}' | sort -k1 -n >>$output_file
     ls -lt $DBPath | grep "bucket" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB delta, num = " t;}' >>$output_file
+    ls -lt $DBPath | grep "deltaStoreManifest" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB manifest, num = " t;}' >> $output_file
     ls -lt $DBPath | grep "commit" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB commit log, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "sst" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB sst, num = " t;}' >>$output_file
     ls -lt $DBPath | grep "blob" | awk '{s+=$5; t++;} END {print s / 1024 / 1024 " MiB blob, num = " t;}' >>$output_file
@@ -229,6 +238,7 @@ up2x="false"
 crash="false"
 crashTime=3600
 recovery="false"
+noparallel="false"
 commit_log_size="$(( 1 * 1024 * 1024 * 1024 ))"
 finalScan="0"
 
@@ -408,7 +418,7 @@ for param in $*; do
             fi
             cp $filename out.data
         fi
-    elif [[ "$param" =~ ^workload[a-g2-9]$ ]]; then
+    elif [[ "$param" =~ ^workload[a-z2-9]+$ ]]; then
         if [[ "$param" == "workloada" ]]; then
             workloada="true"
         elif [[ "$param" == "workloadb" ]]; then
@@ -427,6 +437,12 @@ for param in $*; do
             workload3="true"
         elif [[ "$param" == "workload4" ]]; then
             workload4="true"
+        elif [[ "$param" == "workloadarmw" ]]; then
+            workloadarmw="true"
+        elif [[ "$param" == "workloadbrmw" ]]; then
+            workloadbrmw="true"
+        elif [[ "$param" == "workloadfrmw" ]]; then
+            workloadfrmw="true"
         fi
         run_suffix=${run_suffix}_$param
     elif [[ "$param" == "fake" ]]; then
@@ -461,6 +477,9 @@ for param in $*; do
     elif [[ "$param" == "recovery" ]]; then
         recovery="true"
         run_suffix=${run_suffix}_recovery
+    elif [[ "$param" == "noparallel" ]]; then
+        noparallel="true"
+        run_suffix=${run_suffix}_$param
     elif [[ "$param" =~ ^finalScan[0-9]+[mMkK]*$ ]]; then # req10m
         tmp=$(echo $param | sed 's/finalScan//g' | sed 's/m/000000/g' |\
                 sed 's/M/000000/g' | sed 's/k/000/g' | sed 's/K/000/g')
@@ -569,6 +588,9 @@ fi
 
 if [[ $recovery == "true" ]]; then
     sed -i "/test_recovery/c\\test_recovery = true" temp.ini
+fi
+if [[ $noparallel == "true" ]]; then
+    sed -i "/parallel_lsm_tree_interface/c\\parallel_lsm_tree_interface = false" temp.ini
 fi
 
 max_kv_size=$(((${fieldcount} * (${fieldlength} + 4) + 4095) / 4096 * 4096))
@@ -691,6 +713,8 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
             echo "cp -r $loadedDB $workingDB"
             cp -r $loadedDB $workingDB
             echo "Copy loaded database"
+        else 
+            cp $workingDB/deltaStoreManifest $output_file.manifest
         fi
     fi
     if [ ! -d $workingDB ]; then
@@ -715,7 +739,11 @@ for ((roundIndex = 1; roundIndex <= MAXRunTimes; roundIndex++)); do
         CPU_FILE=tmp_cpu_usage.txt
         testcpu $CPU_FILE &
         echo "./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file"
-        ./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file
+        echo "time 1" >$output_file
+        expr `date +%s%N` / 1000 >>$output_file
+        ./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >>$output_file
+        echo "time 2" >>$output_file
+        expr `date +%s%N` / 1000 >>$output_file
 #        perf stat ./ycsbc -db rocksdb -dbfilename $workingDB -threads 1 -P workload-temp.spec -phase run -configpath $configPath >$output_file
     fi
     t_output_file=$output_file

@@ -38,6 +38,7 @@ public:
     bool isGCFinished();
 
     bool pushToGCQueue(BucketHandler* fileHandlerPtr);
+    bool pushToGCQueue(deltaStoreOpHandler* op_hdl);
 
     // Consistency
     bool writeToCommitLog(vector<mempoolHandler_t> objects, bool& flag, 
@@ -53,15 +54,17 @@ public:
 
     // recovery
     void recoverFileMt(BucketHandler* bucket,
-        boost::atomic<uint64_t>& data_sizes,
-        boost::atomic<uint64_t>& disk_sizes,
-        boost::atomic<uint64_t>& cnt); 
+            uint64_t physical_size,
+            boost::atomic<uint64_t>& data_sizes,
+            boost::atomic<uint64_t>& disk_sizes,
+            boost::atomic<uint64_t>& cnt); 
     uint64_t recoverIndexAndFilter(
     BucketHandler* bucket, char* read_buf, uint64_t read_buf_size);
 
     bool recoverBucketTable(); // return map of key to all related values that need redo, bool flag used for is_anchor check
     uint64_t GetMinSequenceNumber();
     bool probeThread(); 
+    bool isEmpty();
 //    bool recoveryFromFailureOld(unordered_map<string, vector<pair<bool, string>>>& targetListForRedo); // return map of key to all related values that need redo, bool flag used for is_anchor check
 
 private:
@@ -128,6 +131,7 @@ private:
     bool CloseHashStoreFileMetaDataList(); // will close all opened files, and delete obsolete files
     bool CreateHashStoreFileMetaDataListIfNotExist();
     void asioSingleFileGC(BucketHandler* bucket);
+    void asioSingleFileGC(deltaStoreOpHandler* bucket);
 
     // recovery
     uint64_t decodeAllData(char* fileContentBuffer, uint64_t fileSize,
@@ -203,6 +207,7 @@ private:
     unordered_map<uint64_t, BucketHandler*> id2buckets_;
     uint64_t min_seq_num_ = 0;
     bool debug_flag_ = false;
+    bool is_empty_ = true;
     unique_ptr<boost::asio::thread_pool> gc_threads_;
     unique_ptr<boost::asio::thread_pool> extra_threads_;
 };

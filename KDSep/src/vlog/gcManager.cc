@@ -234,8 +234,8 @@ size_t GCManager::gcVLog()
         for (auto& v : values) {
             v.offset = (v.offset + logOffset) % capacity;
         }
-        debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
-                logOffset + len);
+//        debug_error("logOffset %lu len %lu total %lu\n", logOffset, len,
+//                logOffset + len);
         // update metadata of flushed data
         STAT_PROCESS(ret = _keyManager->mergeKeyBatch(keys, values), StatsType::UPDATE_KEY_WRITE_LSM_GC);
         if (!ret) {

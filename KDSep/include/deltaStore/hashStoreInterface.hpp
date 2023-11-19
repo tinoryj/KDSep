@@ -35,6 +35,7 @@ public:
     bool wrapUpGC(uint64_t& num_bucket_pushed);
     bool setJobDone();
     bool Recovery();
+    bool isEmpty();
 
     uint64_t getNumOfBuckets();
 

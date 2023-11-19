@@ -203,6 +203,12 @@ struct BucketHandler {
     BucketIndexBlock* index_block = nullptr;
     uint64_t unsorted_part_offset = 0;
 
+    // debug!
+    uint64_t start_offset = 0;
+    uint64_t prev_offset = 0;
+    uint64_t rollback_offset = 0;
+    uint64_t buf_used_size = 0;
+
     char* extra_wb = nullptr;
     uint64_t extra_wb_size = 0;
 

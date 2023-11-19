@@ -74,7 +74,7 @@ BucketManager::BucketManager(KDSepOptions* options, string workingDirStr)
     BucketHandler* bucket;
     if (prefix_tree_.size() == 0) {
         createNewInitialBucket(bucket); // the first bucket
-    }
+    } 
     num_threads_ = 0;
 }
 
@@ -92,6 +92,11 @@ BucketManager::~BucketManager()
     for (auto& it : vec) {
         deleteFileHandler(it);
     }
+}
+
+bool BucketManager::isEmpty()
+{
+    return is_empty_;
 }
 
 void BucketManager::OpenBucketFile()
@@ -158,6 +163,21 @@ bool BucketManager::pushToGCQueue(BucketHandler* bucket) {
     done_first_gc_ = true;
     boost::asio::post(*gc_threads_, [this, bucket]() {
             asioSingleFileGC(bucket);
+            });
+    return true;
+}
+
+bool BucketManager::pushToGCQueue(deltaStoreOpHandler* op_hdl) {
+    if (done_first_gc_ && !enable_gc_) {
+        // release the bucket
+        op_hdl->bucket->ownership = 0;
+        op_hdl->job_done = kDone;
+        return false;
+    }
+    // if GC is disabled, still do GC, but only for the first time
+    done_first_gc_ = true;
+    boost::asio::post(*gc_threads_, [this, op_hdl]() {
+            asioSingleFileGC(op_hdl);
             });
     return true;
 }
@@ -401,6 +421,7 @@ bool BucketManager::deleteObslateFileWithFileIDAsInput(uint64_t fileID)
 }
 
 void BucketManager::recoverFileMt(BucketHandler* bucket,
+        uint64_t physical_size,
         boost::atomic<uint64_t>& data_sizes,
         boost::atomic<uint64_t>& disk_sizes,
         boost::atomic<uint64_t>& cnt) {
@@ -412,22 +433,15 @@ void BucketManager::recoverFileMt(BucketHandler* bucket,
     bool ret;
 
     STAT_PROCESS(
-//    ret = fop->openAndReadFile(filename, read_buf, data_size, true),
-    ret = fop->retrieveFilePiece(read_buf, data_size, true),
+    ret = fop->retrieveFilePiece(read_buf, data_size, true, physical_size),
     StatsType::DS_RECOVERY_READ);
 
-//    if (ret == false) {
-//        printf("[ERROR] open failed: %s\n", filename.c_str()); 
-//        debug_error("[ERROR] open failed: %s\n", filename.c_str()); 
-//        exit(1);
-//    }
-
     uint64_t onDiskFileSize = fop->getCachedFileSize();
-//    if (onDiskFileSize == 0) {
-//        printf("[ERROR] read failed: %s\n", filename.c_str()); 
-//        debug_error("[ERROR] read failed: %s\n", filename.c_str()); 
-//        exit(1);
-//    }
+
+    if (ret == false) {
+        debug_error("retrieve bucket failed, bucket id %lu",
+                bucket->file_id);
+    }
 
     recoverIndexAndFilter(bucket, read_buf, data_size);
     delete[] read_buf;
@@ -477,7 +491,7 @@ uint64_t BucketManager::recoverIndexAndFilter(
         if (use_varint_d_header == false) {
             memcpy(&header, read_buf + i, header_sz);
         } else {
-    // TODO check whether header can be destructed
+            // TODO check whether header can be destructed
             header = GetDeltaHeaderVarintMayFail(read_buf + i,
                     read_buf_size - i, header_sz, read_header_success);
             if (read_header_success == false) {
@@ -538,7 +552,7 @@ uint64_t BucketManager::recoverIndexAndFilter(
         str_t key(read_buf + i, header.key_size_);
         string_view key_view(read_buf + i, header.key_size_);
 
-        // no sorted part if the key is smaller or equal to the previous key
+        // no sorted part if key is smaller or equal to previous key
         if (sorted && previous_key.size() > 0 && previous_key >= key_view) {
             // no sorted part
             sorted = false;
@@ -554,9 +568,8 @@ uint64_t BucketManager::recoverIndexAndFilter(
 
         if (i <= read_buf_size) {
             // successfully read record.
-            bucket->max_seq_num = max(
-                bucket->max_seq_num,
-                (uint64_t)header.seq_num);
+            bucket->max_seq_num = max(bucket->max_seq_num,
+                    (uint64_t)header.seq_num);
             if (sorted) {
                 may_sorted_records.push_back(make_pair(key, header));
             } else {
@@ -572,6 +585,8 @@ uint64_t BucketManager::recoverIndexAndFilter(
             }
 
             previous_key = key_view;
+            // update the size of objects
+            rollback_offset = i;
         } else {
             // read record failed
             rollback_offset = header_offset;
@@ -588,11 +603,15 @@ uint64_t BucketManager::recoverIndexAndFilter(
 
     StatsRecorder::staticProcess(StatsType::DS_RECOVERY_INDEX_FILTER, tv);
 
+    bucket->prev_offset = read_buf_size;
+    bucket->rollback_offset = rollback_offset;
     if (i < read_buf_size) {
         STAT_PROCESS(
                 bucket->io_ptr->rollbackFile(read_buf, rollback_offset),
                 StatsType::DS_RECOVERY_ROLLBACK);
     }
+    bucket->buf_used_size = bucket->io_ptr->getFileBufferedSize();
+    bucket->start_offset = bucket->io_ptr->getStartOffset();
 
     // update file handler
     bucket->total_object_cnt = processed_delta_num;
@@ -621,6 +640,13 @@ bool BucketManager::recoverBucketTable() {
     data_sizes = 0;
     disk_sizes = 0;
 
+    uint64_t physical_size = 0; 
+    for (auto& it : id2buckets_) {
+        physical_size = it.second->io_ptr->getFilePhysicalSize(
+                working_dir_ + "/bucket");
+        break;
+    }
+
     // Step 2: Recover each bucket
     for (auto& it : id2buckets_) {
         cnt_in_progress++;
@@ -629,7 +655,7 @@ bool BucketManager::recoverBucketTable() {
             boost::bind(
                 &BucketManager::recoverFileMt,
                 this,
-                it.second,
+                it.second, physical_size,
                 boost::ref(data_sizes),
                 boost::ref(disk_sizes),
                 boost::ref(cnt_in_progress)));
@@ -660,6 +686,8 @@ bool BucketManager::recoverBucketTable() {
     printf("part 2 (%d files, data size %lu disk size %lu)\n", 
             cnt_f, t1, t2);
 
+    is_empty_ = (t1 == 0);
+
     gettimeofday(&tv2, 0);
     printf("read all buckets time: %.6lf\n", 
             tv2.tv_sec + tv2.tv_usec / 1000000.0 - tv.tv_sec -
@@ -684,7 +712,7 @@ bool BucketManager::readCommitLog(char*& read_buf, uint64_t& data_size)
     }
     bool ret;
     STAT_PROCESS(
-    ret = commit_log_fop_->openAndReadFile(commit_log_path, read_buf,
+    ret = commit_log_fop_->tryOpenAndReadFile(commit_log_path, read_buf,
         data_size, false),
     StatsType::DS_RECOVERY_COMMIT_LOG_READ);
 
@@ -849,7 +877,7 @@ bool BucketManager::recoverBucketList()
     gettimeofday(&start, NULL);
     bool ret = manifest_->retrieve(should_recover, id2prefixes_);
     gettimeofday(&end, NULL);
-    printf("-- retrieve: %ld s\n", (end.tv_sec - start.tv_sec) * 1000000 +
+    printf("-- retrieve: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
             end.tv_usec - start.tv_usec);
     if (ret == false) {
         debug_error("[ERROR] read metadata failed: ids %lu\n",
@@ -865,6 +893,7 @@ bool BucketManager::recoverBucketList()
     id2buckets_.clear();
     // TODO will fix later
 
+    gettimeofday(&start, NULL);
     for (auto& it : id2prefixes_) {
         auto& file_id = it.first;
         auto& prefix = it.second;
@@ -874,12 +903,69 @@ bool BucketManager::recoverBucketList()
         id2buckets_[file_id] = bucket;
         bucket->key = prefix;
         bucket->file_id = file_id;
+    }
+    gettimeofday(&end, NULL);
+    printf("-- record: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
 
+    gettimeofday(&start, NULL);
+    for (auto& it : id2buckets_) {
+        auto& bucket = it.second;
+        bucket->io_ptr->reuseLargeFileRecovery(bucket->file_id *
+                maxBucketSize_);
+    }
+    gettimeofday(&end, NULL);
+    printf("-- reuse: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
+
+    gettimeofday(&start, NULL);
+    for (auto& it : id2buckets_) {
+        auto& bucket = it.second;
+        auto& prefix = bucket->key;
+        // cause segfault if we use reuseLargeFile(). Need to check
         //debug_error("Recover file id = %lu, prefix = %s\n", file_id, prefix.c_str());
         prefix_tree_.insert(prefix, bucket);
-        recoverBucketID(file_id);
+        recoverBucketID(bucket->file_id);
+    }
+    gettimeofday(&end, NULL);
+    printf("-- reuse: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
+
+    gettimeofday(&start, NULL);
+    for (auto& it : id2buckets_) {
+        auto& bucket = it.second;
         manifest_->InitialSnapshot(bucket);
     }
+    gettimeofday(&end, NULL);
+    printf("-- initial: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
+
+    // original loop
+//    for (auto& it : id2prefixes_) {
+//        auto& file_id = it.first;
+//        auto& prefix = it.second;
+//        BucketHandler* old_hdl = nullptr;
+//        BucketHandler* bucket = createFileHandler();
+//
+//        id2buckets_[file_id] = bucket;
+//        bucket->key = prefix;
+//        bucket->file_id = file_id;
+//        bucket->io_ptr->reuseLargeFileRecovery(bucket->file_id *
+//                maxBucketSize_);
+//
+//        // cause segfault if we use reuseLargeFile(). Need to check
+//        //debug_error("Recover file id = %lu, prefix = %s\n", file_id, prefix.c_str());
+//        prefix_tree_.insert(prefix, bucket);
+//        recoverBucketID(file_id);
+//        manifest_->InitialSnapshot(bucket);
+//    }
+
+    gettimeofday(&start, NULL);
+    // good performance
+    manifest_->FlushSnapshot();
+    gettimeofday(&end, NULL);
+    printf("-- flush: %ld us\n", (end.tv_sec - start.tv_sec) * 1000000 +
+            end.tv_usec - start.tv_usec);
 
     return true;
 }
@@ -1132,6 +1218,10 @@ bool BucketManager::getBucketHandlerInternal(const string& key,
         return s;
     }
 
+    if (op_type == kMultiPut || op_type == kPut) {
+        is_empty_ = false;
+    }
+
     while (true) {
         if (s == false) {
             debug_e("cannot get from the prefix tree");
@@ -1226,6 +1316,7 @@ BucketManager::createNewInitialBucket(BucketHandler*& bucket)
     bucket = tmp_bucket;
     if (enable_crash_consistency_) {
         manifest_->InitialSnapshot(bucket);
+        manifest_->FlushSnapshot();
     }
     return true;
 }
@@ -1283,6 +1374,9 @@ uint64_t BucketManager::generateNewFileID()
 
 void BucketManager::recoverBucketID(uint64_t bucket_id) {
     bitmap_mtx_.lock();
+    if (bucket_bitmap_->getBit(bucket_id)) {
+        debug_error("bit previously set: %lu\n", bucket_id);
+    }
     bucket_bitmap_->setBit(bucket_id);
     bitmap_mtx_.unlock();
 }
@@ -2574,7 +2668,18 @@ void BucketManager::TryMerge() {
     
 void BucketManager::asioSingleFileGC(BucketHandler* bucket) {
     num_threads_++;
+//    debug_error("single file gc %ld\n", bucket->file_id);
     singleFileGC(bucket);
+//    debug_error("single file gc finished %ld\n", bucket->file_id);
+    num_threads_--;
+}
+
+void BucketManager::asioSingleFileGC(deltaStoreOpHandler* op_hdl) {
+    num_threads_++;
+//    debug_error("single file gc op_hdl %ld\n", op_hdl->bucket->file_id);
+    singleFileGC(op_hdl->bucket);
+//    debug_error("single file gc op_hdl finished %ld\n", op_hdl->bucket->file_id);
+    op_hdl->job_done = kDone;
     num_threads_--;
 }
 
@@ -2606,6 +2711,10 @@ void BucketManager::singleFileGC(BucketHandler* bucket) {
         if (!readFileStatus.success_ || readFileStatus.logicalSize_ !=
                 bucket->total_object_bytes) {
             debug_error("[ERROR] Could not read contents of file for GC, fileID = %lu, target size = %lu, actual read size = %lu\n", bucket->file_id, bucket->total_object_bytes, readFileStatus.logicalSize_);
+            debug_error("prev %lu rollback %lu buf %lu start %lu\n",
+                    bucket->prev_offset, bucket->rollback_offset,
+                    bucket->buf_used_size, bucket->start_offset);
+            // do not crash it for recovery testing
             exit(1);
         }
     }

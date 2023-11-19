@@ -13,6 +13,7 @@ public:
             id2prefixes); 
 
     void InitialSnapshot(BucketHandler* bucket); 
+    void FlushSnapshot();
     void UpdateGCMetadata(
 	const vector<BucketHandler*>& old_buckets,
 	const vector<BucketHandler*>& new_buckets); 
@@ -27,6 +28,7 @@ public:
 private:
     bool enable_pointer_ = false;
     uint64_t pointer_int_ = 0;
+    vector<pair<string, uint64_t>> snapshots_;
     shared_mutex mtx_;
     ofstream manifest_fs_;
     ofstream pointer_fs_;

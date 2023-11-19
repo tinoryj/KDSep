@@ -12,6 +12,7 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr,
     perFileFlushBufferSizeLimit_ = options->deltaStore_bucket_flush_buffer_size_limit_;
     perFileGCSizeLimit_ = options->deltaStore_gc_threshold * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
+    enable_crash_consistency_ = options->enable_crash_consistency;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         workerThreads_.reset(new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_));
         num_threads_ = 0;
@@ -853,7 +854,12 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
         bucket->extra_wb = new char[write_i]; 
         bucket->extra_wb_size = write_i;
         memcpy(bucket->extra_wb, write_buf, write_i);
-        bool ret = pushGcIfNeeded(bucket);
+        bool ret;
+        if (op_hdl->need_flush) {
+            ret = pushGcIfNeeded(op_hdl);
+        } else {
+            ret = pushGcIfNeeded(bucket);
+        } 
         if (ret == false) {
             debug_error("[ERROR] target file %lu exceed limit %lu, extra "
                     "write buffer %lu, total bytes %lu, but no GC\n",
@@ -890,7 +896,8 @@ bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl,
                         it.isAnchorFlag_);
             }
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
         return true;
     }
 }
@@ -908,7 +915,13 @@ bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl, bool& gc_pushed
     auto bucket = op_hdl->bucket;
     if (bucket->io_ptr->canWriteFile(0) == false) {
         // directly do GC on this file. 
-        bool ret = pushGcIfNeeded(bucket);
+        bool ret;
+        if (enable_crash_consistency_) {
+            op_hdl->need_flush = true;
+            ret = pushGcIfNeeded(op_hdl);
+        } else {
+            ret = pushGcIfNeeded(bucket);
+        }
         if (ret == false) {
             debug_error("[ERROR] target file %lu exceed limit %lu, "
                     "total bytes %lu, but no GC\n",
@@ -938,8 +951,9 @@ bool BucketOperator::operationFind(deltaStoreOpHandler* op_hdl) {
             obj->isAnchorFlag_);
 
     if (status == false) {
-        debug_error("[ERROR] Get file handler for key = %s"
-                " error during multiput\n", obj->keyPtr_);
+        debug_error("[ERROR] Get file handler for key = %.*s"
+                " error during multiput\n", 
+                (int)obj->keySize_, obj->keyPtr_);
     }
 
     return true;
@@ -954,6 +968,15 @@ bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket)
     } else {
         debug_trace("Current file ID = %lu should not GC, skip\n",
                 bucket->file_id);
+        return false;
+    }
+}
+
+bool BucketOperator::pushGcIfNeeded(deltaStoreOpHandler* op_hdl) {
+    if (op_hdl->bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
+        op_hdl->bucket->ownership = -1;
+        return bucket_manager_->pushToGCQueue(op_hdl);
+    } else {
         return false;
     }
 }
@@ -1665,9 +1688,15 @@ void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
             }
         } else {
             if (!gc_pushed) {
+                // read operation, or write/flush but no gc
                 op_hdl->bucket->ownership = 0;
+                op_hdl->job_done = kDone;
+            } else if (op_hdl->need_flush == false) {
+                op_hdl->job_done = kDone;
+            } else {
+                // let the GC thread to handle the bucket job_done flag
+                //op_hdl->job_done = kDone;
             }
-            op_hdl->job_done = kDone;
         }
     } else {
         op_hdl->job_done = kDone;

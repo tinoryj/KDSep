@@ -1,4 +1,5 @@
 #include "deltaStore/manifestManager.hpp"
+#include <algorithm>
 
 namespace KDSEP_NAMESPACE {
 
@@ -213,16 +214,43 @@ label_stop:
 void ManifestManager::InitialSnapshot(BucketHandler* bucket) {
     scoped_lock<shared_mutex> lk(mtx_);
 
-    if (!manifest_fs_.is_open()) {
-        debug_e("manifest_fs_ is not open\n");
-        exit(1);
+    snapshots_.push_back(make_pair(bucket->key, bucket->file_id));
+//    if (!manifest_fs_.is_open()) {
+//        debug_e("manifest_fs_ is not open\n");
+//        exit(1);
+//    }
+//    if (!(manifest_fs_ << "add" << endl)) {
+//	debug_error("output error: %d\n", __LINE__);
+//    }	
+//    manifest_fs_ << bucket->key << endl;
+//    manifest_fs_ << bucket->file_id << endl;
+//    manifest_fs_ << "add_end" << endl;
+}
+
+void ManifestManager::FlushSnapshot() {
+    scoped_lock<shared_mutex> lk(mtx_);
+
+    // numbers (10), "add" and "add_end" (10), newline (4)
+    int tot_size = snapshots_.size() * 24;
+    int max_id = 0;
+    for (auto& it : snapshots_) {
+        tot_size += it.first.size();
+        max_id = std::max(max_id, (int)it.second);
     }
-    if (!(manifest_fs_ << "add" << endl)) {
-	debug_error("output error: %d\n", __LINE__);
-    }	
-    manifest_fs_ << bucket->key << endl;
-    manifest_fs_ << bucket->file_id << endl;
-    manifest_fs_ << "add_end" << endl;
+
+    char *buf = new char[tot_size];
+    int ptr = 0;
+    for (auto& it : snapshots_) {
+        sprintf(buf + ptr, "add\n%s\n%lu\nadd_end\n", it.first.c_str(),
+                it.second); 
+        while (buf[ptr] != '\0') {
+            ptr++;
+        }
+    }
+
+    debug_error("snapshot size: %d\n", ptr);
+    manifest_fs_ << buf << endl;
+    snapshots_.clear();
 }
 
 void ManifestManager::UpdateGCMetadata(
