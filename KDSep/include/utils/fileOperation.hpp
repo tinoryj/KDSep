@@ -42,7 +42,10 @@ class FileOperation {
 public:
     FileOperation(fileOperationType operationType);
     FileOperation(fileOperationType operationType, uint64_t fileSize, uint64_t bufferSize);
+    FileOperation(fileOperationType operationType, uint64_t fileSize, 
+        uint64_t bufferSize, int existing_fd, uint64_t existing_offset);
     ~FileOperation();
+    bool canWriteFile(uint64_t size);
     FileOpStatus writeFile(char* write_buf, uint64_t size);
     FileOpStatus writeAndFlushFile(char* write_buf, uint64_t size);
     FileOpStatus readFile(char* read_buf, uint64_t size);
@@ -60,12 +63,22 @@ public:
     uint64_t getCachedFileSize();
     uint64_t getFilePhysicalSize(string path);
     uint64_t getFileBufferedSize();
+    uint64_t getStartOffset();
     void markDirectDataAddress(uint64_t data);
 
     // for recovery
-    bool openAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
+    bool tryOpenAndReadFile(string path, char*& read_buf, uint64_t& data_size, 
 	    bool save_page_data_sizes);
+    bool retrieveFilePiece(char*& read_buf, uint64_t& data_size, 
+	    bool save_page_data_sizes, 
+            uint64_t physical_size = ~0ull);
     bool rollbackFile(char* read_buf, uint64_t rollback_offset);
+
+    bool setStartOffset(uint64_t start_offset);
+    bool reuseLargeFile(uint64_t start_offset);
+    bool reuseLargeFileRecovery(uint64_t start_offset); 
+
+    bool cleanFile();
 
 private:
     fileOperationType operationType_;
@@ -75,9 +88,9 @@ private:
     uint64_t page_size_m4_ = sysconf(_SC_PAGESIZE) - sizeof(uint32_t);
     uint64_t disk_size_ = 0;
     uint64_t data_size_ = 0;
-    uint64_t newlyCreatedFileFlag_ = false;
-    uint64_t preAllocateFileSize_ = 0;
-    char* globalWriteBuffer_ = nullptr;
+    uint64_t is_newly_created_ = false;
+    uint64_t max_size_ = 0;
+    char* write_buf_ = nullptr;
     uint64_t buf_used_size_ = 0;
     uint64_t buf_size_ = 0;
 
@@ -87,7 +100,13 @@ private:
     uint64_t mark_disk_ = 0;
     uint64_t mark_in_page_offset_ = 0;
 
+    // operate an existing file
+    bool use_existing_ = false; 
+    uint64_t start_offset_ = 0;
+
     bool recovery_state_ = false;
+    bool closed_before_ = false;
+    bool debug_flag_ = false;
     std::vector<uint32_t> page_data_sizes_;
 };
 

@@ -135,6 +135,9 @@ class CoreWorkload {
     static const std::string RECORD_COUNT_PROPERTY;
     static const std::string OPERATION_COUNT_PROPERTY;
 
+    static const std::string ZIPFIAN_CONSTANT_PROPERTY;
+    static const std::string ZIPFIAN_CONSTANT_DEFAULT;
+
     static const std::string LARGE_VALUE_PROPORTION_PROPERTY;
     static const std::string LARGE_VALUE_PROPORTION_DEFAULT;
 

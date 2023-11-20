@@ -70,3 +70,4 @@ tmpappend-prepare
 test.sh
 debug.sh
 runLog.sh
+tmp_cpu_usage.txt

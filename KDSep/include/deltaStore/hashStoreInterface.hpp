@@ -12,12 +12,12 @@ namespace KDSEP_NAMESPACE {
 
 class HashStoreInterface {
 public:
-    HashStoreInterface(KDSepOptions* options, const string& workingDirStr, BucketManager*& bucketManager,
-        BucketOperator*& bucketOperator, messageQueue<writeBackObject*>* writeBackOperationsQueue);
+    HashStoreInterface(KDSepOptions* options, const string& workingDirStr,
+            shared_ptr<BucketManager>& bucketManager,
+            shared_ptr<BucketOperator>& bucketOperator);
     ~HashStoreInterface();
 
     uint64_t getExtractSizeThreshold();
-    bool put(mempoolHandler_t object);
 
     // not enable consistency: false & false 
     // consistency + has value: (false (not full) / true (full)) & false 
@@ -31,10 +31,13 @@ public:
     bool get(const string& keyStr, vector<string>& valueStrVecPtr);
     bool get(const string& keyStr, vector<string>& valueStrVec, vector<KDRecordHeader>& recordVec);
     bool multiGet(const vector<string>& keyStrVec, vector<vector<string>>& valueStrVecVecPtr);
-    bool forcedManualGarbageCollection();
+    bool scan(const string& key, int len, map<string, string>& keys_values);
+    bool wrapUpGC(uint64_t& num_bucket_pushed);
     bool setJobDone();
     bool Recovery();
+    bool isEmpty();
 
+    uint64_t getNumOfBuckets();
 
 private:
     bool anyBucketInitedFlag_ = false;
@@ -49,11 +52,11 @@ private:
 
     bool recoverFromCommitLog(uint64_t min_seq_num);
     // get function pointers
-    BucketManager* file_manager_ = nullptr;
-    BucketOperator* file_operator_ = nullptr;
-    KDLRUCache* kd_cache_ = nullptr;
-    // message queues for internal usage
-    messageQueue<BucketHandler*>* notifyGCMQ_ = nullptr;
+    shared_ptr<BucketManager> file_manager_;
+    shared_ptr<BucketOperator> file_operator_;
+
+    mutex multiop_mtx_;
+    shared_ptr<KDLRUCache> kd_cache_;
 };
 
 }

@@ -30,11 +30,13 @@ else
     fi
 fi
 
-./scripts/cleanup.sh
+#./scripts/cleanup.sh
 
+set -x
 cd ./build || exit
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$cpuMaxThreadNumber
+set +x
 
 cd .. || exit
 

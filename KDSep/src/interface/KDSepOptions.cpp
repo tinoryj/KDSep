@@ -18,7 +18,7 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "DeltaStore options:" << endl;
         dumpOptionsOutStream << "\tenable_deltaStore = " << enable_deltaStore << endl;
         dumpOptionsOutStream << "\tenable_deltaStore_KDLevel_cache = " << enable_deltaStore_KDLevel_cache << endl;
-        dumpOptionsOutStream << "\tenable_deltaStore_garbage_collection = " << enable_deltaStore_garbage_collection << endl;
+        dumpOptionsOutStream << "\tenable_bucket_gc = " << enable_bucket_gc << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_cache_mode = " << static_cast<typename std::underlying_type<contentCacheMode>::type>(deltaStore_base_cache_mode) << endl;
         dumpOptionsOutStream << "\tdeltaStore_base_store_mode = " << static_cast<typename std::underlying_type<contentStoreMode>::type>(deltaStore_base_store_mode) << endl;
         dumpOptionsOutStream << "\tdeltaStore_KDCache_item_number_ = " << deltaStore_KDCache_item_number_ << endl;
@@ -29,7 +29,7 @@ bool KDSepOptions::dumpOptions(string dumpPath)
         dumpOptionsOutStream << "\tdeltaStore_total_storage_maximum_size = " << deltaStore_total_storage_maximum_size << endl;
         dumpOptionsOutStream << "\tdeltaStore_worker_thread_number_limit = " << deltaStore_op_worker_thread_number_limit_ << endl;
         dumpOptionsOutStream << "\tdeltaStore_gc_thread_number_limit = " << deltaStore_gc_worker_thread_number_limit_ << endl;
-        dumpOptionsOutStream << "\tdeltaStore_garbage_collection_start_single_file_minimum_occupancy = " << deltaStore_garbage_collection_start_single_file_minimum_occupancy << endl;
+        dumpOptionsOutStream << "\tdeltaStore_gc_threshold = " << deltaStore_gc_threshold << endl;
     }
     if (enable_valueStore == true) {
         dumpOptionsOutStream << "ValueStore options:" << endl;
@@ -65,7 +65,7 @@ bool KDSepOptions::dumpDataStructureInfo(string dumpPath)
     dumpStructureSizeOutStream << "Size of BucketHandler = " << sizeof(BucketHandler) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreWriteOperationHandler = " << sizeof(hashStoreWriteOperationHandler) << endl;
     dumpStructureSizeOutStream << "Size of hashStoreReadOperationHandler = " << sizeof(hashStoreMultiGetOperationHandler) << endl;
-    dumpStructureSizeOutStream << "Size of hashStoreOperationHandler = " << sizeof(hashStoreOperationHandler) << endl;
+    dumpStructureSizeOutStream << "Size of deltaStoreOpHandler = " << sizeof(deltaStoreOpHandler) << endl;
     dumpStructureSizeOutStream << "Size of KDRecordHeader = " << sizeof(KDRecordHeader) << endl;
 
     dumpStructureSizeOutStream.flush();

@@ -137,6 +137,10 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     size_t memtableSize = config.getMemtable();
     uint64_t debugLevel = config.getDebugLevel();
     DebugManager::getInstance().setDebugLevel(debugLevel);
+    size_t memory_budget = config.getMemoryBudget();
+
+    options_.memory_budget = memory_budget;
+    options_.min_block_cache_size = blockCacheSize;
 
     // set optionssc
     rocksdb::BlockBasedTableOptions bbto;
@@ -173,13 +177,15 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
         options_.rocks_opt.prepopulate_blob_cache = rocksdb::PrepopulateBlobCache::kDisable;                  // Default kDisable
         assert(!keyValueSeparation);
     } else {
-        bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(blockCacheSize);
+        bbto.block_cache = (blockCacheSize == 0) ? nullptr : rocksdb::NewLRUCache(memory_budget);
         if (blockCacheSize == 0) {
             bbto.no_block_cache = true;
         }
     }
     bbto.block_size = config.getBlockSize();
     bbto.cache_index_and_filter_blocks = true;
+
+    options_.rocks_block_cache = bbto.block_cache;
 
     if (keyValueSeparation == true) {
         options_.enable_valueStore = true;
@@ -200,16 +206,17 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
         options_.deltaStore_max_bucket_number_ = config.getDeltaStoreMaxBucketNumber();
         bool enable_gc_flag = config.getDeltaStoreGCEnableStatus();
         if (enable_gc_flag == true) {
-            options_.enable_deltaStore_garbage_collection = true;
+            options_.enable_bucket_gc = true;
+            options_.enable_bucket_split = config.getEnableBucketSplit();
+            options_.enable_bucket_merge = config.getEnableBucketMerge();
             options_.deltaStore_gc_split_threshold_ = config.getDeltaStoreSplitGCThreshold();
+            options_.deltaStore_gc_threshold = config.getDeltaStoreGCThreshold();
         } else {
-            options_.enable_deltaStore_garbage_collection = false;
+            options_.enable_bucket_gc = false;
         }
     }
-    options_.enable_batched_operations_ = config.getDeltaStoreBatchEnableStatus();
     options_.write_buffer_size = config.getKDSepWriteBufferSize();
-
-    if (options_.enable_batched_operations_ == true && options_.write_buffer_size > 0) {
+    if (options_.write_buffer_size > 0) {
         options_.deltaStore_mem_pool_object_number_ = 300000;
         // ceil(options_.write_buffer_size * 3);
         long pagesize = sysconf(_SC_PAGE_SIZE);
@@ -220,8 +227,10 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     options_.rocksdb_sync_put = !keyValueSeparation;
     options_.rocksdb_sync_merge = !keyDeltaSeparation;
     options_.enable_parallel_lsm_interface_ = config.getParallelLsmTreeInterface();
+    cerr << "parallel: " << (int)options_.enable_parallel_lsm_interface_ << endl;
     options_.enable_crash_consistency = (keyDeltaSeparation &&
             config.getEnableCrashConsistency());
+    options_.commit_log_size = config.getCommitLogSize();
 
     options_.KDSep_merge_operation_ptr.reset(new KDSEP_NAMESPACE::KDSepFieldUpdateMergeOperator);
     options_.rocks_opt.merge_operator.reset(new FieldUpdateMergeOperator);
@@ -238,15 +247,8 @@ KDSepDB::KDSepDB(const char *dbfilename, const std::string &config_file_path) {
     options_.rocks_opt.target_file_size_base = config.getSSTSize();
     options_.rocks_opt.max_bytes_for_level_base = config.getL1Size();
 
-    cerr << "write buffer size " << options_.rocks_opt.write_buffer_size << endl;
-    cerr << "write buffer number " << options_.rocks_opt.max_write_buffer_number << endl;
-    cerr << "num compaction trigger "
-         << options_.rocks_opt.level0_file_num_compaction_trigger << endl;
-    cerr << "targe file size base " << options_.rocks_opt.target_file_size_base << endl;
-    cerr << "level size base " << options_.rocks_opt.max_bytes_for_level_base << endl;
-
     if (config.getEnableGcWriteStall()) {
-        options_.write_stall = new bool;  // new boost::atomic<bool>;
+        options_.write_stall.reset(new bool);
         *options_.write_stall = false;
     }
 

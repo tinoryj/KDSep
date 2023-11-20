@@ -8,6 +8,8 @@
 #include "utils/appendAbleLRUCacheStrVector.hpp"
 #include "utils/debug.hpp"
 #include "utils/fileOperation.hpp"
+#include "utils/messageQueue.hpp"
+#include "utils/lockQueue.hpp"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -20,6 +22,7 @@ public:
     ~KDSepOptions() = default;
 
     rocksdb::Options rocks_opt;
+    shared_ptr<rocksdb::Cache> rocks_block_cache = nullptr;
 
     enum class contentStoreMode {
         kAppendOnlyLogWithIndex = 0,
@@ -36,7 +39,7 @@ public:
     // deltaStore options
     bool enable_deltaStore = false;
     bool enable_deltaStore_KDLevel_cache = false;
-    bool enable_deltaStore_garbage_collection = false;
+    bool enable_bucket_gc = false;
     contentCacheMode deltaStore_base_cache_mode = contentCacheMode::kLRUCache;
     contentStoreMode deltaStore_base_store_mode = contentStoreMode::kHashBasedBucketWithoutIndex;
     uint64_t deltaStore_KDCache_item_number_ = 1 * 1024 * 1024;
@@ -50,7 +53,7 @@ public:
     uint64_t deltaStore_gc_worker_thread_number_limit_ = 1;
     uint64_t deltaStore_bucket_flush_buffer_size_limit_ = 4096;
     uint64_t deltaStore_operationNumberForForcedSingleFileGCThreshold_ = 50;
-    float deltaStore_garbage_collection_start_single_file_minimum_occupancy = 0.9;
+    float deltaStore_gc_threshold = 0.9;
     float deltaStore_gc_split_threshold_ = 0.8;
     uint64_t deltaStore_write_back_during_reads_threshold = 0;
     uint64_t deltaStore_write_back_during_reads_size_threshold = 0;
@@ -81,9 +84,9 @@ public:
     bool enable_write_back_optimization_ = true;
     bool enable_parallel_lsm_interface_ = false;
     bool enable_crash_consistency = false;
+    bool enable_bucket_split = true;
     bool enable_bucket_merge = true;
-    bool enable_batched_operations_ = true;
-    bool enable_lsm_tree_delta_meta = false;
+    bool enable_batched_operations = true;
     uint64_t key_value_cache_object_number_ = 1000;
     uint64_t write_buffer_num = 5;
     uint64_t write_buffer_size = 2 * 1024 * 1024;
@@ -94,12 +97,17 @@ public:
     bool enable_index_block = true;
     bool test_recovery = false;
 
-    AppendAbleLRUCacheStrVector* keyToValueListCacheStr_ = nullptr;
-    KDLRUCache* kd_cache = nullptr;
-    //    boost::atomic<bool>* write_stall = nullptr;
-    bool* write_stall = nullptr;
-    std::queue<string>* wb_keys = nullptr;
-    std::mutex* wb_keys_mutex = nullptr;
+    uint64_t commit_log_size = 1024 * 1024 * 1024;
+
+    // tune the block cache size
+    uint64_t min_block_cache_size = 0;
+    uint64_t memory_budget;
+
+    // not message queue
+    shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue;
+    shared_ptr<condition_variable> write_back_cv;
+    shared_ptr<bool> write_stall;
+    shared_ptr<KDLRUCache> kd_cache;
 
     // dump options
     bool dumpOptions(string dumpPath);

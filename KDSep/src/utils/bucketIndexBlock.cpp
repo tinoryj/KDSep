@@ -7,13 +7,8 @@ BucketIndexBlock::BucketIndexBlock() {
 }
 
 BucketIndexBlock::~BucketIndexBlock() {
-    static int free_cnt = 0;
     mp_.clear();
     delete[] key_buf_;
-    free_cnt++;
-    if (free_cnt % 1000 == 0) {
-        printf("free key filter %d\n", free_cnt);
-    }
 }
 
 void BucketIndexBlock::Insert(const str_t& key, size_t kd_size) {

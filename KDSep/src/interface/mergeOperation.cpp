@@ -216,11 +216,7 @@ inline bool RocksDBInternalMergeOperator::ExtractDeltas(bool value_separated,
         KvHeader header;
        
         // increase delta_off
-        if (use_varint_kv_header == false) {
-            memcpy(&header, operand.data_ + delta_off, header_sz);
-        } else {
-            header = GetKVHeaderVarint(operand.data_ + delta_off, header_sz);
-        }
+        header = GetKVHeaderVarint(operand.data_ + delta_off, header_sz);
 
         // extract the oprand
         if (header.mergeFlag_ == true) {
@@ -289,11 +285,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
 
     KvHeader vheader; 
 
-    if (use_varint_kv_header == false) {
-        memcpy(&vheader, existing_value->data(), vheader_sz);
-    } else {
-        vheader = GetKVHeaderVarint(existing_value->data(), vheader_sz);
-    }
+    vheader = GetKVHeaderVarint(existing_value->data(), vheader_sz);
 
     vector<str_t> leadingRawDeltas;
     vector<str_t> deltas;
@@ -343,9 +335,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     if (leading_index > 0) {
         vector<str_t> raw_deltas;
         for (int i = 0; i < leading_index; i++) {
-            if (use_varint_kv_header == true) {
-                dheader_sz = GetKVHeaderVarintSize(deltas[i].data_);
-            }
+            dheader_sz = GetKVHeaderVarintSize(deltas[i].data_);
             raw_deltas.push_back(str_t(deltas[i].data_ + dheader_sz,
                         deltas[i].size_ - dheader_sz));
         }
@@ -386,11 +376,7 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
             uint64_t total_delta_size = 0;
             for (int i = leading_index; i < (int)deltas.size(); i++) {
                 KvHeader dheader;
-                if (use_varint_kv_header == false) {
-                    memcpy(&dheader, deltas[i].data_, dheader_sz);
-                } else {
-                    dheader = GetKVHeaderVarint(deltas[i].data_, dheader_sz);
-                }
+                dheader = GetKVHeaderVarint(deltas[i].data_, dheader_sz);
                 operand_type_vec[i - leading_index] = 
                     make_pair(dheader, str_t(deltas[i].data_ + dheader_sz,
                                 deltas[i].size_ - dheader_sz)); 
@@ -418,20 +404,14 @@ bool RocksDBInternalMergeOperator::FullMerge(const Slice& key, const Slice* exis
     }
 
     char header_buf[16];
-    if (use_varint_kv_header == true) {
-        vheader_sz = PutKVHeaderVarint(header_buf, vheader);
-    }
+    vheader_sz = PutKVHeaderVarint(header_buf, vheader);
 
     // Prepare space for header, value, and deltas
     new_value->resize(vheader_sz + merged_raw_value.size_ +
             partial_merged_delta.size_);
     char* buffer = new_value->data();
     // write the header. Buffer pointer moved by copyIncBuf()
-    if (use_varint_kv_header == true) {
-        copyIncBuf(buffer, &header_buf, vheader_sz);
-    } else {
-        copyIncBuf(buffer, &vheader, vheader_sz);
-    }
+    copyIncBuf(buffer, &header_buf, vheader_sz);
 
     // write the value
     if (merged_raw_value.size_ > 0) {
@@ -479,11 +459,7 @@ bool RocksDBInternalMergeOperator::PartialMerge(
             KvHeader header;
 
             // increase delta_off. Extract the header
-            if (use_varint_kv_header == false) {
-                memcpy(&header, it.data_ + delta_off, header_sz);
-            } else {
-                header = GetKVHeaderVarint(it.data_ + delta_off, header_sz);
-            }
+            header = GetKVHeaderVarint(it.data_ + delta_off, header_sz);
                 
             // extract the operand
             if (header.mergeFlag_ == true) {
@@ -607,12 +583,8 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdatesWithHeader(
         }
         // record the raw delta size in the vector
         header.rawValueSize_ = raw_delta_size; 
-        if (use_varint_kv_header == true) {
-            raw_delta_sizes[i++] = raw_delta_size;
-            final_size += GetKVHeaderVarintSize(header) + raw_delta_size;
-        } else {
-            final_size += header_sz + raw_delta_size;
-        }
+        raw_delta_sizes[i++] = raw_delta_size;
+        final_size += GetKVHeaderVarintSize(header) + raw_delta_size;
     }
 
     debug_info("PartialMerge raw delta number %lu, "
@@ -633,10 +605,8 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdatesWithHeader(
         if (it.empty() == false) {
             bool first = true;
             int tmp_i = result_i;
-            if (use_varint_kv_header == true) {
-                header.rawValueSize_ = raw_delta_sizes[j++];
-                header_sz = PutKVHeaderVarint(result + result_i, header);
-            }
+            header.rawValueSize_ = raw_delta_sizes[j++];
+            header_sz = PutKVHeaderVarint(result + result_i, header);
             result_i += header_sz;
             for (auto& it0 : it) {
                 if (first) {
@@ -651,25 +621,15 @@ inline bool RocksDBInternalMergeOperator::PartialMergeFieldUpdatesWithHeader(
                 while (result[result_i]) 
                     result_i++;
             }
-            if (use_varint_kv_header == false) {
-                header.rawValueSize_ = result_i - tmp_i - header_sz;
-                memcpy(result + tmp_i, &header, header_sz);
-            } else {
-                if (header.rawValueSize_ != result_i - tmp_i - header_sz) {
-                    debug_error("Header size error: %d %d\n", 
-                            header.rawValueSize_,
-                            (int)(result_i - tmp_i - header_sz));
-                    exit(1);
-                }
+            if (header.rawValueSize_ != result_i - tmp_i - header_sz) {
+                debug_error("Header size error: %d %d\n", 
+                        header.rawValueSize_,
+                        (int)(result_i - tmp_i - header_sz));
+                exit(1);
             }
         } else {
-            if (use_varint_kv_header == false) {
-                memcpy(result + result_i, &(separated_headers[i]),
-                        header_sz);
-            } else {
-                header_sz = PutKVHeaderVarint(result + result_i,
-                        separated_headers[i]);
-            }
+            header_sz = PutKVHeaderVarint(result + result_i,
+                    separated_headers[i]);
             result_i += header_sz;
             i++;
         }

@@ -25,3 +25,4 @@ fieldcount=NaN
 fieldlength=NaN
 field_len_dist=constant
 maxscanlength=100
+zipfianconstant=0.9

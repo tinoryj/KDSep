@@ -25,6 +25,7 @@ class ExternDBConfig {
     int numThreads_;
     size_t blockCache_;
     size_t blobCacheSize;
+    size_t memory_budget_;
     size_t memtable_;
     bool tiered_;
     double GCRatio_;
@@ -43,7 +44,6 @@ class ExternDBConfig {
     uint64_t ds_worker_thread_number_limit;
     uint64_t ds_gc_thread_number_limit;
     bool ds_enable_gc;
-    bool KDSep_enable_batch;
     uint64_t write_buffer_size_ = 2 * 1024 * 1024;
     uint64_t prefixTreeBitNumber_;
     uint64_t blockSize;
@@ -51,11 +51,14 @@ class ExternDBConfig {
     uint64_t max_kv_size;
     bool parallel_lsm_interface_;
     bool enable_crash_consistency_;
+    bool enable_bucket_split_;
     bool enable_bucket_merge_;
     bool enable_index_block_;
     double blobgcforce_;
     bool enable_gc_write_stall_;
     bool test_recovery_;
+    uint64_t test_final_scan_ops_;
+    uint64_t commit_log_size_;
 
     struct {
         uint64_t level;
@@ -73,6 +76,7 @@ class ExternDBConfig {
         use_pwrite_ = pt_.get<bool>("config.usepwrite", false);
         blockCache_ = pt_.get<size_t>("config.blockCache");
         blobCacheSize = pt_.get<size_t>("config.blobCacheSize", 0);
+        memory_budget_ = pt_.get<size_t>("config.memory_budget", 4ull * 1024 * 1024 * 1024);
         blobgcforce_ = pt_.get<double>("config.blobgcforce", 1.0);
         memtable_ = pt_.get<size_t>("config.memtable");
         noCompaction_ = pt_.get<bool>("config.noCompaction");
@@ -95,7 +99,6 @@ class ExternDBConfig {
         ds_gc_thread_number_limit = pt_.get<uint64_t>("deltaStore.ds_gc_thread_number_limit");
         debug_.level = pt_.get<uint64_t>("debug.level");
         ds_enable_gc = pt_.get<bool>("deltaStore.deltaStoreEnableGC", true);
-        KDSep_enable_batch = pt_.get<bool>("config.enableBatchedOperations");
         write_buffer_size_ = pt_.get<uint64_t>("config.write_buffer_size", 2 * 1024 * 1024);
         prefixTreeBitNumber_ = pt_.get<uint64_t>("deltaStore.ds_init_bit");
         max_kv_size = pt_.get<uint64_t>("config.max_kv_size", 4096);
@@ -103,9 +106,12 @@ class ExternDBConfig {
         blockSize = pt_.get<uint64_t>("rocksdb.blockSize", 65536);
         parallel_lsm_interface_ = pt_.get<bool>("config.parallel_lsm_tree_interface", true);
         enable_crash_consistency_ = pt_.get<bool>("config.crash_consistency", false);
+        enable_bucket_split_ = pt_.get<bool>("config.enable_bucket_split", true); 
         enable_bucket_merge_ = pt_.get<bool>("config.enable_bucket_merge", true);
         enable_index_block_ = pt_.get<bool>("config.enable_index_block", true);
         enable_gc_write_stall_ = pt_.get<bool>("config.enable_gc_write_stall", true);
+        commit_log_size_ = pt_.get<uint64_t>("config.commit_log_size", 1024 *1024 * 1024);
+        test_final_scan_ops_ = pt_.get<uint64_t>("config.test_final_scan_ops", 0);
 	test_recovery_ = pt_.get<bool>("debug.test_recovery", false);
     }
 
@@ -138,6 +144,9 @@ class ExternDBConfig {
     }
     size_t getBlobCacheSize() {
         return blobCacheSize;
+    }
+    size_t getMemoryBudget() {
+        return memory_budget_;
     }
     size_t getMemtable() {
         return memtable_;
@@ -209,10 +218,6 @@ class ExternDBConfig {
         return ds_enable_gc;
     }
 
-    bool getDeltaStoreBatchEnableStatus() {
-        return KDSep_enable_batch;
-    }
-
     uint64_t getKDSepWriteBufferSize() {
         return write_buffer_size_;
     }
@@ -239,6 +244,9 @@ class ExternDBConfig {
     bool getEnableBucketMerge() {
         return enable_bucket_merge_;
     }
+    bool getEnableBucketSplit() {
+        return enable_bucket_split_;
+    }
     bool getEnableIndexBlock() {
         return enable_index_block_;
     }
@@ -247,6 +255,15 @@ class ExternDBConfig {
     }
     bool getTestRecovery() {
         return test_recovery_;
+    }
+    uint64_t getCommitLogSize() {
+        return commit_log_size_;
+    }
+    bool getUseFinalScan() {
+        return test_final_scan_ops_ > 0;
+    }
+    uint64_t getFinalScanOps() {
+        return test_final_scan_ops_;
     }
     double getBlobGCForce() {
         return blobgcforce_;

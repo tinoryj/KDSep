@@ -6,6 +6,7 @@ using namespace std;
 
 namespace KDSEP_NAMESPACE {
 
+
 class KDSep {
 public:
     KDSep();
@@ -33,14 +34,12 @@ private:
     unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>* batch_map_[2]; // key to <operation type, value>
     uint64_t batch_in_use_ = 0;
     uint64_t maxBatchOperationBeforeCommitNumber_ = 3;
-    uint64_t maxBatchOperationBeforeCommitSize_ = 2 * 1024 * 1024;
-    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* notifyWriteBatchMQ_ = nullptr;
+    uint64_t write_buffer_size_ = 2 * 1024 * 1024;
+    messageQueue<unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*>* write_buffer_mq_ = nullptr;
     uint64_t batch_nums_[2] = { 0UL, 0UL };
     uint64_t batch_sizes_[2] = { 0UL, 0UL };
 //    boost::atomic<bool>* write_stall_ = nullptr;
-    bool* write_stall_ = nullptr;
-    std::queue<string>* wb_keys = nullptr;
-    std::mutex* wb_keys_mutex = nullptr;
+    shared_ptr<bool> write_stall_;
 
     boost::atomic<bool> oneBufferDuringProcessFlag_ = false;
     boost::atomic<bool> writeBatchOperationWorkExitFlag = false;
@@ -59,22 +58,27 @@ private:
     bool MergeWithWriteBatch(mempoolHandler_t objectPairMemPoolHandler);
 
     bool PutImpl(const string& key, const string& value);
-    bool SinglePutInternal(const mempoolHandler_t& mempoolHandler); 
-    bool SingleMergeInternal(const mempoolHandler_t& mempoolHandler);
     bool GetInternal(const string& key, string* value, bool writing_back);
+
+    str_t extractRawLsmValue(const string& lsm_value); 
     bool MultiGetFullMergeInternal(const vector<string>& keys,
 	const vector<string>& lsm_values,
 	const vector<vector<string>>& key_deltas,
 	vector<string>& values); 
+    bool BatchFullMergeInternal(const vector<string>& lsm_keys, 
+            const vector<string>& lsm_values, const map<string, string>&
+            key_deltas, int len, map<string, string>& keys_values); 
 
-    bool MultiGetInternal(const vector<string>& keys, vector<string>& values); 
+    bool MultiGetInternalForWriteBack(const vector<string>& keys,
+            vector<string>& values); 
     bool GetKeysByTargetNumber(const string& targetStartKey, const uint64_t& targetGetNumber, vector<string>& keys, vector<string>& values);
 
-    bool GetCurrentValueThenWriteBack(const string& key);
     bool GetCurrentValuesThenWriteBack(const vector<string>& keys);
 //    bool GetFromBuffer(const string& key, vector<string>& values);
 
-    bool performInBatchedBufferDeduplication(unordered_map<str_t, vector<pair<DBOperationType, mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*& operationsMap);
+    bool writeBufferDedup(unordered_map<str_t, vector<pair<DBOperationType,
+            mempoolHandler_t>>, mapHashKeyForStr_t, mapEqualKeForStr_t>*&
+            operationsMap);
 
     void processBatchedOperationsWorker();
     void processWriteBackOperationsWorker();
@@ -82,11 +86,9 @@ private:
 
     void Recovery();
 
-    bool isDeltaStoreInUseFlag_ = false;
-    bool useInternalRocksDBBatchOperationsFlag_ = false;
-    bool isBatchedOperationsWithBufferInUse_ = false;
-    bool enableDeltaStoreWithBackgroundGCFlag_ = false;
-    bool enableLsmTreeDeltaMeta_ = true;
+    bool enable_delta_store_ = false;
+    bool enable_write_buffer_ = false;
+    bool enable_delta_gc_ = false;
     bool enableParallelLsmInterface = true;
     bool enable_crash_consistency_ = false;
     bool enable_bucket_merge_ = true;
@@ -95,20 +97,22 @@ private:
     int writeBackWhenReadDeltaSizeThreshold_ = 4;
     uint64_t deltaExtractSize_ = 0;
     uint64_t valueExtractSize_ = 0;
-    std::shared_mutex KDSepOperationsMtx_;
+    shared_mutex KDSepOperationsMtx_;
 
     uint32_t globalSequenceNumber_ = 0;
-    std::shared_mutex globalSequenceNumberGeneratorMtx_;
+    shared_mutex globalSequenceNumberGeneratorMtx_;
 
-    std::shared_mutex batchedBufferOperationMtx_;
+    shared_mutex write_buffer_mtx_;
 
-    messageQueue<writeBackObject*>* writeBackOperationsQueue_ = nullptr;
-    // useless
-    messageQueue<lsmInterfaceOperationStruct*>* lsmInterfaceOperationsQueue_ = nullptr;
-    std::mutex lsm_interface_mutex;
-    std::condition_variable lsm_interface_cv;
+    shared_ptr<lockQueue<vector<writeBackObject*>*>> write_back_queue_;
+    shared_ptr<condition_variable> write_back_cv_;
+    shared_ptr<mutex> write_back_mutex_; // for cv lock
+
+    messageQueue<lsmInterfaceOperationStruct*>* lsm_interface_mq_ = nullptr;
+    mutex lsm_interface_mutex;
+    condition_variable lsm_interface_cv;
     bool enable_write_back_ = false;
-    std::shared_mutex writeBackOperationsMtx_;
+    shared_mutex writeBackOperationsMtx_;
 
     // thread management
     vector<boost::thread*> thList_;
@@ -119,14 +123,29 @@ private:
     bool extractDeltas(string internalValue, uint64_t skipSize,
             vector<pair<bool, string>>& mergeOperatorsVec, 
             vector<KvHeader>& mergeOperatorsRecordVec);
+    void pushWriteBuffer();
     // Storage component for delta store
 
-    HashStoreInterface* delta_store_ = nullptr;
-    BucketManager* bucket_manager_ = nullptr;
-    BucketOperator* bucket_operator_ = nullptr;
+    // tune the block cache size
+    shared_ptr<rocksdb::Cache> rocks_block_cache_;
+    struct timeval tv_tune_cache_;
+    void tryTuneCache();
+    uint64_t extra_mem_step_ = 16 * 1024 * 1024;
+    uint64_t extra_mem_threshold_ = extra_mem_step_;
+    uint64_t max_kd_cache_size_ = 0;
+    uint64_t min_block_cache_size_ = 0;
+    uint64_t memory_budget_ = 4ull * 1024 * 1024 * 1024;
+    shared_ptr<KDLRUCache> kd_cache_;
+
+    unique_ptr<HashStoreInterface> delta_store_;
+    shared_ptr<BucketManager> bucket_manager_;
+    shared_ptr<BucketOperator> bucket_operator_;
     shared_ptr<KDSepMergeOperator> KDSepMergeOperatorPtr_;
     LsmTreeInterface lsmTreeInterface_;
 
+    bool should_exit_ = false;
+    bool buffer_in_process_ = false; 
+    bool probeThread();
 };
 
 } // namespace KDSEP_NAMESPACE

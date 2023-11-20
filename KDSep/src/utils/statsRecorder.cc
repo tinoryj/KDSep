@@ -157,6 +157,10 @@ StatsRecorder::~StatsRecorder()
     PRINT_FULL("  no wait buffer", KDSep_WRITE_BACK_NO_WAIT_BUFFER, time[KDSep_WRITE_BACK]);
     PRINT_FULL("  check buffer", KDSep_WRITE_BACK_CHECK_BUFFER, time[KDSep_WRITE_BACK]);
     PRINT_FULL("  get-internal", KDSep_WRITE_BACK_GET, time[KDSep_WRITE_BACK]);
+    PRINT_FULL("    lsm", KDS_WRITE_BACK_GET_LSM, time[KDSep_WRITE_BACK]);
+    PRINT_FULL("    deltaStore", KDS_WRITE_BACK_GET_DS, time[KDSep_WRITE_BACK]);
+    PRINT_FULL("      onefile", DS_MULTIGET_ONE_FILE, time[KDSep_WRITE_BACK]);
+    PRINT_FULL("    fullmerge", KDS_WRITE_BACK_FULLMERGE, time[KDSep_WRITE_BACK]);
     PRINT_FULL("  put", KDSep_WRITE_BACK_PUT, time[KDSep_WRITE_BACK]);
 
     fprintf(stdout, "-------------- KDSep Merge request Breakdown ------------------------------\n");
@@ -315,15 +319,15 @@ StatsRecorder::~StatsRecorder()
 
     PRINT_FULL("merge-success", GC_MERGE_SUCCESS, time[KDSep_HASHSTORE_WORKER_GC]);
 
-    PRINT_FULL("merge", MERGE, time[KDSep_HASHSTORE_WORKER_GC]);
-    PRINT_FULL("  wait-lock", MERGE_WAIT_LOCK, time[MERGE]);
-    PRINT_FULL("  handler", MERGE_CREATE_HANDLER, time[MERGE]);
-    PRINT_FULL("  wait-lock3", MERGE_WAIT_LOCK3, time[MERGE]);
-    PRINT_FULL("  file1", MERGE_FILE1, time[MERGE]);
-    PRINT_FULL("  file2", MERGE_FILE2, time[MERGE]);
-    PRINT_FULL("  file3", MERGE_FILE3, time[MERGE]);
-    PRINT_FULL("  metadata", MERGE_METADATA, time[MERGE]);
-    PRINT_FULL("  manifest", DS_MANIFEST_GC_MERGE, time[MERGE]);
+    PRINT_FULL("merge", DELTASTORE_MERGE, time[KDSep_HASHSTORE_WORKER_GC]);
+    PRINT_FULL("  wait-lock", MERGE_WAIT_LOCK, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  handler", MERGE_CREATE_HANDLER, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  wait-lock3", MERGE_WAIT_LOCK3, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  file1", MERGE_FILE1, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  file2", MERGE_FILE2, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  file3", MERGE_FILE3, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  metadata", MERGE_METADATA, time[DELTASTORE_MERGE]);
+    PRINT_FULL("  manifest", DS_MANIFEST_GC_MERGE, time[DELTASTORE_MERGE]);
 
     PRINT_FULL("split", SPLIT, time[KDSep_HASHSTORE_WORKER_GC]);
     PRINT_FULL("  handler", SPLIT_HANDLER, time[SPLIT]);

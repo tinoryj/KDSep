@@ -6,29 +6,29 @@
 
 namespace KDSEP_NAMESPACE {
 
-BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, BucketManager* bucketManager)
+BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr,
+        shared_ptr<BucketManager> bucketManager)
 {
     perFileFlushBufferSizeLimit_ = options->deltaStore_bucket_flush_buffer_size_limit_;
-    perFileGCSizeLimit_ = options->deltaStore_garbage_collection_start_single_file_minimum_occupancy * options->deltaStore_bucket_size_;
+    perFileGCSizeLimit_ = options->deltaStore_gc_threshold * options->deltaStore_bucket_size_;
     singleFileSizeLimit_ = options->deltaStore_bucket_size_;
+    enable_crash_consistency_ = options->enable_crash_consistency;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
-        operationToWorkerMQ_ = new messageQueue<hashStoreOperationHandler*>;
-        workerThreads_ = new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_);
+        workerThreads_.reset(new boost::asio::thread_pool(options->deltaStore_op_worker_thread_number_limit_));
+        num_threads_ = 0;
         debug_info("Total thread number for operationWorker >= 2, use multithread operation%s\n", "");
     }
     if (options->kd_cache != nullptr) {
         kd_cache_ = options->kd_cache;
     }
-    enableGCFlag_ = options->enable_deltaStore_garbage_collection;
-    enableLsmTreeDeltaMeta_ = options->enable_lsm_tree_delta_meta;
+    enable_gc_ = options->enable_bucket_gc;
     enable_index_block_ = options->enable_index_block;
-    hashStoreFileManager_ = bucketManager;
+    bucket_manager_ = bucketManager;
     working_dir_ = workingDirStr;
     operationNumberThresholdForForcedSingleFileGC_ = options->deltaStore_operationNumberForForcedSingleFileGCThreshold_;
     if (options->deltaStore_op_worker_thread_number_limit_ >= 2) {
         syncStatistics_ = true;
         workerThreadNumber_ = options->deltaStore_op_worker_thread_number_limit_;
-        workingThreadExitFlagVec_ = 0;
     }
     KDSepMergeOperatorPtr_ = options->KDSep_merge_operation_ptr;
     write_stall_ = options->write_stall;
@@ -39,58 +39,49 @@ BucketOperator::BucketOperator(KDSepOptions* options, string workingDirStr, Buck
 
 BucketOperator::~BucketOperator()
 {
-    if (kd_cache_ != nullptr) {
-        delete kd_cache_;
-    }
-    if (operationToWorkerMQ_ != nullptr) {
-        delete operationToWorkerMQ_;
-    }
-    if (workerThreads_ != nullptr) {
-        delete workerThreads_;
+    if (num_threads_ > 0) {
+        cerr << "Warning: " << num_threads_ << " threads are still running" <<
+            endl;
+        while (num_threads_ > 0) {
+            asm volatile("");
+        }
     }
 }
 
 bool BucketOperator::setJobDone()
 {
-    if (operationToWorkerMQ_ != nullptr) {
-        operationToWorkerMQ_->done = true;
-        operationNotifyCV_.notify_all();
-        while (workingThreadExitFlagVec_ != workerThreadNumber_) {
-            asm volatile("");
-        }
-    }
+    should_exit_ = true;
     return true;
 }
 
-bool BucketOperator::putIntoJobQueue(hashStoreOperationHandler* op_hdl)
+bool BucketOperator::putIntoJobQueue(deltaStoreOpHandler* op_hdl)
 {
-    bool ret = operationToWorkerMQ_->push(op_hdl);
-    operationNotifyCV_.notify_all();
-    return ret;
+    startJob(op_hdl);
+    return true;
 }
 
-bool BucketOperator::startJob(hashStoreOperationHandler* op_hdl)
+bool BucketOperator::startJob(deltaStoreOpHandler* op_hdl)
 {
     boost::asio::post(*workerThreads_, 
             boost::bind(
-                &BucketOperator::operationBoostThreadWorker,
+                &BucketOperator::singleOperation,
                 this,
                 op_hdl));
     return true;
 }
 
-bool BucketOperator::waitOperationHandlerDone(hashStoreOperationHandler* op_hdl, bool need_delete) {
+bool BucketOperator::waitOperationHandlerDone(deltaStoreOpHandler* op_hdl, bool need_delete) {
     while (op_hdl->job_done == kNotDone) {
         asm volatile("");
     }
     if (op_hdl->job_done == kDone) {
-        debug_trace("Process operation %d for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->bucket->file_id, op_hdl->multiput_op.size);
         if (need_delete) {
             delete op_hdl;
         }
         return true;
     } else {
-        debug_error("[ERROR] Process %d operation for file ID = %lu, key number = %u\n", (int)op_hdl->op_type, op_hdl->bucket->file_id, op_hdl->multiput_op.size);
+        debug_error("[ERROR] Process %d operation ID = %lu\n",
+                (int)op_hdl->op_type, op_hdl->bucket->file_id);
         if (need_delete) {
             delete op_hdl;
         }
@@ -98,8 +89,7 @@ bool BucketOperator::waitOperationHandlerDone(hashStoreOperationHandler* op_hdl,
     }
 }
 
-uint64_t BucketOperator::readWholeFile(
-        BucketHandler* bucket, char** read_buf)
+uint64_t BucketOperator::readWholeFile(BucketHandler* bucket, char** read_buf)
 {
     auto& file_size = bucket->total_object_bytes;
     debug_trace("Read content from file ID = %lu\n", bucket->file_id);
@@ -236,8 +226,7 @@ bool BucketOperator::readAndProcessWholeFile(
     uint64_t process_delta_num = 0;
 
     STAT_PROCESS(process_delta_num = processReadContentToValueLists(
-                *buf, file_size, 
-                kd_list, key_view),
+                *buf, file_size, kd_list, key_view),
             StatsType::KDSep_HASHSTORE_GET_PROCESS);
     if (process_delta_num != bucket->total_object_cnt) {
         debug_error("[ERROR] processed object number during read = %lu, not"
@@ -246,12 +235,33 @@ bool BucketOperator::readAndProcessWholeFile(
         return false;
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
+    return true;
+}
+
+bool BucketOperator::readAndProcessWholeFile(
+    BucketHandler* bucket, map<string_view, vector<string_view>>& kd_lists,
+    char** buf) {
+
+    auto& file_size = bucket->total_object_bytes;
+    bool s = readWholeFile(bucket, buf);
+    kd_lists.clear();
+
+    if (s == false) {
+        debug_error("[ERROR] Could not read from file bucket id %lu\n",
+                bucket->file_id);
+        exit(1);
+    }
+
+    uint64_t process_delta_num = 0;
+    STAT_PROCESS(process_delta_num = processReadContentToValueLists(
+                *buf, file_size, kd_lists),
+            StatsType::KDSep_HASHSTORE_GET_PROCESS);
+    
+    if (process_delta_num != bucket->total_object_cnt) {
+        debug_error("[ERROR] processed object number during read = %lu, not"
+                " equal to object number in metadata = %lu\n",
+                process_delta_num, bucket->total_object_cnt);
+        return false;
     }
     return true;
 }
@@ -268,13 +278,12 @@ bool BucketOperator::readAndProcessWholeFileKeyList(
         debug_error("[ERROR] Could not read from file for key list %lu\n",
                 keys->size());
         exit(1);
-        return false;
     }
 
     vector<string_view> key_views;
     key_views.resize(keys->size());
     for (int i = 0; i < keys->size(); i++) {
-	key_views[i] = string_view((*(*keys)[i]));
+        key_views[i] = string_view((*(*keys)[i]));
     }
 
     uint64_t process_delta_num = 0;
@@ -289,13 +298,6 @@ bool BucketOperator::readAndProcessWholeFileKeyList(
         return false;
     }
 
-    if (kd_lists.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key %lu\n", keys->size());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -333,13 +335,6 @@ bool BucketOperator::readAndProcessSortedPart(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -371,13 +366,6 @@ bool BucketOperator::readAndProcessBothParts(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -408,13 +396,6 @@ bool BucketOperator::readAndProcessUnsortedPart(
         exit(1);
     }
 
-    if (kd_list.empty() == false) {
-        if (enableLsmTreeDeltaMeta_ == true) {
-            debug_error("[ERROR] Read bucket done, but could not found values"
-                    " for key = %s\n", key.c_str());
-            exit(1);
-        }
-    }
     return true;
 }
 
@@ -591,9 +572,9 @@ uint64_t BucketOperator::processReadContentToValueLists(
 }
 
 uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
-        char* read_buf, uint64_t read_buf_size, 
-	vector<vector<string_view>>& kd_lists,
-        const vector<string_view>& keys)
+    char* read_buf, uint64_t read_buf_size,
+    vector<vector<string_view>>& kd_lists,
+    const vector<string_view>& keys)
 {
     kd_lists.clear();
     kd_lists.resize(keys.size());
@@ -616,7 +597,7 @@ uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
             // skip since it is gc flag, no content.
 	    if (has_gc_done) {
 		debug_error("read error: gc done appeared before"
-			"%lu %lu\n", gc_done_offset, i);
+			" %lu %lu\n", gc_done_offset, i);
 		exit(1);
 	    }
 	    has_gc_done = true;
@@ -627,28 +608,85 @@ uint64_t BucketOperator::processReadContentToValueListsWithKeyList(
         // get key 
         string_view currentKey(read_buf + i, header.key_size_);
 
-	int key_i = 0;
-	bool has_key = false;
-	for (key_i = 0; key_i < (int)keys.size(); key_i++) {
-	    string_view key = keys[key_i];
-	    if (key != currentKey) {
-		continue;
-	    }
+        int key_i = 0;
+        bool has_key = false;
+        for (key_i = 0; key_i < (int)keys.size(); key_i++) {
+            string_view key = keys[key_i];
+            if (key != currentKey) {
+                continue;
+            }
 
-	    has_key = true;
-	    i += header.key_size_;
-	    if (header.is_anchor_ == false) {
-		string_view currentValue(read_buf + i, header.value_size_);
-		kd_lists[key_i].push_back(currentValue);
-		i += header.value_size_;
-	    }
-	}
+            has_key = true;
+            i += header.key_size_;
+            if (header.is_anchor_ == false) {
+                string_view currentValue(read_buf + i, header.value_size_);
+                kd_lists[key_i].push_back(currentValue);
+                i += header.value_size_;
+            }
+        }
 
-	if (has_key == false) {
+        if (has_key == false) {
 	    i += header.key_size_ +
 		((header.is_anchor_) ? 0 :
 		 header.value_size_);
 	}
+    }
+    if (i > read_buf_size) {
+        debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
+                i, read_buf_size);
+        return 0;
+    }
+    return processed_delta_num;
+}
+
+uint64_t BucketOperator::processReadContentToValueLists(
+    char* read_buf, uint64_t read_buf_size,
+    map<string_view, vector<string_view>>& kd_lists)
+{
+    kd_lists.clear();
+
+    uint64_t i = 0;
+    uint64_t processed_delta_num = 0;
+    size_t header_sz = sizeof(KDRecordHeader);
+    KDRecordHeader header;
+    bool has_gc_done = false;
+    uint64_t gc_done_offset = 0;
+    while (i < read_buf_size) {
+        processed_delta_num++;
+        if (use_varint_d_header == false) {
+            memcpy(&header, read_buf + i, header_sz);
+        } else {
+            header = GetDeltaHeaderVarint(read_buf + i, header_sz);
+        }
+        i += header_sz;
+        if (header.is_gc_done_ == true) {
+            // skip since it is gc flag, no content.
+            if (has_gc_done) {
+                debug_error("read error: gc done appeared before"
+                            " %lu %lu\n",
+                    gc_done_offset, i);
+                exit(1);
+            }
+            has_gc_done = true;
+            gc_done_offset = i;
+            continue;
+        }
+
+        // get key 
+        string_view currentKey(read_buf + i, header.key_size_);
+
+        i += header.key_size_;
+        if (header.is_anchor_ == false) {
+            string_view currentValue(read_buf + i, header.value_size_);
+            kd_lists[currentKey].push_back(currentValue);
+            i += header.value_size_;
+        } else {
+            // is an anchor, clean all KD pairs for this key
+            if (kd_lists.count(currentKey)) {
+                kd_lists.at(currentKey).clear();
+                kd_lists.erase(currentKey);
+            }
+        }
     }
     if (i > read_buf_size) {
         debug_error("[ERROR] read buf index error! %lu v.s. %lu\n", 
@@ -692,107 +730,8 @@ bool BucketOperator::writeToFile(
     }
 }
 
-bool BucketOperator::operationWorkerPutFunction(hashStoreOperationHandler* op_hdl)
-{
-    str_t currentKeyStr(op_hdl->write_op.object->keyPtr_, op_hdl->write_op.object->keySize_);
-    if (op_hdl->write_op.object->isAnchorFlag_ == true) {
-        // Only when the key is not in the sorted filter, clean the filter.
-        // Otherwise, it will read the deltas in the sorted part but ignore the
-        // anchors in the unsorted part 
-        if (op_hdl->bucket->sorted_filter->MayExist(currentKeyStr) == true) {
-            op_hdl->bucket->filter->Insert(currentKeyStr);
-        } else {
-            if (op_hdl->bucket->filter->MayExist(currentKeyStr) == true) {
-                op_hdl->bucket->filter->Erase(currentKeyStr);
-            }
-        }
-    } else {
-        op_hdl->bucket->filter->Insert(currentKeyStr);
-    }
-    // construct record header
-    // leave it here 
-    KDRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = op_hdl->write_op.object->isAnchorFlag_;
-    newRecordHeader.key_size_ = op_hdl->write_op.object->keySize_;
-    newRecordHeader.seq_num = op_hdl->write_op.object->seq_num;
-    newRecordHeader.value_size_ = op_hdl->write_op.object->valueSize_;
-    if (op_hdl->bucket->io_ptr->isFileOpen() == false) {
-        // since file not created, shoud not flush anchors
-        // place file header and record header in write buffer
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            targetWriteSize = writeBufferSize;
-        } else {
-            targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // open target file
-	debug_info("First open newly created file ID = %lu, target prefix "
-		"bit number = %lu\n", op_hdl->bucket->file_id,
-		op_hdl->bucket->prefix);
-        string targetFilePathStr = working_dir_ + "/" + to_string(op_hdl->bucket->file_id) + ".delta";
-        if (std::filesystem::exists(targetFilePathStr) != true) {
-            op_hdl->bucket->io_ptr->createThenOpenFile(targetFilePathStr);
-        } else {
-            op_hdl->bucket->io_ptr->openFile(targetFilePathStr);
-        }
-        // write contents of file
-        bool writeContentStatus = writeToFile(op_hdl->bucket, writeBuffer, targetWriteSize, 1);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", op_hdl->bucket->file_id);
-            return false;
-        } else {
-            // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_op.object;
-            if (kd_cache_ != nullptr) {
-                STAT_PROCESS(updateKDCacheIfExist(
-                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
-                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
-                            newRecordHeader.is_anchor_),
-                        StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE);
-            }
-            return true;
-        }
-    } else {
-        // since file exist, may contains unflushed anchors, check anchors first
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.object->keyPtr_, newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, op_hdl->write_op.object->valuePtr_, newRecordHeader.value_size_);
-            targetWriteSize = writeBufferSize;
-        } else {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), op_hdl->write_op.object->keyPtr_, newRecordHeader.key_size_);
-            targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // write contents of file
-        bool writeContentStatus = writeToFile(op_hdl->bucket, writeBuffer, targetWriteSize, 1);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", op_hdl->bucket->file_id);
-            return false;
-        } else {
-            // insert to cache if current key exist in cache && cache is enabled
-            auto mempoolHandler = op_hdl->write_op.object;
-            if (kd_cache_ != nullptr) {
-                STAT_PROCESS(updateKDCacheIfExist(
-                            str_t(mempoolHandler->keyPtr_, mempoolHandler->keySize_), 
-                            str_t(mempoolHandler->valuePtr_, mempoolHandler->valueSize_), 
-                            newRecordHeader.is_anchor_),
-                        StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE);
-            }
-            return true;
-        }
-    }
-}
-
-bool BucketOperator::operationWorkerMultiPutFunction(
-	hashStoreOperationHandler* op_hdl)
+bool BucketOperator::operationMultiPut(deltaStoreOpHandler* op_hdl, 
+        bool& gc_pushed)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -858,12 +797,12 @@ bool BucketOperator::operationWorkerMultiPutFunction(
         targetWriteBufferSize += (sizeof(KDRecordHeader) + 
                 op_hdl->multiput_op.objects[i].keySize_);
         if (op_hdl->multiput_op.objects[i].isAnchorFlag_ == true) {
-            bucket->num_anchors++;
             continue;
         } else {
             targetWriteBufferSize += op_hdl->multiput_op.objects[i].valueSize_;
         }
     }
+
     char write_buf[targetWriteBufferSize];
     uint64_t write_i = 0;
 
@@ -904,12 +843,38 @@ bool BucketOperator::operationWorkerMultiPutFunction(
 
     StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_PREPARE_FILE_CONTENT, tv);
     uint64_t targetObjectNumber = op_hdl->multiput_op.size;
+
     // write content
-    bool writeContentStatus;
-    STAT_PROCESS(writeContentStatus = writeToFile(bucket,
-                write_buf, write_i, targetObjectNumber,
-                op_hdl->need_flush),
-            StatsType::DS_WRITE_FUNCTION);
+    bool writeContentStatus = true;
+
+    // before write, check
+    if (bucket->io_ptr->canWriteFile(write_i) == false) {
+        // directly do GC on this file. 
+        // can skip the write stall check, because there will be no write back
+        bucket->extra_wb = new char[write_i]; 
+        bucket->extra_wb_size = write_i;
+        memcpy(bucket->extra_wb, write_buf, write_i);
+        bool ret;
+        if (op_hdl->need_flush) {
+            ret = pushGcIfNeeded(op_hdl);
+        } else {
+            ret = pushGcIfNeeded(bucket);
+        } 
+        if (ret == false) {
+            debug_error("[ERROR] target file %lu exceed limit %lu, extra "
+                    "write buffer %lu, total bytes %lu, but no GC\n",
+                    bucket->file_id, singleFileSizeLimit_, write_i,
+                    bucket->total_object_bytes);
+            exit(1);
+        }
+        gc_pushed = true;
+    } else {
+        STAT_PROCESS(writeContentStatus = writeToFile(bucket,
+                    write_buf, write_i, targetObjectNumber,
+                    op_hdl->need_flush),
+                StatsType::DS_WRITE_FUNCTION);
+    }
+
     if (writeContentStatus == false) {
         debug_error("[ERROR] Could not write content to file, target file ID"
                 " = %lu, content size = %lu, content bytes number = %lu\n",
@@ -931,12 +896,13 @@ bool BucketOperator::operationWorkerMultiPutFunction(
                         it.isAnchorFlag_);
             }
         }
-        StatsRecorder::getInstance()->timeProcess(StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::DS_MULTIPUT_INSERT_CACHE, tv);
         return true;
     }
 }
 
-bool BucketOperator::operationWorkerFlush(hashStoreOperationHandler* op_hdl)
+bool BucketOperator::operationFlush(deltaStoreOpHandler* op_hdl, bool& gc_pushed)
 {
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -946,129 +912,72 @@ bool BucketOperator::operationWorkerFlush(hashStoreOperationHandler* op_hdl)
         return true;
     }
 
-    // write content
-    FileOpStatus status = op_hdl->bucket->io_ptr->flushFile();
-//    debug_error("flush file %lu\n", op_hdl->bucket->file_id);
-    if (status.success_ == false) {
-        debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
-                op_hdl->bucket->file_id);
-        exit(1);
-    } 
-    op_hdl->bucket->total_on_disk_bytes += status.physicalSize_;
+    auto bucket = op_hdl->bucket;
+    if (bucket->io_ptr->canWriteFile(0) == false) {
+        // directly do GC on this file. 
+        bool ret;
+        if (enable_crash_consistency_) {
+            op_hdl->need_flush = true;
+            ret = pushGcIfNeeded(op_hdl);
+        } else {
+            ret = pushGcIfNeeded(bucket);
+        }
+        if (ret == false) {
+            debug_error("[ERROR] target file %lu exceed limit %lu, "
+                    "total bytes %lu, but no GC\n",
+                    bucket->file_id, singleFileSizeLimit_,
+                    bucket->total_object_bytes);
+            exit(1);
+        }
+        gc_pushed = true;
+    } else {
+        // write content
+        FileOpStatus status = op_hdl->bucket->io_ptr->flushFile();
+        //    debug_error("flush file %lu\n", op_hdl->bucket->file_id);
+        if (status.success_ == false) {
+            debug_error("[ERROR] Could not flush to file, target file ID = %lu\n",
+                    op_hdl->bucket->file_id);
+            exit(1);
+        } 
+        op_hdl->bucket->total_on_disk_bytes += status.physicalSize_;
+    }
     return true;
 }
 
-bool BucketOperator::operationWorkerFind(hashStoreOperationHandler* op_hdl) {
+bool BucketOperator::operationFind(deltaStoreOpHandler* op_hdl) {
     auto obj = op_hdl->object;
-    bool status = hashStoreFileManager_->getFileHandlerWithKey(
-            obj->keyPtr_, obj->keySize_, kMultiPut, op_hdl->bucket,
+    bool status = bucket_manager_->getBucketWithKey(
+            string(obj->keyPtr_, obj->keySize_), kMultiPut, op_hdl->bucket,
             obj->isAnchorFlag_);
 
     if (status == false) {
-        debug_error("[ERROR] Get file handler for key = %s"
-                " error during multiput\n", obj->keyPtr_);
+        debug_error("[ERROR] Get file handler for key = %.*s"
+                " error during multiput\n", 
+                (int)obj->keySize_, obj->keyPtr_);
     }
 
     return true;
 }
 
-bool BucketOperator::putFileHandlerIntoGCJobQueueIfNeeded(BucketHandler* bucket)
+bool BucketOperator::pushGcIfNeeded(BucketHandler* bucket)
 {
-    static int cnt = 0;
-    if (write_stall_ != nullptr) {
-        if (*write_stall_ == true) {
-            // performing write-back, does not do GC now
-            return false;
-        }
-    }
     // insert into GC job queue if exceed the threshold
     if (bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
-        if (bucket->gc_status == kNoGC) {
-            bucket->no_gc_wait_operation_number_++;
-            if (bucket->no_gc_wait_operation_number_ >= operationNumberThresholdForForcedSingleFileGC_ ||
-                    bucket->num_anchors >= operationNumberThresholdForForcedSingleFileGC_) {
-                bucket->ownership = -1;
-                bucket->gc_status = kMayGC;
-                hashStoreFileManager_->pushToGCQueue(bucket);
-                debug_info("Current file ID = %lu exceed GC threshold = %lu with kNoGC flag, current size = %lu, total disk size = %lu, put into GC job queue, no gc wait count = %lu, threshold = %lu\n", bucket->file_id, perFileGCSizeLimit_, bucket->total_object_bytes, bucket->total_on_disk_bytes + bucket->io_ptr->getFileBufferedSize(), bucket->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
-                bucket->no_gc_wait_operation_number_ = 0;
-                return true;
-            } else {
-                if (bucket->no_gc_wait_operation_number_ % 25 == 1) {
-                    debug_error("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", bucket->file_id, perFileGCSizeLimit_, bucket->total_object_bytes, bucket->total_on_disk_bytes + bucket->io_ptr->getFileBufferedSize(), bucket->gc_status, bucket->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
-                }
-                debug_trace("Current file ID = %lu exceed file size threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d, no gc wait count = %lu, threshold = %lu\n", bucket->file_id, perFileGCSizeLimit_, bucket->total_object_bytes, bucket->total_on_disk_bytes + bucket->io_ptr->getFileBufferedSize(), bucket->gc_status, bucket->no_gc_wait_operation_number_, operationNumberThresholdForForcedSingleFileGC_);
-                return false;
-            }
-        } else if (bucket->gc_status == kNew || bucket->gc_status == kMayGC) {
-            bucket->ownership = -1;
-            hashStoreFileManager_->pushToGCQueue(bucket);
-            debug_info("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, put into GC job queue\n", bucket->file_id, perFileGCSizeLimit_, bucket->total_object_bytes, bucket->total_on_disk_bytes + bucket->io_ptr->getFileBufferedSize());
-            return true;
-        } else {
-            debug_trace("Current file ID = %lu exceed GC threshold = %lu, current size = %lu, total disk size = %lu, not put into GC job queue, since file type = %d\n", bucket->file_id, perFileGCSizeLimit_, bucket->total_object_bytes, bucket->total_on_disk_bytes + bucket->io_ptr->getFileBufferedSize(), bucket->gc_status);
-            return false;
-        }
+        bucket->ownership = -1;
+        return bucket_manager_->pushToGCQueue(bucket);
     } else {
-        debug_trace("Current file ID = %lu should not GC, skip\n", bucket->file_id);
+        debug_trace("Current file ID = %lu should not GC, skip\n",
+                bucket->file_id);
         return false;
     }
 }
 
-// for put
-inline void BucketOperator::putKeyValueToAppendableCacheIfExist(
-        char* keyPtr, size_t keySize, char* valuePtr, size_t valueSize, 
-        bool isAnchor)
-{
-    str_t key(keyPtr, keySize);
-        
-    // insert into cache only if the key has been read
-    if (isAnchor == true) {
-        keyToValueListCacheStr_->cleanCacheIfExist(key);
+bool BucketOperator::pushGcIfNeeded(deltaStoreOpHandler* op_hdl) {
+    if (op_hdl->bucket->DiskAndBufferSizeExceeds(perFileGCSizeLimit_)) {
+        op_hdl->bucket->ownership = -1;
+        return bucket_manager_->pushToGCQueue(op_hdl);
     } else {
-        vector<str_t>* vec =
-            keyToValueListCacheStr_->getFromCache(key);
-
-        // TODO a bug here. vec may be evicted and deleted before the
-        // update
-        if (vec != nullptr) {
-            str_t valueStr(valuePtr, valueSize);
-            vector<str_t> temp_vec;
-            for (auto& it : *vec) {
-                temp_vec.push_back(it);
-            }
-            temp_vec.push_back(valueStr);
-
-            str_t merged_delta;
-
-            // allocate merged_delta. The deletion is now managed by cache
-            KDSepMergeOperatorPtr_->PartialMerge(temp_vec, merged_delta);
-
-            vector<str_t>* merged_deltas = new vector<str_t>;
-            merged_deltas->push_back(merged_delta);
-
-            keyToValueListCacheStr_->updateCache(key, merged_deltas);
-        }
-    }
-}
-
-// for get
-inline void BucketOperator::putKeyValueVectorToAppendableCacheIfNotExist(
-        char* keyPtr, size_t keySize, vector<str_t>& values) {
-    str_t currentKeyStr(keyPtr, keySize);
-
-    if (keyToValueListCacheStr_->existsInCache(currentKeyStr) == false) {
-        str_t newKeyStr(new char[keySize], keySize);
-        memcpy(newKeyStr.data_, keyPtr, keySize);
-
-        vector<str_t>* valuesForInsertPtr = new vector<str_t>;
-        for (auto& it : values) {
-            str_t newValueStr(new char[it.size_], it.size_);
-            memcpy(newValueStr.data_, it.data_, it.size_);
-            valuesForInsertPtr->push_back(newValueStr);
-        }
-
-        keyToValueListCacheStr_->insertToCache(newKeyStr, valuesForInsertPtr);
+        return false;
     }
 }
 
@@ -1108,217 +1017,6 @@ inline void BucketOperator::updateKDCache(
         char* keyPtr, size_t keySize, str_t delta) {
     str_t key(keyPtr, keySize);
     kd_cache_->updateCache(key, delta);
-}
-
-bool BucketOperator::directlyWriteOperation(BucketHandler* bucket, mempoolHandler_t* mempoolHandler)
-{
-    std::scoped_lock<std::shared_mutex> w_lock(bucket->op_mtx);
-    // update search set
-    str_t currentKeyStr(mempoolHandler->keyPtr_, mempoolHandler->keySize_);
-    if (mempoolHandler->isAnchorFlag_ == true) {
-        if (bucket->filter->MayExist(currentKeyStr)) {
-            bucket->filter->Erase(currentKeyStr);
-        }
-    } else {
-        bucket->filter->Insert(currentKeyStr);
-    }
-    // construct record header
-    // leave it here 
-    KDRecordHeader newRecordHeader;
-    newRecordHeader.is_anchor_ = mempoolHandler->isAnchorFlag_;
-    newRecordHeader.key_size_ = mempoolHandler->keySize_;
-    newRecordHeader.seq_num = mempoolHandler->seq_num;
-    newRecordHeader.value_size_ = mempoolHandler->valueSize_;
-    if (bucket->io_ptr->isFileOpen() == false) {
-        // since file not created, shoud not flush anchors
-        // construct file header
-        // place file header and record header in write buffer
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            targetWriteSize = writeBufferSize;
-        } else {
-	    targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // open target file
-	debug_info("First open newly created file ID = %lu, target prefix "
-		"bit number = %lu\n", bucket->file_id, bucket->prefix);
-        string targetFilePathStr = working_dir_ + "/" + to_string(bucket->file_id) + ".delta";
-        if (std::filesystem::exists(targetFilePathStr) != true) {
-            bucket->io_ptr->createThenOpenFile(targetFilePathStr);
-        } else {
-            bucket->io_ptr->openFile(targetFilePathStr);
-        }
-        // write contents of file
-        bool write_ret = writeToFile(bucket, writeBuffer, targetWriteSize, 1);
-        if (write_ret == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", bucket->file_id);
-            return false;
-        } else {
-            if (enableGCFlag_ == true) {
-                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
-                if (putIntoGCJobQueueStatus == false) {
-                    bucket->ownership = 0;
-                }
-            } else {
-                bucket->ownership = 0;
-            }
-            // insert to cache if current key exist in cache && cache is enabled
-            if (kd_cache_ != nullptr) {
-                // do not implement
-            }
-            return true;
-        }
-    } else {
-        // since file exist, may contains unflushed anchors, check anchors first
-        uint64_t writeBufferSize = sizeof(newRecordHeader) + newRecordHeader.key_size_ + newRecordHeader.value_size_;
-        uint64_t targetWriteSize = 0;
-        char writeBuffer[writeBufferSize];
-        if (newRecordHeader.is_anchor_ == false) {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
-            memcpy(writeBuffer + sizeof(newRecordHeader) + newRecordHeader.key_size_, mempoolHandler->valuePtr_, newRecordHeader.value_size_);
-            targetWriteSize = writeBufferSize;
-        } else {
-            memcpy(writeBuffer, &newRecordHeader, sizeof(newRecordHeader));
-            memcpy(writeBuffer + sizeof(newRecordHeader), mempoolHandler->keyPtr_, newRecordHeader.key_size_);
-            targetWriteSize = writeBufferSize - newRecordHeader.value_size_;
-        }
-
-        // write contents of file
-        bool writeContentStatus = writeToFile(bucket, writeBuffer, targetWriteSize, 1);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Write bucket error, internal file operation fault, could not write content to file ID = %lu\n", bucket->file_id);
-            return false;
-        } else {
-            if (enableGCFlag_ == true) {
-                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
-                if (putIntoGCJobQueueStatus == false) {
-                    bucket->ownership = 0;
-                }
-            } else {
-                bucket->ownership = 0;
-            }
-            // insert to cache if current key exist in cache && cache is enabled
-            if (kd_cache_ != nullptr) {
-                // do not implement
-            }
-            return true;
-        }
-    }
-}
-
-bool BucketOperator::directlyMultiWriteOperation(unordered_map<BucketHandler*, vector<mempoolHandler_t>> batchedWriteOperationsMap)
-{
-    // leave it here (header not fixed)
-    debug_error("not implemented %s\n", "");
-    exit(1);
-    vector<bool> jobeDoneStatus;
-    for (auto& batchIt : batchedWriteOperationsMap) {
-        std::scoped_lock<std::shared_mutex> w_lock(batchIt.first->op_mtx);
-        // check file existence, create if not exist
-        bool onlyAnchorFlag = true;
-        for (auto index = 0; index < batchIt.second.size(); index++) {
-            str_t currentKeyStr(batchIt.second[index].keyPtr_, batchIt.second[index].keySize_);
-            if (batchIt.second[index].isAnchorFlag_ == false) {
-                onlyAnchorFlag = false;
-                batchIt.first->filter->Insert(currentKeyStr);
-            } else {
-                if (batchIt.first->filter->MayExist(currentKeyStr)) {
-                    batchIt.first->filter->Erase(currentKeyStr);
-                }
-            }
-        }
-        if (onlyAnchorFlag == true && batchIt.first->io_ptr->isFileOpen() == false) {
-            debug_info("Only contains anchors for file ID = %lu, and file is not opened, skip\n", batchIt.first->file_id);
-            batchIt.first->ownership = 0;
-            jobeDoneStatus.push_back(true);
-            continue;
-        }
-        uint64_t targetWriteBufferSize = 0;
-        if (batchIt.first->io_ptr->isFileOpen() == false) {
-            string targetFilePath = working_dir_ + "/" + to_string(batchIt.first->file_id) + ".delta";
-            if (std::filesystem::exists(targetFilePath) == false) {
-                batchIt.first->io_ptr->createThenOpenFile(targetFilePath);
-            } else {
-                batchIt.first->io_ptr->openFile(targetFilePath);
-            }
-        }
-        for (auto i = 0; i < batchIt.second.size(); i++) {
-            targetWriteBufferSize += (sizeof(KDRecordHeader) + batchIt.second[i].keySize_);
-            if (batchIt.second[i].isAnchorFlag_ == true) {
-                continue;
-            } else {
-                targetWriteBufferSize += batchIt.second[i].valueSize_;
-            }
-        }
-        char writeContentBuffer[targetWriteBufferSize];
-        uint64_t currentProcessedBufferIndex = 0;
-        KDRecordHeader newRecordHeader;
-        for (auto i = 0; i < batchIt.second.size(); i++) {
-            newRecordHeader.key_size_ = batchIt.second[i].keySize_;
-            newRecordHeader.value_size_ = batchIt.second[i].valueSize_;
-            newRecordHeader.seq_num = batchIt.second[i].seq_num;
-            newRecordHeader.is_anchor_ = batchIt.second[i].isAnchorFlag_;
-            memcpy(writeContentBuffer + currentProcessedBufferIndex, &newRecordHeader, sizeof(KDRecordHeader));
-            currentProcessedBufferIndex += sizeof(KDRecordHeader);
-            memcpy(writeContentBuffer + currentProcessedBufferIndex, batchIt.second[i].keyPtr_, newRecordHeader.key_size_);
-            currentProcessedBufferIndex += newRecordHeader.key_size_;
-            if (newRecordHeader.is_anchor_ == true) {
-                continue;
-            } else {
-                memcpy(writeContentBuffer + currentProcessedBufferIndex, batchIt.second[i].valuePtr_, newRecordHeader.value_size_);
-                currentProcessedBufferIndex += newRecordHeader.value_size_;
-            }
-        }
-        uint64_t targetObjectNumber = batchIt.second.size();
-        // write content
-        bool writeContentStatus = writeToFile(batchIt.first, writeContentBuffer, targetWriteBufferSize, targetObjectNumber);
-        if (writeContentStatus == false) {
-            debug_error("[ERROR] Could not write content to file ID = %lu, object number = %lu, object total size = %lu\n", batchIt.first->file_id, targetObjectNumber, targetWriteBufferSize);
-            batchIt.first->ownership = 0;
-            jobeDoneStatus.push_back(false);
-        } else {
-            // insert to cache if need
-            if (kd_cache_ != nullptr) {
-                for (auto i = 0; i < batchIt.second.size(); i++) {
-                    auto& it = batchIt.second[i];
-                    updateKDCacheIfExist(str_t(it.keyPtr_, it.keySize_),
-                            str_t(it.valuePtr_, it.valueSize_),
-                            it.isAnchorFlag_);
-                }
-            }
-            if (enableGCFlag_ == true) {
-                bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(batchIt.first);
-                if (putIntoGCJobQueueStatus == false) {
-                    batchIt.first->ownership = 0;
-                }
-            } else {
-                batchIt.first->ownership = 0;
-            }
-            jobeDoneStatus.push_back(true);
-        }
-    }
-    bool jobDoneSuccessFlag = true;
-    if (jobeDoneStatus.size() != batchedWriteOperationsMap.size()) {
-        debug_error("[ERROR] Job done flag in vec = %lu, not equal to request numebr = %lu\n", jobeDoneStatus.size(), batchedWriteOperationsMap.size());
-        return false;
-    } else {
-        for (auto jobDoneIt : jobeDoneStatus) {
-            if (jobDoneIt == false) {
-                jobDoneSuccessFlag = false;
-            }
-        }
-        if (jobDoneSuccessFlag == true) {
-            debug_info("Batched operations processed done by DirectMultiPut, total file handler number = %lu\n", batchedWriteOperationsMap.size());
-            return true;
-        } else {
-            debug_error("[ERROR] Batched operations processed done by DirectMultiPut, but some operations may not success, total file handler number = %lu\n", batchedWriteOperationsMap.size());
-            return false;
-        }
-    }
 }
 
 bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
@@ -1373,11 +1071,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                 } else {
                     if (bucket->filter->MayExist(key_str_t) == false) {
                         // does not exist, or not stored in the memory 
-                        if (enableLsmTreeDeltaMeta_ == true) {
-                            debug_error("[ERROR] Read bucket done, but could not"
-                                    " found values for key = %s\n", key.c_str());
-                            exit(1);
-                        }
                         valueVec.clear();
                         bucket->ownership = 0;
                         return true;
@@ -1422,8 +1115,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                 valueVec.push_back(string(merged_delta.data_, merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -1467,8 +1158,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
                             merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1501,11 +1190,6 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
             } else {
                 if (bucket->filter->MayExist(key_str_t) == false) {
                     // does not exist, or not stored in the memory 
-                    if (enableLsmTreeDeltaMeta_ == true) {
-                        debug_error("[ERROR] Read bucket done, but could not"
-                                " found values for key = %s\n", key.c_str());
-                        exit(1);
-                    }
                     valueVec.clear();
                     bucket->ownership = 0;
                     return true;
@@ -1566,7 +1250,93 @@ bool BucketOperator::directlyReadOperation(BucketHandler* bucket,
     }
 }
 
-bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hdl)
+bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
+	string key, int len, map<string, string>& keys_values) {
+
+    string cur_key = key;
+    BucketHandler* prev_bucket = nullptr;
+
+    while (true) {
+        std::scoped_lock<std::shared_mutex> r_lock(bucket->op_mtx);
+
+        // Do not enable index block, directly write 
+        // Not exist in cache, find the content in the file
+        map<string_view, vector<string_view>> kd_lists;
+
+        char* buf = nullptr;
+        bool success;
+
+        success = readAndProcessWholeFile(bucket, kd_lists, &buf);
+        // TODO here
+
+        if (success == false) {
+            debug_error("[ERROR] read and process failed %s\n", key.c_str());
+            exit(1);
+        }
+
+        struct timeval tv;
+        gettimeofday(&tv, 0);
+        vector<str_t> deltas;
+
+        for (auto& it : kd_lists) {
+            if (it.first < cur_key || len == 0) {
+                continue;
+            }
+
+            len--;
+
+            vector<str_t> deltas;
+            for (auto& delta : it.second) {
+                deltas.push_back(str_t(const_cast<char*>(delta.data()),
+                            delta.size()));
+            }
+
+            str_t merged_delta(nullptr, 0);
+            if (deltas.size() > 0) {
+                KDSepMergeOperatorPtr_->PartialMerge(deltas, merged_delta);
+                keys_values[string(it.first.data(), it.first.size())] =
+                    string(merged_delta.data_, merged_delta.size_);
+            }
+
+            if (kd_cache_ != nullptr) {
+                updateKDCache(const_cast<char*>(it.first.data()),
+                        it.first.size(), merged_delta);
+            }
+        }
+
+        StatsRecorder::getInstance()->timeProcess(
+                StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
+
+        delete[] buf;
+        bucket->ownership = 0;
+
+        if (len) {
+            cur_key = (keys_values.empty()) ? cur_key :
+                (--keys_values.end())->first;
+            // TODO a bug: if the bucket does not have the key, it will go into
+            // a dead loop
+            prev_bucket = bucket;
+            bucket_manager_->getNextBucketWithKey(cur_key, bucket);
+            if (prev_bucket == bucket) {
+                debug_error("[ERROR] Exit because of empty bucket %s len %d\n",
+                        cur_key.c_str(), len);
+                prev_bucket->ownership = 0;
+                return true;
+            } else if (bucket == nullptr) {
+                debug_error("Exit because of going to the end, len %d\n",
+                    len);
+                return true;
+            } else {
+                debug_e("ok - two different buckets");
+            }
+        } else {
+            break;
+        }
+    }
+    return true;
+}
+
+bool BucketOperator::operationGet(deltaStoreOpHandler* op_hdl)
 {
     auto& bucket = op_hdl->bucket; 
     // check if not flushed anchors exit, return directly.
@@ -1603,11 +1373,6 @@ bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hd
                 } else {
                     if (bucket->filter->MayExist(key_str_t) == false) {
                         // does not exist, or not stored in the memory 
-                        if (enableLsmTreeDeltaMeta_ == true) {
-                            debug_error("[ERROR] Read bucket done, but could not"
-                                    " found values for key = %s\n", key.c_str());
-                            exit(1);
-                        }
                         valueVec.clear();
                         bucket->ownership = 0;
                         return true;
@@ -1652,8 +1417,6 @@ bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hd
                 valueVec.push_back(new string(merged_delta.data_, merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(
                     StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
@@ -1697,8 +1460,6 @@ bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hd
                             merged_delta.size_));
             }
 
-//            putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-//                    key.size(), deltas);
             updateKDCache(key.data(), key.size(), merged_delta);
             StatsRecorder::getInstance()->timeProcess(StatsType::KDSep_HASHSTORE_GET_INSERT_CACHE, tv);
 
@@ -1735,11 +1496,6 @@ bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hd
             } else {
                 if (bucket->filter->MayExist(key_str_t) == false) {
                     // does not exist, or not stored in the memory 
-                    if (enableLsmTreeDeltaMeta_ == true) {
-                        debug_error("[ERROR] Read bucket done, but could not"
-                                " found values for key = %s\n", key.c_str());
-                        exit(1);
-                    }
                     valueVec.clear();
                     bucket->ownership = 0;
                     return true;
@@ -1800,10 +1556,10 @@ bool BucketOperator::operationWorkerGetFunction(hashStoreOperationHandler* op_hd
     }
 }
 
-bool BucketOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* op_hdl)
+bool BucketOperator::operationMultiGet(deltaStoreOpHandler* op_hdl)
 {
     if (op_hdl->multiget_op.keys->size() == 1) {
-	return operationWorkerGetFunction(op_hdl);
+	return operationGet(op_hdl);
     }
 
     auto& bucket = op_hdl->bucket; 
@@ -1858,8 +1614,6 @@ bool BucketOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* 
 		    merged_delta.size_);
 	}
 
-	//putKeyValueVectorToAppendableCacheIfNotExist(key.data(),
-	//    key.size(), deltas);
 	if (kd_cache_ != nullptr) {
 	    updateKDCache((*keys)[key_i]->data(), 
 		    (*keys)[key_i]->size(), merged_delta);
@@ -1874,8 +1628,13 @@ bool BucketOperator::operationWorkerMultiGetFunction(hashStoreOperationHandler* 
     return true;
 }
 
-void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hdl)
-{
+void BucketOperator::asioSingleOperation(deltaStoreOpHandler* op_hdl) {
+    num_threads_++;
+    singleOperation(op_hdl);
+    num_threads_--;
+}
+
+void BucketOperator::singleOperation(deltaStoreOpHandler* op_hdl) {
     bool operationsStatus = true;
     bool bucket_is_input = true;
     auto bucket = op_hdl->bucket;
@@ -1886,23 +1645,26 @@ void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hd
             std::scoped_lock<std::shared_mutex>(bucket->op_mtx);
     }
 
+    bool gc_pushed = false;
+
     switch (op_hdl->op_type) {
         case kMultiGet:
-            STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
+            STAT_PROCESS(operationsStatus =
+                    operationMultiGet(op_hdl),
+                    StatsType::OP_MULTIGET);
             break;
         case kMultiPut:
             debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", bucket->file_id, op_hdl->multiput_op.size);
-            STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
-            break;
-        case kPut:
-            debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
-            STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
+            STAT_PROCESS(operationsStatus = operationMultiPut(op_hdl,
+                        gc_pushed), StatsType::OP_MULTIPUT);
             break;
         case kFlush:
-            STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
+            STAT_PROCESS(operationsStatus = operationFlush(op_hdl, gc_pushed),
+                    StatsType::OP_FLUSH);
             break;
         case kFind:
-            STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
+            STAT_PROCESS(operationsStatus = operationFind(op_hdl),
+                    StatsType::OP_FIND);
             bucket_is_input = false;
             break;
         default:
@@ -1914,10 +1676,10 @@ void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hd
         bucket->ownership = 0;
         debug_trace("Process file ID = %lu error\n", bucket->file_id);
         op_hdl->job_done = kError;
-    } else if (bucket_is_input == true) {
-        if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
-                && enableGCFlag_ == true) {
-            bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
+    } else if (bucket_is_input) {
+        if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut) &&
+                enable_gc_ && !gc_pushed) {
+            bool putIntoGCJobQueueStatus = pushGcIfNeeded(bucket);
             if (putIntoGCJobQueueStatus == false) {
                 bucket->ownership = 0;
                 op_hdl->job_done = kDone;
@@ -1925,8 +1687,16 @@ void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hd
                 op_hdl->job_done = kDone;
             }
         } else {
-            op_hdl->bucket->ownership = 0;
-            op_hdl->job_done = kDone;
+            if (!gc_pushed) {
+                // read operation, or write/flush but no gc
+                op_hdl->bucket->ownership = 0;
+                op_hdl->job_done = kDone;
+            } else if (op_hdl->need_flush == false) {
+                op_hdl->job_done = kDone;
+            } else {
+                // let the GC thread to handle the bucket job_done flag
+                //op_hdl->job_done = kDone;
+            }
         }
     } else {
         op_hdl->job_done = kDone;
@@ -1935,114 +1705,20 @@ void BucketOperator::operationBoostThreadWorker(hashStoreOperationHandler* op_hd
     if (w_lock) {
         delete w_lock;
     }
+
 }
 
-void BucketOperator::operationWorker(int threadID)
-{
-    struct timeval tvs, tve;
-    gettimeofday(&tvs, 0);
-    struct timeval empty_time;
-    bool empty_started = false;
+bool BucketOperator::probeThread() {
     while (true) {
-        gettimeofday(&tve, 0);
-        {
-            std::unique_lock<std::mutex> lk(operationNotifyMtx_);
-            if (operationToWorkerMQ_->isEmpty() && 
-                    operationToWorkerMQ_->done == false && 
-                    empty_started == true && 
-                    tve.tv_sec - empty_time.tv_sec > 3) {
-                operationNotifyCV_.wait(lk);
-            }
-        }
-        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
+        sleep(1);
+        int gc_threads = num_threads_;
+        debug_error("gc_threads %d\n", gc_threads); 
+        if (should_exit_ == true) {
             break;
         }
-        hashStoreOperationHandler* op_hdl;
-        if (operationToWorkerMQ_->pop(op_hdl)) {
-            empty_started = false;
-            bool operationsStatus = true;
-            bool bucket_is_input = true;
-            auto bucket = op_hdl->bucket;
-
-            std::scoped_lock<std::shared_mutex>* w_lock = nullptr;
-            if (bucket != nullptr) {
-                w_lock = new
-                    std::scoped_lock<std::shared_mutex>(bucket->op_mtx);
-            }
-
-            switch (op_hdl->op_type) {
-            case kMultiGet:
-                STAT_PROCESS(operationsStatus = operationWorkerMultiGetFunction(op_hdl), StatsType::OP_MULTIGET);
-                break;
-            case kMultiPut:
-                debug_trace("receive operations, type = kMultiPut, file ID = %lu, put deltas key number = %u\n", bucket->file_id, op_hdl->multiput_op.size);
-                STAT_PROCESS(operationsStatus = operationWorkerMultiPutFunction(op_hdl), StatsType::OP_MULTIPUT);
-                break;
-            case kPut:
-                debug_trace("receive operations, type = kPut, key = %s, target file ID = %lu\n", op_hdl->write_op.object->keyPtr_, bucket->file_id);
-                STAT_PROCESS(operationsStatus = operationWorkerPutFunction(op_hdl), StatsType::OP_PUT);
-                break;
-            case kFlush:
-                STAT_PROCESS(operationsStatus = operationWorkerFlush(op_hdl), StatsType::OP_FLUSH);
-                break;
-            case kFind:
-                STAT_PROCESS(operationsStatus = operationWorkerFind(op_hdl), StatsType::OP_FIND);
-                bucket_is_input = false;
-                break;
-            default:
-                debug_error("[ERROR] Unknown operation type = %d\n", op_hdl->op_type);
-                break;
-            }
-
-            if (operationsStatus == false) {
-                bucket->ownership = 0;
-                debug_trace("Process file ID = %lu error\n", bucket->file_id);
-                op_hdl->job_done = kError;
-            } else if (bucket_is_input == true) {
-                if ((op_hdl->op_type == kPut || op_hdl->op_type == kMultiPut)
-                        && enableGCFlag_ == true) {
-                    bool putIntoGCJobQueueStatus = putFileHandlerIntoGCJobQueueIfNeeded(bucket);
-                    if (putIntoGCJobQueueStatus == false) {
-                        bucket->ownership = 0;
-                        op_hdl->job_done = kDone;
-                    } else {
-                        op_hdl->job_done = kDone;
-                    }
-                } else {
-                    op_hdl->bucket->ownership = 0;
-                    op_hdl->job_done = kDone;
-                }
-            } else {
-                op_hdl->job_done = kDone;
-            }
-
-            if (w_lock) {
-                delete w_lock;
-            }
-        } else {
-            if (empty_started == false) {
-                empty_started = true;
-                gettimeofday(&empty_time, 0);
-            }
-        }
     }
-    debug_info("Thread of operation worker exit success %p\n", this);
-    workingThreadExitFlagVec_ += 1;
-    return;
-}
+    return true;
 
-void BucketOperator::notifyOperationWorkerThread()
-{
-    while (true) {
-        if (operationToWorkerMQ_->done == true && operationToWorkerMQ_->isEmpty() == true) {
-            break;
-        }
-        if (operationToWorkerMQ_->isEmpty() == false) {
-            operationNotifyCV_.notify_all();
-            usleep(10000);
-        }
-    }
-    return;
 }
 
 } // namespace KDSEP_NAMESPACE
