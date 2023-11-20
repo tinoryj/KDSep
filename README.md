@@ -1,10 +1,10 @@
 # Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation
 
-**This is the code repository for the submission of Eurosys'24 paper (ID: 560): "Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation".**
+**This is the code repository for the submission of ICDE'24 paper (ID: 788): "Enhancing LSM-tree Key-Value Stores for Read-Modify-Writes via Key-Delta Separation".**
 
 ## Introduction
 
-Read-modify-writes (RMWs) are increasingly observed in practical key-value (KV) storage workloads to support fine-grained updates.  To make RMWs efficient, one approach is to write deltas (i.e., changes to current values) to the log-structured-merged-tree (LSM-tree), yet it also increases the read overhead caused by retrieving and combining a chain of deltas.  We propose a notion called **key-delta (KD) separation** to support efficient reads and RMWs in LSM-tree KV stores under RMW-intensive workloads.  The core idea of KD separation is to store deltas in separate storage and group deltas into storage units called buckets, such that all deltas of a key are kept in the same bucket and can be all together accessed in subsequent reads.  To this end, we build KDSep, a middleware layer that realizes KD separation and integrates KDSep into state-of-the-art LSM-tree KV stores (e.g., RocksDB and BlobDB). The evaluation shows that KDSep achieves up to 80.8\% throughput gain and up to 37.9\% read latency reduction under RMW-intensive workloads while preserving the efficiency in general workloads.
+Read-modify-writes (RMWs) are increasingly observed in practical key-value (KV) storage workloads to support ﬁne-grained updates. To make RMWs efﬁcient, one approach is to write deltas (i.e., changes to current values) to the logstructured-merged-tree (LSM-tree), yet it also increases the read overhead caused by retrieving and combining a chain of deltas. We propose a notion called key-delta (KD) separation to support efﬁcient reads and RMWs in LSM-tree KV stores under RMWintensive workloads. The core idea of KD separation is to store deltas in separate storage and group deltas into storage units called buckets, such that all deltas of a key are kept in the same bucket and can be all together accessed in subsequent reads. To this end, we build KDSep, a middleware layer that realizes KD separation and integrates KDSep into state-of-the-art LSM-tree KV stores (e.g., RocksDB and BlobDB). We show that KDSep achieves signiﬁcant I/O throughput gains and read latency reduction under RMW-intensive workloads while preserving the efﬁciency in general workloads.
 
 ## Components
 
@@ -18,8 +18,6 @@ This repo mainly includes the following three components:
 3. **Benchmark**: The benchmark tool that is used to evaluate the performance of KDSep.
     * We use [YCSB-C](https://github.com/basicthinker/YCSB-C) as the benchmark tool, which is the `C++` version of [YCSB](https://github.com/brianfrankcooper/YCSB). The source code of YCSB-C is stored in the `./Benchmark/YCSB-C` directory.
     * We add support to RocksDB+KDSep, BlobDB+KDSep, and vLogDB+KDSep and corresponding baselines in YCSB-C.
-
-**Note that we put a tarball (KDSep.zip) in this repo for download, which contains all the components.**
 
 ## Dependencies
 
