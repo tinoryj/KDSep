@@ -7,13 +7,8 @@ source scripts/common.sh
 ExpName="_exp2_up2x"
 req="1000M" # 1 billion KV pairs
 op="200M"
+bonus2="up2x"
 
 ## RocksDB, BlobDB, vLogDB
-runModeSet=('raw' 'bkv' 'kv')
-bonus4="up2x"
-func
-
-## Add KDSep 
-cacheSize=3584
-runModeSet=('kd' 'bkvkd' 'kvkd')
+runModeSet=('raw' 'kd' 'bkv' 'bkvkd' 'kv' 'kvkd')
 func
