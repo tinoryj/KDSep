@@ -9,6 +9,8 @@ if [[ ! -d "/opt/RocksDB" || ! -f "/opt/RocksDB/librocksdb.a" ]]; then
         cd ../RocksDB || exit
         make clean # clean up current build result since it may have errors
         make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+        make ldb EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+        make sst_dump EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
         cd ../KDSep || exit
     fi
     echo "Copy rocksdb static lib to /opt"
@@ -20,6 +22,8 @@ else
     md5value=$(md5sum $librocksdb)
     cd ../RocksDB/
     make static_lib EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+    make ldb EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
+    make sst_dump EXTRA_CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC USE_RTTI=1 DEBUG_LEVEL=0 -j$cpuMaxThreadNumber
     cd -
     md5value2=$(md5sum $librocksdb)
     if [[ "$md5value" != "$md5value2" ]]; then

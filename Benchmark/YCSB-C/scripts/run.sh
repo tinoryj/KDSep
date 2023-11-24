@@ -200,11 +200,10 @@ kdcache=0
 workerThreadNumber=8
 gcThreadNumber=2
 ds_split_thres=0.8
-ds_gc_thres=0.9
+ds_gc_thres=0.99
 batchSize=2 # In MiB
 batchSizeK=0
 scanThreads=16
-gcWriteBackSize=100000
 enableCrashConsistency="false"
 # usage
 
@@ -247,7 +246,7 @@ memtable=64
 l1sz=256
 
 initBit=10
-zipfianconstant=0.9
+zipfianconstant=0.99
 
 havekd="false"
 
@@ -382,12 +381,6 @@ for param in $*; do
         num=$(echo $param | sed 's/kdcache//g')
         kdcache=$(($num * 1024 * 1024))
         run_suffix=${run_suffix}_kdc${num}
-    elif [[ "$param" =~ ^gcWriteBackSize[0-9]+$ ]]; then
-        num=$(echo $param | sed 's/gcWriteBackSize//g')
-        if [[ $gcWriteBackSize != $num ]]; then
-            gcWriteBackSize=$num
-            run_suffix=${run_suffix}_gcwbsz${gcWriteBackSize}
-        fi
     elif [[ "$param" =~ ^sst[0-9]+$ ]]; then
         tmp=$(echo $param | sed 's/sst//g')
         if [[ $sstsz -ne $tmp ]]; then
