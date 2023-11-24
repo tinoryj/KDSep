@@ -1,21 +1,10 @@
 #!/bin/bash
 
 source scripts/common.sh
-works=8
-batchSize=2
-cacheSize=3584
-splitThres=0.8
-bucketNumber=32768
-kdcacheSize=512
-fcl=10
-flength=100
-req="105M"
-op="100M"
-readRatios=(1)
 
 #### 9. Overhead of crash consistency components 
 
-ExpName="_exp9_crash"
+ExpName="_exp9_crash_thpt"
 runModeSet=('kvkd')
 
 #### 9.1 Without crash consistency
