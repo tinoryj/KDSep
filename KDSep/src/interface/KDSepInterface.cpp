@@ -139,7 +139,6 @@ bool KDSep::Close()
 {
     // check the buffer, GC, and write back queue
     // buffer -> GC -> write back -> buffer ...
-    int retry_num = 0;
     while (true) {
         bool finished = true;
 
@@ -539,6 +538,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys,
             while (op->job_done == kNotDone) {
                 asm volatile("");
             }
+            delete op;
         }
         keys = lsm_keys;
         StatsRecorder::getInstance()->timeProcess(StatsType::SCAN, tv);
@@ -559,6 +559,7 @@ bool KDSep::Scan(const string& startKey, int len, vector<string>& keys,
         while (op->job_done == kNotDone) {
             asm volatile("");
         }
+        delete op;
     }
 
     map<string, string> keys_values;
@@ -680,11 +681,9 @@ bool KDSep::MultiGetFullMergeInternal(const vector<string>& keys,
 
         bool mergeOperationStatus;
         vector<str_t> deltaInStrT;
-        int total_d_sz = 0;
         for (auto& it : key_deltas[i]) {
             deltaInStrT.push_back(
             str_t(const_cast<char*>(it.data()), it.size()));
-            total_d_sz += it.size();
         }
 
         STAT_PROCESS(mergeOperationStatus =
@@ -1441,8 +1440,6 @@ void KDSep::processBatchedOperationsWorker()
 
                 rocksdb::WriteBatch mergeBatch;
 
-                auto separatedID = 0, notSeparatedID = 0;
-
                 // LSM interface
                 struct lsmInterfaceOperationStruct* op = nullptr;
                 bool vlog_need_post_update = false;
@@ -1557,7 +1554,6 @@ void KDSep::processBatchedOperationsWorker()
 
 void KDSep::processWriteBackOperationsWorker()
 {
-    uint64_t total_written_pairs = 0;
     int written_pairs = 0;
     const int write_back_batch_size = 5000;
     vector<writeBackObject*> objs_to_delete;
@@ -1604,7 +1600,6 @@ void KDSep::processWriteBackOperationsWorker()
         }
 
         if (written_pairs > 0) {
-            total_written_pairs += written_pairs;
             if (write_stall_ != nullptr) {
                 *write_stall_ = false;
             }

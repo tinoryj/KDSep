@@ -25,11 +25,12 @@ KDLRUCache::~KDLRUCache() {
     size_t num_items = 0;
     size_t rss_before = getRss();
     for (int i = 0; i < shard_num_; i++) {
-        total_data_size += shards_[i]->getDataSize();
+        total_data_size += shards_[i]->size();
         num_items += shards_[i]->getNumberOfItems();
         delete shards_[i];
     }
     delete[] shards_;
+    delete bucket_shard_;
 //    debug_error("total_data_size: %lu\n", total_data_size);
 //    debug_error("total_items: %lu\n", num_items);
     size_t rss_after = getRss();

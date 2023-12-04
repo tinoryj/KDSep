@@ -250,6 +250,7 @@ void ManifestManager::FlushSnapshot() {
 
     debug_error("snapshot size: %d\n", ptr);
     manifest_fs_ << buf << endl;
+    delete[] buf;
     snapshots_.clear();
 }
 

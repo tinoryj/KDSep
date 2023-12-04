@@ -110,6 +110,53 @@ uint64_t BucketOperator::readWholeFile(BucketHandler* bucket, char** read_buf)
     }
 }
 
+uint64_t BucketOperator::readWholeFileOrRetrieveFromCache(BucketHandler* bucket,
+        char** buf) {
+    static int numHit = 0;
+    static int numMiss = 0;
+    if (numHit + numMiss > 0 && (numHit + numMiss) % 10000 == 0) {
+        debug_error("Bucket cache hit rate = %d/%d = %f\n", 
+                numHit, numHit + numMiss, 
+                (float)numHit / (numHit + numMiss + 0.0001));
+    }
+    bool readFromFileStatus;
+    auto& file_size = bucket->total_object_bytes;
+    str_t cachedBucket(nullptr, 0);
+    if (kd_cache_ != nullptr) {
+        str_t str_key = str_t(const_cast<char*>(bucket->key.c_str()),
+                bucket->key.size());
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        cachedBucket = kd_cache_->getFromBucketCache(str_key);
+        if (cachedBucket.data_ != nullptr) {
+            numHit++;
+            if (file_size != cachedBucket.size_) { 
+                debug_error("[ERROR] cached bucket size %u not equal to"
+                        " file size %lu for key %s\n", cachedBucket.size_,
+                        file_size, bucket->key.c_str());
+                exit(1);
+            } 
+            *buf = new char[file_size];
+            memcpy(*buf, cachedBucket.data_, file_size);
+            readFromFileStatus = true;
+        } else {
+            numMiss++;
+            readFromFileStatus = readWholeFile(bucket, buf);
+            char* cachedBuf = new char[file_size];
+            memcpy(cachedBuf, *buf, file_size);
+            str_t insert_bucket(cachedBuf, file_size);
+            kd_cache_->updateCacheWholeBucket(str_key, insert_bucket);
+        }
+    } else {
+        readFromFileStatus = readWholeFile(bucket, buf);
+    }
+
+    if (readFromFileStatus) {
+        return file_size;
+    }
+    return 0;
+}
+
 uint64_t BucketOperator::readSortedPart(
         BucketHandler* bucket, const string_view& key_view, 
         char** read_buf, bool& key_exists) {
@@ -238,15 +285,15 @@ bool BucketOperator::readAndProcessWholeFile(
     return true;
 }
 
-bool BucketOperator::readAndProcessWholeFile(
+bool BucketOperator::readAndProcessWholeFileWithCache(
     BucketHandler* bucket, map<string_view, vector<string_view>>& kd_lists,
     char** buf) {
 
     auto& file_size = bucket->total_object_bytes;
-    bool s = readWholeFile(bucket, buf);
+    uint64_t read_size = readWholeFileOrRetrieveFromCache(bucket, buf);
     kd_lists.clear();
 
-    if (s == false) {
+    if (read_size == 0) {
         debug_error("[ERROR] Could not read from file bucket id %lu\n",
                 bucket->file_id);
         exit(1);
@@ -266,12 +313,16 @@ bool BucketOperator::readAndProcessWholeFile(
     return true;
 }
 
+// for multiGet
 bool BucketOperator::readAndProcessWholeFileKeyList(
         BucketHandler* bucket, vector<string*>* keys,
         vector<vector<string_view>>& kd_lists, char** buf)
 {
+    debug_e("2");
     auto& file_size = bucket->total_object_bytes;
     bool readFromFileStatus = readWholeFile(bucket, buf);
+        // don't want to test this
+        //readWholeFileOrRetrieveFromCache(bucket, buf);
 
     kd_lists.clear();
     if (readFromFileStatus == false) {
@@ -1266,7 +1317,8 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
         char* buf = nullptr;
         bool success;
 
-        success = readAndProcessWholeFile(bucket, kd_lists, &buf);
+        success = readAndProcessWholeFileWithCache(bucket, kd_lists, &buf);
+//        debug_error("kd_lists size %lu\n", kd_lists.size());
         // TODO here
 
         if (success == false) {
@@ -1298,10 +1350,12 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
                     string(merged_delta.data_, merged_delta.size_);
             }
 
-            if (kd_cache_ != nullptr) {
-                updateKDCache(const_cast<char*>(it.first.data()),
-                        it.first.size(), merged_delta);
-            }
+            // do not update kd cache after scanning
+            delete[] merged_delta.data_;
+//            if (kd_cache_ != nullptr) {
+//                updateKDCache(const_cast<char*>(it.first.data()),
+//                        it.first.size(), merged_delta);
+//            }
         }
 
         StatsRecorder::getInstance()->timeProcess(
@@ -1326,8 +1380,6 @@ bool BucketOperator::directlyScanOperation(BucketHandler* bucket,
                 debug_error("Exit because of going to the end, len %d\n",
                     len);
                 return true;
-            } else {
-                debug_e("ok - two different buckets");
             }
         } else {
             break;
