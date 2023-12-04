@@ -1465,20 +1465,20 @@ void KDSep::processBatchedOperationsWorker()
 
                 // DeltaStore interface
 
-        // any value to write, then we need to 
-        if (two_phase_write) {
+                // any value to write, then we need to 
+                if (two_phase_write) {
                     putToDeltaStoreStatus = delta_store_->putCommitLog(pending_kds, ds_need_flush);
                     if (pending_kds.size() > 0) {
                         ds_need_post_update = true;
                     }
-        } else {
+                } else {
                     // directly multiput
-            STAT_PROCESS(
-            putToDeltaStoreStatus =
-            delta_store_->multiPut(pending_kds, 
-                        true /* arbitrary */, true), 
-            StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
-        }
+                    STAT_PROCESS(
+                            putToDeltaStoreStatus =
+                            delta_store_->multiPut(pending_kds, 
+                                true /* arbitrary */, true), 
+                            StatsType::KDS_FLUSH_MUTIPUT_DSTORE);
+                }
                 if (putToDeltaStoreStatus == false) {
                     debug_error("[ERROR] could not put %zu object into delta store,"
                             " as well as not separated object number = %zu\n", 
@@ -1490,7 +1490,7 @@ void KDSep::processBatchedOperationsWorker()
                 if (op != nullptr) {
 //                    lsm_interface_cv.notify_one();
                     while (op->job_done == kNotDone) {
-            asm volatile("");
+                        asm volatile("");
                     }
                     if (op->job_done == kError) {
                         debug_error("lsmInterfaceOp error %s\n", ""); 

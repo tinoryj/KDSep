@@ -318,7 +318,6 @@ bool BucketOperator::readAndProcessWholeFileKeyList(
         BucketHandler* bucket, vector<string*>* keys,
         vector<vector<string_view>>& kd_lists, char** buf)
 {
-    debug_e("2");
     auto& file_size = bucket->total_object_bytes;
     bool readFromFileStatus = readWholeFile(bucket, buf);
         // don't want to test this
