@@ -294,7 +294,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
     // come here because there are no values written by the interface
     if (enable_crash_consistency_ == true && need_commit == true) {
         // directly write to the commit log
-    need_flush = false;
+        need_flush = false;
         bool write_commit_log_status = 
             file_manager_->writeToCommitLog(objects, need_flush, true);
         if (write_commit_log_status == false) {
@@ -306,7 +306,7 @@ bool HashStoreInterface::multiPut(vector<mempoolHandler_t>& objects,
 
     if (enable_crash_consistency_ == false) {
         // TODO may still have some bugs
-        need_flush = true; 
+        need_flush = false; 
     }
     // otherwise don't need to touch the commit message. The commit log has
     // been well written. does not change the need_flush variable

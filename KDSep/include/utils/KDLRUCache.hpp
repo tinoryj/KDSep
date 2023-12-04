@@ -42,6 +42,7 @@ public:
         return 24; 
     }
 
+    // release the whole value 
     inline void delete_value(vtype old_value) {
         data_size -= size_of_value(old_value);
         if (old_value.size_ > 0) {
@@ -55,6 +56,7 @@ public:
 //        delete old_value;
     } 
 
+    // merely clean the value string and change it to nullptr
     inline void clean_value(vtype old_value) {
         data_size -= old_value.size_;
         if (old_value.size_ > 0) {
@@ -71,6 +73,19 @@ public:
     size_t size()
     {
         return data_size; //m_map.size();
+    }
+
+    void set_capacity(size_t capacity)
+    {
+        m_capacity = capacity;
+        while (size() > m_capacity) {
+            uint64_t old_size = size();
+            evict();
+            if (size() >= old_size) {
+                fprintf(stderr, "Error: failed to evict items\n");
+                exit(1);
+            }
+        }
     }
 
     size_t capacity()
@@ -107,6 +122,7 @@ public:
     }
 
     // The caller don't need to allocate space for key.
+    // But the caller needs to allocate space for the value first
     void update(ktype& key, vtype value) {
         mtype::iterator i = m_map.find(key);
         if (i == m_map.end()) {
@@ -195,11 +211,7 @@ public:
         return value;
     }
 
-    void clear();
-
-    size_t getDataSize() {
-        return data_size;
-    } 
+    void clear(); 
 
     size_t getNumberOfItems() {
         return m_map.size();
@@ -213,6 +225,10 @@ private:
 //            evicted++;
 //        }
         // evict item from the end of most recently used list
+        if (m_list.empty()) {
+            return;
+        }
+
         ltype::iterator i = --m_list.end();
         char* char_ptr;
         vtype evict_value = m_map[*i].first; 
@@ -290,9 +306,14 @@ public:
     // The cache_key does not needs allocation by the caller
     // But the data needs allocation.
     void updateCache(str_t& cache_key, vtype data) {
-        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        std::scoped_lock<std::shared_mutex> w_lock(cacheMtx_);
         Cache_->update(cache_key, data);
     }
+
+    void set_capacity(size_t cap) {
+        std::scoped_lock<std::shared_mutex> w_lock(cacheMtx_);
+        Cache_->set_capacity(cap);
+    } 
 
     void updateCacheIfExist(str_t& cache_key, vtype data) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
@@ -304,13 +325,18 @@ public:
         Cache_->cleanIfExist(cache_key);
     }
 
+    void clear() {
+        std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
+        Cache_->clear();
+    }
+
     vtype getFromCache(str_t& cache_key) {
         std::scoped_lock<std::shared_mutex> r_lock(cacheMtx_);
         return Cache_->get(cache_key);
     }
 
-    size_t getDataSize() {
-        return Cache_->getDataSize();
+    size_t size() {
+        return Cache_->size();
     }
 
     size_t getNumberOfItems() {
@@ -324,10 +350,13 @@ private:
     uint32_t shard_num_ = 64;
     const uint32_t SHARD_MASK = 63;
     uint64_t cacheSize_ = 2 * 1024 * 1024;
+    uint64_t bucket_cache_capacity_ = 1 * 1024 * 1024;
 
     inline unsigned int hash(str_t& cache_key) {
         return SHARD_MASK & charBasedHashFunc(cache_key.data_, cache_key.size_);
     }
+
+    AppendAbleLRUCacheStrTShard* bucket_shard_ = nullptr;
 
 public:
     KDLRUCache(uint64_t cacheSize) {
@@ -336,6 +365,7 @@ public:
         for (int i = 0; i < shard_num_; i++) {
             shards_[i] = new AppendAbleLRUCacheStrTShard(cacheSize / shard_num_);
         }
+        bucket_shard_ = new AppendAbleLRUCacheStrTShard(cacheSize);
     }
 
     ~KDLRUCache(); 
@@ -348,17 +378,49 @@ public:
         return shards_[hash(cache_key)]->existsInCache(cache_key);
     }
 
+    void updateCacheWholeBucket(str_t& cache_key, vtype data) {
+        // TODO
+        bucket_shard_->updateCache(cache_key, data);
+        if (bucket_shard_->size() > bucket_cache_capacity_ && 
+                bucket_cache_capacity_ < cacheSize_) {
+            bucket_cache_capacity_ += 1 * 1024 * 1024;
+            size_t per_shard_capacity = 
+                (cacheSize_ - bucket_cache_capacity_) / shard_num_;
+            for (int i = 0; i < shard_num_; i++) {
+                shards_[i]->set_capacity(per_shard_capacity);
+            }
+        }
+    }
+
+    inline void resetBucketCache() {
+        if (bucket_shard_->size() > 0) {
+            bucket_shard_->clear();
+            for (int i = 0; i < shard_num_; i++) {
+                shards_[i]->set_capacity(cacheSize_ / shard_num_);
+            }
+            bucket_cache_capacity_ = 1 * 1024 * 1024;
+        }
+    }
+
+    vtype getFromBucketCache(str_t& cache_key) {
+        return bucket_shard_->getFromCache(cache_key);
+    }
+
     // The cache_key does not needs allocation by the caller
     // But the data needs allocation.
     void updateCache(str_t& cache_key, vtype data) {
+        resetBucketCache();
         shards_[hash(cache_key)]->updateCache(cache_key, data);
     }
 
     void updateCacheIfExist(str_t& cache_key, vtype data) {
+        resetBucketCache();
         shards_[hash(cache_key)]->updateCacheIfExist(cache_key, data);
     }
 
+    // called when an anchor is written
     void cleanCacheIfExist(str_t& cache_key) {
+        resetBucketCache();
         shards_[hash(cache_key)]->cleanCacheIfExist(cache_key);
     }
 
@@ -369,7 +431,7 @@ public:
     uint64_t getUsage() {
         uint64_t ans = 0;
         for (int i = 0; i < shard_num_; i++) {
-            ans += shards_[i]->getDataSize();
+            ans += shards_[i]->size();
         }
         return ans;
     }

@@ -53,6 +53,8 @@ private:
     bool operationFind(deltaStoreOpHandler* op_hdl);
 
     uint64_t readWholeFile(BucketHandler* bucket, char** buf);
+    // for scan or multiget 
+    uint64_t readWholeFileOrRetrieveFromCache(BucketHandler* bucket, char** buf);
     uint64_t readUnsortedPart(BucketHandler* bucket, char** buf);
     uint64_t readSortedPart(BucketHandler* bucket, const string_view& key_view, char** buf, bool& key_exists);
     uint64_t readBothParts(BucketHandler* bucket, const string_view& key_view, char** buf);
@@ -64,14 +66,17 @@ private:
             string& key, vector<string_view>& kd_list, char** buf);
     bool readAndProcessWholeFile(BucketHandler* bucket,
             string& key, vector<string_view>& kd_list, char** buf);
-    bool readAndProcessWholeFile(BucketHandler* bucket,
+    // for a scan; may update the cache
+    bool readAndProcessWholeFileWithCache(BucketHandler* bucket,
             map<string_view, vector<string_view>>& kd_lists, char** buf);
+    // for a normal read; hits only the unsorted part
     bool readAndProcessUnsortedPart(BucketHandler* bucket,
             string& key, vector<string_view>& kd_list, char** buf);
+    // for a normal read; hits both sorted and unsorted part
     bool readAndProcessBothParts(BucketHandler* bucket,
             string& key, vector<string_view>& kd_list, char** buf);
     
-    // for multiget
+    // for multiget (when writing back)
     bool readAndProcessWholeFileKeyList(
             BucketHandler* bucket, vector<string*>* key,
             vector<vector<string_view>>& kd_list, char** buf);
